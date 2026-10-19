@@ -6,7 +6,7 @@
 // tests/generate_triplets_fixture.py, plus self-contained geometry checks.
 
 import { describe, expect, it } from 'vitest';
-import { APP_MAX_ANGLES, EDGE_SNAP_DEG, WINDOW_TOL, bondAngleSummary } from '../triplets';
+import { APP_MAX_ANGLES, EDGE_SNAP_DEG, WINDOW_TOL, bondAngleSummary, coordinationSummaryOf } from '../triplets';
 import fixture from '../../__tests__/fixtures/triplets_fixture.json';
 
 const runSpec = (testCase, spec) =>
@@ -68,9 +68,37 @@ describe('Python parity (triplets_fixture.json)', () => {
         summary.binCenters.forEach((value, bin) =>
           expect(result.binCenters[bin]).toBeCloseTo(value, 9));
         expect(result.sharedEnds).toBe(summary.sharedEnds);
+        // The coordination summary the window refusal and the page read.
+        expect(result.coordinationSummary.modal).toBe(summary.coordinationSummary.modal);
+        for (const key of ['mean', 'modalShare', 'unbondedShare']) {
+          expect(result.coordinationSummary[key]).toBeCloseTo(summary.coordinationSummary[key], 12);
+        }
       });
     }
   }
+});
+
+// The same histograms as tests/test_triplets.py's coordination_summary known
+// answers: the two ports agree on a tie, on unbonded atoms and on no atoms.
+describe('coordinationSummaryOf (triplets.py coordination_summary)', () => {
+  it('reads the mean, the modal count (the lowest n on a tie) and the shares', () => {
+    // 2 atoms with no bond, 3 with one, 3 with two, 1 with three: 12 bonds over 9 atoms.
+    expect(coordinationSummaryOf([2, 3, 3, 1])).toEqual({ mean: 12 / 9, modal: 1, modalShare: 3 / 9, unbondedShare: 2 / 9 });
+    // The Demo's Se–Ta–Se at 2.3–2.7 Å: 47 % share the modal count, 3.
+    const demo = coordinationSummaryOf([0, 7, 231, 7596, 4930, 2457, 779]);
+    expect(demo.modal).toBe(3);
+    expect(Math.round(demo.modalShare * 100)).toBe(47);
+    expect(demo.unbondedShare).toBe(0);
+    expect(demo.mean).toBe(59936 / 16000);
+    expect(coordinationSummaryOf([0, 0, 0, 0, 0, 0, 16])).toEqual({ mean: 6, modal: 6, modalShare: 1, unbondedShare: 0 });
+  });
+
+  it('is null throughout without central atoms', () => {
+    const none = { mean: null, modal: null, modalShare: null, unbondedShare: null };
+    expect(coordinationSummaryOf([])).toEqual(none);
+    expect(coordinationSummaryOf([0])).toEqual(none);
+    expect(coordinationSummaryOf(null)).toEqual(none);
+  });
 });
 
 describe('bin edges (ideal geometries)', () => {

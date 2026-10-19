@@ -2,15 +2,11 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { describe, expect, it } from 'vitest';
-import {
-    extractPeaks,
-    firstShell,
-    IDEAL_COORDINATION,
-    SHELL_TROUGH_FRACTION,
-    SPLIT_SHELL_REACH_A,
-    nearestNeighborDistances,
-    pairCorrelationsContext
-} from '../context/pairCorrelations';
+import { nearestNeighborDistances, pairCorrelationsContext } from '../context/pairCorrelations';
+import { shellCatalogue } from '../context/shells';
+
+// The shell rules themselves (peaks, windows, CN, the first peak, joins) are
+// tested with the module that reads them: shells.test.js.
 
 // A 2×2×2 supercell of a 4 Å cubic cell with Na at the origin and Cl at
 // [0.5, 0, 0]: Na–Cl nearest neighbour 2 Å, like pairs 4 Å (via images).
@@ -40,32 +36,6 @@ describe('nearestNeighborDistances', () => {
     it('returns null without a basis', () => {
         expect(nearestNeighborDistances({ latticeVectors: [[1, 0, 0]], supercell: [1, 1, 1] })).toBeNull();
         expect(nearestNeighborDistances(null)).toBeNull();
-    });
-});
-
-describe('extractPeaks', () => {
-    it('finds the first peaks below rMax with plausible widths', () => {
-        const x = grid(400, 0.02);   // 0 … 8 Å
-        const y = x.map((r) => (
-            gaussian(r, 2, 0.1, 5) + gaussian(r, 3.5, 0.15, 3) + gaussian(r, 7, 0.1, 4)
-        ));
-        const peaks = extractPeaks(x, y);
-        expect(peaks).toHaveLength(2);
-        expect(peaks[0].r).toBeCloseTo(2, 1);
-        expect(peaks[1].r).toBeCloseTo(3.5, 1);
-        // Gaussian FWHM = 2.355σ ≈ 0.24; smoothing broadens it slightly.
-        expect(peaks[0].fwhm).toBeGreaterThan(0.15);
-        expect(peaks[0].fwhm).toBeLessThan(0.4);
-    });
-
-    it('ignores noise below the floor and handles flat input', () => {
-        const x = grid(300, 0.02);
-        const y = x.map((r) => gaussian(r, 3, 0.1, 10) + 0.3 * Math.sin(r * 40));
-        const peaks = extractPeaks(x, y);
-        expect(peaks.length).toBeGreaterThanOrEqual(1);
-        expect(peaks[0].r).toBeCloseTo(3, 1);
-        expect(extractPeaks(x, x.map(() => 0))).toEqual([]);
-        expect(extractPeaks([], [])).toEqual([]);
     });
 });
 
@@ -104,55 +74,48 @@ describe('pairCorrelationsContext', () => {
     });
 });
 
-// Shells of Gaussian peaks, each holding `cn` partner atoms at density rho
-// (CN = 4π ρ ∫ r² g dr; a narrow Gaussian at r0 holds 4π ρ h σ √(2π) r0²).
+// Shells of Gaussian peaks in r²g, each holding `cn` partner atoms at density
+// rho (g = Σ cn N(r; r₀, σ) / (4π ρ r²)), 1 beyond 5 Å.
 const shellG = (shells, rho, step = 0.005) => {
     const x = grid(1400, step);
-    const y = x.map((r) => shells.reduce((sum, [r0, sigma, cn]) => (
-        sum + gaussian(r, r0, sigma, cn / (4 * Math.PI * rho * sigma * Math.sqrt(2 * Math.PI) * r0 * r0))
-    ), 0) + (r > 5 ? 1 : 0));
+    const y = x.map((r) => (r > 0 ? shells.reduce((sum, [r0, sigma, cn]) => (
+        sum + cn * gaussian(r, r0, sigma, 1 / (sigma * Math.sqrt(2 * Math.PI)))
+    ), 0) / (4 * Math.PI * rho * r * r) : 0) + (r > 5 ? 1 : 0));
     return { x, y };
 };
 
-describe('firstShell: a split shell cut at a deep trough (review L1)', () => {
-    const rho = 0.05;
+describe('pairCorrelationsContext reads the run\'s one shell reading (shells.js)', () => {
+    // 100 Ta and 200 Se in a 20 Å box: ρ(Se) = 0.025 Å⁻³.
+    const structure = { latticeVectors: [[20, 0, 0], [0, 20, 0], [0, 0, 20]], supercell: [1, 1, 1], elementCounts: { Ta: 100, Se: 200 } };
+    const split = () => {
+        const { x, y } = shellG([[2.52, 0.06, 3], [2.74, 0.1, 3]], 0.025);
+        return [{ plotKind: 'pdf_partials', plotData: { series: [{ label: 'Ta-Se', x, y }] } }];
+    };
 
-    it('joins a Jahn–Teller octahedron (4 short + 2 long, deep trough) to CN 6, and keeps the first peak\'s own window', () => {
-        const { x, y } = shellG([[1.93, 0.05, 4], [2.25, 0.05, 2]], rho);
-        const shell = firstShell(x, y, { partnerDensity: rho });
-        expect(shell.peaksInShell).toEqual([expect.closeTo(1.93, 1), expect.closeTo(2.25, 1)]);
-        expect(shell.cn).toBeCloseTo(6, 1);
-        expect(shell.boundaryR).toBeGreaterThan(2.35);
-        expect(shell.split.firstCn).toBeCloseTo(4, 1);
-        expect(shell.split.firstBoundaryR).toBeGreaterThan(2.0);
-        expect(shell.split.firstBoundaryR).toBeLessThan(2.2);
-        expect(shell.split.firstTroughRatio).toBeLessThan(SHELL_TROUGH_FRACTION);
-        // Without a density there is no CN to judge by: the old cut stands.
-        const blind = firstShell(x, y);
-        expect(blind.split).toBeUndefined();
-        expect(blind.boundaryR).toBeCloseTo(shell.split.firstBoundaryR, 5);
+    it('gives the shell, its CN and, for two resolved peaks, where the first peak ends and what it holds', () => {
+        const plotFiles = split();
+        const [entry] = pairCorrelationsContext(structure, plotFiles);
+        const shell = shellCatalogue({ plotFiles, structure }).shell('Ta', 'Se');
+        expect(entry.gr_peaks_A.map((peak) => peak.r)).toEqual(shell.peaks.slice(0, 2).map((peak) => Number(peak.r.toPrecision(3))));
+        expect(entry.first_shell.to_A).toBe(Number(shell.window[1].toPrecision(3)));
+        expect(entry.first_shell.cn_Se_per_Ta).toBe(Number(shell.cn.toPrecision(3)));
+        expect(entry.first_shell.cn_Se_per_Ta).toBeCloseTo(6, 1);
+        expect(entry.first_shell.first_peak_to_A).toBe(Number(shell.firstPeak.window[1].toPrecision(3)));
+        expect(entry.first_shell.first_peak_cn).toBe(Number(shell.firstPeak.cn.toPrecision(3)));
+        // Separated from the next shell: no gap flag; no settings: no constraint flag.
+        expect(entry.first_shell.gap_g_fraction).toBeUndefined();
+        expect(entry.cut_at_min_distance).toBeUndefined();
     });
 
-    it('never joins a peak beyond the reach, nor one whose summed CN is no polyhedron', () => {
-        const far = shellG([[2.0, 0.05, 6], [2.0 + SPLIT_SHELL_REACH_A + 0.1, 0.05, 2]], rho);
-        expect(firstShell(far.x, far.y, { partnerDensity: rho }).cn).toBeCloseTo(6, 1);
-        const odd = shellG([[2.0, 0.05, 4], [2.35, 0.05, 3]], rho);
-        const shell = firstShell(odd.x, odd.y, { partnerDensity: rho });
-        expect(shell.split).toBeUndefined();
-        expect(shell.cn).toBeCloseTo(4, 1);
-    });
-
-    it('takes the furthest peak that completes a polyhedron (2 + 2 + 2), and counts either direction', () => {
-        const ortho = shellG([[1.95, 0.03, 2], [2.12, 0.03, 2], [2.32, 0.03, 2]], rho);
-        const shell = firstShell(ortho.x, ortho.y, { partnerDensity: rho });
-        expect(shell.cn).toBeCloseTo(6, 1);
-        expect(shell.split.firstCn).toBeCloseTo(2, 1);
-        // 1 + 0.5 B per A is no polyhedron, but A is four times as dense: 6 A per B.
-        const reverse = shellG([[1.93, 0.05, 1], [2.25, 0.05, 0.5]], rho);
-        expect(firstShell(reverse.x, reverse.y, { partnerDensity: rho }).split).toBeUndefined();
-        const joined = firstShell(reverse.x, reverse.y, { partnerDensity: rho, centreDensity: 4 * rho });
-        expect(joined.cn).toBeCloseTo(1.5, 1);
-        expect(joined.split.firstCn).toBeCloseTo(1, 1);
-        expect(IDEAL_COORDINATION).toEqual([4, 6, 8, 12]);
+    it('flags the closest-approach pile-up from the run settings, in either pair order', () => {
+        const x = grid(1000, 0.01);
+        const plotFiles = [{
+            plotKind: 'pdf_partials',
+            plotData: { series: [{ label: 'Ta-Se', x, y: x.map((r) => (r < 2.4 ? 0 : gaussian(r, 2.5, 0.08, 8))) }] }
+        }];
+        const [entry] = pairCorrelationsContext(structure, plotFiles, { runSettings: { atoms: ['Se', 'Ta'], minimumDistancesA: [3, 2.4, 3] } });
+        expect(entry.cut_at_min_distance.at_A).toBe(2.4);
+        expect(entry.cut_at_min_distance.g_fraction).toBeGreaterThan(0.2);
+        expect(entry.first_shell.first_peak_to_A).toBeUndefined();
     });
 });

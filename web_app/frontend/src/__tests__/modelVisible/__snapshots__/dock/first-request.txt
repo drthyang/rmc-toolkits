@@ -87,15 +87,19 @@ Context for this RMC modeling run:
   {
    "pair": "Ga-Ga",
    "avg_structure_d_A": 7.32,
+   "gr_peaks_A": [
+    {"r": 7.33, "fwhm": 0.28}
+   ],
    "first_shell": {"mean_d_A": 7.33, "to_A": 7.73, "cn_Ga_per_Ga": 11.9}
   },
   {
    "pair": "Ga-Ta",
    "avg_structure_d_A": 4.37,
    "gr_peaks_A": [
-    {"r": 4.37, "fwhm": 0.28}
+    {"r": 4.37, "fwhm": 0.28},
+    {"r": 6.43, "fwhm": 0.29}
    ],
-   "first_shell": {"mean_d_A": 4.38, "to_A": 4.85, "cn_Ta_per_Ga": 12}
+   "first_shell": {"mean_d_A": 4.38, "to_A": 4.85, "cn_Ta_per_Ga": 11.9}
   },
   {
    "pair": "Ga-Se",
@@ -114,7 +118,7 @@ Context for this RMC modeling run:
     {"r": 2.93, "fwhm": 0.32},
     {"r": 4.31, "fwhm": 0.2}
    ],
-   "first_shell": {"mean_d_A": 3, "to_A": 3.33, "cn_Ta_per_Ta": 2.76, "gap_g_fraction": 0.057}
+   "first_shell": {"mean_d_A": 3, "to_A": 3.33, "cn_Ta_per_Ta": 2.75, "gap_g_fraction": 0.057}
   },
   {
    "pair": "Ta-Se",
@@ -123,7 +127,7 @@ Context for this RMC modeling run:
     {"r": 2.52, "fwhm": 0.19},
     {"r": 2.74, "fwhm": 0.45}
    ],
-   "first_shell": {"mean_d_A": 2.64, "to_A": 3.23, "cn_Se_per_Ta": 6}
+   "first_shell": {"mean_d_A": 2.64, "to_A": 3.23, "cn_Se_per_Ta": 6, "first_peak_to_A": 2.65, "first_peak_cn": 3.25}
   },
   {
    "pair": "Se-Se",
@@ -132,7 +136,7 @@ Context for this RMC modeling run:
     {"r": 3.33, "fwhm": 0.86},
     {"r": 3.7, "fwhm": 0.2}
    ],
-   "first_shell": {"mean_d_A": 3.67, "to_A": 4.42, "cn_Se_per_Se": 12}
+   "first_shell": {"mean_d_A": 3.67, "to_A": 4.42, "cn_Se_per_Se": 12, "first_peak_to_A": 3.5, "first_peak_cn": 2.78}
   }
  ],
  "datasets": [

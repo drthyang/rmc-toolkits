@@ -1236,7 +1236,7 @@
  {
   "id": "dev-breathing__A+",
   "protocol": "2026-10-19.6",
-  "commit": "3f90a80fdb33984b75e86c0248b9c16dfa7b3efa",
+  "commit": "f763969125f44cb496fc79b142ff1a4276e8e612",
   "case": "dev-breathing",
   "split": "dev",
   "arm": "A+",
@@ -1375,7 +1375,7 @@
    },
    {
     "page": "analyze_clusters",
-    "what": "Mo clusters in 2.4–3.21 Å (engine verdict)",
+    "what": "Mo clusters in 2.39–3.21 Å (engine verdict)",
     "value": {
      "distorted": "false (within_null)",
      "lessDistorted": "false (within_null)",
@@ -1781,7 +1781,7 @@
  {
   "id": "dev-jahn-teller__A+",
   "protocol": "2026-10-19.6",
-  "commit": "3f90a80fdb33984b75e86c0248b9c16dfa7b3efa",
+  "commit": "f763969125f44cb496fc79b142ff1a4276e8e612",
   "case": "dev-jahn-teller",
   "split": "dev",
   "arm": "A+",
@@ -2069,7 +2069,7 @@
    },
    {
     "page": "analyze_clusters",
-    "what": "F clusters in 2.5–3.25 Å (engine verdict)",
+    "what": "F clusters in 2.49–3.25 Å (engine verdict)",
     "value": {
      "distorted": "true (axis_family)",
      "lessDistorted": "true (below_null)",
@@ -3125,7 +3125,7 @@
  {
   "id": "dev-symmetry-lowering__A+",
   "protocol": "2026-10-19.6",
-  "commit": "3f90a80fdb33984b75e86c0248b9c16dfa7b3efa",
+  "commit": "f763969125f44cb496fc79b142ff1a4276e8e612",
   "case": "dev-symmetry-lowering",
   "split": "dev",
   "arm": "A+",
@@ -3323,7 +3323,7 @@
    },
    {
     "page": "analyze_clusters",
-    "what": "O clusters in 2.52–3.21 Å (engine verdict)",
+    "what": "O clusters in 2.51–3.21 Å (engine verdict)",
     "value": {
      "window": "true (extended_network)"
     },

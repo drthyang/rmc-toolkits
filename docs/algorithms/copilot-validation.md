@@ -391,6 +391,70 @@ exercise the rule changes; the test set was not run, and its A+ records are re-r
 freeze. Approved
 by the manager on the user's delegation, 2026-10-19 (`validation/findings/decisions/2026-10-19-engine-verdicts.json`).
 
+**Protocol 2026-10-19.8 (one shell reading per pair, per run, architecture candidate 6).** The first
+coordination shell of every pair is read once (`src/llm/context/shells.js`, ai-assistant.md Step 9),
+and the context, `find_gr_peaks`, the Workbench's questions, the evidence gate, the answer checks,
+`compute_bond_angles`' refusal and A+ all read it; before, five readers searched their own ranges and
+integrated their own way. What the model sees changes:
+1. **The first peak alone ends at the minimum between the first two resolved peaks** (approved by
+   the manager on the user's delegation, 2026-10-19), no longer at r ± FWHM, whose half-height walk
+   reached into the second peak: the Demo's Ta–Se first peak is 2.21–2.65 Å holding 3.25 Se per Ta
+   (2.33–2.71 Å and 3.86–3.9 before; the known answer, a 3 + 3 split with overlapping widths, gives
+   3 ± 0.1 where r ± FWHM gives 3.4–4.0). A shell of one peak has none.
+2. **`find_gr_peaks`:** `first_peak_window_A` leaves; the first peak is `first_shell.first_peak_only`
+   (window, CN, trough) for every shell of two or more resolved peaks, and the split-shell note
+   gives its CN; the shell no longer depends on `r_max` (a pair whose first peak lies above it gets
+   a note and the shell, where it got "no peak"), and the tool's description says so; the
+   constraint warning loses its FWHM clause (nothing moved on the Demo or the dev cases).
+3. **The context's `pair_correlations`:** peaks below 8 Å (the Demo's Ga–Ga 7.33 Å, Ga–Ta's second
+   peak), `first_peak_to_A` / `first_peak_cn` for every shell of two or more resolved peaks (the
+   Demo's Ta–Se and Se–Se, dev-offcentre's K–Nb and Nb–O), and each CN integrated over exactly the
+   window it quotes (third-digit moves: the Demo's Ta–Ta 2.76 → 2.75, Ga–Ta 12 → 11.9,
+   dev-offcentre's O–O 8 → 7.99).
+4. **The Workbench's "First peak only"** on the Demo: 2.21–2.65 Å, CN 3.2 (was 2.33–2.71 Å, 3.9).
+
+The snapshots moved where expected: `find_gr_peaks.json`, `dock/first-request.txt` and
+`harness/first-request.arm-B.txt` (the context), and the two `tools` files (the description); the
+`compute_bond_angles` snapshots did not (the cut rule is unchanged; only its no-angles advice now
+points at `first_shell.window_A`). The dock's worst turn grows by 90 tokens (the context +73, the
+description +16: 38,652 needed, 10,500 to spare at 48k; `contextBudget.test.js`), arm B's worst
+(dev-fit-unconverged) by 16 (35,922 needed, 13,230 to spare). Live runs under earlier protocols are not
+comparable on shell, coordination or bond-angle questions. **Arms A and A+ on dev:** every score
+and claim unchanged; three A+ records move, only in the window their cluster reading names, whose
+low end is now the catalogue's (onset − one grid step, 0.01 Å) — dev-breathing Mo 2.40 → 2.39,
+dev-jahn-teller F 2.50 → 2.49, dev-symmetry-lowering O 2.52 → 2.51 Å — with the engines' verdicts
+unchanged; re-recorded in `arm-a-dev.json` at f763969, the other 27 records as recorded. The test
+set was not run.
+
+**The skill review is a precondition for the freeze.** The skill text is the user's and is not
+edited: until the user updates the coordination-shells skill, arm B reads (`read_skill`) "the
+first-peak window 2.33–2.71 Å holds 3.9 Se per Ta" (SKILL.md step 2, and the Demo table in
+`lacunar-spinel-shells.md`) while `find_gr_peaks` says 2.21–2.65 Å and 3.25. The skill lint's new
+value check finds the four places and holds them on its allow-list with both values.
+
+**The cut rule did not change; a recommendation waits for the user.** Two readings of a window that
+cuts a shell live in the shell module: the Workbench asks on the CN margin (the window holds fewer
+atoms than the shell by ≥ max(0.5, 15 %)), `compute_bond_angles` refuses on the counts (more than half
+the central atoms unbonded, or fewer than 60 % with the most common count). `run.js shell-cuts`
+tabulates both on every natural window of the dev cases and the Demo (the whole shell, its first
+peak alone, its top 0.2 Å earlier and later, and the Demo's historical Ta–Se windows). Of 149
+windows they agree on 134 (6 cut by both, 128 by neither):
+- **The counts alone refuse 11:** dev-offcentre's whole Nb–Nb shell (3.40–4.24 Å, CN 5.46; 52 %
+  share the modal 5 — its counts spread because the shell runs into the next, 4.2 % at the
+  boundary), and 10 windows with the top 0.2 Å early whose CN stays within the margin (e.g. the
+  Demo's Ga–Ga 6.88–7.53 Å, 11.2 of 11.9; dev-jahn-teller's Cu–K 6.87 of 8 at 38 %).
+- **The CN margin alone asks on 4:** first peaks whose counts form a sub-shell — the Demo's Ta–Se
+  (3.25 of 6; 72 % have exactly 3), dev-jahn-teller's four short Cu–F (3.98 of 6; 92 % have 4), the
+  Demo's Se–Se (2.78 of 12; 76 %) and dev-offcentre's one short Nb–O (0.89 of 6; 72 %).
+- **Both:** the spot check's 2.3–2.7 Å and the old first-peak window 2.33–2.71 Å on the Demo, two
+  first peaks and two early cuts on the dev cases.
+
+The recommendation (decision record `validation/findings/decisions/2026-10-19-shell-catalogue.json`,
+not approved): `compute_bond_angles` refuses on the CN-margin reading, the Workbench's own, so a
+window the Workbench did not question is not refused and a whole shell never is; the 10 slightly
+cut windows would then run (their CN within 15 % of the shell's), and the 4 sub-shell first peaks be
+refused unless the user chose them — which the Workbench's question already asks. The user decides.
+
 ### The report beside the case score (plan item 1.6, part i)
 
 The engines alone (A+) score 0.99, because most components of a case are facts they get right every
@@ -628,8 +692,9 @@ each model a window that holds the worst turn (`MIN_CONTEXT_TOKENS`):
 | Cloud | None | The provider; never probed |
 
 48k holds the worst realistic turn of the dock and of arm B (two skills read whole, a full round of
-analyses, the 8,192-token reply reserve; `src/__tests__/contextBudget.test.js`), with 10,590 and
-13,246 tokens to spare (arm B's worst is dev-fit-unconverged since protocol 2026-10-19.6).
+analyses, the 8,192-token reply reserve; `src/__tests__/contextBudget.test.js`), with 10,500 and
+13,230 tokens to spare (arm B's worst is dev-fit-unconverged since protocol 2026-10-19.6; protocol
+2026-10-19.8 added 90 tokens to the dock's and 16 to arm B's).
 
 **The pre-run check.** `run.js live` calls `preflight` before every run. It reads the model's
 server the way the guard does: `detectServer`, then LM Studio's `GET /api/v0/models`
@@ -652,8 +717,8 @@ request at LM Studio's default), the record, the transcript and the report carry
 
 **The dock at 32k.** The decision fixes the validation, not the dock. A user who loads
 qwen3.8-27b in LM Studio at 32k can have the worst two-skill turn refused. The budget test pins the
-dock's worst turn 1,698 tokens over by LM Studio's rule (5,794 by `planContext`'s), and arm B's
-2,351 over by `planContext`'s. The fix is on-demand skill references (plan item 5.5, second half):
+dock's worst turn 1,788 tokens over by LM Studio's rule (5,884 by `planContext`'s), and arm B's
+3,154 over by `planContext`'s. The fix is on-demand skill references (plan item 5.5, second half):
 the skills' long reference material leaves what `read_skill` returns whole. That is skill text, so
 it waits for the user.
 

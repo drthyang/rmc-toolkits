@@ -43,6 +43,10 @@ describe('coords-only .rmc6f: browser vs Python file loaders', () => {
             expect(result.apexCount).toBe(summary.apexCount);
             expect(result.counts).toEqual(summary.counts);
             expect(result.coordination).toEqual(summary.coordination);
+            expect(result.coordinationSummary.modal).toBe(summary.coordinationSummary.modal);
+            for (const key of ['mean', 'modalShare', 'unbondedShare']) {
+                expect(result.coordinationSummary[key]).toBeCloseTo(summary.coordinationSummary[key], 12);
+            }
             expect(result.lengths12.counts).toEqual(summary.lengths12.counts);
             expect(result.lengths12.uniqueBonds).toBe(summary.lengths12.uniqueBonds);
             if (summary.lengths23) {

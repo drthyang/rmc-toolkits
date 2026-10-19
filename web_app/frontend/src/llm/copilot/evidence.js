@@ -39,6 +39,7 @@
 // cluster_breathing, "features": [] …) are read as the claims they are.
 
 import { BREATHING, CELL_DOUBLING, CN_CLAIMS, DISTORTED, POLYHEDRON_CN, PREFERRED, RIGID, SUPERSTRUCTURE, asserts } from './answerAudit';
+import { CN_MATCH_TOLERANCE } from '../context/shells';
 
 const MODULATION = /(^|[^\w-])(modulat(?:ion|ions|ed)|incommensurate|order(?:ed)? between cells|correlated displacements between cells)\b/gi;
 // A split site: named, random off-centring either way round, a ± displacement
@@ -64,10 +65,11 @@ export const CLUSTER_CN_MAX = 4.5;
 const ranTool = (ran, name) => ran.some((call) => call.name === name);
 
 /**
- * The gate for one run. `catalog` (clarify.js buildShellCatalog, optional)
- * names the elements whose own first shell is a finite cluster's; `offered`
- * the tool names this turn offers (a rule never asks for a tool that is not
- * there).
+ * The gate for one run. `catalog` (the run's shell catalogue, context/
+ * shells.js shellCatalogue; optional) names the elements whose own first
+ * shell is a finite cluster's (its CN, `shell(element, element).cn`, as the
+ * context and find_gr_peaks report it); `offered` the tool names this turn
+ * offers (a rule never asks for a tool that is not there).
  */
 export const buildEvidenceGate = ({ catalog = null, offered = null, elements = null } = {}) => {
     const has = (name) => !offered || offered.includes(name);
@@ -77,8 +79,8 @@ export const buildEvidenceGate = ({ catalog = null, offered = null, elements = n
     const claims = (text, pattern) => asserts(text, pattern, { within });
     const clusterElements = catalog
         ? catalog.elements.filter((element) => {
-            const shell = catalog.shell(element, element);
-            return shell && Number.isFinite(shell.cn) && shell.cn >= 0.5 && shell.cn <= CLUSTER_CN_MAX;
+            const cn = catalog.shell(element, element)?.cn;
+            return Number.isFinite(cn) && cn >= CN_MATCH_TOLERANCE && cn <= CLUSTER_CN_MAX;
         })
         : [];
     const rules = [

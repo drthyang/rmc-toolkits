@@ -7,6 +7,8 @@
 //   NOT_GATES   a number after a comparator that is no gate, with why;
 //   FIRM_RULES  a "*Firm rule in the app:*" → the code that enforces it, and a
 //               probe that exercises that code;
+//   VALUES      a value a skill quotes as measured on the Demo → what the tool
+//               measures there now (the shell readings, candidate #6);
 //   ALLOW_LIST  today's violations, each with why and what clears it.
 //
 // When a skill's text changes (the user's review of a draft), its entries here
@@ -17,30 +19,34 @@
 
 import assert from 'node:assert/strict';
 import {
-    LOW_INDEX_CONE_DEG, MODAL_COORDINATION_SHARE, SIGNIFICANCE_SIGMA, UNBONDED_APEX_FRACTION,
-    summarizeBondAngles, summarizeOrientation, summarizeSymmetry
+    LOW_INDEX_CONE_DEG, SIGNIFICANCE_SIGMA, summarizeBondAngles, summarizeOrientation, summarizeSymmetry
 } from '../../copilotTools';
 import { auditAnswer, contextAuditFacts } from '../../llm/copilot/answerAudit';
 import { buildRunTools } from '../../llm/copilot/runTools';
 import { computeOutcome } from '../../llm/copilot/verdict';
 import { buildRunContext } from '../../llm/context/runContext';
 import { pointGroupFacts } from '../../llm/context/pointGroups';
+import { MODAL_COORDINATION_SHARE, UNBONDED_APEX_FRACTION } from '../../llm/context/shells';
 import {
     AXIS_CONE_DEG, AXIS_ENHANCEMENT, CLUSTER_EFFECT, CLUSTER_Z, SPLIT_SITE_KURTOSIS, SPLIT_SITE_SE, TRIGONALITY_EFFECT, isSplitSite
 } from '../../workers/clusters';
 import { ASYMMETRY_FLAG_SIGMA, MAP_TEST_MIN_PAIRS } from '../../workers/orientation';
 import { AXIS_RESOLUTION_SIGMAS } from '../../workers/pcaKde';
+import { coordinationSummaryOf } from '../../workers/triplets';
 
 const ANISOTROPY = 'displacement-anisotropy/SKILL.md';
 const SIGNIFICANCE = 'displacement-anisotropy/significance-reading.md';
 const SHELLS = 'coordination-shells/SKILL.md';
+const SHELL_TABLE = 'coordination-shells/lacunar-spinel-shells.md';
 const SYMMETRY = 'local-symmetry/SKILL.md';
 const FIT = 'rmc-fit-assessment/SKILL.md';
+const RUN_NUMBERS = 'rmc-fit-assessment/run-numbers.md';
 
 const constant = (name, value, module) => ({ name, value, module });
 const SIGMA = constant('SIGNIFICANCE_SIGMA', SIGNIFICANCE_SIGMA, 'copilotTools.js');
 const ASYMMETRY_SIGMA = constant('ASYMMETRY_FLAG_SIGMA', ASYMMETRY_FLAG_SIGMA, 'workers/orientation.js');
-const MODAL_SHARE = constant('MODAL_COORDINATION_SHARE', MODAL_COORDINATION_SHARE, 'copilotTools.js');
+// compute_bond_angles' counts rule lives in the shell module (countsCut), pinned as it was.
+const MODAL_SHARE = constant('MODAL_COORDINATION_SHARE', MODAL_COORDINATION_SHARE, 'llm/context/shells.js, countsCut');
 
 // --- probes: the code applies a constant, or enforces a firm rule, as stated ----------
 
@@ -54,10 +60,12 @@ const orientationPayload = ({ peak, map }) => ({
 });
 
 // A compute_bond_angles engine payload with the coordination counts given
-// (counts[n] = central atoms with n A–B bonds in the window).
+// (counts[n] = central atoms with n A–B bonds in the window) and the engine's
+// summary of them.
 const bondAnglePayload = (coordination) => ({
     triplet: ['Se', 'Ta', 'Se'], bond12: [2.3, 2.7], bond23: [2.3, 2.7], sharedEnds: true,
     angleCount: 1000, apexCount: coordination.reduce((sum, count) => sum + count, 0), coordination,
+    coordinationSummary: coordinationSummaryOf(coordination),
     meanAngle: 100, stdAngle: 20, binCenters: [45, 90, 135, 180], counts: [100, 600, 200, 100], lengths12: null
 });
 const refused = (result) => typeof result.data.refused === 'string' && !('mean_deg' in result.data);
@@ -229,7 +237,7 @@ export const BINDINGS = [
         gate: 'a window that misses the shell (firm rule)',
         find: 'or most have none',
         number: /or (?<n>most) have none/,
-        constants: [constant('UNBONDED_APEX_FRACTION', UNBONDED_APEX_FRACTION, 'copilotTools.js')],
+        constants: [constant('UNBONDED_APEX_FRACTION', UNBONDED_APEX_FRACTION, 'llm/context/shells.js, countsCut')],
         verify: () => {
             // "Most" is more than half: 51 of 100 central atoms with no bond → refused.
             assert.ok(refused(summarizeBondAngles(bondAnglePayload([51, 0, 49]))), 'a window that misses 51 % was not refused');
@@ -316,12 +324,279 @@ export const FIRM_RULES = [
     }
 ];
 
+// --- VALUES ---------------------------------------------------------------------------
+
+// A value a skill quotes as measured on the Demo, bound to what the tool shows
+// there now: `find` locates the sentence, `number` reads the value as written
+// (group n, and m for a window), `measure(probeContext)` gives the tool's
+// value (a number, or [lo, hi]) and `tool` names where it comes from. The
+// probe context (skillLint.test.js) runs the tools on the Demo: gr(pair) is
+// find_gr_peaks' data, bondAngles(args) compute_bond_angles' data,
+// triplets(params) the bond-angle engine's payload, catalogue the run's shell
+// catalogue (shells.js). Bound so far: the numbers the shell reading gives
+// (architecture candidate #6) and the counts summary beside them.
+const SE_TA_SE = { end1: 'Se', apex: 'Ta', end2: 'Se' };
+const firstShell = async (ctx, pair) => (await ctx.gr(pair)).first_shell;
+export const VALUES = [
+    {
+        file: SHELLS,
+        what: 'the two Ta–Se peaks of the TaSe₆ shell',
+        find: 'the TaSe₆ shell has Ta–Se peaks at',
+        number: /peaks at (?<n>\d+\.\d+) and (?<m>\d+\.\d+) Å/,
+        tool: 'find_gr_peaks first_shell.peaks_in_shell_A',
+        measure: async (ctx) => (await firstShell(ctx, 'Ta-Se')).peaks_in_shell_A
+    },
+    {
+        file: SHELLS,
+        what: 'the Ta–Se first-peak window',
+        find: 'the first-peak window',
+        number: /first-peak window (?<n>\d+\.\d+)–(?<m>\d+\.\d+) Å/,
+        tool: 'find_gr_peaks first_shell.first_peak_only.window_A',
+        measure: async (ctx) => (await firstShell(ctx, 'Ta-Se')).first_peak_only?.window_A ?? null
+    },
+    {
+        file: SHELLS,
+        what: 'the Ta–Se first peak\'s CN',
+        find: 'Se per Ta, the whole shell',
+        before: 24,
+        number: /holds (?<n>\d+(?:\.\d+)?) Se per Ta, the whole shell/,
+        tool: 'find_gr_peaks first_shell.first_peak_only.cn.Se_per_Ta',
+        measure: async (ctx) => (await firstShell(ctx, 'Ta-Se')).first_peak_only?.cn?.Se_per_Ta ?? null
+    },
+    {
+        file: SHELLS,
+        what: 'the whole TaSe₆ shell\'s CN',
+        find: 'Se per Ta, the whole shell',
+        number: /the whole shell (?<n>\d+(?:\.\d+)?)\./,
+        tool: 'find_gr_peaks first_shell.cn.Se_per_Ta',
+        measure: async (ctx) => (await firstShell(ctx, 'Ta-Se')).cn.Se_per_Ta
+    },
+    {
+        file: SHELLS,
+        what: 'the mean coordination in the spot check\'s 2.3–2.7 Å window',
+        find: 'gemma4 used 2.3–2.7 Å, got CN',
+        number: /got CN (?<n>\d+\.\d+)/,
+        tool: 'compute_bond_angles coordination.mean (Se–Ta–Se, 2.3–2.7 Å)',
+        measure: async (ctx) => (await ctx.bondAngles({ ...SE_TA_SE, r12_min: 2.3, r12_max: 2.7 })).coordination.mean
+    },
+    {
+        file: SHELLS,
+        what: 'the mean coordination in 2.33–2.71 Å',
+        find: 'qwen3.8 started at 2.33–2.71 Å (CN',
+        number: /\(CN (?<n>\d+\.\d+)\)/,
+        tool: 'compute_bond_angles coordination.mean (Se–Ta–Se, 2.33–2.71 Å)',
+        measure: async (ctx) => (await ctx.bondAngles({ ...SE_TA_SE, r12_min: 2.33, r12_max: 2.71 })).coordination.mean
+    },
+    {
+        file: SHELLS,
+        what: 'the Ta–Ta g(r) peak',
+        find: '"Peak shifted to',
+        number: /Peak shifted to (?<n>\d+\.\d+) Å/,
+        tool: 'find_gr_peaks peaks_A[0].r (Ta-Ta)',
+        measure: async (ctx) => (await ctx.gr('Ta-Ta')).peaks_A[0].r
+    },
+    {
+        file: SHELLS,
+        what: 'the Ta–Ta shell mean',
+        find: 'sits below the shell mean',
+        number: /shell mean \((?<n>\d+\.\d+) Å from r²g\)/,
+        tool: 'find_gr_peaks first_shell.mean_d_A (Ta-Ta)',
+        measure: async (ctx) => (await firstShell(ctx, 'Ta-Ta')).mean_d_A
+    },
+    {
+        file: SHELL_TABLE,
+        what: 'the TaSe₆ shell window',
+        find: '(find_gr_peaks, 2026-10-11)',
+        before: 20,
+        number: /≈ (?<n>\d+\.\d+)–(?<m>\d+\.\d+) Å \(find_gr_peaks/,
+        tool: 'find_gr_peaks first_shell.window_A (Ta-Se)',
+        measure: async (ctx) => (await firstShell(ctx, 'Ta-Se')).window_A
+    },
+    {
+        file: SHELL_TABLE,
+        what: 'the two peaks of the TaSe₆ shell',
+        find: 'Å in the review |',
+        number: /\| (?<n>\d+\.\d+), (?<m>\d+\.\d+) Å \|/,
+        tool: 'find_gr_peaks first_shell.peaks_in_shell_A (Ta-Se)',
+        measure: async (ctx) => (await firstShell(ctx, 'Ta-Se')).peaks_in_shell_A
+    },
+    {
+        file: SHELL_TABLE,
+        what: 'the TaSe₆ shell\'s CN',
+        find: 'in 2.33–2.96 Å) |',
+        before: 12,
+        number: /\| (?<n>\d+) \(\d+\.\d+ in/,
+        tool: 'find_gr_peaks first_shell.cn.Se_per_Ta',
+        measure: async (ctx) => (await firstShell(ctx, 'Ta-Se')).cn.Se_per_Ta
+    },
+    {
+        file: SHELL_TABLE,
+        what: 'the CN in the review\'s 2.33–2.96 Å window',
+        find: 'in 2.33–2.96 Å) |',
+        before: 12,
+        number: /\((?<n>\d+\.\d+) in 2\.33–2\.96 Å\)/,
+        tool: 'the shell catalogue\'s window(Ta, Se, [2.33, 2.96]).cn (what the Workbench reads)',
+        measure: (ctx) => ctx.catalogue.window('Ta', 'Se', [2.33, 2.96]).cn
+    },
+    {
+        file: SHELL_TABLE,
+        what: 'the Ta–Se first-peak window',
+        find: 'first-peak window',
+        number: /first-peak window (?<n>\d+\.\d+)–(?<m>\d+\.\d+) Å/,
+        tool: 'find_gr_peaks first_shell.first_peak_only.window_A',
+        measure: async (ctx) => (await firstShell(ctx, 'Ta-Se')).first_peak_only?.window_A ?? null
+    },
+    {
+        file: SHELL_TABLE,
+        what: 'the Ta–Se first peak\'s CN',
+        find: 'Å holds only',
+        number: /holds only (?<n>\d+(?:\.\d+)?):/,
+        tool: 'find_gr_peaks first_shell.first_peak_only.cn.Se_per_Ta',
+        measure: async (ctx) => (await firstShell(ctx, 'Ta-Se')).first_peak_only?.cn?.Se_per_Ta ?? null
+    },
+    {
+        file: SHELL_TABLE,
+        what: 'the GaSe₄ shell window',
+        find: '| GaSe₄ | Ga–Se |',
+        number: /Ga–Se \| (?<n>\d+\.\d+)–(?<m>\d+\.\d+) Å/,
+        tool: 'find_gr_peaks first_shell.window_A (Ga-Se)',
+        measure: async (ctx) => (await firstShell(ctx, 'Ga-Se')).window_A
+    },
+    {
+        file: SHELL_TABLE,
+        what: 'the GaSe₄ shell\'s CN',
+        find: '| GaSe₄ | Ga–Se |',
+        number: /— \| (?<n>\d+\.\d+) \| mean/,
+        tool: 'find_gr_peaks first_shell.cn.Se_per_Ga',
+        measure: async (ctx) => (await firstShell(ctx, 'Ga-Se')).cn.Se_per_Ga
+    },
+    {
+        file: SHELL_TABLE,
+        what: 'the GaSe₄ shell\'s mean distance',
+        find: '| GaSe₄ | Ga–Se |',
+        number: /mean (?<n>\d+\.\d+) Å, sd/,
+        tool: 'find_gr_peaks first_shell.mean_d_A (Ga-Se)',
+        measure: async (ctx) => (await firstShell(ctx, 'Ga-Se')).mean_d_A
+    },
+    {
+        file: SHELL_TABLE,
+        what: 'the GaSe₄ shell\'s spread',
+        find: '| GaSe₄ | Ga–Se |',
+        number: /, sd (?<n>\d+\.\d+) Å;/,
+        tool: 'find_gr_peaks first_shell.sd_d_A (Ga-Se)',
+        measure: async (ctx) => (await firstShell(ctx, 'Ga-Se')).sd_d_A
+    },
+    {
+        file: SHELL_TABLE,
+        what: 'the constraint that shapes the GaSe₄ shell',
+        find: 'low-r side shaped by the',
+        number: /shaped by the (?<n>\d+\.\d+) Å constraint/,
+        tool: 'find_gr_peaks min_distance_constraint_A (Ga-Se), when g_at_constraint_fraction flags it',
+        measure: async (ctx) => {
+            const data = await ctx.gr('Ga-Se');
+            return data.g_at_constraint_fraction != null ? data.min_distance_constraint_A : null;
+        }
+    },
+    {
+        file: SHELL_TABLE,
+        what: 'the Ta₄ shell mean',
+        find: '| Ta₄ | Ta–Ta |',
+        number: /shell mean (?<n>\d+\.\d+) Å \(r²g\)/,
+        tool: 'find_gr_peaks first_shell.mean_d_A (Ta-Ta)',
+        measure: async (ctx) => (await firstShell(ctx, 'Ta-Ta')).mean_d_A
+    },
+    {
+        file: SHELL_TABLE,
+        what: 'the Ta–Ta g(r) peak',
+        find: '| Ta₄ | Ta–Ta |',
+        number: /g peak (?<n>\d+\.\d+) Å/,
+        tool: 'find_gr_peaks peaks_A[0].r (Ta-Ta)',
+        measure: async (ctx) => (await ctx.gr('Ta-Ta')).peaks_A[0].r
+    },
+    {
+        file: SHELL_TABLE,
+        what: 'the Ta₄ shell\'s CN',
+        find: '| Ta₄ | Ta–Ta |',
+        number: /g peak \d+\.\d+ Å \| (?<n>\d+) \|/,
+        tool: 'find_gr_peaks first_shell.cn.Ta_per_Ta',
+        measure: async (ctx) => (await firstShell(ctx, 'Ta-Ta')).cn.Ta_per_Ta
+    },
+    {
+        file: SHELL_TABLE,
+        what: 'the modal share in the 2.3–2.7 Å window',
+        find: 'of the Ta atoms share the most common Se count',
+        before: 12,
+        number: /only (?<n>\d+) % of the Ta atoms/,
+        unit: '%',
+        tool: 'the bond-angle engine\'s coordinationSummary.modalShare (Se–Ta–Se, 2.3–2.7 Å; compute_bond_angles\' refusal quotes it)',
+        measure: async (ctx) => (await ctx.triplets({ end1: 'Se', apex: 'Ta', end2: 'Se', r12Min: 2.3, r12Max: 2.7 })).coordinationSummary.modalShare
+    },
+    {
+        file: SHELL_TABLE,
+        what: 'the modal Se count in the 2.3–2.7 Å window',
+        find: 'share the most common Se count',
+        number: /most common Se count \((?<n>\d+)\)/,
+        tool: 'the bond-angle engine\'s coordinationSummary.modal (Se–Ta–Se, 2.3–2.7 Å)',
+        measure: async (ctx) => (await ctx.triplets({ end1: 'Se', apex: 'Ta', end2: 'Se', r12Min: 2.3, r12Max: 2.7 })).coordinationSummary.modal
+    },
+    {
+        file: RUN_NUMBERS,
+        what: 'g(r) just above the Ga–Se constraint',
+        find: 'g(r) just above it is',
+        number: /just above it is (?<n>\d+(?:\.\d+)?) % of the first peak/,
+        unit: '%',
+        tool: 'find_gr_peaks g_at_constraint_fraction (Ga-Se; the shell catalogue\'s constraint.gFraction)',
+        measure: (ctx) => ctx.catalogue.shell('Ga', 'Se').constraint.gFraction
+    }
+];
+
 // --- ALLOW_LIST -----------------------------------------------------------------------
 
 // Today's violations (docs/AGENT_PLAN.md section E). `fragment` (≤ 60
 // characters) is skill text at the violation; an entry that no finding needs
 // fails the test, so a fix removes its entry. Phase 5's items 5.2–5.4 empty it.
+// A value entry also names the skill's line, its value and the tool's: the
+// test fails when any of the three moves.
+const FIRST_PEAK_WHY = 'the first-peak window moved from r ± FWHM, which reached into the second Ta–Se peak, to the inter-peak minimum '
+    + '(shells.js; approved by the manager on the user\'s delegation, 2026-10-19: validation/findings/decisions/2026-10-19-shell-catalogue.json). '
+    + 'The skill text is the user\'s and is not edited: awaiting the user\'s skill review, a precondition for the freeze';
 export const ALLOW_LIST = [
+    {
+        check: 'value',
+        file: SHELLS,
+        fragment: 'the first-peak window 2.33–2.71 Å',
+        line: 32,
+        skill: '2.33–2.71',
+        tool: '2.21–2.65',
+        why: `step 2: ${FIRST_PEAK_WHY}`
+    },
+    {
+        check: 'value',
+        file: SHELLS,
+        fragment: 'holds 3.9 Se per Ta, the whole shell',
+        line: 33,
+        skill: '3.9',
+        tool: '3.25',
+        why: `step 2, the first peak's CN (≈ 3, the three short Ta–Se bonds of TaSe₆): ${FIRST_PEAK_WHY}`
+    },
+    {
+        check: 'value',
+        file: SHELL_TABLE,
+        fragment: 'first-peak window 2.33–2.71 Å',
+        line: 17,
+        skill: '2.33–2.71',
+        tool: '2.21–2.65',
+        why: `the TaSe₆ row of the Demo table: ${FIRST_PEAK_WHY}`
+    },
+    {
+        check: 'value',
+        file: SHELL_TABLE,
+        fragment: 'Å holds only 3.9:',
+        line: 17,
+        skill: '3.9',
+        tool: '3.25',
+        why: `the TaSe₆ row of the Demo table, the first peak's CN (≈ 3): ${FIRST_PEAK_WHY}`
+    },
     {
         check: 'gate',
         file: ANISOTROPY,

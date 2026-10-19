@@ -3,13 +3,13 @@
   "arguments": {
     "pair": "Ta-Se"
   },
-  "content_chars": 710,
+  "content_chars": 856,
   "content": {
     "ref": "r1",
     "checks": [
       {
         "level": "note",
-        "text": "The first shell holds 2 peaks (2.52, 2.74 Å): a split shell, e.g. two bond lengths of one distorted polyhedron. Use first_shell.window_A, not the first-peak window."
+        "text": "The first shell holds 2 peaks (2.52, 2.74 Å): a split shell, e.g. two bond lengths of one distorted polyhedron. Use first_shell.window_A, not the first peak alone. The first peak alone (first_peak_only, to 2.65 Å) holds 3.25 Se per Ta of the shell's 6."
       },
       {
         "level": "ok",
@@ -33,7 +33,6 @@
           "fwhm": 0.4
         }
       ],
-      "first_peak_window_A": [2.33, 2.71],
       "first_shell": {
         "window_A": [2.21, 3.23],
         "peaks_in_shell_A": [2.52, 2.74],
@@ -44,7 +43,14 @@
           "Ta_per_Se": 3
         },
         "cn_if_cut_0p2A_earlier_later": [5.97, 6],
-        "trough_g_fraction": 0.00096
+        "trough_g_fraction": 0.00096,
+        "first_peak_only": {
+          "window_A": [2.21, 2.65],
+          "cn": {
+            "Se_per_Ta": 3.25
+          },
+          "trough_g_fraction": 0.48
+        }
       },
       "min_distance_constraint_A": 2.2
     }

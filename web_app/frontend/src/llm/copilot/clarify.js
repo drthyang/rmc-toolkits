@@ -32,141 +32,56 @@
 // `session` and applied to a later call with that window without asking
 // again. Pure functions of the run data; the agent loop shows the card
 // (agentLoop.js) and hands the model the user's choice.
+//
+// The shells, their first peaks, the cut sensitivity and whether a window
+// cuts a shell are the run's one shell reading (context/shells.js): the
+// clarifier asks on its CN-margin reading (window().cnMargin), as before.
 
-import { elementDensity, extractPeaks, firstShell } from '../context/pairCorrelations';
+import { CN_MATCH_TOLERANCE, cnMatches, shellCatalogue } from '../context/shells';
 
 const roundTo = (value, digits = 2) => (Number.isFinite(value) ? Number(value.toFixed(digits)) + 0 : null);
 const cnText = (value) => (Number.isFinite(value) ? (Math.abs(value - Math.round(value)) < 0.05 ? String(Math.round(value)) : value.toFixed(1)) : '?');
 const windowText = ([lo, hi]) => `${roundTo(lo)}–${roundTo(hi)} Å`;
 
-// A window changes the answer when its coordination number differs from the
-// whole shell's by at least this much (absolute, or relative to the shell's).
-export const CN_CHANGE_ABS = 0.5;
-export const CN_CHANGE_REL = 0.15;
 // A neighbour shell counts as bonded when it starts within this factor of the
 // nearest shell's start.
 export const BONDED_REACH = 1.4;
 // A ladder rung above the sampling noise floor must reach this factor of it.
 export const NOISE_MARGIN = 1.25;
-const changes = (cn, reference) => Number.isFinite(cn) && Number.isFinite(reference)
-    && Math.abs(cn - reference) >= Math.max(CN_CHANGE_ABS, CN_CHANGE_REL * reference);
-
-const trapezoidRange = (x, f, lo, hi) => {
-    let sum = 0;
-    for (let i = 0; i < x.length - 1; i += 1) {
-        const a = Math.max(lo, x[i]);
-        const b = Math.min(hi, x[i + 1]);
-        if (b <= a) continue;
-        const slope = (f[i + 1] - f[i]) / (x[i + 1] - x[i]);
-        const fa = f[i] + slope * (a - x[i]);
-        const fb = f[i] + slope * (b - x[i]);
-        sum += 0.5 * (fa + fb) * (b - a);
-    }
-    return sum;
-};
 
 // --- the shells the run's partial g(r) hold ------------------------------------
 
 /**
- * The first coordination shell of every element pair in the run's partial-PDF
- * file: `shell(centre, partner)` → `{ window, peaks, cn, firstPeak: { window,
- * cn }, cut: { earlier, later }, troughRatio }` (CN = partner atoms per centre
- * atom), `cnIn(centre, partner, [lo, hi])`, `partners(centre)`, nearest first.
- * Null without partials or densities.
+ * The bonded neighbours of `centre` in a shell catalogue (shells.js): its
+ * closed shells holding at least half an atom, nearest first, that start
+ * within BONDED_REACH of the nearest one (the Demo's Ta: Se from 2.21 Å, Ta
+ * from 2.65 Å — the Ta4 cluster — but not Ga from 3.77 Å).
  */
-export const buildShellCatalog = ({ plotFiles, structure } = {}) => {
-    const partials = (plotFiles || []).find((file) => file.plotKind === 'pdf_partials' && file.plotData?.series?.length);
-    if (!partials || !structure?.elementCounts) return null;
-    const series = new Map();
-    for (const entry of partials.plotData.series) {
-        const match = /^([A-Z][a-z]?)\s*-\s*([A-Z][a-z]?)$/.exec((entry.label || '').trim());
-        if (!match || !Array.isArray(entry.x) || entry.x.length !== entry.y?.length) continue;
-        const radial = entry.y.map((value, i) => Math.max(0, value) * entry.x[i] * entry.x[i]);
-        const value = { x: entry.x, y: entry.y, radial };
-        series.set(`${match[1]}|${match[2]}`, value);
-        series.set(`${match[2]}|${match[1]}`, value);
-    }
-    if (!series.size) return null;
-    const cache = new Map();
-    const cnIn = (centre, partner, [lo, hi]) => {
-        const data = series.get(`${centre}|${partner}`);
-        const density = elementDensity(structure, partner);
-        if (!data || !density || !(hi > lo)) return null;
-        return 4 * Math.PI * density * trapezoidRange(data.x, data.radial, lo, hi);
-    };
-    const shell = (centre, partner) => {
-        const key = `${centre}|${partner}`;
-        if (cache.has(key)) return cache.get(key);
-        const data = series.get(key);
-        let result = null;
-        if (data) {
-            const peaks = extractPeaks(data.x, data.y, { rMax: 8, maxPeaks: 3 });
-            // With both densities a split shell cut at a deep trough is joined
-            // when its summed CN is an ideal polyhedral count (firstShell).
-            const found = peaks.length ? firstShell(data.x, data.y, {
-                rMax: Math.max(6, peaks[0].r + 3),
-                partnerDensity: elementDensity(structure, partner),
-                centreDensity: elementDensity(structure, centre)
-            }) : null;
-            if (found?.boundaryR != null) {
-                const step = data.x.length > 1 ? Math.abs(data.x[1] - data.x[0]) : 0;
-                // Rounded as shown to the user (0.01 Å), so a window applied
-                // from a card is the one its option names.
-                const window = [roundTo(Math.max(0, found.onsetR - step)), roundTo(found.boundaryR)];
-                const first = peaks[0];
-                // A joined split shell: its first peak alone ends at the deep
-                // trough the shell was cut at before.
-                const firstWindow = found.split
-                    ? [window[0], roundTo(found.split.firstBoundaryR)]
-                    : [roundTo(Math.max(0, first.r - first.fwhm)), roundTo(first.r + first.fwhm)];
-                result = {
-                    centre,
-                    partner,
-                    window,
-                    peaks: found.peaksInShell,
-                    cn: cnIn(centre, partner, window),
-                    firstPeak: { window: firstWindow, cn: cnIn(centre, partner, firstWindow) },
-                    cut: {
-                        earlier: { window: [window[0], roundTo(window[1] - 0.2)], cn: cnIn(centre, partner, [window[0], roundTo(window[1] - 0.2)]) },
-                        later: { window: [window[0], roundTo(window[1] + 0.2)], cn: cnIn(centre, partner, [window[0], roundTo(window[1] + 0.2)]) }
-                    },
-                    troughRatio: found.troughRatio
-                };
-            }
-        }
-        cache.set(key, result);
-        return result;
-    };
-    const elements = [...new Set([...series.keys()].flatMap((key) => key.split('|')))].sort();
-    // The bonded neighbours: shells starting within BONDED_REACH of the
-    // nearest one (the demo's Ta: Se from 2.21 Å, Ta from 2.65 Å — the Ta4
-    // cluster — but not Ga from 3.77 Å).
-    const partners = (centre) => {
-        const shells = elements
-            .map((partner) => shell(centre, partner))
-            .filter((item) => item && Number.isFinite(item.cn) && item.cn >= 0.5)
-            .sort((a, b) => a.window[0] - b.window[0]);
-        const nearest = shells[0]?.window[0];
-        return shells.filter((item) => item.window[0] <= BONDED_REACH * nearest);
-    };
-    return { elements, shell, cnIn, partners };
+export const bondedPartners = (catalogue, centre) => {
+    if (!catalogue) return [];
+    const shells = catalogue.elements
+        .map((partner) => catalogue.shell(centre, partner))
+        .filter((item) => item?.window && Number.isFinite(item.cn) && item.cn >= CN_MATCH_TOLERANCE)
+        .sort((a, b) => a.window[0] - b.window[0]);
+    const nearest = shells[0]?.window[0];
+    return shells.filter((item) => item.window[0] <= BONDED_REACH * nearest);
 };
 
 /**
- * The windows the data offer for one shell when the choice changes the
- * answer: [{ label, description, window, cn }], the whole shell first; null
- * when the shell is clear.
+ * The windows the data offer for one shell (a shells.js Shell) when the
+ * choice changes the answer by the CN margin: [{ label, description, window,
+ * cn }], the whole shell first; null when the shell is clear.
  */
 export const ambiguousWindows = (shell) => {
-    if (!shell || !Number.isFinite(shell.cn)) return null;
+    if (!shell?.window || !Number.isFinite(shell.cn)) return null;
     const pair = `${shell.partner} per ${shell.centre}`;
     const whole = {
         label: 'Whole first shell',
-        description: `${windowText(shell.window)}${shell.peaks.length > 1 ? `, both peaks (${shell.peaks.map((r) => roundTo(r)).join(' and ')} Å)` : ''}: CN ${cnText(shell.cn)} ${pair}`,
+        description: `${windowText(shell.window)}${shell.peaksInShell.length > 1 ? `, both peaks (${shell.peaksInShell.map((r) => roundTo(r)).join(' and ')} Å)` : ''}: CN ${cnText(shell.cn)} ${pair}`,
         window: shell.window,
         cn: shell.cn
     };
-    if (shell.peaks.length > 1 && changes(shell.firstPeak.cn, shell.cn)) {
+    if (shell.firstPeak?.changesCn) {
         return [whole, {
             label: 'First peak only',
             description: `${windowText(shell.firstPeak.window)}, the shortest bonds: CN ${cnText(shell.firstPeak.cn)} ${pair}`,
@@ -175,7 +90,7 @@ export const ambiguousWindows = (shell) => {
         }];
     }
     const { earlier, later } = shell.cut;
-    if (shell.troughRatio > 0.02 && (changes(earlier.cn, shell.cn) || changes(later.cn, shell.cn))) {
+    if (!shell.separated && (earlier.changesCn || later.changesCn)) {
         return [
             { ...whole, label: 'Cut at the minimum', description: `${windowText(shell.window)}: CN ${cnText(shell.cn)} ${pair}` },
             { label: 'Cut 0.2 Å earlier', description: `${windowText(earlier.window)}: CN ${cnText(earlier.cn)} ${pair}`, window: earlier.window, cn: earlier.cn },
@@ -276,17 +191,17 @@ const asRequest = (question, choices, kind) => ({
 // holds its coordination number.
 const settledByPolyhedron = (options, polyhedronCn) => {
     if (!polyhedronCn || !options) return null;
-    const matching = options.filter((option) => Math.abs(option.cn - polyhedronCn) <= 0.5);
+    const matching = options.filter((option) => cnMatches(option.cn, polyhedronCn));
     return matching.length === 1 ? matching[0] : null;
 };
 
 // (a) Which neighbours, for an angle or coordination request naming one element.
 const neighbourQuestion = (intent, catalog) => {
     const [centre] = intent.elements;
-    const partners = catalog.partners(centre);
+    const partners = bondedPartners(catalog, centre);
     if (partners.length < 2) return null;
     if (intent.polyhedronCn) {
-        const match = partners.filter((shell) => Math.abs(shell.cn - intent.polyhedronCn) <= 0.5);
+        const match = partners.filter((shell) => cnMatches(shell.cn, intent.polyhedronCn));
         if (match.length === 1) return null;
     }
     const shown = partners.slice(0, intent.angles ? MAX_OPTIONS : MAX_OPTIONS - 1);
@@ -384,10 +299,12 @@ const toleranceQuestion = (run, noiseFloor) => {
  * `beforeCall(tool, args, { questionText })`, each null or
  * `{ kind, request, choices }` (the card's request; each choice's `apply`
  * gives the note for the model, or the new arguments). `run` holds the host
- * props (plotFiles, structure, symmetry); `noiseFloor` the context's.
+ * props (plotFiles, structure, runSettings, symmetry); `noiseFloor` the
+ * context's. `catalog` is the run's shell catalogue (shells.js), which the
+ * evidence gate reads too.
  */
 export const buildClarifier = (run = {}, { noiseFloor = null } = {}) => {
-    const catalog = buildShellCatalog(run);
+    const catalog = shellCatalogue(run);
     const elements = Object.keys(run.structure?.elementCounts || {});
     return {
         catalog,
@@ -422,10 +339,12 @@ export const buildClarifier = (run = {}, { noiseFloor = null } = {}) => {
                 const named = [lo, hi].every((value) => new RegExp(`(^|[^\\d.])${String(value).replace('.', '\\.')}0*(?![\\d])`).test(questionText));
                 if (named) continue;
                 const shell = catalog.shell(item.centre, item.partner);
-                if (!shell || !Number.isFinite(shell.cn)) continue;
-                const cn = catalog.cnIn(item.centre, item.partner, [lo, hi]);
-                const overlaps = hi > shell.window[0] && lo < shell.window[1];
-                if (!overlaps || !(cn < shell.cn) || !changes(cn, shell.cn)) continue;
+                if (!shell?.window || !Number.isFinite(shell.cn)) continue;
+                // The CN-margin reading: the window overlaps the shell and
+                // holds fewer atoms by max(0.5, 15 % of the shell's).
+                const reading = catalog.window(item.centre, item.partner, [lo, hi]);
+                if (!reading?.cnMargin.cut) continue;
+                const { cn } = reading;
                 const pair = `${item.partner} per ${item.centre}`;
                 // Answered already in this turn: the same choice, unasked.
                 const key = windowKey(item.centre, item.partner, [lo, hi]);

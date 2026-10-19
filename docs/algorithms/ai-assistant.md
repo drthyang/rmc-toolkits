@@ -553,14 +553,16 @@ This is the app's own peak finder — it is not RMCProfile output, and it is int
 
 **Input:** one series `(x, y)` from the partials file: $x$ = $r$ in Å (assumed ascending), $y$ = the
 partial pair-correlation value as parsed from the CSV (no normalization, no baseline model). Options:
-`rMax = 6` Å, `maxPeaks = 2` — the defaults the context's `pair_correlations` uses (Step 9);
-`firstShell()` (up to 8 peaks), `find_gr_peaks` (the call's `r_max` and `max_peaks`) and the
-Workbench's question shell catalog (`clarify.js`: 8 Å, 3 peaks) pass their own.
+`rMax = 6` Å, `maxPeaks = 2` by default. Since 2026-10-19 (`shells.js`, Step 9) the run's shell
+reading asks for the peaks below 8 Å (`PEAK_SEARCH_MAX_A`, up to 8), whose first two are the
+context's `gr_peaks_A`; `find_gr_peaks` shows the call's own (`r_max`, `max_peaks`) as `peaks_A`,
+a display that does not move the shell; arm A's eye reading of the plot (validation/armA.js,
+below 3.2 Å) is the third caller.
 
 **Procedure (`extractPeaks()`).**
 
 1. **Window.** $\mathrm{end} = \min\{i : x_i > r_\mathrm{max}\}$, or the full length if no such $i$ exists.
-   If $\mathrm{end} < 5$ the function returns `[]`. Only $r \le 6$ Å is ever examined.
+   If $\mathrm{end} < 5$ the function returns `[]`. Only $r \le r_\mathrm{max}$ is examined.
 2. **Smoothing.** A 5-point moving average with truncated (not padded) edges — the window is clipped at
    **both** ends of the analysis window (`j >= 0 && j < end`):
 
@@ -571,7 +573,7 @@ Workbench's question shell catalog (`clarify.js`: 8 Å, 3 peaks) pass their own.
    5 samples spanning $4\,\Delta r$ end to end, whatever the file's $r$ step is (0.08 Å on the test's
    0.02 Å grid). The right-edge samples are not inert — they are the
    $s_{i+1}, s_{i+2}$ comparands for the last candidate peak ($i = \mathrm{end}-3$), and the half-height
-   walk runs out to $\mathrm{end}-1$. **A peak sitting just under the 6 Å cut is therefore accepted,
+   walk runs out to $\mathrm{end}-1$. **A peak sitting just under the $r_\mathrm{max}$ cut is therefore accepted,
    rejected, and widened against edge-biased averages, and is the least reliable peak reported.**
 3. **Floor.** $f = 0.15\,\max_i s_i$ over the window. If the window maximum is not $>0$ the function
    returns `[]` (so an all-zero or all-negative curve yields no peaks).
@@ -601,7 +603,7 @@ Workbench's question shell catalog (`clarify.js`: 8 Å, 3 peaks) pass their own.
    **first two by distance**, not the two tallest.
 
 **Validation — what the tests actually assert.**
-`__tests__/pairCorrelations.test.js` feeds three Gaussians at 2, 3.5, and 7 Å on a 0.02 Å grid and
+`__tests__/shells.test.js` feeds three Gaussians at 2, 3.5, and 7 Å on a 0.02 Å grid and
 asserts that exactly two peaks are found below 6 Å, at $r \approx 2$ and $r \approx 3.5$ Å (to one
 decimal place). The width assertion is only a loose bracket, $0.15 < \mathrm{fwhm} < 0.4$ Å, around the
 analytic $2.355\sigma = 0.2355$ Å — a $-36\,\%/+70\,\%$ window, so the test does **not** establish
@@ -629,52 +631,110 @@ sort order (Step 11) is used.
    silently, with no counter.
 2. `avg_structure_d_A` = the Step-7 distance for that pair, looked up under the **sorted** key
    `pairKey(el1, el2)`, 3 s.f., when a basis exists.
-3. `gr_peaks_A` = the Step-8 peaks as `[{r (3 s.f.), fwhm (2 s.f.)}]`, both in Å.
+3. `gr_peaks_A` = the first two peaks of the shell reading (Step 8, below 8 Å) as
+   `[{r (3 s.f.), fwhm (2 s.f.)}]`, both in Å (below 6 Å until 2026-10-19: the Demo's Ga–Ga first peak,
+   at 7.33 Å, had a first shell but no peak; a FWHM the walk had cut at 6 Å now reaches its crossing).
 4. The `pair` field is the **verbatim CSV column label**, in whatever order the file writes it. Because
    the distance is keyed on the sorted pair, the model can legitimately receive
    `{pair: "Se-Ga", avg_structure_d_A: …}` where the distance was stored under `"Ga-Se"`. The two orders
    describe the same unordered pair; only the string differs.
-5. `first_shell` = `{mean_d_A, to_A, cn_<B>_per_<A>?}` from `firstShell()` (below), when a shell
+5. `first_shell` = `{mean_d_A, to_A, cn_<B>_per_<A>?}` from the shell reading (below), when a shell
    boundary is found: the shell's mean distance from $r^2 g(r)$, its outer edge, and — with the cell —
-   the coordination number of B around A. A split shell joined across a deep trough (below) adds
-   `first_peak_to_A` and `first_peak_cn`: where its first peak alone ends, and what it holds.
+   the coordination number of B around A. A shell of two or more resolved peaks adds
+   `first_peak_to_A` and `first_peak_cn`: where its first peak alone ends (the minimum between the
+   first two) and what it holds (until 2026-10-19 only a split shell joined across a deep trough had
+   them). `gap_g_fraction` when the shell is not separated from the next, and
+   `cut_at_min_distance: {at_A, g_fraction}` when the pair's closest-approach constraint limits it.
 6. The entry is kept only if at least one of `avg_structure_d_A` / `gr_peaks_A` is present.
 
-**The first coordination shell (`firstShell()`).** On the 5-point moving average $\tilde g$ of the
-partial (normalised to 1 at large $r$, as RMCProfile writes it), with the first peak of Step 8 at
-height $h$:
+**The first coordination shell: one reading per pair, per run (`shells.js`, architecture candidate
+#6, 2026-10-19).** `shellCatalogue(run)` reads every element-pair series of the partials file once
+(both orientations: the reverse of a pair reads the same $g$ with the other density), memoised per
+partials data, structure and run settings, and every reader takes the reading from it: this
+context, `find_gr_peaks`, the Workbench's questions, the evidence gate, the answer checks
+(`cnMatches`), `compute_bond_angles`' refusal (`countsCut`) and arm A+'s cluster windows. A Shell is
+frozen: `{centre, partner, label, peaks, window, peaksInShell, meanR, sdR, peakG, cn, reverseCn,
+ideal, joined, troughRatio, separated, firstPeak, cut, constraint}`. On the 5-point moving average
+$\tilde g$ of the partial (normalised to 1 at large $r$, as RMCProfile writes it), one rule per
+quantity:
 
-- the **onset** is the last point before the peak where $\tilde g$ rises above $0.01\,h$;
+- **search range:** the peaks of Step 8 below 8 Å (`PEAK_SEARCH_MAX_A`, up to 8), the first at
+  height $h$; the minimum that closes the shell is sought to $\max(8, r_1 + 3)$ Å
+  (`BOUNDARY_REACH_A`). No caller picks the range (before, the context searched 8 Å,
+  `find_gr_peaks` $\max(r_\mathrm{max}, r_1 + 3)$, the Workbench $\max(6, r_1 + 3)$);
+- the **onset** is the last point before the peak where $\tilde g$ rises above $0.01\,h$; the
+  window starts one grid step before it;
 - the **boundary** is the first point after the peak that is either a local minimum below
-  `SHELL_TROUGH_FRACTION` $= 0.2\,h$ — a shallower dip lies *inside* a split shell, as the demo's
+  `SHELL_TROUGH_FRACTION` $= 0.2\,h$ — a shallower dip lies *inside* a split shell, as the Demo's
   two Ta–Se distances (2.52 and 2.74 Å) of one TaSe₆ octahedron — or where $\tilde g < 0.001\,h$
   (a tail decaying into an empty gap: 3.7σ out on a Gaussian shell);
-- the shell's distance statistics come from the radial distribution $r^2 g(r)$ (raw $g$, negatives
-  clamped) between onset and boundary, by the trapezoid rule:
+- **rounding:** every window the module returns is rounded to 0.01 Å, then integrated: every CN it
+  returns equals `window()`.cn of the window returned with it;
+- **the CN integral** is the trapezoid of the linear interpolant of $r^2\max(g, 0)$ (raw $g$) over
+  exactly the quoted window, $\mathrm{CN}_{B|A} = 4\pi\rho_B\int_{lo}^{hi} r^2 g_{AB}(r)\,dr$ with
+  $\rho_B = N_B/V$ (`elementDensity()`: the element count over the supercell volume), and
+  $\mathrm{CN}_{A|B} = \mathrm{CN}_{B|A}\,\rho_A/\rho_B$ (`reverseCn`). Before, the context and
+  `find_gr_peaks` integrated from $r = 0$ on the grid and the Workbench over the rounded window; the
+  window excludes the $g$ below the onset (~0.1–0.3 % of a shell), so a count can move in the third
+  digit (the Demo's Ta–Ta 2.76 → 2.75, Ga–Ta 12.0 → 11.9). The mean distance and spread come from
+  $r^2 g$ over the same window:
   $$\bar d = \frac{\int r^3 g\,dr}{\int r^2 g\,dr},\qquad
   \sigma_d^2 = \frac{\int (r-\bar d)^2 r^2 g\,dr}{\int r^2 g\,dr};$$
   the $g(r)$ peak itself sits *below* $\bar d$ for a broad or skewed shell, because $g$ divides by
-  $r^2$ (demo Ta–Ta: peak 2.93 Å, mean 3.00 Å, average-structure distance 3.02 Å — the model had read
+  $r^2$ (Demo Ta–Ta: peak 2.93 Å, mean 3.00 Å, average-structure distance 3.02 Å — the model had read
   the peak as a 0.09 Å contraction);
-- with the partner's number density $\rho_B = N_B/V$ (`elementDensity()`: the element count over
-  the supercell volume), the coordination number
-  $\mathrm{CN}_{B|A} = 4\pi\rho_B\int_0^{r_b} r^2 g_{AB}(r)\,dr$, and the same integral to
-  $r_b \mp 0.2$ Å (`cnRange`): how much the count depends on the cut. The reverse count is
-  $\mathrm{CN}_{A|B} = \mathrm{CN}_{B|A}\,\rho_A/\rho_B$. Demo checks: Ga 3.99 Se, Ta 6.00 Se,
-  Se 12.0 Se, and Ta 2.76 Ta (the intracluster 3 with the Ta–Ta gap at 3.3–4.0 Å not empty).
+- **the first peak alone** (`firstPeak: {window, cn, troughRatio, changesCn}`), only with two or
+  more resolved peaks in the shell: from the shell's start to the minimum of $\tilde g$ between the
+  first two (the first lowest point on a flat bottom; approved 2026-10-19). There is no fallback: a
+  shell of one peak has none. It replaces $[r_1 - w, r_1 + w]$ (w the FWHM of Step 8), whose
+  half-height walk reaches into the second peak when the two overlap. *Known answer*
+  (`shells.test.js`): 3 + 3 partners at 2.5 and 2.75 Å, σ 0.07 Å each, so the trough between them
+  stays at ~40 % of the first peak: the first peak holds 3.03, 3.03 and 2.96 on 0.005, 0.01 and
+  0.02 Å grids (3 ± 0.1), $r \pm w$ 3.40, 3.45 and 4.00; at σ 0.08 Å (the trough above half the
+  first peak) $r \pm w$ holds the whole shell (5.97) and the minimum still 3.04. On the Demo the
+  Ta–Se first peak ends at 2.65 Å and holds 3.25 Se per Ta, against 3.86 in $r \pm w$ = 2.33–2.71 Å:
+  the three short bonds of TaSe₆, with the near tail of the broad long-bond peak;
+- **the cut sensitivity** (`cut: {earlier, later}`): the window's top 0.2 Å earlier and later
+  (`CUT_SHIFT_A`; the earlier never below the shell's start, and an empty window holds 0), each with
+  its CN and whether it changes the shell's by the Workbench's margin (`changesCn`: by ≥
+  max(0.5, 15 % of the shell's CN), `cnChanges`);
+- **separation:** `separated` when $\tilde g/h$ at the boundary (`troughRatio`) is ≤
+  `SEPARATION_G_FRACTION` $= 0.02$; **the constraint** (`constraint: {limitA, gFraction, limited}`):
+  the pair's closest-approach distance from the run settings (`labelledMinimumDistances`:
+  MINIMUM_DISTANCES labelled in RMCProfile's upper-triangle pair order, matched in either order),
+  the largest raw $g$ in $(d_{\min}, d_{\min} + 2.5\,\Delta r]$ over $h$, `limited` above the same
+  0.02 — one fraction for both. `find_gr_peaks`' old clause $r - \mathrm{FWHM}/2 \le d_{\min} + 0.05$
+  Å is dropped: a sharp peak on a fine grid whose half maximum lies just above the constraint, with
+  $g$ at ~1 % of the peak there, is not cut (`shells.test.js`). Dropping it changed nothing the model
+  sees on the Demo or the dev cases (the dev cases have no run settings);
 - **a split shell cut at a deep trough** (the 2026-10-14 review's L1, approved for batch 1): when the
   two bond lengths of a distorted polyhedron are well resolved, the trough between them is deep
   (a Jahn–Teller CuF₆, 4 × 1.93 + 2 × 2.25 Å at σ 0.05 Å: $\tilde g$ falls to 12 % of the first
   peak), and the first boundary cuts the polyhedron (CN 4, the long bonds read as "the next
   shell"). With the densities, each later peak within `SPLIT_SHELL_REACH_A` $= 0.5$ Å of the first
   is closed at its own boundary (the same rule, against its own height); the furthest whose summed
-  CN is within `IDEAL_CN_TOLERANCE` $= 0.5$ of an ideal polyhedral count (`IDEAL_COORDINATION` =
-  4, 6, 8, 12), in either direction ($\mathrm{CN}_{B|A}$, or $\mathrm{CN}_{A|B}$ when the centre's
-  density is given), joins the shell. `split = {firstBoundaryR, firstTroughRatio, firstCn}` keeps
-  the first peak's own window: the Workbench offers it as *First peak only* (clarify.js, its window
-  ends at the trough) and asks before an analysis runs in it. Bond-length splits of distorted
-  polyhedra are 0.1–0.4 Å; the next coordination shell lies a sizeable fraction of the bond further
-  out, and a summed count that is no polyhedron (4 + 3) is never joined.
+  CN over the rounded window matches an ideal polyhedral count (`IDEAL_COORDINATION` = 4, 6, 8, 12)
+  within half an atom (`cnMatches`, `CN_MATCH_TOLERANCE`), in either direction
+  ($\mathrm{CN}_{B|A}$, or $\mathrm{CN}_{A|B}$ with the centre's density), joins the shell
+  (`joined`); its first peak alone ends in the trough, and the Workbench offers it as *First peak
+  only* and asks before an analysis runs in it. Bond-length splits of distorted polyhedra are
+  0.1–0.4 Å; the next coordination shell lies a sizeable fraction of the bond further out, and a
+  summed count that is no polyhedron (4 + 3) is never joined;
+- **`ideal`:** the ideal count $\mathrm{CN}_{B|A}$ matches (`cnMatches`), or null.
+
+`window(centre, partner, [lo, hi], { counts })` reads a caller's window (as given, not rounded)
+against the shell: its CN over exactly that window, what it `holds` ('whole', 'part', 'more' — the
+whole shell and beyond its boundary — or 'apart') and **both readings of a cut**, today's rules
+unchanged: `cnMargin.cut`, the Workbench's (the window overlaps the shell and holds fewer partner
+atoms by the margin), and, given the window's coordination counts (the bond-angle engine's
+`coordinationSummary`), `counts: {cut, by}`, `compute_bond_angles`' (`countsCut`: more than half the
+central atoms unbonded, or fewer than 60 % with the most common count). Which should decide is the
+user's decision; `validation/run.js shell-cuts` tabulates both on the dev windows
+([copilot-validation.md](copilot-validation.md)).
+
+Demo checks: Ga 3.99 Se, Ta 6.00 Se, Se 12.0 Se, and Ta 2.75 Ta (the intracluster 3 with the Ta–Ta
+gap at 3.3–4.0 Å not empty). `shellReading.test.js` checks every reader against the catalogue on the
+Demo and the dev cases.
 
 **Cap:** at most `maxPairs = 10` accepted entries (the loop breaks once 10 have been pushed); the function
 returns `null` if none. Nothing records how many pairs were dropped at this stage.
@@ -686,7 +746,7 @@ average structure cannot express, and pairing them is the whole point of this bl
 single-basis-site self-pairs of Step 7, where $d^{\,\mathrm{avg}}$ is a lattice repeat and the comparison
 is meaningless.)
 
-**Code:** `pairCorrelations.js` → `pairCorrelationsContext()`.
+**Code:** `pairCorrelations.js` → `pairCorrelationsContext()`, over `shells.js` → `shellCatalogue()`.
 
 ---
 
@@ -1241,10 +1301,10 @@ not answer as asked". A tool is offered only when its inputs exist.
 |---|---|---|---|---|
 | `read_run_data(section)` | the context has the section | `buildRunContext` | one context section as built (the builder's caps apply: ≤ 12 sites, 48 history points), before `contextToJson`'s trims | — |
 | `assess_convergence()` | an R-value series exists | `classifyConvergence` (Step 14), `seriesStats` | column, status, n, first/last/min, total drop, least-squares slope per row over the last 10 / 25 / 50 % (≥ 3 points each) | note: judged on one `.log` column, not the total; ok: converged; note: improving; warn: stalled/diverging; warn: non-finite rows; warn: < 5 rows; fail: < 2 finite rows |
-| `find_gr_peaks(pair, r_max = 6, max_peaks = 3)` | a parsed partials file | `extractPeaks` (Step 8), `firstShell` (Step 9) | peaks (r, FWHM); first-peak window `[r − FWHM, r + FWHM]`; `first_shell`: its window (onset − one grid step to the boundary), the peaks inside it, mean distance and sd from $r^2g$, the CN in both directions and the CN with the cut 0.2 Å earlier / later, the trough $\tilde g/h$ at the boundary; the pair's `MINIMUM_DISTANCES` value, matched order-free, and `g_at_constraint_fraction` | warn: the first shell is not separated from the next ($\tilde g/h > 0.02$ at its boundary: distances fill the gap, the CN depends on the cut); note: the shell holds several peaks (a split shell: use its window); note: a split shell joined across a deep trough, with the first peak's CN and window (`first_shell.first_peak_only`) and the summed count, said in the direction that is ideal (review L1); note: no boundary below max(r_max, r₁ + 3 Å); warn: the closest-approach constraint cuts the distribution — raw $g$ in $(d_{\min}, d_{\min} + 2.5\,\Delta r]$ above 2 % of the peak (`CONSTRAINT_PILEUP_FRACTION`; demo Ga–Se 9 % at 2.2 Å), or the old $r - \mathrm{FWHM}/2 \le d_{\min} + 0.05$ Å; ok: peak, shell edge, mean, CNs; fail: no peak |
+| `find_gr_peaks(pair, r_max = 6, max_peaks = 3)` | a parsed partials file | `extractPeaks` (Step 8) for `peaks_A`; the run's shell reading (`shells.js`, Step 9) for the rest | peaks (r, FWHM) below `r_max` — a display: the shell does not depend on it; `first_shell`, the run's reading: its window (onset − one grid step to the boundary, to 0.01 Å), the peaks inside it, mean distance and sd from $r^2g$ over the window, the CN in both directions and with the top 0.2 Å earlier / later, the trough $\tilde g/h$ at the boundary, and for two or more resolved peaks `first_peak_only` (to the minimum between the first two: window, CN, trough; `first_peak_window_A`, $[r - \mathrm{FWHM}, r + \mathrm{FWHM}]$, left on 2026-10-19); the pair's `MINIMUM_DISTANCES` value, matched order-free, and `g_at_constraint_fraction` | warn: the first shell is not separated from the next (`separated`: $\tilde g/h > 0.02$ at its boundary: distances fill the gap, the CN depends on the cut); note: the shell holds several peaks (a split shell: use its window; the first peak alone's CN of the shell's); note: a split shell joined across a deep trough, with the first peak's CN and window (`first_shell.first_peak_only`) and the summed count, said in the direction that is ideal (review L1); note: no peak below `r_max`, the first shell beyond it; note: no boundary below max(8, r₁ + 3 Å); note: no shell (no peak below 8 Å); warn: the closest-approach constraint cuts the distribution — raw $g$ in $(d_{\min}, d_{\min} + 2.5\,\Delta r]$ above 2 % of the peak (`SEPARATION_G_FRACTION`; demo Ga–Se 9 % at 2.2 Å; the old $r - \mathrm{FWHM}/2 \le d_{\min} + 0.05$ Å clause dropped 2026-10-19); ok: peak, shell edge, mean, CNs; fail: no peak below `r_max` and no shell |
 | `list_sites(element?)` | a browser-loaded run or Flask mode | worker `sites` / `/api/pca/sites` | per site: ref, label (composition if mixed), count, U_iso, rms axes, anisotropy, Mardia kurtosis; `kurtosis_axes`, the excess kurtosis along each principal axis on resolved axes only (null elsewhere; absent when none has one); `pc1_uvw`, PC1 as a direct-lattice `[u v w]` (`crystalOrientationRows`) when PC1 is resolved; on a split site, `delta_A` ± `delta_se_A`, its static displacement and sampling error (Step 20); split sites first (largest `delta_A` first), then by \|kurtosis\| and U_iso; top-3 refs by \|kurtosis\|, U_iso and anisotropy; the note defines only the fields the result holds | warn: parse warning; note: reconstructed sites; warn: zero-spread sites; note: the split sites by ref and label (PC1 resolved, κ₁ ≤ −0.5 and ≤ −3√(24/n): `isSplitSite`, the rule `analyze_clusters` uses); fail: no site (holding that element) |
 | `analyze_displacement_directions(site_ref \| element, frequency?)` | same | worker `orientation` / `/api/pca/orientation`, `geometry: false` | used / rejected points; peak enhancement, count, expected and calibrated `peakSignificance`; peak direction as a Cartesian unit vector, as `[u v w]` (direct lattice, $M^{-T}d$ scaled to max \|component\| = 1, sign kept, since the map is not antipodally folded) and as angles to a, b, c; `mapSignificance`; antipodal asymmetry, its z and flag; orientation-tensor eigenvalues, anisotropy and its Bingham significance; the principal axis `[u v w]` (`crystalOrientationRows`) | warn: < 100 vectors; ok: peak ≥ 3σ; note: peak < 3σ; note: map test undefined; ok: map ≥ 3σ, said as *anisotropic* and, without a significant peak, "not a preferred direction" (any anisotropic Gaussian ellipsoid passes the map test: the validation's thermal-only O, peak 2.3σ, map 7.2σ; review L3); note: tied peak cells; note: significant ± asymmetry; warn: parse warning; note: an element pooled over > 1 site (the site count from the basis) — where their local axes differ, as for the four vertices of a tetrahedral cluster, a per-site preference cancels, so an isotropic pooled map is not evidence against a per-site or cluster distortion |
-| `compute_bond_angles(end1, apex, end2, r12_min, r12_max, r23_min?, r23_max?, bin_width = 1)` | same | worker `triplets` / `/api/triplets` (`APP_MAX_ANGLES` applies) | angle count, central atoms, mean ± sd; ≤ 3 modes (local maxima of a 5-bin running mean of the counts, each with the share of angles within ± 7.5°); the distribution in 18 bins of 10° (the engine's bins shared by overlap), raw and sin θ-corrected ($S_j = (N_j/N)\,/\,[(\cos\theta_j - \cos\theta_{j+1})/2]$, 1 for random directions); for an A–B–A triplet in one window that does not cut the shell and a mean coordination within 0.5 of 6, the share and mean angle below and above 135° against an ideal octahedron (80 % cis at 90°, 20 % trans at 180°), within 0.5 of 4, the share within 15° of 109.47°; mean bond length, its sd from the engine's 40-bin length histogram, and unique bonds per window; coordination histogram and mean | fail: 0 angles ("widen the window"); warn: > 50 % of central atoms have no A–B bond in the window; otherwise warn: < 60 % of central atoms have the most common A–B bond count (the window cuts a coordination shell) — **refused** (fail) unless `window_confirmed`, the modes, mean, sd and histograms withheld (the coordination-shells skill's firm rule), else a warn "kept: the user chose this window"; note: raw counts deplete 180° (with the octahedron split); warn: parse warning; ok otherwise. Refused before running: min ≥ max, an r23 bound without its pair |
+| `compute_bond_angles(end1, apex, end2, r12_min, r12_max, r23_min?, r23_max?, bin_width = 1)` | same | worker `triplets` / `/api/triplets` (`APP_MAX_ANGLES` applies) | angle count, central atoms, mean ± sd; ≤ 3 modes (local maxima of a 5-bin running mean of the counts, each with the share of angles within ± 7.5°); the distribution in 18 bins of 10° (the engine's bins shared by overlap), raw and sin θ-corrected ($S_j = (N_j/N)\,/\,[(\cos\theta_j - \cos\theta_{j+1})/2]$, 1 for random directions); for an A–B–A triplet in one window that does not cut the shell and a mean coordination within half an atom of 6 (`cnMatches`), the share and mean angle below and above 135° against an ideal octahedron (80 % cis at 90°, 20 % trans at 180°), of 4, the share within 15° of 109.47°; mean bond length, its sd from the engine's 40-bin length histogram, and unique bonds per window; coordination histogram and mean (the engine's `coordinationSummary`) | fail: 0 angles ("widen the window": find_gr_peaks' first_shell.window_A); warn: > 50 % of central atoms have no A–B bond in the window; otherwise warn: < 60 % of central atoms have the most common A–B bond count (the window cuts a coordination shell; both the shell module's `countsCut`, unchanged on 2026-10-19) — **refused** (fail) unless `window_confirmed`, the modes, mean, sd and histograms withheld (the coordination-shells skill's firm rule), else a warn "kept: the user chose this window"; note: raw counts deplete 180° (with the octahedron split); warn: parse warning; ok otherwise. Refused before running: min ≥ max, an r23 bound without its pair |
 | `detect_symmetry(tolerance_A ∈ [0.001, 1])` | the structure has a `basis` (browser-loaded runs) | `describeSymmetry` (the Detected SG card's finder), *not* changing the card | group, number (only when certain), point group and its facts (`point_group_facts`, as in the context), n ops, max residual, every orbit with `orbitLabel` Wyckoff label, site symmetry and representative fractional coordinates (4 decimals) | ok: group holds; note: the point group's facts ("take inversion, chirality and polarity from this"); note: undetermined; note: "≥" lower bound; warn: not analysed (caps); fail: no basis |
 | `measure_symmetry_lowering(parent_tolerance_A = 0.2, tolerance_A = 1.25 × noise floor)` | the structure has a `basis` | `symmetryShifts` (`symmetryShift.js`): the parent group at `parent_tolerance_A` (`analyseSymmetry`), each orbit averaged over its operations (`averageOrbit`), each member's ideal position the nearest image of that average; a member's shift = its mean − its ideal position, the common part the least-squares origin leaves removed by the geometric median of all members' shifts (Weiszfeld: the parent on the majority of the atoms, the description that moves the fewest); the lower group by `describeSymmetry` at `tolerance_A` | the parent and lower groups (the lower with its point-group facts), the noise floor, up to 12 sites (largest first) with `shift_A`, `direction_uvw`, `nearest_low_index` (within 15°, `LOW_INDEX_CONE_DEG`), `se_A` (the mean's sampling error along the shift) and `above_noise_floor`; `facts.lowering` = `{parent, lower, shifted: [{element, shift_A, direction_uvw}]}` | ok: each element whose largest shift exceeds the noise floor ("Ta shifted 0.065 Å along [0 0 1] (3.7° off) from the Pm-3m positions … a coherent shift every copy shares"); note: the parent → lower change in inversion and polarity; ok: no site above the noise floor; note: the lower tolerance still gives the parent group; warn: not analysed; fail: no basis, or no parent operation (review L4: the shift had to be worked out by hand from the orbit positions) |
 | `compare_fit(dataset, n_ranges = 6)` | a fit file with a model and a measured column (`xpdf`, `npdf`, `xray_sq`, `neutron_sq`, `bragg`; repeated kinds keyed `npdf_2`, …) | `fitTool` in `runTools.js` (roles by label `/exp\|obs/` vs `/calc\|rmc\|fit/`, else column order — `rwpColumns`, duplicated) | the dataset's $R$ (Step 10) over its range; per equal-width range of r or Q: $R$ there and its share of $\sum (y^\mathrm{calc}-y^\mathrm{expt})^2$; the 5 largest local extrema of the 5-point mean residual (position, model − data, relative to the data's rms) | ok (the card's headline): the overall $R$ and where the misfit lives — one range holding ≥ 40 % of the squared residual (`MISFIT_CONCENTRATION`), else spread; note: another range's own $R$ ≥ 3× the dataset's (`RELATIVE_MISFIT_FACTOR`) — weak signal poorly fitted, e.g. high-Q F(Q); fail: < 10 points |
@@ -1422,13 +1482,13 @@ writes stands over a computed `achieved` or `partial` ("the model says the answe
 lists the reasons, then the model's sentence; a status the model wrote is `claimed`, and named
 ("The model said 'achieved': …") when it differs.
 
-**The Workbench's own questions** (`copilot/clarify.js`). `buildShellCatalog` reads the
-partials file: per ordered pair (centre, partner) the first shell as `firstShell` finds it (Step 9),
-its window rounded to 0.01 Å, the peaks in it, the CN $4\pi\rho_\text{partner}\int r^2 g\,dr$ over
-the window (linear interpolation between grid points), the first-peak window $[r_1 - w, r_1 + w]$
-(w the FWHM) and its CN, and the CN with the window's top 0.2 Å earlier and later. A window
-*changes the answer* when its CN differs from the whole shell's by ≥ max(0.5, 0.15 × CN)
-(`CN_CHANGE_ABS`, `CN_CHANGE_REL`). `readQuestion` reads the user's question for its intent
+**The Workbench's own questions** (`copilot/clarify.js`). The clarifier reads the run's shell
+catalogue (`shells.js`, Step 9; `buildShellCatalog` left on 2026-10-19): per ordered pair (centre,
+partner) the first shell, its window, the peaks in it, its CN, the first peak alone (to the minimum
+between the first two resolved peaks; before, $[r_1 - w, r_1 + w]$ with w the FWHM) and the CN with
+the window's top 0.2 Å earlier and later. A window *changes the answer* when its CN differs from
+the whole shell's by ≥ max(0.5, 0.15 × CN) (`CN_CHANGE_ABS`, `CN_CHANGE_REL`: `cnChanges`, each
+reading's `changesCn`). `readQuestion` reads the user's question for its intent
 (bond angles; coordination, polyhedra, neighbours; directions; space group), the run's elements
 (element symbols that are English words — In, As, S… — only after "around", "of", "for" or
 before "atoms", "sites"), pairs and triplets, a polyhedron (octahedron 6, tetrahedron 4, trigonal
@@ -1439,8 +1499,8 @@ prism 6, square planar 4, cuboctahedron 12), a length or tolerance in Å, and a 
   `BONDED_REACH`; at most 4 options; "Every neighbour type" for coordination); not asked when only
   one partner or when the named polyhedron's CN matches exactly one partner. A named pair or
   triplet (A–B–C: the B–A and B–C shells) → which window, when `ambiguousWindows` finds a split
-  shell whose first peak changes the CN, or a shell whose trough is above 2 % of the peak and
-  whose 0.2 Å cuts change it; not asked when the named polyhedron's CN matches exactly one option,
+  shell whose first peak changes the CN (`firstPeak.changesCn`), or a shell not separated from the
+  next (`separated` false: its trough above 2 % of the peak) whose 0.2 Å cuts change it; not asked when the named polyhedron's CN matches exactly one option,
   or when the question names the shell (`shellChoice`: "first … peak" → the first peak; "whole /
   entire / full / complete (first) shell" or "both peaks" → the whole shell).
   A directions question with one element and no site number → one site per orbit or all pooled,
@@ -1448,8 +1508,8 @@ prism 6, square planar 4, cuboctahedron 12), a length or tolerance in Å, and a 
   -43m, m-3m). A space-group question with no length in Å → which group, when ≥ 2 ladder rungs
   reach ≥ 1.25× the noise floor (`NOISE_MARGIN`).
 - `beforeCall(tool, args, { questionText, session })`, for a tool with `shellWindows(args)`: a
-  window overlapping its first shell whose CN is below the whole shell's by the margin is asked
-  about (whole shell, or keep), unless both its bounds appear in the question (or in an answer to an
+  window overlapping its first shell whose CN is below the whole shell's by the margin
+  (`window().cnMargin.cut`) is asked about (whole shell, or keep), unless both its bounds appear in the question (or in an answer to an
   earlier Workbench question). Settled without asking (`{ settled: true, args, note }`): a window
   the user already chose for in this turn (`session.windows`, keyed by centre, partner and window
   to 0.01 Å) runs in the choice; with the question's `shellChoice`, the first peak keeps the window
@@ -1992,7 +2052,7 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 | `resultCharBudget` | 3 000 | characters | `copilot/agentLoop.js` | One `tool` message |
 | `turnCharBudget` | 12 000 | characters | `copilot/agentLoop.js` | All `tool` messages of one question; older ones compacted to their checks |
 | `maxQuestions` (`MAX_QUESTIONS`) | 2 | questions | `copilot/askUser.js`, `copilot/agentLoop.js` | `ask_user` calls per question (one per round), the Workbench's included |
-| `CN_CHANGE_ABS`, `CN_CHANGE_REL` | 0.5, 0.15 | atoms, of the shell's CN | `copilot/clarify.js` | A window changes the answer when its CN differs from the whole shell's by at least the larger |
+| `CN_CHANGE_ABS`, `CN_CHANGE_REL` | 0.5, 0.15 | atoms, of the shell's CN | `context/shells.js` (`cnChanges`) | A window changes the answer when its CN differs from the whole shell's by at least the larger: the Workbench's CN-margin reading of a cut (`cnMarginCut`) |
 | `BONDED_REACH` | 1.4 | × the nearest shell's start | `copilot/clarify.js` | Partners offered for "around <element>" |
 | `NOISE_MARGIN` | 1.25 | × the noise floor | `copilot/clarify.js` | A ladder group must hold to this to make the tolerance a question |
 | `SKILL_RESULT_BUDGET` | 9 000 | characters | `copilot/skills.js` | `read_skill`'s own result budget (kept, never compacted) |
@@ -2006,16 +2066,16 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 | `copilotTools` | `true` | — | `settings.js`, `ConnectionSettings.jsx` | *Let the Copilot run analyses* |
 | `MIN_ORIENTATION_POINTS` | 100 | vectors | `copilotTools.js` | Below: "the map is noisy" |
 | `SIGNIFICANCE_SIGMA` | 3 | σ (calibrated, one-sided) | `copilotTools.js`, `prompts/copilot.js` | Peak / map significance threshold for the checks |
-| `UNBONDED_APEX_FRACTION` | 0.5 | fraction | `copilotTools.js` | Central atoms with no A–B bond in the window above this: the window cuts the shell — refused unless `window_confirmed` (then warn) |
-| `MODAL_COORDINATION_SHARE` | 0.6 | fraction | `copilotTools.js` | Central atoms with the most common A–B bond count below this share: the window cuts the shell — refused unless `window_confirmed` (then warn) (a spread coordination, as when the window cuts through a shell; demo Se–Ta–Se at 2.3–2.7 Å: 0.47, whole shells 0.83–0.96) |
-| `SHELL_TROUGH_FRACTION` | 0.2 | of the first peak | `pairCorrelations.js` | A deeper local minimum closes the first shell; a shallower dip is inside a split shell |
-| `SHELL_ONSET_FRACTION`, `SHELL_EMPTY_FRACTION` | 0.01, 0.001 | of the first peak | `pairCorrelations.js` | Shell onset; a tail below this closes the shell |
+| `UNBONDED_APEX_FRACTION` | 0.5 | fraction | `context/shells.js` (`countsCut`) | Central atoms with no A–B bond in the window above this (the engine's `coordinationSummary.unbondedShare`): the window cuts the shell — `compute_bond_angles` refuses unless `window_confirmed` (then warn) |
+| `MODAL_COORDINATION_SHARE` | 0.6 | fraction | `context/shells.js` (`countsCut`) | Central atoms with the most common A–B bond count (`coordinationSummary.modalShare`) below this share: the window cuts the shell — refused unless `window_confirmed` (then warn) (a spread coordination, as when the window cuts through a shell; demo Se–Ta–Se at 2.3–2.7 Å: 0.47, whole shells 0.83–0.96) |
+| `SHELL_TROUGH_FRACTION` | 0.2 | of the first peak | `context/shells.js` | A deeper local minimum closes the first shell; a shallower dip is inside a split shell |
+| `SHELL_ONSET_FRACTION`, `SHELL_EMPTY_FRACTION` | 0.01, 0.001 | of the first peak | `context/shells.js` | Shell onset; a tail below this closes the shell |
+| `PEAK_SEARCH_MAX_A`, `BOUNDARY_REACH_A`, `CUT_SHIFT_A` | 8, 3, 0.2 | Å | `context/shells.js` | Peaks below 8 Å; the minimum closing the shell sought to max(8, r₁ + 3); the shell's top moved this far for the cut sensitivity |
 | `maxEvidenceGates` | 2 | send-backs per turn | `agentLoop.js` | The evidence gate sends an answer back at most this often, once per rule (THY-18) |
 | `CLUSTER_CN_MAX` | 4.5 | neighbours | `evidence.js` | An element whose own first shell holds at most this many may form finite clusters: "no order" needs `analyze_clusters` on it |
 | `CLUSTER_RESULT_BUDGET` | 4 500 | characters | `copilotTools.js` | `analyze_clusters`' own result budget |
-| `SPLIT_SHELL_REACH_A`, `IDEAL_COORDINATION`, `IDEAL_CN_TOLERANCE` | 0.5, [4, 6, 8, 12], 0.5 | Å; atoms; atoms | `pairCorrelations.js` | A later peak within the reach joins a shell cut at a deep trough when the summed CN is an ideal count (review L1) |
-| `CONSTRAINT_PILEUP_FRACTION` | 0.02 | of the first peak | `runTools.js` | $g$ just above a closest-approach constraint above this: the constraint cuts the distribution |
-| `SHELL_OVERLAP_FRACTION` | 0.02 | of the first peak | `runTools.js` | $\tilde g$ at the shell boundary above this: shells not separated |
+| `SPLIT_SHELL_REACH_A`, `IDEAL_COORDINATION`, `CN_MATCH_TOLERANCE` | 0.5, [4, 6, 8, 12], 0.5 | Å; atoms; atoms | `context/shells.js` | A later peak within the reach joins a shell cut at a deep trough when the summed CN is an ideal count (review L1); two counts agree within `CN_MATCH_TOLERANCE` (`cnMatches`: the Workbench's named polyhedron, the answer checks, the octahedron/tetrahedron reading; `IDEAL_CN_TOLERANCE` until 2026-10-19) |
+| `SEPARATION_G_FRACTION` | 0.02 | of the first peak | `context/shells.js` | $\tilde g$ at the shell boundary above this: shells not separated; raw $g$ just above a closest-approach constraint above this: the constraint limits the pair (one constant since 2026-10-19, for `CONSTRAINT_PILEUP_FRACTION`, `SHELL_OVERLAP_FRACTION` and `PAIR_FLAG_FRACTION`) |
 | `MISFIT_CONCENTRATION`, `RELATIVE_MISFIT_FACTOR` | 0.4, 3 | share; × the dataset's R | `runTools.js` | `compare_fit`'s concentration and weak-signal notes |
 | `DEFAULT_SHUFFLES`, `SHUFFLE_SEED`, `AXIS_CONE_DEG` | 24, `0x5EED`, 15° | — | `clusters.py`, `clusters.js` | The cluster null and the axis families |
 | `MAX_CLUSTER_WINDOW` | 8 | Å | `app.py`, `pcaKdeWorker.js` | Largest `rMax` of a cluster request |
@@ -2117,7 +2177,7 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
   much smaller arrays: `Math.max(...disps)` over one Wyckoff orbit's basis members in `symmetryContext()`
   (bounded by the number of reference sites in the conventional cell, **not** by the supercell atom
   count, because `structure.basis` holds one entry per reference number), and `Math.max(...smooth)` over
-  the peak-finding window in `extractPeaks()` (bounded by the number of grid points below 6 Å).
+  the peak-finding window in `extractPeaks()` (bounded by the number of grid points below its rMax: 8 Å for the shell reading).
 - **The watchdog thresholds are heuristics, not statistics.** There is no noise model, no significance
   test, and no dependence on the number of datasets or the acceptance rate. `stalled` vs `converged` is
   decided by a single 0.1-in-$\ln\chi$ total-drop rule that a run resumed from an already-good
