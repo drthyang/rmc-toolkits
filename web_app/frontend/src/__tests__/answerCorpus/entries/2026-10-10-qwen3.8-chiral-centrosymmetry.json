@@ -1,0 +1,31 @@
+{
+  "id": "2026-10-10-qwen3.8-chiral-centrosymmetry",
+  "fidelity": "quoted",
+  "model": "qwen/qwen3.8-27b (LM Studio)",
+  "date": "2026-10-10",
+  "run": "Demo (GaTa4Se8, 250 K)",
+  "question": "Space group at 0.2 Å and 0.02 Å; what breaks?",
+  "source": {
+    "file": ".claude/skills/local-symmetry/SKILL.md",
+    "lines": "74",
+    "commit": "f316293",
+    "note": "the spot check's answer as the skill quotes it (also web_app/frontend/src/llm/README.md:432); the whole answer is not in the repo"
+  },
+  "text": "P-42₁m is chiral and centrosymmetry is lost",
+  "steps": [
+    { "name": "detect_symmetry", "args": { "tolerance_A": 0.02 } }
+  ],
+  "stepsSource": "the llm README's spot-check table (line 669): \"detect_symmetry at 0.02 Å (0.2 Å from the context)\"",
+  "reproduces": [
+    { "step": 1, "path": "facts.groups.0.symbol", "value": "P-42_1m" }
+  ],
+  "expected": {
+    "claims": [],
+    "gateSendBack": null,
+    "auditFindings": ["chirality", "inversion-lost"]
+  },
+  "judgements": [
+    { "on": "audit:chirality", "right": true, "reason": "P-42₁m (-42m) has improper operations, so it is achiral." },
+    { "on": "audit:inversion-lost", "right": true, "reason": "Neither F-43m nor P-42₁m has an inversion centre: there is none to lose." }
+  ]
+}

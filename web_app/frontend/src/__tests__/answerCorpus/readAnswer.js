@@ -1,0 +1,102 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
+// The answer corpus's runner (docs/AGENT_PLAN.md item 3.5; the corpus is the
+// entries/ folder beside this file, one JSON file per real answer): the Demo
+// run as the dock hands it to the Copilot, an entry's recorded steps run as
+// the agent loop runs them, and ONE adapter from an answer to what the
+// current checks read in it.
+//
+// `readAnswer` is the only place that knows today's modules: the evidence
+// gate (llm/copilot/evidence.js) and the checks on the answer
+// (llm/copilot/answerAudit.js), through their public functions only. When
+// one verification module replaces evidence / answerAudit / verdict, this
+// function is rewritten and the corpus pins stay as they are.
+
+import { copilotSkills } from '../../copilotSkills';
+import { auditAnswer, contextAuditFacts } from '../../llm/copilot/answerAudit';
+import { buildAskUserTool } from '../../llm/copilot/askUser';
+import { buildClarifier } from '../../llm/copilot/clarify';
+import { buildEvidenceGate } from '../../llm/copilot/evidence';
+import { buildRunTools } from '../../llm/copilot/runTools';
+import { buildReadSkillTool } from '../../llm/copilot/skills';
+import { executeToolCall } from '../../llm/copilot/tools';
+import { pointGroupFacts } from '../../llm/context/pointGroups';
+import { buildRunContext } from '../../llm/context/runContext';
+import { bundledSkills, loadDemoAssistantRun } from '../modelVisible/helpers';
+
+/** What an entry pins for the gate when its transcript does not show which tools ran. */
+export const STEPS_UNKNOWN = 'steps unknown';
+
+/**
+ * The adapter: an answer → what the current checks read in it.
+ *   claims         the gate's rules whose claim the answer makes (in a
+ *                  sentence about the run), read as `unmet` reads them with
+ *                  nothing run: every rule that applies is then unmet;
+ *   gateSendBack   the rule the gate would send the answer back for, given
+ *                  the steps that ran (`check`, the loop's call): { id,
+ *                  missing } or null; STEPS_UNKNOWN when `ran` is null;
+ *   auditFindings  the checks on the answer that fire (their rule names),
+ *                  against the steps' facts and the run context's.
+ */
+export const readAnswer = (text, { gate, ran = null, facts = [], auditContext = null }) => {
+    const sendBack = ran ? gate.check(text, { ran }) : null;
+    return {
+        claims: gate.unmet(text, []).map((rule) => rule.id),
+        gateSendBack: ran ? (sendBack && { id: sendBack.id, missing: sendBack.missing }) : STEPS_UNKNOWN,
+        auditFindings: auditAnswer(text, { facts, context: auditContext }).map((finding) => finding.rule)
+    };
+};
+
+/**
+ * The Demo run (GaTa4Se8, 250 K) as App.jsx hands it to CopilotChat at the
+ * default view, with what the dock builds for a turn (useCopilot.js,
+ * CopilotChat.jsx): the run tools, the engine tools, ask_user and read_skill
+ * (view tools offer no analysis and are left out); the clarifier's shell
+ * catalog; the gate over the offered tools and the context's elements; and
+ * the context's audit facts (the watchdog's status, the ladder's groups).
+ */
+export const openCorpusRun = async () => {
+    const { copilot, run } = await loadDemoAssistantRun();
+    const context = buildRunContext(run);
+    const tools = [
+        ...buildRunTools(run, { cards: [] }),
+        ...copilot.tools,
+        buildAskUserTool(),
+        buildReadSkillTool(bundledSkills(), { load: copilotSkills.load })
+    ].filter(Boolean);
+    const clarifier = buildClarifier({ plotFiles: run.plotFiles, structure: run.structure, symmetry: run.symmetry },
+        { noiseFloor: context.symmetry?.noise_floor_A ?? null });
+    const gate = buildEvidenceGate({
+        catalog: clarifier.catalog,
+        offered: tools.map((tool) => tool.name),
+        elements: Object.keys(context.structure?.elements || {})
+    });
+    return { tools, gate, auditContext: contextAuditFacts(context, pointGroupFacts), context };
+};
+
+/**
+ * An entry's recorded steps, run as the agent loop runs a model's calls
+ * (executeToolCall: arguments parsed and validated): `results` per step,
+ * the tools' `facts`, and `ran` as the loop's ranCalls gives it to the gate
+ * — executed without an error, and not a question, a skill read or a view
+ * tool (those are not run here: they return no facts).
+ */
+export const runSteps = async (tools, steps) => {
+    const results = [];
+    for (const step of steps) {
+        const tool = tools.find((candidate) => candidate.name === step.name);
+        if (!tool) throw new Error(`the Demo offers no tool named ${step.name}`);
+        if (tool.interactive || tool.keep || tool.view) {
+            results.push({ step, analysis: false, result: null });
+            continue;
+        }
+        results.push({ step, analysis: true, result: await executeToolCall(tool, JSON.stringify(step.args || {}), { timeoutMs: 120_000 }) });
+    }
+    const analyses = results.filter(({ analysis, result }) => analysis && !result.error);
+    return {
+        results,
+        ran: analyses.map(({ step, result }) => ({ name: step.name, args: result.args })),
+        facts: analyses.map(({ result }) => result.facts).filter(Boolean)
+    };
+};

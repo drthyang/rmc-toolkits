@@ -1,0 +1,26 @@
+{
+  "id": "2026-10-10-gemma4-ta-peak-distorted",
+  "fidelity": "quoted",
+  "model": "gemma4:26b (Ollama)",
+  "date": "2026-10-10",
+  "run": "Demo (GaTa4Se8, 250 K)",
+  "question": "Is the Ta₄ cluster distorted?",
+  "source": {
+    "file": "docs/CHANGELOG.md",
+    "lines": "609",
+    "commit": "8aefab6",
+    "note": "the scientific review's first round as the changelog quotes it; the README (line 707) and .claude/skills/coordination-shells/SKILL.md:84 quote it shorter, as \"peak shifted to 2.93 Å: distorted\", which names no cluster and reads no claim; the whole answer is not in the repo"
+  },
+  "text": "The Ta–Ta peak is shifted to 2.93 Å: the cluster is distorted.",
+  "steps": [],
+  "stepsSource": "the llm README's review table (line 707): \"(no tool)\"",
+  "reproduces": [],
+  "expected": {
+    "claims": ["clusters"],
+    "gateSendBack": { "id": "clusters", "missing": ["analyze_clusters"] },
+    "auditFindings": []
+  },
+  "judgements": [
+    { "on": "gate:clusters", "right": true, "reason": "A cluster distortion concluded from a g(r) peak position with no cluster analysis; analyze_clusters finds the Ta₄ clusters 23 % less distorted than independent atoms." }
+  ]
+}
