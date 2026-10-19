@@ -9,7 +9,7 @@
 //
 // The tools run as the Copilot runs them (executeToolCall: arguments parsed
 // and validated as the model's are), the engines in-thread (pcaKdeWorker's
-// handlePcaMessage), on the Demo run (as the dock gets it, modelVisible/
+// inProcessEngine), on the Demo run (as the dock gets it, modelVisible/
 // helpers.js) and on every dev case of the validation (validation/runFolder.js,
 // as the harness builds a run), with arguments derived from each run's own
 // data: every read_run_data section, every partial g(r) pair, the whole first
@@ -32,7 +32,7 @@ import { buildRunTools } from '../llm/copilot/runTools';
 import { executeToolCall, toRequestTools } from '../llm/copilot/tools';
 import { copilotSkills } from '../copilotSkills';
 import { buildCopilotTools } from '../copilotTools';
-import { handlePcaMessage } from '../workers/pcaKdeWorker';
+import { inProcessEngine } from '../workers/pcaKdeWorker';
 import { buildCase, DEV_CASES } from '../../validation/cases';
 import { loadRun } from '../../validation/runFolder';
 import { bundledSkills, loadDemoAssistantRun } from './modelVisible/helpers';
@@ -205,7 +205,7 @@ describe('every live tool\'s data fits its declared dataShape', () => {
         const runs = [{
             name: 'demo',
             props: demo.run,
-            request: (kind, params) => handlePcaMessage({ kind, ...params }, async () => demo.rmc6fText)
+            request: inProcessEngine(demo.rmc6fText)
         }];
         // The dev cases only: the held-out test cases are never built here.
         for (const item of DEV_CASES) {

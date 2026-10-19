@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { structureFromRmc6f } from '../browserData';
-import { handlePcaMessage } from '../workers/pcaKdeWorker';
+import { handlePcaMessage, inProcessEngine } from '../workers/pcaKdeWorker';
 import { displacementModulations } from '../workers/modulations';
 import { siteDisplacementsFromRmc6f } from '../workers/pcaKde';
 import modulationsFixture from './fixtures/modulations_fixture.json';
@@ -35,7 +35,7 @@ import {
 
 const RMC6F = readFileSync(new URL('../../public/demo/GTS_250K.rmc6f', import.meta.url), 'utf8');
 const structure = structureFromRmc6f({ path: 'Demo/GTS_250K.rmc6f', text: RMC6F });
-const request = (kind, params) => handlePcaMessage({ kind, ...params }, async () => RMC6F);
+const request = inProcessEngine(RMC6F);
 const elements = Object.keys(structure.elementCounts).sort();
 const tools = Object.fromEntries(
     buildCopilotTools({ request, structure, elements }).map((tool) => [tool.name, tool])
@@ -471,7 +471,7 @@ describe('Copilot summarizers', () => {
         // regular: the engine reads the shape at each cluster's own size
         // (its tests pin the decision), and the tool says so.
         const breathing = buildCase(ALL_CASES.find((item) => item.id === 'dev-breathing'), { partials: false });
-        const ask = (built) => (kind, params) => handlePcaMessage({ kind, ...params }, async () => built.rmc6f);
+        const ask = (built) => inProcessEngine(built.rmc6f);
         const triangles = buildCopilotTools({ request: ask(breathing), structure: null, elements: ['Mo', 'O'] })
             .find((tool) => tool.name === 'analyze_clusters');
         const { data, checks, facts } = await triangles.run({ element: 'Mo', r_min: 2.4, r_max: 3.21 });

@@ -14,12 +14,12 @@ import { buildCopilotTools } from '../copilotTools';
 import { auditAnswer } from '../llm/copilot/answerAudit';
 import { buildRunTools } from '../llm/copilot/runTools';
 import { runTurn } from '../llm/copilot/turn';
-import { handlePcaMessage } from '../workers/pcaKdeWorker';
+import { inProcessEngine } from '../workers/pcaKdeWorker';
 
 const read = (name) => readFileSync(new URL(`../../public/demo/${name}`, import.meta.url), 'utf8');
 const RMC6F = read('GTS_250K.rmc6f');
 const structure = structureFromRmc6f({ path: 'Demo/GTS_250K.rmc6f', text: RMC6F });
-const request = (kind, params) => handlePcaMessage({ kind, ...params }, async () => RMC6F);
+const request = inProcessEngine(RMC6F);
 const hostTools = buildCopilotTools({ request, structure, elements: Object.keys(structure.elementCounts).sort() });
 
 // The demo's own χ² history, its three logs end to end, as the Dashboard reads it.
