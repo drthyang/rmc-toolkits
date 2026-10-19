@@ -4979,7 +4979,7 @@
  {
   "id": "dev-jt-off-centre__A",
   "protocol": "2026-10-19.9",
-  "commit": "fb5d68ee73a280dc85d8957a41c8f29d5e3297f7",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
   "case": "dev-jt-off-centre",
   "split": "dev",
   "arm": "A",
@@ -5322,7 +5322,7 @@
  {
   "id": "dev-jt-off-centre__A+",
   "protocol": "2026-10-19.9",
-  "commit": "fb5d68ee73a280dc85d8957a41c8f29d5e3297f7",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
   "case": "dev-jt-off-centre",
   "split": "dev",
   "arm": "A+",
@@ -5723,7 +5723,7 @@
  {
   "id": "dev-jt-off-centre__D",
   "protocol": "2026-10-19.9",
-  "commit": "fb5d68ee73a280dc85d8957a41c8f29d5e3297f7",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
   "case": "dev-jt-off-centre",
   "split": "dev",
   "arm": "D",
@@ -5860,7 +5860,7 @@
  {
   "id": "dev-eight-site__A",
   "protocol": "2026-10-19.9",
-  "commit": "fb5d68ee73a280dc85d8957a41c8f29d5e3297f7",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
   "case": "dev-eight-site",
   "split": "dev",
   "arm": "A",
@@ -6065,7 +6065,7 @@
  {
   "id": "dev-eight-site__A+",
   "protocol": "2026-10-19.9",
-  "commit": "fb5d68ee73a280dc85d8957a41c8f29d5e3297f7",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
   "case": "dev-eight-site",
   "split": "dev",
   "arm": "A+",
@@ -6255,7 +6255,7 @@
    },
    {
     "page": "analyze_clusters",
-    "what": "O clusters in 2.48–3.17 Å (engine verdict)",
+    "what": "O clusters in 2.47–3.17 Å (engine verdict)",
     "value": {
      "window": "true (extended_network)"
     },
@@ -6300,7 +6300,7 @@
  {
   "id": "dev-eight-site__D",
   "protocol": "2026-10-19.9",
-  "commit": "fb5d68ee73a280dc85d8957a41c8f29d5e3297f7",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
   "case": "dev-eight-site",
   "split": "dev",
   "arm": "D",
@@ -6391,7 +6391,7 @@
  {
   "id": "dev-octahedral-clusters__A",
   "protocol": "2026-10-19.9",
-  "commit": "fb5d68ee73a280dc85d8957a41c8f29d5e3297f7",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
   "case": "dev-octahedral-clusters",
   "split": "dev",
   "arm": "A",
@@ -6644,7 +6644,7 @@
  {
   "id": "dev-octahedral-clusters__A+",
   "protocol": "2026-10-19.9",
-  "commit": "fb5d68ee73a280dc85d8957a41c8f29d5e3297f7",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
   "case": "dev-octahedral-clusters",
   "split": "dev",
   "arm": "A+",
@@ -6660,6 +6660,10 @@
       0
      ],
      "magnitude_A": 0.243
+    },
+    {
+     "kind": "cluster_distortion",
+     "element": "W"
     }
    ],
    "space_group": "Pm-3m",
@@ -6672,9 +6676,12 @@
    "null_case": false,
    "features": [
     {
+     "planted": "cluster_distortion",
+     "found": true,
+     "claim_index": 1,
      "kind": "cluster_distortion",
      "element": "W",
-     "found": false
+     "accurate": true
     }
    ],
    "spurious": [],
@@ -6699,7 +6706,7 @@
     "polar": "right"
    },
    "contradictions": [],
-   "score": 0.8333
+   "score": 1
   },
   "readings": [
    {
@@ -6875,11 +6882,30 @@
    },
    {
     "page": "analyze_clusters",
-    "what": "W clusters in 2.42–2.83 Å (engine verdict)",
+    "what": "W clusters in 2.42–3.31 Å (engine verdict)",
     "value": {
-     "window": "false (no_clusters)"
+     "distorted": "true (axis_family)",
+     "lessDistorted": "true (below_null)",
+     "breathing": "false (below_null)",
+     "rigid": "false (split_sites)",
+     "staticDistortion": "false (within_sampling_error)",
+     "splitMemberSites": "true (half_or_more_split)",
+     "trigonalLean": "null (not_tetrahedra)",
+     "favouredAxes": "true (enhanced)",
+     "ladder_width": {
+      "obs": 0.544,
+      "null": 0.697,
+      "z": -19,
+      "change": -0.22
+     },
+     "breathing_sd": {
+      "obs": 0.0304,
+      "null": 0.144,
+      "z": -27,
+      "change": -0.79
+     }
     },
-    "reading": "no clusters: no_clusters"
+    "reading": "distorted true (axis_family); lessDistorted true (below_null); breathing false (below_null); rigid false (split_sites); staticDistortion false (within_sampling_error); splitMemberSites true (half_or_more_split); trigonalLean null (not_tetrahedra); favouredAxes true (enhanced)"
    }
   ],
   "truth": {
@@ -6922,7 +6948,7 @@
  {
   "id": "dev-octahedral-clusters__D",
   "protocol": "2026-10-19.9",
-  "commit": "fb5d68ee73a280dc85d8957a41c8f29d5e3297f7",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
   "case": "dev-octahedral-clusters",
   "split": "dev",
   "arm": "D",
@@ -7005,7 +7031,7 @@
  {
   "id": "dev-weak-order-a__A",
   "protocol": "2026-10-19.9",
-  "commit": "fb5d68ee73a280dc85d8957a41c8f29d5e3297f7",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
   "case": "dev-weak-order-a",
   "split": "dev",
   "arm": "A",
@@ -7178,7 +7204,7 @@
  {
   "id": "dev-weak-order-a__A+",
   "protocol": "2026-10-19.9",
-  "commit": "fb5d68ee73a280dc85d8957a41c8f29d5e3297f7",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
   "case": "dev-weak-order-a",
   "split": "dev",
   "arm": "A+",
@@ -7357,7 +7383,7 @@
    },
    {
     "page": "analyze_clusters",
-    "what": "O clusters in 2.48–3.21 Å (engine verdict)",
+    "what": "O clusters in 2.47–3.21 Å (engine verdict)",
     "value": {
      "window": "true (extended_network)"
     },
@@ -7400,7 +7426,7 @@
  {
   "id": "dev-weak-order-a__D",
   "protocol": "2026-10-19.9",
-  "commit": "fb5d68ee73a280dc85d8957a41c8f29d5e3297f7",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
   "case": "dev-weak-order-a",
   "split": "dev",
   "arm": "D",
@@ -7490,7 +7516,7 @@
  {
   "id": "dev-weak-order-b__A",
   "protocol": "2026-10-19.9",
-  "commit": "fb5d68ee73a280dc85d8957a41c8f29d5e3297f7",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
   "case": "dev-weak-order-b",
   "split": "dev",
   "arm": "A",
@@ -7663,7 +7689,7 @@
  {
   "id": "dev-weak-order-b__A+",
   "protocol": "2026-10-19.9",
-  "commit": "fb5d68ee73a280dc85d8957a41c8f29d5e3297f7",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
   "case": "dev-weak-order-b",
   "split": "dev",
   "arm": "A+",
@@ -7866,7 +7892,7 @@
  {
   "id": "dev-weak-order-b__D",
   "protocol": "2026-10-19.9",
-  "commit": "fb5d68ee73a280dc85d8957a41c8f29d5e3297f7",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
   "case": "dev-weak-order-b",
   "split": "dev",
   "arm": "D",
