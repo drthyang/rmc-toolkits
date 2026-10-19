@@ -25,8 +25,8 @@
 //      default, …"), and the screen reader's line says the same;
 //   D5 notes: the app's note to the model is on the dock's step and in the
 //      record;
-//   D6 provenance: today's reading (every step's data and checks, a
-//      Workbench question's card included);
+//   D6 provenance: what the model was told (each tool message it read, its
+//      note and error included), never a Workbench question's card;
 //   D7 a step still running when the turn stops is listed in the record,
 //      stopped, as the dock shows it.
 //
@@ -281,14 +281,16 @@ describe('how each call ended, through the dock and the harness alike (the tool 
         expect(record.steps[10]).toMatchObject({ by: 'workbench', note: WORKBENCH_NOTE });
     }, 60000);
 
-    it('D6: provenance reads every step\'s data and checks, the Workbench\'s card included (today\'s reading)', async () => {
+    it('D6: provenance credits what the model was told, never the Workbench\'s card (protocol 2026-10-19.13)', async () => {
         const record = await inTheHarness();
         const sources = Object.fromEntries(record.provenance.numbers.map((number) => [number.literal, number.source]));
         // 1.94 Å is the window the model asked for; only the Workbench's card,
-        // which the model never read, restates it.
-        expect(sources['1.94']).toBe('tool ask_user (app_ask_1) data.question');
+        // which the model never read, restated it: unsourced. (Before
+        // 2026-10-19.13 it was credited to the card's data.question.)
+        expect(sources['1.94']).toBeNull();
         expect(sources['1.6']).toMatch(/^tool compute_bond_angles \(call_1_1#2\) data\.window_ab_A/);
         expect(sources['2.48']).toMatch(/^tool /);
+        expect(Object.values(sources).filter(Boolean).some((source) => source.startsWith('tool ask_user (app_ask_1) data'))).toBe(false);
     }, 60000);
 
     it('D7: a step still running when the turn stops is listed, stopped, with no result, and no count reads it', async () => {

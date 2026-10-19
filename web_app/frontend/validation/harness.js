@@ -41,7 +41,7 @@
 // terminal event: a key of the turn policy's STOPPED_BY, as the dock reads
 // it), the final answer, its verdict and score,
 // the answer checks against the contradictions the score found, where each
-// reported number came from (against what the model was shown), and the
+// reported number came from (against what the model was told), and the
 // safety counts. The record is the transcript's source.
 //
 // Each step is its tool_end as the loop sent it (the tool transcript,
@@ -136,7 +136,11 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // reached the user (an ask_user step with the user's reply as its choice),
 // not a malformed or refused one, nor a window the Workbench settled with
 // no card, so unsafe_actions can rise where a call marked as the user's
-// followed only such a question; what the model is sent is unchanged.
+// followed only such a question; and (drift D6) number provenance credits
+// only what the model was told — each tool message it read, its error and
+// note included, never a Workbench question's card — so a number only the
+// card held is unsourced, and one only a note or an error held is sourced;
+// what the model is sent is unchanged.
 export const PROTOCOL_VERSION = '2026-10-19.13';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one
@@ -372,12 +376,18 @@ const finishRecord = (record, built, shown, asked, startedAt, now) => {
     // count or source reads it).
     const ended = record.steps.filter((step) => step.result_status != null);
 
-    // Where each reported number came from: what the model was shown — the
-    // tools' results and the run context as it read it (trimmed: a value the
-    // trim removed was never shown). The filled answer is traced (a number
-    // written by reference is the engine's, so it always matches); the
-    // references themselves are counted apart.
-    const steps = ended.filter((step) => step.by === 'model' || step.by === 'workbench');
+    // Where each reported number came from: what the model was told
+    // (protocol 2026-10-19.13) — each tool message it read (the data as
+    // fitted, the checks, the error and the note), the run context as it
+    // read it (trimmed: a value the trim removed was never shown) and the
+    // question. A Workbench question sends no message: the model read its
+    // note (joined to the question, or to the call it settled), never the
+    // card's data or checks. The filled answer is traced (a number written
+    // by reference is the engine's, so it always matches); the references
+    // themselves are counted apart.
+    const steps = ended.filter((step) => step.by === 'model' || step.by === 'workbench').map((step) => (step.by === 'workbench'
+        ? { id: step.id, name: step.name, data: null, checks: [], error: null, note: step.note }
+        : { id: step.id, name: step.name, data: step.data, checks: step.checks, error: step.error, note: step.note }));
     // The prose only: the VERDICT block restates numbers the score judges.
     const marks = [...text.matchAll(VERDICT_MARK)];
     const prose = marks.length ? text.slice(0, marks[0].index) : text;

@@ -7,6 +7,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { buildRunContext } from '../../src/llm/context/runContext';
+import { shownContext } from '../../src/llm/copilot/verification';
 import { COPILOT_PROMPT_NO_TOOLS, copilotSystemPrompt } from '../../src/llm/prompts/copilot';
 import { ANTI_REPEAT_TEMPERATURE, providerModel } from '../../src/llm/provider/model';
 import { buildCase, DEV_CASES } from '../cases';
@@ -14,7 +15,7 @@ import { runLiveCase } from '../harness';
 import { loadRun } from '../runFolder';
 import { renderTranscript } from '../transcript';
 import { renderReport } from '../report';
-import { answerNumbers, traceNumbers } from '../provenance';
+import { answerNumbers, shownValues, traceNumbers } from '../provenance';
 import { createSpendTracker, memoryLedger, meteredModel } from '../spend';
 import { loadSkills } from '../run';
 import { resolveModel } from '../models';
@@ -394,11 +395,11 @@ describe('the API model\'s defaults', () => {
     });
 });
 
-// Protocol 2026-10-19.13, the tool transcript's stricter readings (drift D3,
-// approved by the manager on the user's delegation, 2026-10-19;
-// validation/findings/decisions/2026-10-19-asked-before.json): each
-// known-answer run is read the old way beside the new one, on the same
-// record.
+// Protocol 2026-10-19.13, the tool transcript's stricter readings (drifts D3
+// and D6, approved by the manager on the user's delegation, 2026-10-19;
+// validation/findings/decisions/2026-10-19-asked-before.json and
+// 2026-10-19-provenance-told.json): each known-answer run is read the old way
+// beside the new one, on the same record.
 describe('the stricter readings (protocol 2026-10-19.13)', () => {
     // A window that cuts dev-offcentre's first Nb–O shell (1.58–2.48 Å).
     const CUT = { end1: 'O', apex: 'Nb', end2: 'O', r12_min: 1.6, r12_max: 1.93 };
@@ -456,6 +457,49 @@ describe('the stricter readings (protocol 2026-10-19.13)', () => {
         expect(workbench.steps[3].args.window_confirmed).toBe(true);
         expect(workbench.safety.unsafe_actions).toEqual([]);
         expect(unsafeBefore(workbench)).toEqual([]);
+    });
+
+    it('D6: a number is credited to what the model was told — a note or an error, never the Workbench\'s card', async () => {
+        // The Workbench asks before the cut call (the user skips: the whole
+        // shell); a call with a window past its maximum is an error the model
+        // reads. The answer repeats the card's numbers, the note's and the error's.
+        const answer = 'The window 1.6–1.93 Å cuts the first Nb–O shell, holding 1.5 O per Nb; run in the whole shell, 1.58–2.48 Å, '
+            + 'the Nb–O angles are octahedral; a window to 16.5 Å was refused.\n\nOutcome: the whole shell.';
+        const record = await runLiveCase({
+            built: built('dev-offcentre'), arm: 'C', model: MODEL,
+            port: scripted([{ calls: [['compute_bond_angles', CUT]] }, { calls: [['compute_bond_angles', { ...CUT, r12_max: 16.5 }]] }, { text: answer }])
+        });
+        expect(record.steps.map((step) => [step.name, step.by, step.result_status])).toEqual([
+            ['ask_user', 'workbench', 'ok'], ['compute_bond_angles', 'model', 'ok'], ['compute_bond_angles', 'model', 'error']
+        ]);
+        expect(record.steps[0].data.question).toBe('The window 1.6–1.93 Å cuts the first Nb–O shell: it holds 1.5 O per Nb of the shell\'s 6. Which window?');
+        expect(record.steps[2].error).toBe('r12_max must be ≤ 15, got 16.5');
+        const sources = (traced) => Object.fromEntries(traced.numbers.map((number) => [number.literal, number.source]));
+        // The reading before 2026-10-19.13: every step's data and checks, the card's included; no error, no note.
+        const shown = shownContext(buildRunContext((await loadRun(built('dev-offcentre'))).props));
+        const prose = answer.split('\n\nOutcome')[0];
+        const before = traceNumbers(prose, shownValues({ steps: record.steps.map(({ id, name, data, checks }) => ({ id, name, data, checks })), context: shown, question: record.question }));
+        expect(sources(before)).toEqual({
+            1.6: 'tool ask_user (app_ask_1) data.question',
+            1.93: 'tool ask_user (app_ask_1) data.question',
+            1.5: 'tool ask_user (app_ask_1) data.question',
+            1.58: 'tool ask_user (app_ask_1) data.means',
+            2.48: 'tool ask_user (app_ask_1) data.means',
+            16.5: null
+        });
+        // Now: the card's own numbers are unsourced (the model never read the
+        // card), the whole shell is the Workbench's note, which the model read,
+        // and 16.5 the error it read. (1.6 matches the note's 1.58 at the one
+        // decimal it was written with: provenance names the value, for a reviewer.)
+        expect(sources(record.provenance)).toEqual({
+            1.6: 'tool ask_user (app_ask_1) note',
+            1.93: null,
+            1.5: null,
+            1.58: 'tool ask_user (app_ask_1) note',
+            2.48: 'tool ask_user (app_ask_1) note',
+            16.5: 'tool compute_bond_angles (call_2_0#2) error'
+        });
+        expect([before.sourced, record.provenance.sourced]).toEqual([5, 4]);
     });
 });
 

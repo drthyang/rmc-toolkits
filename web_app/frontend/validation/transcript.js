@@ -72,12 +72,17 @@ export const renderTranscript = (record) => {
         const ended = step.result_status && step.result_status !== 'ok' ? ` (${step.result_status.replace('_', ' ')})` : '';
         lines.push(`**Arguments:** \`${JSON.stringify(step.args)}\` · status ${step.status}${ended}${step.cached ? ' (cached repeat)' : ''} · ${step.ms ?? 0} ms`);
         if (step.error) lines.push(`\n**Error:** ${step.error}`);
-        if (step.note) lines.push(`\n**Note the app added for the model:** ${step.note}`);
+        // A Workbench question sends the model no message: it reads the note
+        // in its place, never the card's reply.
+        const card = step.by === 'workbench';
+        if (step.note) lines.push(`\n**${card ? 'What the model read of it' : 'Note the app added for the model'}:** ${step.note}`);
         if (step.checks?.length) {
-            lines.push('\n**Checks the model read:**\n');
+            lines.push(`\n**${card ? 'The card\'s checks (not sent to the model)' : 'Checks the model read'}:**\n`);
             step.checks.forEach((check) => lines.push(`- ${check.level}: ${check.text}`));
         }
-        if (step.data != null) lines.push(`\n<details><summary>Result the model read</summary>\n\n${fence(step.data)}\n\n</details>`);
+        if (step.data != null) {
+            lines.push(`\n<details><summary>${card ? 'The card\'s reply (not sent to the model)' : 'Result the model read'}</summary>\n\n${fence(step.data)}\n\n</details>`);
+        }
     });
     lines.push('');
     lines.push('## The answer');
