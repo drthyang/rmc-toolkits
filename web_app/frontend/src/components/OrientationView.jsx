@@ -4,10 +4,13 @@
 // Displacement-orientation sphere: the solid-angle histogram of a site's
 // displacement directions (u = Δr/|Δr|), hex-binned on a Goldberg tiling and
 // color-mapped on the unit sphere. The engine lives in workers/orientation.js
-// (browser) and /api/pca/orientation (Flask); this component fetches, renders,
-// and reads out. Options are owned by the host page (OrientationPage) and
-// arrive as props, following the PCA page's design logic: controls in the
-// page's top bar, panel actions (frame toggle, Reset, Save) in the header.
+// (browser) and /api/pca/orientation (Flask); the host page (OrientationPage)
+// owns the options and the two engine results (useDirectionHistogram), and
+// this component renders and reads out: the sphere, colorbar and hover from
+// `result` (the drawn, possibly smoothed map), every readout under it from
+// `readout` (the raw histogram, the same whatever the smoothing). Following
+// the PCA page's design logic, the controls sit in the page's top bar and the
+// panel actions (frame toggle, Reset, Save) in the header.
 //
 // The root renders with display:contents, so its two panels — the fixed-angle
 // mini-view column and the main sphere — sit directly in the page's
@@ -83,19 +86,125 @@ const buildAxisRods = (axes, colors, radius, length) => {
     return rods;
 };
 
+// Every readout under the sphere, read from the raw histogram (`readout`)
+// exactly as analyze_displacement_directions reads it at the same settings.
+// The engines pick the peak cell on the smoothed map, so the drawn map's own
+// peak can move with the smoothing; this one never does.
+export function DirectionReadouts({ readout }) {
+    // A real inversion asymmetry: the engine's flag, A > null + 3 null SDs for
+    // an inversion-symmetric population with the same antipodal-pair totals.
+    const asymmetrySignificant = Boolean(readout.antipodalAsymmetrySignificant);
+    return (
+        <div className="ui-inline-stats">
+            <span className="ui-inline-stat">
+                peak <b>{numberFormat(readout.peakEnhancement, 2)}×</b> at {formatDirection(readout.peakDirection)}
+                {readout.peakTieCount > 1 && (
+                    <span className="ui-inline-stat__null" title="Several cells share the maximum enhancement (within 1e-9); the lowest-index cell is reported">
+                        {' '}(1 of {readout.peakTieCount} equal cells)
+                    </span>
+                )}
+                {' '}· <b>{sigmaFormat(readout.peakSignificance)}</b>
+                <InfoBadge label="About the peak significance" align="end">
+                    <p>
+                        How surprising the peak cell&apos;s raw count is for an isotropic
+                        site: the exact Poisson probability of at least that many atoms
+                        given the cell&apos;s expected count, corrected for having searched
+                        all {readout.cellCount} cells for the maximum (Šidák), as a
+                        one-sided normal deviate. A pure-noise map exceeds 2σ in at most
+                        ~2% of cases. The hover z is local and uncorrected — the largest
+                        of many cells, so it is not a significance.
+                    </p>
+                    <p>
+                        Read from the raw counts at this resolution: smoothing redraws the
+                        map but never moves this peak, its direction or its σ (the
+                        brightest drawn cell can differ). The direction is good to within
+                        its cell.
+                    </p>
+                </InfoBadge>
+            </span>
+            <span className="ui-inline-stat">
+                anisotropy <b>{numberFormat(readout.orientationAnisotropy, 2)}</b>
+                {' '}<span className="ui-inline-stat__null">
+                    (isotropic ≈ {numberFormat(readout.orientationAnisotropyNull, 2)})
+                </span>
+                {' '}· <b>{sigmaFormat(readout.orientationAnisotropySignificance)}</b>
+                <InfoBadge label="About the orientation anisotropy" align="end">
+                    <p>
+                        3λ₁ − 1 of the orientation tensor ⟨u uᵀ⟩: 2 for a perfect single
+                        axis, and 0 for an isotropic site only in the limit of many
+                        atoms — a finite isotropic sample reads about 1.6/√N (shown in
+                        brackets). The σ is Bingham&apos;s test of isotropy on the same
+                        tensor (χ² with 5 degrees of freedom). Resolution independent
+                        (computed from the vectors, not the bins).
+                    </p>
+                </InfoBadge>
+            </span>
+            <span className={`ui-inline-stat ${asymmetrySignificant ? 'is-flagged' : ''}`}>
+                ± asymmetry <b>{numberFormat(readout.antipodalAsymmetry, 2)}</b>
+                {' '}<span className="ui-inline-stat__null">
+                    (symmetric null {numberFormat(readout.antipodalAsymmetryNull, 2)} ± {numberFormat(readout.antipodalAsymmetryNullSd, 2)})
+                </span>
+                {' '}· <b>{sigmaFormat(readout.antipodalAsymmetryZ)}</b>
+                <InfoBadge label="About the antipodal asymmetry" align="end">
+                    <p>
+                        The +u vs −u imbalance, Σ|n(u) − n(−u)| / N over antipodal cell
+                        pairs: 0 for an inversion-symmetric cloud, 1 for a fully
+                        one-sided one. Counting noise alone makes it positive: the null
+                        is its exact mean ± SD if every pair&apos;s atoms had split at
+                        random between u and −u (same pair totals), and the readout
+                        turns red above null + 3 SD. The thermal ellipsoid is blind to
+                        this — a value well above the null means the cloud is skewed
+                        about its mean: odd-order anharmonicity, or unequally occupied
+                        opposite off-centre wells. Directions are measured from the
+                        site&apos;s own mean position, so an off-centring shared by every
+                        copy moves that mean and does not show here.
+                    </p>
+                </InfoBadge>
+            </span>
+            <span className="ui-inline-stat">
+                map significance <b>{Number.isFinite(readout.mapSignificance) ? sigmaFormat(readout.mapSignificance) : '— (too sparse)'}</b>
+                <InfoBadge label="About the map significance" align="end">
+                    <p>
+                        Pearson&apos;s χ² of the raw cell counts against an isotropic
+                        site: χ² = {numberFormat(readout.mapChiSquare, 0)}, where pure
+                        counting noise gives {readout.mapDegreesOfFreedom} ±{' '}
+                        {numberFormat(readout.mapNullSd, 0)}. Its tail comes from a gamma
+                        curve matched to the exact isotropic mean, spread and skewness of
+                        χ², not from the textbook χ² curve: with well under one atom per
+                        cell, χ² mostly counts the few pairs of atoms that share a cell,
+                        which is far more skewed. Reported as a one-sided normal deviate;
+                        pure counting noise exceeds 2σ in about 2% of maps and 3σ in
+                        under 0.25%, at any resolution.
+                    </p>
+                    {!Number.isFinite(readout.mapSignificance) && (
+                        <p>
+                            Not reported here: only{' '}
+                            {numberFormat(readout.mapExpectedPairs, 2)} pairs of atoms are
+                            expected to share a cell (under 0.1), so χ² has almost nothing
+                            to count. Use Auto resolution, or read the peak and anisotropy
+                            tests.
+                        </p>
+                    )}
+                </InfoBadge>
+            </span>
+        </div>
+    );
+}
+
 export default function OrientationView({
-    requestPca,
-    ready,
+    // The drawn map (smoothed when the page smooths) and the raw histogram the
+    // readouts come from: the same object when smoothing is 0.
+    result = null,
+    readout = null,
+    loading = false,
+    error = null,
+    // The site whose map is on screen.
+    loadedRef = null,
     selectedRef,
     selectedEllipsoid,
-    clusterThreshold,
     unitCell,
-    frequency,
-    weight,
     frame,
     onFrameChange,
-    smoothing,
-    minQuantile,
     colormap,
     contrast,
     relief,
@@ -107,12 +216,10 @@ export default function OrientationView({
     onSelectSite = null,
     siteRefs = null
 }) {
-    const [result, setResult] = useState(null);
-    const [error, setError] = useState(null);
     // Also listed in the page's Problems section; the stage keeps its badge.
     useIssue('orientation', error, { source: 'Direction sphere' });
-    const [loading, setLoading] = useState(false);
-    // Hovered cell readout: { cell, x, y } in canvas-local coordinates.
+    // Hovered cell readout: { cell, x, y, map } in canvas-local coordinates,
+    // `map` the result it was picked on.
     const [hover, setHover] = useState(null);
 
     const mountRef = useRef(null);
@@ -122,13 +229,11 @@ export default function OrientationView({
     // changes — the cameras never move, so there is no per-frame cost.
     const miniMountRef = useRef(null);
     const miniRef = useRef(null);
-    const resultRef = useRef(null);
-    resultRef.current = result;
+    const resultRef = useRef(result);
     // The site whose map is on screen (the Copilot waits for a newly selected
     // site's map before it describes the view).
-    const loadedRefRef = useRef(null);
-    const loadingRef = useRef(false);
-    loadingRef.current = loading;
+    const loadedRefRef = useRef(loadedRef);
+    const loadingRef = useRef(loading);
 
     // The three axes the mini views (and their labels) follow: the site's own
     // frame when the map is drawn in PCA coordinates (identity = PC1/2/3),
@@ -141,48 +246,16 @@ export default function OrientationView({
         return { axes: unitCell, labels: CELL_AXIS_LABELS, colors: CELL_AXIS_CSS };
     }, [frame, unitCell]);
     const miniAxesRef = useRef(miniAxes);
-    miniAxesRef.current = miniAxes;
 
-    // --- Fetch the histogram whenever the site or an option changes. ----------
+    // The latest values for what outlives a render (the pointer handlers, the
+    // Copilot's waits, the mini views): written after every render, before
+    // the scene effects below (declared after this one) read them.
     useEffect(() => {
-        let cancelled = false;
-        const load = async () => {
-            if (!ready || selectedRef == null) { setResult(null); setError(null); return; }
-            setLoading(true);
-            setError(null);
-            try {
-                const data = await requestPca('orientation', {
-                    referenceNumber: selectedRef,
-                    frequency: frequency === 'auto' ? null : frequency,
-                    weight,
-                    frame,
-                    smoothing,
-                    minAmplitudeQuantile: minQuantile,
-                    clusterThreshold,
-                    geometry: true
-                });
-                if (!cancelled) {
-                    // A hover index from the previous tiling may be out of range
-                    // for the new one (fewer cells) — clear it with the result.
-                    setHover(null);
-                    setResult(data);
-                    loadedRefRef.current = selectedRef;
-                }
-            } catch (requestError) {
-                if (cancelled) return;
-                // A cluster-distance change can transiently request a re-numbered
-                // site (same self-healing race as the KDE volume); keep the current
-                // sphere rather than surfacing it.
-                if (/Unknown reference number/i.test(requestError.message || '')) return;
-                setResult(null);
-                setError(requestError.message);
-            } finally {
-                if (!cancelled) setLoading(false);
-            }
-        };
-        load();
-        return () => { cancelled = true; };
-    }, [requestPca, ready, selectedRef, frequency, weight, frame, smoothing, minQuantile, clusterThreshold]);
+        resultRef.current = result;
+        loadedRefRef.current = loadedRef;
+        loadingRef.current = loading;
+        miniAxesRef.current = miniAxes;
+    });
 
     // Render the three fixed-angle views into the scissored mini renderer. The
     // cameras are static, so this runs only on scene rebuilds and resizes; it
@@ -281,11 +354,12 @@ export default function OrientationView({
             raycaster.setFromCamera(pointer, camera);
             const hit = raycaster.intersectObjects(meshGroup.children, false)[0];
             const cell = hit ? hit.object.userData.triangleCell[hit.faceIndex] : null;
+            const map = resultRef.current;
             if (cell !== lastCell) {
                 lastCell = cell;
-                setHover(cell == null ? null : { cell, x: event.clientX - rect.left, y: event.clientY - rect.top });
+                setHover(cell == null ? null : { cell, x: event.clientX - rect.left, y: event.clientY - rect.top, map });
             } else if (cell != null) {
-                setHover({ cell, x: event.clientX - rect.left, y: event.clientY - rect.top });
+                setHover({ cell, x: event.clientX - rect.left, y: event.clientY - rect.top, map });
             }
         };
         const onPointerLeave = () => { lastCell = null; setHover(null); };
@@ -502,13 +576,10 @@ export default function OrientationView({
         [colormap, contrast, result]
     );
 
-    // A real inversion asymmetry: the engine's flag, A > null + 3 null SDs for
-    // an inversion-symmetric population with the same antipodal-pair totals.
-    const asymmetrySignificant = Boolean(result?.antipodalAsymmetrySignificant);
-
-    // Bounds-guarded: a raycast fired between a resolution change and the hover
-    // reset could carry an index from the previous, larger tiling.
-    const hoverCell = hover && result && hover.cell < result.cellCount ? hover.cell : null;
+    // Only a cell picked on the map on screen: a hover from the previous map
+    // (another tiling, possibly with fewer cells) shows nothing until the
+    // pointer moves; the bounds check stays as a second guard.
+    const hoverCell = hover && result && hover.map === result && hover.cell < result.cellCount ? hover.cell : null;
 
     // display:contents root — the two panels below are direct grid items of the
     // page's 3 : 6.5 : 6.5 layout, next to the site picker panel.
@@ -626,93 +697,7 @@ export default function OrientationView({
                             </div>
                             <span className="orient-colorbar-label">{numberFormat(result.vmax, 1)}× isotropic</span>
                         </div>
-                        <div className="ui-inline-stats">
-                            <span className="ui-inline-stat">
-                                peak <b>{numberFormat(result.peakEnhancement, 2)}×</b> at {formatDirection(result.peakDirection)}
-                                {result.peakTieCount > 1 && (
-                                    <span className="ui-inline-stat__null" title="Several cells share the maximum enhancement (within 1e-9); the lowest-index cell is reported">
-                                        {' '}(1 of {result.peakTieCount} equal cells)
-                                    </span>
-                                )}
-                                {' '}· <b>{sigmaFormat(result.peakSignificance)}</b>
-                                <InfoBadge label="About the peak significance" align="end">
-                                    <p>
-                                        How surprising the peak cell&apos;s raw count is for an isotropic
-                                        site: the exact Poisson probability of at least that many atoms
-                                        given the cell&apos;s expected count, corrected for having searched
-                                        all {result.cellCount} cells for the maximum (Šidák), as a
-                                        one-sided normal deviate. A pure-noise map exceeds 2σ in at most
-                                        ~2% of cases. The hover z is local and uncorrected — the largest
-                                        of many cells, so it is not a significance.
-                                    </p>
-                                </InfoBadge>
-                            </span>
-                            <span className="ui-inline-stat">
-                                anisotropy <b>{numberFormat(result.orientationAnisotropy, 2)}</b>
-                                {' '}<span className="ui-inline-stat__null">
-                                    (isotropic ≈ {numberFormat(result.orientationAnisotropyNull, 2)})
-                                </span>
-                                {' '}· <b>{sigmaFormat(result.orientationAnisotropySignificance)}</b>
-                                <InfoBadge label="About the orientation anisotropy" align="end">
-                                    <p>
-                                        3λ₁ − 1 of the orientation tensor ⟨u uᵀ⟩: 2 for a perfect single
-                                        axis, and 0 for an isotropic site only in the limit of many
-                                        atoms — a finite isotropic sample reads about 1.6/√N (shown in
-                                        brackets). The σ is Bingham&apos;s test of isotropy on the same
-                                        tensor (χ² with 5 degrees of freedom). Resolution independent
-                                        (computed from the vectors, not the bins).
-                                    </p>
-                                </InfoBadge>
-                            </span>
-                            <span className={`ui-inline-stat ${asymmetrySignificant ? 'is-flagged' : ''}`}>
-                                ± asymmetry <b>{numberFormat(result.antipodalAsymmetry, 2)}</b>
-                                {' '}<span className="ui-inline-stat__null">
-                                    (symmetric null {numberFormat(result.antipodalAsymmetryNull, 2)} ± {numberFormat(result.antipodalAsymmetryNullSd, 2)})
-                                </span>
-                                {' '}· <b>{sigmaFormat(result.antipodalAsymmetryZ)}</b>
-                                <InfoBadge label="About the antipodal asymmetry" align="end">
-                                    <p>
-                                        The +u vs −u imbalance, Σ|n(u) − n(−u)| / N over antipodal cell
-                                        pairs: 0 for an inversion-symmetric cloud, 1 for a fully
-                                        one-sided one. Counting noise alone makes it positive: the null
-                                        is its exact mean ± SD if every pair&apos;s atoms had split at
-                                        random between u and −u (same pair totals), and the readout
-                                        turns red above null + 3 SD. The thermal ellipsoid is blind to
-                                        this — a value well above the null means the cloud is skewed
-                                        about its mean: odd-order anharmonicity, or unequally occupied
-                                        opposite off-centre wells. Directions are measured from the
-                                        site&apos;s own mean position, so an off-centring shared by every
-                                        copy moves that mean and does not show here.
-                                    </p>
-                                </InfoBadge>
-                            </span>
-                            <span className="ui-inline-stat">
-                                map significance <b>{Number.isFinite(result.mapSignificance) ? sigmaFormat(result.mapSignificance) : '— (too sparse)'}</b>
-                                <InfoBadge label="About the map significance" align="end">
-                                    <p>
-                                        Pearson&apos;s χ² of the raw cell counts against an isotropic
-                                        site: χ² = {numberFormat(result.mapChiSquare, 0)}, where pure
-                                        counting noise gives {result.mapDegreesOfFreedom} ±{' '}
-                                        {numberFormat(result.mapNullSd, 0)}. Its tail comes from a gamma
-                                        curve matched to the exact isotropic mean, spread and skewness of
-                                        χ², not from the textbook χ² curve: with well under one atom per
-                                        cell, χ² mostly counts the few pairs of atoms that share a cell,
-                                        which is far more skewed. Reported as a one-sided normal deviate;
-                                        pure counting noise exceeds 2σ in about 2% of maps and 3σ in
-                                        under 0.25%, at any resolution.
-                                    </p>
-                                    {!Number.isFinite(result.mapSignificance) && (
-                                        <p>
-                                            Not reported here: only{' '}
-                                            {numberFormat(result.mapExpectedPairs, 2)} pairs of atoms are
-                                            expected to share a cell (under 0.1), so χ² has almost nothing
-                                            to count. Use Auto resolution, or read the peak and anisotropy
-                                            tests.
-                                        </p>
-                                    )}
-                                </InfoBadge>
-                            </span>
-                        </div>
+                        {readout && <DirectionReadouts readout={readout} />}
                         <div className="ui-legend">
                             {frame === 'cartesian' && unitCell ? (
                                 CELL_AXIS_LABELS.map((label, i) => (

@@ -31,6 +31,11 @@ const runBoth = async (item) => {
 // above them is unchanged.
 // Candidate 8 (2026-10-19, A+ reads the app's rules): no pin moved; only A+'s
 // readings (and dev-offcentre's δ, 0.201 → 0.202 Å) did, pinned below.
+// Plan item 2.5 (protocol 2026-10-19.16, the Displacement Directions page at
+// the engine's resolution, its readouts the raw histogram's): one pin moved,
+// dev-jt-off-centre's A and A+ 0.8571 → 0.7857. At its 216 copies Auto is
+// ν = 1, twelve cells with [0 0 1] on a boundary, so the now significant Ag
+// peak names [0 −0.62 1], 31.7° off the planted axis (pinned below).
 const BAR = [
     ['dev-offcentre', 1, [], 1, []],
     ['dev-zone-boundary', 0.6667, ['off_centre Ti'], 1, []],
@@ -42,7 +47,7 @@ const BAR = [
     ['dev-chirality-trap', 1, [], 1, []],
     ['dev-chiral', 1, [], 1, []],
     ['dev-fit-unconverged', 1, [], 1, []],
-    ['dev-jt-off-centre', 0.8571, [], 0.8571, []],
+    ['dev-jt-off-centre', 0.7857, [], 0.7857, []],
     ['dev-eight-site', 0.6667, ['jahn_teller Nb'], 0.6667, ['jahn_teller Nb']],
     ['dev-octahedral-clusters', 0.8333, [], 1, []],
     ['dev-weak-order-a', 0.8333, [], 1, []],
@@ -123,9 +128,13 @@ describe('the model-free arms on the dev cases (the bar)', () => {
             expect(site(jt.sweep, n).value.pc1_kurtosis_z).toBeGreaterThan(-3);
         }
         expect(site(jt.sweep, 3).value).toMatchObject({ delta_A: 0.16, delta_se_A: 0.0043, pc1_kurtosis_z: -4.43 });
-        expect(jt.sweep.verdict.features[0]).toEqual({ kind: 'off_centre', element: 'F', direction_uvw: [1, 0, -0.01], magnitude_A: 0.16 });
+        // Its direction since plan item 2.5: the map's peak on the engine's
+        // ν = 1 tiling (significant there; on the old default it was not, and
+        // the claim took PC1, [1 0 −0.01]). F off-centring is tolerated, unscored.
+        expect(jt.sweep.verdict.features[0]).toEqual({ kind: 'off_centre', element: 'F', direction_uvw: [-1, 0, -0.62], magnitude_A: 0.16 });
         const offcentre = await runBoth(DEV_CASES.find((item) => item.id === 'dev-offcentre'));
-        expect(offcentre.sweep.verdict.features).toEqual([{ kind: 'off_centre', element: 'Nb', direction_uvw: [0.1, 0.06, -1], magnitude_A: 0.202 }]);
+        // ν = 2 holds [0 0 1] as a cell centre (on ν = 10 the peak read [0.1 0.06 −1]).
+        expect(offcentre.sweep.verdict.features).toEqual([{ kind: 'off_centre', element: 'Nb', direction_uvw: [0, 0, -1], magnitude_A: 0.202 }]);
         expect(offcentre.a.verdict.features[0].magnitude_A).toBe(0.201);
         // The cluster elements: the gate's (CN 0.5–4.5); perovskite O (CN 8) no longer tried.
         expect(offcentre.sweep.readings.filter((r) => r.page === 'analyze_clusters')).toEqual([]);
@@ -148,6 +157,16 @@ describe('the model-free arms on the dev cases (the bar)', () => {
         expect(two.sweep.readings.find((r) => r.page === 'Dashboard partial g(r)').value.peaks_A).toHaveLength(2);
         expect(two.sweep.verdict.features.some((feature) => feature.kind === 'jahn_teller')).toBe(false);
         expect(found(two.scoreSweep)).toEqual(['jahn_teller:false', 'off_centre:true']);
+        // A side miss since plan item 2.5: the Ag direction map at the engine's
+        // resolution, ν = 1 for 216 copies, whose twelve cell centres sit 31.7°
+        // from every cube axis. Its peak is significant, so A and A+ take its
+        // direction ([0 −0.62 1]) over PC1's (within 2° of [0 0 1]).
+        const agMap = two.sweep.readings.find((r) => r.page === 'Displacement Directions' && r.what.endsWith('Ag'));
+        expect(agMap.value).toMatchObject({ frequency: 1, peak_uvw: [0, -0.62, 1] });
+        expect(agMap.value.peak_sigma).toBeGreaterThanOrEqual(ARM_A_RULES.SIGMA);
+        const ag = two.scoreSweep.features.find((feature) => feature.planted === 'off_centre');
+        expect(ag).toMatchObject({ direction_ok: false, magnitude_ok: true });
+        expect(ag.direction_error_deg).toBeCloseTo(31.7, 0);
 
         // Two readings: the eight wells average to a round Nb ellipsoid, so
         // no split site; the 3 + 3 shell it leaves unexplained becomes a

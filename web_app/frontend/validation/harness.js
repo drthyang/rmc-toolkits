@@ -119,8 +119,14 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // 2026-10-19.12: analyze_modulations gives each ordered point's polarisation
 // (plan item 4.3), never prints a ratio or σ below its bar rounded onto it
 // (F2), and corrects over every element's points whichever the call names
-// (F3); arm A+ reads a modulation's direction from the polarisation).
-export const PROTOCOL_VERSION = '2026-10-19.12';
+// (F3); arm A+ reads a modulation's direction from the polarisation);
+// 2026-10-19.16: the Displacement Directions page and the tool at the same
+// settings (plan item 2.5) — the page opens at the engine's resolution (Auto)
+// and reads every readout from the raw histogram, so arm A (and A+, through
+// the same reading) reads a split site's direction map at the tiling
+// analyze_displacement_directions reads, from the page's own defaults
+// (src/directionSettings.js); what the model is sent is unchanged.
+export const PROTOCOL_VERSION = '2026-10-19.16';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one
 // follows the full method.
