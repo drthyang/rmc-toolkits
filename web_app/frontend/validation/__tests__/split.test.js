@@ -20,7 +20,7 @@ import { join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildCase, DEV_CASES, JUDGMENT_SITUATIONS, splitOf, TEST_CASE_IDS } from '../cases';
 import { parseFindingFiles, parseFindings, validateFinding } from '../findings';
-import { HOLDOUT_DIR, holdoutEnabled, loadTestCases } from '../holdoutLoader';
+import { ARM_A_TEST_RECORDS, HOLDOUT_DIR, holdoutEnabled, loadTestCases } from '../holdoutLoader';
 import { guardSplit, guardTestOutput } from '../run';
 import { copilotSkills } from '../../src/copilotSkills';
 import { HOLDOUT_ALLOWED, HOLDOUT_LEAKS_PENDING_USER } from './holdoutLists';
@@ -146,7 +146,7 @@ describe('the dev / test split', () => {
         expect(() => guardSplit({ split: 'test', final: true, clean: true })).not.toThrow();
         // A test-set file written inside the repository goes under the sealed
         // folder or a gitignored output folder.
-        expect(() => guardTestOutput('test', join(FRONTEND, HOLDOUT_DIR, 'arm-a-test.json'))).not.toThrow();
+        expect(() => guardTestOutput('test', join(FRONTEND, ARM_A_TEST_RECORDS))).not.toThrow();
         expect(() => guardTestOutput('test', join(FRONTEND, 'validation/runs/x'))).not.toThrow();
         expect(() => guardTestOutput('test', join(FRONTEND, 'validation/baseline/arm-a-test.json'))).toThrow(/goes under/);
         expect(() => guardTestOutput('test', join(FRONTEND, 'validation/holdout-copy/x.json'))).toThrow(/goes under/);

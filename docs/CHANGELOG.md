@@ -28,8 +28,9 @@ Chronological record of notable changes, newest first. For current architecture 
   arm B: a leak of the case's kind to arm B only. The case is recomposed, not the skill (the
   user's text): a composition a fresh author chose without dev results, which no skill (main or
   PR #71's drafts) or model-visible snapshot names. Its seed follows a rule fixed before looking:
-  the first seed from 731 up whose drawn breathing sd over the 512 clusters lies in
-  [0.033, 0.037] (732; 731 gave 0.0327). Shape, breathing, thermal width and supercell are unchanged.
+  the first seed of a fixed sequence whose drawn breathing sd over the case's clusters lies in a
+  fixed window about the planted sd. Shape, breathing, thermal width and supercell are unchanged.
+  (Values, seed and rule sealed with the test cases since the holdout gate; see `TEST_SET_SHA256`.)
   Approved by the manager on the user's delegation, 2026-10-19; the user may reverse it.
 - `TEST_SET_SHA256` and `PROTOCOL_VERSION` 2026-10-19.2. No arm B or C run had touched the test
   set. Arms A and A+ re-recorded on it with `--final` (4ab9eab): only the breathing case's records
@@ -228,7 +229,7 @@ A review of the Copilot's tools against synthetic configurations with planted lo
   and without skills) and D (truth) scored by one fixed function; transcripts, number provenance,
   a spend cap, and the supervisor findings schema. Arm A: 0.81 on both sets; it reads ordered
   antiphase displacements as random off-centring, misses cluster breathing and rigid dimers, and
-  the 0.2 Å card misses a 0.06–0.07 Å polar shift. The review's larger findings (split shells cut
+  the 0.2 Å card misses a polar shift below its tolerance. The review's larger findings (split shells cut
   at a deep trough, the cluster null under collective motion) are listed in
   [copilot-review.md](algorithms/copilot-review.md).
 

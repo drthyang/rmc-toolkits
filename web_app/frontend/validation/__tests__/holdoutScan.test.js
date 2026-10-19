@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { describeHit, holdoutTokens, NEAR_WORDS, readText, scanText } from './holdoutScan';
 
-const OFFCENTRE = { id: 'test-made-up', kind: 'offcentre', params: { elements: ['Eu', 'Lu', 'N'], a: 4.44, axis: [1, 1, 2], delta: 0.23 } };
+const OFFCENTRE = { id: 'test-made-up', kind: 'offcentre', params: { elements: ['Eu', 'Lu', 'N'], a: 4.44, axis: [1, 1, 2], delta: 0.27 } };
 const OFFCENTRE_DEV = { id: 'dev-made-up', kind: 'offcentre', params: { elements: ['La', 'Al', 'N'], a: 4.44, axis: [0, 0, 1], delta: 0.31 } };
 const tokensOf = (item, devs) => holdoutTokens(item, devs);
 const kindsFound = (text, tokens) => scanText(readText(text), tokens).map((hit) => `${hit.kind}:${hit.name}`);
@@ -56,7 +56,7 @@ describe('holdout tokens', () => {
 
     it('the judgment subset\'s options and its own kind have their readers', () => {
         const names = (tokens) => tokens.filter((token) => token.kind !== 'id').map((token) => `${token.kind}:${token.name}`).sort();
-        const weak = { id: 'test-made-up-weak', kind: 'zone_boundary', params: { elements: ['Eu', 'Lu', 'N'], a: 4.44, axis: [1, 1, 2], q: [0.5, 0.5, 0.5], delta: 0.017, decoy: null, weak: true } };
+        const weak = { id: 'test-made-up-weak', kind: 'zone_boundary', params: { elements: ['Eu', 'Lu', 'N'], a: 4.44, axis: [1, 1, 2], q: [0.25, 0.25, 0], delta: 0.017, decoy: null, weak: true } };
         expect(names(tokensOf(weak, []))).toEqual(['composition:elements', 'direction:axis', 'magnitude:a', 'magnitude:delta', 'wavevector:q']);
         const jt = { id: 'test-made-up-jt', kind: 'jahn_teller', params: { elements: ['Eu', 'Lu', 'N'], a: 9.1, short: 1.71, long: 2.07, offCentre: { axis: [1, 1, 2], delta: 0.13 } } };
         expect(names(tokensOf(jt, []))).toEqual(expect.arrayContaining(['direction:offCentre.axis', 'magnitude:offCentre.delta', 'magnitude:short']));
@@ -94,16 +94,16 @@ describe('the holdout scanner', () => {
 
     it('a length counts within NEAR_WORDS words of its element, as written, with trailing zeros or not', () => {
         expect(NEAR_WORDS).toBe(6);
-        expect(kindsFound('Lu is off-centred by ±0.23 Å', tokens)).toEqual(['magnitude:delta']);
-        expect(kindsFound('a shift of 0.230 Å (Lu)', tokens)).toEqual(['magnitude:delta']);
-        expect(kindsFound('in EuLuN3 the shift is 0.23 Å', tokens)).toEqual(['composition:elements', 'magnitude:delta']);
-        expect(kindsFound('the Lu–N bond, 0.23 Å', tokens)).toEqual(['magnitude:delta']);
-        expect(kindsFound('Lu one two three four five 0.23', tokens)).toEqual(['magnitude:delta']);
+        expect(kindsFound('Lu is off-centred by ±0.27 Å', tokens)).toEqual(['magnitude:delta']);
+        expect(kindsFound('a shift of 0.270 Å (Lu)', tokens)).toEqual(['magnitude:delta']);
+        expect(kindsFound('in EuLuN3 the shift is 0.27 Å', tokens)).toEqual(['composition:elements', 'magnitude:delta']);
+        expect(kindsFound('the Lu–N bond, 0.27 Å', tokens)).toEqual(['magnitude:delta']);
+        expect(kindsFound('Lu one two three four five 0.27', tokens)).toEqual(['magnitude:delta']);
         // Not hits: too far, another element, other digits.
-        expect(kindsFound('Lu one two three four five six 0.23', tokens)).toEqual([]);
-        expect(kindsFound('La is off-centred by 0.23 Å', tokens)).toEqual([]);
-        expect(kindsFound('Lu: 0.231, 10.23, 0.23.1 and 0.023', tokens)).toEqual([]);
-        expect(kindsFound('a shift of 0.23 Å', tokens)).toEqual([]);
+        expect(kindsFound('Lu one two three four five six 0.27', tokens)).toEqual([]);
+        expect(kindsFound('La is off-centred by 0.27 Å', tokens)).toEqual([]);
+        expect(kindsFound('Lu: 0.271, 10.27, 0.27.1 and 0.027', tokens)).toEqual([]);
+        expect(kindsFound('a shift of 0.27 Å', tokens)).toEqual([]);
     });
 
     it('a direction counts as its family next to its element, however it is bracketed or spaced', () => {
@@ -111,7 +111,7 @@ describe('the holdout scanner', () => {
         expect(kindsFound('Lu along <211>', tokens)).toEqual(['direction:axis']);
         expect(kindsFound('Lu along ⟨1, −1, 2⟩', tokens)).toEqual(['direction:axis']);
         // A spaced vector is one word: "[1 1 2]" does not push the length out of reach.
-        expect(kindsFound('Lu 0.10 Å [1 1 2] for 0.23', tokens)).toEqual(['magnitude:delta', 'direction:axis']);
+        expect(kindsFound('Lu 0.10 Å [1 1 2] for 0.27', tokens)).toEqual(['magnitude:delta', 'direction:axis']);
         expect(kindsFound('Lu along [1 1 0] and [0 0 1]', tokens)).toEqual([]);
         expect(kindsFound('a vector [1 1 2] with no element', tokens)).toEqual([]);
     });
@@ -191,7 +191,7 @@ describe('the holdout scanner', () => {
     });
 
     it('reports a hit by file, line, case and kind with what matched masked', () => {
-        const text = 'line one\nLu is off-centred by 0.23 Å in EuLuN3\n';
+        const text = 'line one\nLu is off-centred by 0.27 Å in EuLuN3\n';
         const read = readText(text);
         const hits = scanText(read, tokens);
         const lines = hits.map((hit) => describeHit(read, hit, hits, 'docs/x.md'));
@@ -200,7 +200,7 @@ describe('the holdout scanner', () => {
             'docs/x.md:2 test-made-up magnitude (delta): ■ is off-centred by ■ Å in ■'
         ]);
         lines.forEach((line) => {
-            expect(line).not.toContain('0.23');
+            expect(line).not.toContain('0.27');
             expect(line).not.toContain('EuLuN3');
         });
     });

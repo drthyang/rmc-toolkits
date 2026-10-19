@@ -34,7 +34,7 @@ export const HOLDOUT_ALLOWED = [
     },
     // The ids, where a file must name its cases (the holdout gate, 2026-10-19):
     {
-        file: 'docs/algorithms/copilot-validation.md', case: '*', kind: 'id', count: 0,
+        file: 'docs/algorithms/copilot-validation.md', case: '*', kind: 'id', count: 10,
         reason: 'the protocol\'s own document: it names every case by its id (the Cases table, the protocol notes); no other kind of token'
     },
     {

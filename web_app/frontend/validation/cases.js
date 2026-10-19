@@ -707,7 +707,7 @@ const KINDS = {
     },
 
     // A coherent shift of every B atom by delta along `axis`: the average
-    // structure itself loses symmetry (P4mm along [001], R3m along [111]).
+    // structure itself loses symmetry (P4mm along [001]; the group follows the axis).
     // Smaller than the Detected SG card's 0.2 Å default tolerance.
     symmetry_lowering: (p) => {
         const sites = perovskiteSites(p.elements);

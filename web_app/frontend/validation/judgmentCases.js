@@ -8,8 +8,9 @@
 // tools that read the same atoms differently, a choice only the user can
 // make. cases.js appends them to DEV_CASES and builds them with its kinds.
 //
-// Paired since protocol 2026-10-19.11: each has a held-out match in
-// TEST_CASES (same situation, kind and option), written by a fresh author who
+// Paired since protocol 2026-10-19.11: each has a held-out match in the
+// sealed test set (same situation, kind and option; holdoutLoader.js),
+// written by a fresh author who
 // never saw these parameters or the dev results: they worked from
 // validation/judgment-spec.md alone (the situations, the kinds and the
 // difficulty knobs, no values). Keep these parameters, and
