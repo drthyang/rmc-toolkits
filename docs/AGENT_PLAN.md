@@ -9,8 +9,9 @@ validation runs as written.
 It builds on the [tool and skill review](algorithms/copilot-review.md) (2026-10-14), validation
 batch 1 and THY-18 (PRs #69 and #70, merged), and a survey of `web_app/frontend/src` (the Copilot,
 its tools and the workers), `web_app/frontend/validation`, `rmc_toolkits` and `.claude/skills` on
-`main` at `b5b3820` (2026-10-18). Every `file:line` below is on that commit. It changes nothing:
-the skill drafts of batch 1 wait in PR #71 for the user's review.
+`main` at `b5b3820` (2026-10-18). Every `file:line` below is on that commit. Sections B and C
+summarise the architecture review of 2026-10-18 and the user's decisions of 2026-10-19. The skill
+drafts of batch 1 wait in PR #71 for the user's review.
 
 ## Ground rules
 
@@ -48,6 +49,12 @@ the skill drafts of batch 1 wait in PR #71 for the user's review.
     `src/llm/prompts/copilot.js:151`), and it never has earlier turns (`harness.js:91`); the
     app sends up to 8 (`copilot.js:125`, `useCopilot.js:137`). These are known and documented
     choices; the record does not say them.
+- **The harness tells the model the case kind.** The run is named after the case id
+  (`validation/runFolder.js:30`), and the name reaches the model as `context.run` in the first
+  message (`src/llm/context/runContext.js:422`, `src/llm/prompts/copilot.js:109,163`). So every
+  arm B and C run is told which kind of case it is ("dev-zone-boundary"). `harness.js:13-14`
+  promises the opposite, and the holdout scan reads only source text, so it cannot see this.
+  Fixed first (B and C, item a).
 - **The warmer retry is lost in the harness.** After a looping reply the loop asks again with
   `antiRepeat` (`src/llm/copilot/agentLoop.js:374`).
   - **The app** raises the temperature to at least 0.6 for that request (`useCopilot.js:48,148-151`).
@@ -70,6 +77,10 @@ the skill drafts of batch 1 wait in PR #71 for the user's review.
   - **So** C measures the skills' text over a prompt that already carries most of their rules.
     That is a legitimate arm, "skills as written", but not "no method", and the doc does not say
     which it is.
+  - **Decided (1.8, 2026-10-19):** arm C removes the whole method, as MATERIA's 1.3 does. With
+    skills off, the model sees no skill names, stage lists, `EVIDENCE_RULES`, method sentences in
+    `TOOL_RULES` or method advice in tool descriptions. It is a structural switch in the turn
+    module (B and C, item C), not text edits.
 - **Models run under different rules,** so a model comparison is partly a comparison of these:
   - **Context sizing.** Ollama gets a sized `num_ctx` and a `num_predict` (`contextGuard.js:15-19`,
     `src/llm/provider/ollama.js:82`). LM Studio is refused a turn its loaded window cannot hold
@@ -128,100 +139,80 @@ What the live runs can still measure:
    - reproducibility over 3 runs;
    - questions asked;
    - time and tokens.
-4. **B against C** on the same measures (what the skills add on top of a prompt that already
-   carries the method, above).
+4. **B against C** on the same measures: what the method adds, the skills together with the
+   prompt's method rules, since C removes both (1.8, decided).
 
 Item 1.6 proposes making the comparison with A+ informative on the dev set **(approval)**.
 
-### B. The same science in more than one place
+### B and C. Architecture: the deepening candidates and the user's decisions
 
-The engines exist twice by design: `rmc_toolkits/*.py` is the source of truth, and the browser
-ports in `web_app/frontend/src/workers/` are parity-tested against Python goldens. The survey found:
+An architecture review on 2026-10-18 used the improve-codebase-architecture method (Matt Pocock).
+It read five areas:
 
-- **PCA above 20,000 points differs between runtimes.** Python draws the fit subsample with numpy's
-  generator (`rmc_toolkits/pca_kde.py:72,570-576`), the port with mulberry32 and Fisher–Yates
-  (`src/workers/pcaKde.js:317-331`, which says so).
-  - **Effect.** A pooled element cloud, or a site in a box of 28 cells per edge or more, gives
-    different numbers in Flask mode and in the browser.
-  - **Which runtime the validation measures.** Only the browser runtime (`runFolder.js:28`); the
-    Flask path, which serves typed server folders, is untested by it.
-- **The page and the tool read the same site differently.**
-  - **The settings.** Arm A reads the Displacement Directions page at ν = 10 with smoothing 2
-    (`armA.js:38-39`). The tool lets the engine choose the resolution (`copilotTools.js:1149`).
-  - **The effect.** On the dev thermal case's O site the map test reads 2.3σ at ν = 10 and 7.2σ at
-    the engine's choice, so "anisotropic" holds for the tool and not for the page.
-  - **The skill** notes the difference ("say which you quote") without a rule.
-- **Three readings of one g(r) shell.**
-  - **The readings.** `find_gr_peaks` (`src/llm/copilot/runTools.js:179,191`), the Workbench's
-    shell catalogue (`src/llm/copilot/clarify.js:91-120`) and the context's `pair_correlations`
-    (`src/llm/context/pairCorrelations.js`) all call `firstShell`, then round and integrate apart:
-    - the window: 3 significant figures against 0.01 Å;
-    - the CN: grid trapezoid to the boundary index (`pairCorrelations.js:251`) against
-      interpolated trapezoid over the rounded window (`clarify.js:54,91`);
-    - the "first peak" window: r ± FWHM (`runTools.js:179`) against the joined shell's own
-      boundary (`clarify.js:119`).
-  - **The effect.** A question's option can quote a CN that differs from the one `find_gr_peaks`
-    shows the model.
-- **Three definitions of a split site:**
-  - Arm A: prolate ≥ 1.3, PC1 resolved and PC1 excess kurtosis ≤ −0.5 (`armA.js:35-36,77`);
-  - the cluster summary: PC1 kurtosis ≤ −0.5 and 3 sampling errors below 0
-    (`copilotTools.js:489-497`);
-  - `list_sites`, which the model reads: Mardia's kurtosis only (`copilotTools.js:68`), although
-    the engine computes the per-axis kurtosis and resolution (`src/workers/pcaKde.js:534`).
+- the agent loop and its guards;
+- the tool specs and their dispatch;
+- the evidence, reference and verdict modules;
+- the engines against their browser ports;
+- the harness against the app.
 
-  So the model cannot apply the rule its own tools apply.
-- **Two definitions of an element that forms clusters.** The A+ sweep tries clusters for a
-  same-element first shell peaking below 3.6 Å (`armA.js:179`). The evidence gate requires
-  `analyze_clusters` for a first shell of at most 4.5 neighbours (`evidence.js:61`). A case can
-  need clusters by one rule and not the other.
-- **Thresholds defined more than once:**
+It works in codebase-design's terms: module, interface, depth, seam, adapter, leverage and locality,
+plus the deletion test. The plan's earlier sections B (the same science in more than one place) and
+C (one tool's facts spread across files) are its evidence. Their findings, such as the duplicated
+thresholds, the three shell readings and the side lists, now sit under the candidates below. The
+user decided on 2026-10-19:
 
-  | Quantity | Copies |
-  | --- | --- |
-  | The Detected SG card's 0.2 Å | `App.jsx:92`, `validation/runFolder.js:15`, `armA.js:47`, `copilotTools.js:1313,1341,1344` |
-  | 1.25 × the noise floor | `clarify.js:50` (`NOISE_MARGIN`), `copilotTools.js:29` (`NOISE_FLOOR_MARGIN`) |
-  | The long-wave limit 0.25 | `rmc_toolkits/modulations.py:58`, `src/workers/modulations.js:23`, `copilotTools.js:779` |
-  | A shell not separated: g at 2 % of the peak | `pairCorrelations.js:273`, `runTools.js:137`, `clarify.js:178` (a literal) |
-  | Half an atom, the CN tolerance | `pairCorrelations.js:130`, `clarify.js:279,289`, `copilotTools.js:322,329`, `src/llm/copilot/answerAudit.js:378` (literals) |
-  | 3σ | `copilotTools.js:41`, `armA.js:40`, `prompts/copilot.js:54` and `answerAudit.js:241` (in text) |
-  | Split-site kurtosis −0.5 | `armA.js:36`, `copilotTools.js:489` |
-  | 15° | `rmc_toolkits/clusters.py:81` and `src/workers/clusters.js:29` (axis cone), `copilotTools.js:978` (low-index cone), `validation/scoring.js:28` (scoring) |
+| # | Deepening | Strength · dependency | Decision |
+| --- | --- | --- | --- |
+| a | **The case-id leak** (a bug, not a deepening). The harness names the run after the case id (`validation/runFolder.js:30`), which reaches the model as `context.run` in the first message (`src/llm/context/runContext.js:422`). Every arm B and C run is told its case kind. | — | Start, first |
+| 2 | **The run as the Copilot sees it.** One module turns a run's files and the view state into the Copilot's run. Today App, Dashboard and useAssistant each hold a piece, and the harness copies them (`runFolder.js:15-38`). The browser and the harness become its two adapters. | Strong · local-substitutable | Start, second |
+| 1 | **The turn.** One module runs one question. Today `useCopilot.js:126,137-181` and `harness.js:75-132` each assemble the turn, and they have drifted apart: the harness loses the warmer retry, the no-tools prompt and the tools-on rule, and the gate setup is copied in both. The dock and the harness become its two adapters, and the module emits each request as it was sent. | Strong · mock (model port) | Start, third |
+| C | **Arm C's "method off" switch** in the turn module (1.8). | — | Start, after 1 |
+| 3 | **Provider quirks behind the model port.** `streamCopilotChat` takes over the retry temperature, honours or enforces `tool_choice: 'none'`, and reports "tools unsupported" as a typed failure instead of a regex over error text. | Strong · mock | Start, fourth |
+| 4 | **One verification module: is this answer verified?** It owns the claim catalogue (phrasing, the analysis that backs a claim, the fact that contradicts it), reference filling, the facts schema, the gate's bookkeeping and the order the checks run in. The prompt's evidence sentence is generated from the catalogue. This replaces the side lists in `evidence.js:86-148`, `verdict.js:61` / `turnState.js:161` and `prompts/copilot.js:32-39`. | Strong · in-process | Start, fifth |
+| 7 | **Generated golden fixtures at the orientation and site seams.** The 3σ direction verdict and the split-site statistics are pinned by one generated fixture, not by twin hand-copied pins. | Strong · ports & adapters | Start, in parallel |
+| 5 | **The engines return their own verdicts** (clusters, modulations), with the row that decided each, so the tool only renders them. | Strong · ports & adapters | Waits **(approval)**: A+ results change, and the verdict becomes part of the library output |
+| 6 | **One shell reading per pair, per run** (find_gr_peaks, the clarifier, the context, the audit and A+), and a coordination reading in the triplets payload. | Strong · in-process | Waits **(approval)**: a context flag and the cut rule change |
+| 8 | **Arm A+ reads the app's rules** for the split site, the cluster elements and the symmetry floor (A+ uses the floor; the tool and the clarifier use 1.25 × the floor). | Worth exploring · in-process | Waits **(approval)**: the A+ baseline moves |
+| 9 | **One request contract for the worker and Flask adapters**: names, defaults, caps, normalisation, error modes, cancelling. | Worth exploring · ports & adapters | Waits |
+| 10 | **Turn policy: what ends a turn.** One owner for the counters, and one `done` shape. | Worth exploring · in-process | Waits |
+| 11 | **Tool transcript: what the model is told about a result.** One store for the loop and the UI. Result statuses (old 3.2) attach here. | Speculative · in-process | Waits |
 
-  Only the engine pairs are pinned equal by a fixture. The rest can drift apart unseen.
+**Rejected by the deletion test:**
 
-### C. One tool's facts are spread across files
+- **A thresholds constants module (old 2.1).** Its interface would be as wide as its
+  implementation: it moves numbers, not decisions. Callers should use the function that already
+  decides, for example `isIdealCoordination` (`pairCorrelations.js:130-132`) or
+  `facts.direction.significant` (`copilotTools.js:41`).
+- **One file per tool in `copilotTools.js` (old 3.4), done before 5 and 6.** It would only spread
+  the shallowness over seven files.
+- **The two `verdict.js` modules** are different concepts: the validation's case claims and the
+  app's computed Outcome. Rename one; don't merge them.
 
-- **Per-tool facts sit in side lists.** The tool spec carries its page, cards, page parameters,
-  bond windows and result budget (`copilotTools.js`). Several other facts live elsewhere:
+**How each started piece is built:**
 
-  | List | File |
-  | --- | --- |
-  | which tool evidences which conclusion | `evidence.js:86-148` and, again in prose, `prompts/copilot.js:32-39` |
-  | which claim kind maps to which answer check | `validation/scoring.js:154` |
-  | which steps are analyses | `verdict.js:61` (no views, no unrun calls) against `turnState.js:161` (counts views) |
-  | the window question's tool | `harness.js:234` (by name) |
+- **Design.** Two subagents each propose an interface (design-it-twice) and the lead picks one.
+- **PRs.** One PR per piece, stacked a → 2 → 1 → C → 3 → 4. Each targets `main`, so CI runs on it.
+  #7 is cut from `main`.
+- **What stays fixed.** Each PR keeps the science and the model-visible snapshot (1.7) unchanged,
+  with two exceptions: the leak fix (a neutral run name, plus a test that no case id reaches the
+  model) and arm C with skills off. Arms A and A+ in `arms.test.js` stay unchanged.
+- **Drift between copies.** Where two copies disagree, the PR names the behaviour it keeps and why,
+  and pins it with a test.
+- **The user.** The user is asked only about choices that change the science, a verdict, a score
+  or what the model sees.
 
-  The analysis count already disagrees: the footer counts a view tool as an analysis
-  (`src/llm/copilot/turnState.js:161`), the computed verdict does not (`src/llm/copilot/verdict.js:61`).
-- **Results are read back as text** in two places:
-  - an unknown tool, by matching its error message (`harness.js:240`);
-  - a kept window, by the option's label starting with "Keep" (`clarify.js:510`).
+**Science items from the old sections B and C that stay open:**
 
-  The answer checks and the gate read prose by regex by design. Those regexes have no corpus test
-  over real answers beyond the replays.
-- **One effect label is loose.** `orient_3d_view` is a view tool but selects a site as a click
-  would (`src/copilotViewTools.js:9,60`), which sets the input of the PCA page's own analysis. That
-  was the maintainer's decision (AGENTS.md, view tools); it should be visible in the spec.
-- **No test pins the output shape of the live tools.** With numbers by reference, a result's data
-  paths are an interface the model writes against (`{{r3.sites.0.shift_A}}`). The tests pin chosen
-  fields (`src/__tests__/copilotTools.test.js`), not the shape, so a renamed key silently breaks
-  every reference to it.
-- **The biggest files mix concerns:**
-  - `copilotTools.js` (1,406 lines) holds eight summarizers, the tool specs and the React hook;
-  - `agentLoop.js` (650) holds the loop, the clarifier calls, compaction, the gate, the reference
-    fill and the verdict;
-  - `answerAudit.js` (430) holds claim reading and ten rules;
-  - `clarify.js` (514) holds the shell catalogue and the questions.
+- **The page and the tool read a site at different settings** **(approval, old 2.5).** Arm A reads
+  the Displacement Directions page at ν = 10 with smoothing 2 (`armA.js:38-39`); the tool lets the
+  engine choose (`copilotTools.js:1149`). On the dev thermal case's O site the map test reads 2.3σ
+  against 7.2σ.
+- **PCA above 20,000 points draws different subsamples in Flask and in the browser** (old 2.6;
+  `rmc_toolkits/pca_kde.py:72,570-576` against `src/workers/pcaKde.js:317-331`). It affects the
+  KDE, not a Copilot tool.
+- **No test pins the shape of a live tool's output** (old 3.3). With numbers by reference, the data
+  paths a result exposes are an interface the model writes against.
+- **No corpus of real answers** tests the claim regexes of the checks and the gate (old 3.5).
 
 ### D. Tool gaps
 
@@ -275,7 +266,7 @@ the tools on `main`:
 PR #71 fixes each of these. Three disagreements remain after it:
 
 - **Split sites.** The skill's split site is a negative kurtosis; the tools' is a PC1 kurtosis
-  ≤ −0.5 three errors below zero; `list_sites` shows neither (B above).
+  ≤ −0.5 three errors below zero; `list_sites` shows neither (candidates 8 and 4.1).
 - **Which elements need clusters.** The local-order draft says "every element whose own first
   shell is short and closed"; the gate says CN ≤ 4.5 and A+ says a peak below 3.6 Å.
 - **What "no order" needs.** The local-order draft requires the polyhedra (`find_gr_peaks`) and
@@ -306,35 +297,43 @@ Beyond single contradictions:
 
 | PR | Change | Size |
 | --- | --- | --- |
-| 1.1 | **The warmer retry in the harness.** `run.js` honours `antiRepeat` as `useCopilot` does (0.6 at least). A harness test asserts it. | S |
+| 1.1 | **The warmer retry in the harness.** Now part of the turn module (1) and the model port (3): both adapters get the same retry, and a test at the port asserts it. | — |
 | 1.2 | **One run policy, recorded.** A `RunPolicy` states the limits, temperature, server kind, context size, reply cap and the context-guard decisions; each record and transcript keeps it; the report lists what a comparison across models also compares. One scripted check that the final round's `tool_choice: 'none'` is sent in the form each provider accepts. | M |
 | 1.3 | **Context parity, stated.** The record says which context sections the run had (no PCA table, no run settings, the 0.2 Å card) and that it is one fresh question; the harness gets an option for a PCA-table context, as after a visit to the PCA page, for a dev check of its effect. | S |
 | 1.4 | **State lifecycle.** A Live Data save that changes the configuration starts a new conversation, as a new run does, or marks earlier answers as about the previous configuration; the Detected SG pick resets with the run. | S |
 | 1.5 | **Holdout scan widened**: test-case materials, formulas, magnitudes and directions (from `cases.js`) across `src`, `.claude/skills`, `rmc_toolkits` and `docs/` except the validation docs. The overlap with the skills' reference compound is listed in copilot-validation.md as a known risk. | S |
 | 1.6 | **An informative comparison with A+** **(approval)**. Dev set only. (i) The report gives feature-only scores, B against A+ per component, and every disagreement with the planted truth beside it, with no change to the case score. (ii) A "judgment" dev subset, designed and tried on dev only: cases where A+'s fixed joining rules are ambiguous or wrong — two features at once, a signal at 2.5–4σ, evidence that two tools read differently, a choice only the user can make — so the model has room to add. The test set gets matching cases only through a new, pinned test version authored without reference to the dev results, decided by the user. | M |
-| 1.7 | **Snapshots of what the model sees.** A test snapshots the system prompt (both arms), the tool list, every description and schema, and the gate's send-back text, so a refactor that changes them shows in the diff. Arm C's snapshot is checked for skill names. | S |
-| 1.8 | **What arm C ablates, decided** **(approval)**. Either C stays "B without the skills' text" and the doc says so, or C also drops `EVIDENCE_RULES`, the method sentences of `TOOL_RULES` and the tool descriptions' window advice. That makes C "no method" and needs a structural switch, not text edits. | M |
+| 1.7 | **Snapshots of what the model sees.** A test snapshots the system prompt (every variant), the tool list, every description and schema, the first request as the dock and the harness send it, and a sample of each tool's result text, so a refactor that changes them shows in the diff. Arm C's snapshot is checked for skill names. First of the started set. | S |
+| 1.8 | **What arm C ablates: decided 2026-10-19.** C removes the whole method: no skill names, stage lists, `EVIDENCE_RULES`, method sentences in `TOOL_RULES` or method advice in tool descriptions. It is a structural switch in the turn module, after 1 (B and C, item C). | M |
 
-### Phase 2 — One definition per rule
+### Phase 2 — The started set (decided 2026-10-19)
 
-| PR | Change | Size |
-| --- | --- | --- |
-| 2.1 | **A thresholds module** (`src/thresholds.js`): the card tolerance, the noise-floor margin, the long-wave limit (with the Python constant pinned by the fixture), the separation fraction, the CN tolerance, the significance level, the split-site kurtosis and the cones, imported by the tools, the clarifier, the checks, the gate and arm A. No value changes; the skill lint (5.1) reads it. | M |
-| 2.2 | **One shell reading.** `find_gr_peaks`, the clarifier's catalogue and the context take the window, CN and first-peak window from one function, with one rounding. Changes the numbers a question quotes (by < 0.05 atom). | M |
-| 2.3 | **One split-site rule** **(approval)**: the per-axis rule (PC1 resolved, excess kurtosis ≤ −0.5 and three sampling errors below 0) used by the cluster summary, arm A+ and, through 4.1, shown to the model. Arm A's rule is part of the frozen protocol and changes only with a dated note. | S |
-| 2.4 | **One rule for which elements need clusters** **(approval)**: the gate's CN ≤ 4.5, A+'s 3.6 Å and the local-order draft's wording made one. It changes what the gate requires and what A+ sweeps. | S |
-| 2.5 | **The page and the tool at the same settings** **(approval)**: the directions tool also reports at the page's ν and smoothing, or the page defaults to the engine's choice (ROADMAP: Displacement Directions default resolution). Changes arm A's reading. | S |
-| 2.6 | **PCA subsamples identical in both runtimes**: the Python draw ported to the browser or the other way (AGENTS.md next step 8). | M |
-
-### Phase 3 — One tool spec, structured results
+The candidates of B and C, in this order. Each is one PR, stacked on the one before.
 
 | PR | Change | Size |
 | --- | --- | --- |
-| 3.1 | The tool spec carries every per-tool fact: what it evidences (`evidence.js` reads it; the prompt's evidence sentence is generated from it), whether it is an analysis, view or question, and the claim kinds its facts cover (`scoring.js` reads it). A test fails if a consumer keeps its own list. The analysis count is one helper. | M |
-| 3.2 | Results carry a status (ok, refused, error, unknown tool, skipped) and a choice flag on clarifications; the harness and the clarifier read them instead of text. | S |
-| 3.3 | **Output-shape contracts** for every live tool: a schema of its `data` (the paths references name), checked on the demo and on each dev case. | M |
-| 3.4 | `copilotTools.js` splits into one module per tool (summarizer + spec) and the hook; `agentLoop.js` into the loop, the clarifier step and the finish (references, checks, gate, verdict). No behaviour change; the replays are the net. | L |
-| 3.5 | A small corpus of real answers (the 2026-10-11 spot check, the dev transcripts once they exist) for the claim regexes of the checks and the gate: each finding and each send-back pinned, false alarms counted. | S |
+| a | **The case-id leak.** The harness gives the run a neutral name; a test asserts that no case id or kind reaches the model. The model-visible snapshot changes by the run name only. | S |
+| 2 | **The run module** (candidate 2). The browser and the harness are its two adapters; the harness records the view state it chose. | M |
+| 1 | **The turn module** (candidate 1). The dock and the harness are its two adapters; it emits each request as sent. | L |
+| C | **Arm C's "method off" switch** in the turn module (1.8). Arm C's snapshot is checked for skill names and the method sentences. | M |
+| 3 | **The model port** (candidate 3): the retry temperature, `tool_choice: 'none'`, "tools unsupported" as a typed failure. | S |
+| 4 | **The verification module** (candidate 4). The prompt's evidence sentence is generated from its claim catalogue. | L |
+| 7 | **Golden fixtures** at the orientation and site seams (candidate 7), in parallel, cut from `main`. | S |
+
+### Phase 3 — Waiting for the user's approval batch
+
+| PR | Change | Size |
+| --- | --- | --- |
+| 5 | **The engines return their own verdicts** (clusters, modulations) **(approval)**. | M |
+| 6 | **One shell reading per pair, per run** **(approval)**. Changes the numbers a question quotes (by < 0.05 atom), a context flag and the cut rule. | M |
+| 8 | **Arm A+ reads the app's rules** for the split site, the cluster elements and the symmetry floor **(approval)**. It covers old 2.3 and 2.4, which land with 5.3, since the rule and the skill change together. Arm A's rule is part of the frozen protocol and changes only with a dated note. | S |
+| 9 | One request contract for the worker and Flask adapters. | M |
+| 10 | Turn policy: what ends a turn. | M |
+| 11 | Tool transcript; result statuses (old 3.2). | M |
+| 2.5 | **The page and the tool at the same settings** **(approval)**: the directions tool also reports at the page's ν and smoothing, or the page defaults to the engine's choice. Changes arm A's reading. | S |
+| 2.6 | PCA subsamples identical in both runtimes (AGENTS.md next step 8). | M |
+| 3.3 | **Output-shape contracts** for every live tool: a schema of its `data` (the paths references name), checked on the demo and on each dev case. Before any tool output changes in phase 4. | M |
+| 3.5 | A small corpus of real answers for the claim regexes of the checks and the gate. | S |
 
 ### Phase 4 — Tool science
 
@@ -354,10 +353,10 @@ change what A+ sweeps are noted.
 
 | PR | Change | Size |
 | --- | --- | --- |
-| 5.1 | **Skill lint in CI.** Every tool a skill names exists; every gate number is bound to its constant in the thresholds module (2.1); every "*Firm rule in the app:*" names a check or refusal that exists. It lands with an allow-list of today's violations, which 5.2 to 5.4 empty. | M |
+| 5.1 | **Skill lint in CI.** Every tool a skill names exists; every gate number is bound to the constant of the module that decides it; every "*Firm rule in the app:*" names a check or refusal that exists. It lands with an allow-list of today's violations, which 5.2 to 5.4 empty. | M |
 | 5.2 | **(approval)** The user's review of PR #71 (batch 1's skill drafts and the new local-order draft). | — |
-| 5.3 | **(approval; each draft goes to the user before it merges)** The three disagreements left after #71 (split site, cluster elements, what "no order" needs), in the same PR as 2.3, 2.4 and the gate change. | S |
-| 5.4 | **(approval; each draft goes to the user before it merges)** Method out of the tool descriptions and the prompt: a description says what a tool does; the window advice and the evidence sentence move to the skills, together with 1.8. | M |
+| 5.3 | **(approval; each draft goes to the user before it merges)** The three disagreements left after #71 (split site, cluster elements, what "no order" needs), in the same PR as candidate 8 and the gate change. | S |
+| 5.4 | **(approval; each draft goes to the user before it merges)** Method out of the tool descriptions and the prompt for arm B too: a description says what a tool does; the window advice and the evidence sentence move to the skills. Arm C already drops them structurally (1.8). | M |
 | 5.5 | **(approval)** Size for a 32k window: a budget test (prompt + two skills + the turn's analyses + the reply reserve within 32k); long reference material moves to on-demand references. | S |
 | 5.6 | SKILL_INTERVIEWS brought up to date when #71 merges; the validation report says which skills are the user's method and which are drafts. | S |
 
@@ -376,25 +375,23 @@ change what A+ sweeps are noted.
 
 ## Order
 
-- **Start together.** Phase 1 (1.1–1.5, 1.7) and 5.1 start together. 1.6 and 1.8 wait for the
-  user's decisions.
-- **Then phase 2,** with 2.1 first. 2.3 and 2.4 land with 5.3, since the rule and the skill change
-  together.
-- **Phase 3** can overlap phase 2 once 2.1 is in; 3.3 goes before any tool output changes in
-  phase 4, so the shape contract shows each change.
-- **Phase 4** needs phases 2 and 3.3.
+- **Start together** (2026-10-19): the snapshot test (1.7), then the started set in order (a → 2 →
+  1 → C → 3 → 4), with #7 alongside. Phase 1's other items (1.2–1.5) and 5.1 can follow on top.
+- **Phase 3** waits for the user's approval batch. 3.3 goes before any tool output changes in phase
+  4, so the shape contract shows each change.
+- **Phase 4** needs the started set and 3.3.
 - **Phase 5's content** (5.3–5.5) waits for phase 4, so the skills describe the final tools; 5.2
   (the review of #71) can happen any time.
 - **Phase 6** is last.
 
-The core goes first: 1.1–1.5, 1.7, 2.1–2.4, 3.3, 4.1, 5.1–5.3. These change what the validation
-would find. The rest is upkeep that follows, before or after the validation.
+The core goes first: 1.7, the started set, 1.2–1.5, 3.3, 4.1 and 5.1–5.3. These change what the
+validation would find. The rest is upkeep that follows, before or after the validation.
 
 ## Risks
 
-- **A refactor changes behaviour silently.** The snapshot of the model-visible text (1.7), the
-  shape contracts (3.3), the replays and the engine parity fixtures catch changes in what the model
-  sees and in the numbers.
+- **A refactor changes behaviour silently.** The snapshot of what the model sees (1.7), the shape
+  contracts (3.3), the replays and the engine parity fixtures (with #7's goldens) catch changes in
+  what the model sees and in the numbers.
 - **The holdout erodes.** Improving the tools for the test cases' kinds is what the dev cases are
   for. The wider scan (1.5) and the dev-only checks keep the test cases themselves unseen; a
   "judgment" test version (1.6) is authored only on the user's decision, without the dev results.
@@ -402,8 +399,8 @@ would find. The rest is upkeep that follows, before or after the validation.
   Unless 1.6 is decided, the report must lead with B against A and the process measures, and say
   so.
 - **Local-model robustness regresses.** The loop guards, the gate and the context guard were tuned
-  on the local tier. 3.4 moves them without changing them; phase 6 runs the local tier again
-  before the test set.
+  on the local tier. The turn, model-port and verification modules move them without changing
+  them; phase 6 runs the local tier again before the test set.
 - **The gate shapes the answers it checks.** A send-back costs a round and steers the model toward
   the listed analyses. The record keeps every send-back (THY-18), and 3.5's corpus counts false
   ones before the freeze.
