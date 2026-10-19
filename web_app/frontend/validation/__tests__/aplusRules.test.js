@@ -123,7 +123,7 @@ describe('the cluster elements as A+ applies them (the evidence gate\'s rule)', 
             for (const item of DEV_CASES) runs.set(item.id, await loadRun(buildCase(item), { ladder: false }));
         }, 120000);
 
-        it('A+ tries clusters for the gate\'s elements: the planted V₂ dimers, Mo₃ triangles and the F around Cu, and nothing else', async () => {
+        it('A+ tries clusters for the gate\'s elements: the planted V₂ dimers, Mo₃ triangles, W₆ octahedra and the F around Cu and Ag, and nothing else', async () => {
             const tried = {};
             for (const [id, run] of runs) {
                 const catalogue = shellCatalogue(run.props);
@@ -132,7 +132,9 @@ describe('the cluster elements as A+ applies them (the evidence gate\'s rule)', 
                 expect(elements, id).toEqual(buildEvidenceGate({ catalog: catalogue }).clusterElements);
                 if (elements.length) tried[id] = elements;
             }
-            expect(tried).toEqual({ 'dev-breathing': ['Mo'], 'dev-jahn-teller': ['F'], 'dev-cell-wrap': ['V'] });
+            expect(tried).toEqual({
+                'dev-breathing': ['Mo'], 'dev-jahn-teller': ['F'], 'dev-cell-wrap': ['V'], 'dev-jt-off-centre': ['F'], 'dev-octahedral-clusters': ['W']
+            });
         }, 120000);
 
         it('the elements the old 3.6 Å rule also tried are extended networks the engine refuses (CN 6–12)', async () => {
@@ -148,8 +150,8 @@ describe('the cluster elements as A+ applies them (the evidence gate\'s rule)', 
                     refused += 1;
                 }
             }
-            // O in four perovskites, Fe and Si in B20 FeSi, Mg and O in rock salt.
-            expect(refused).toBe(8);
+            // O in seven perovskites, Fe and Si in B20 FeSi, Mg and O in rock salt.
+            expect(refused).toBe(11);
         }, 120000);
     });
 });

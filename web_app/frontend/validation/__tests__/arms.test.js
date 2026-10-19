@@ -135,10 +135,15 @@ describe('the model-free arms on the dev cases (the bar)', () => {
         // no split site; the 3 + 3 shell it leaves unexplained becomes a
         // Jahn–Teller claim. The direction map at a finer tiling has the
         // <111> lobe that the default one does not resolve.
+        // (Since candidate 8 A+ reads list_sites' split rule: the round
+        // ellipsoid resolves no PC1, so no split site, as arm A's page reads it.)
         const eight = await judged('dev-eight-site');
-        const nb = eight.sweep.readings.find((r) => r.page === 'PCA Ellipsoid' && r.what.endsWith('Nb'));
-        expect(nb.reading).toBe('thermal ellipsoid');
-        expect(nb.value.pc1_over_pc2).toBeLessThan(ARM_A_RULES.PROLATE_RATIO);
+        const nb = eight.sweep.readings.find((r) => r.page === 'list_sites' && r.what.endsWith('Nb'));
+        expect(nb.reading).toBe('not a split site');
+        expect(nb.value.pc1_resolved).toBe(false);
+        const nbPage = eight.a.readings.find((r) => r.page === 'PCA Ellipsoid' && r.what.endsWith('Nb'));
+        expect(nbPage.reading).toBe('thermal ellipsoid');
+        expect(nbPage.value.pc1_over_pc2).toBeLessThan(ARM_A_RULES.PROLATE_RATIO);
         expect(found(eight.scoreSweep)).toEqual(['off_centre:false']);
         const engine = (await eight.run).engine;
         const coarse = await engine('orientation', { referenceNumber: 2 });
