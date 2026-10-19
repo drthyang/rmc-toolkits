@@ -80,27 +80,45 @@ masked (■).
   file in `.claude/skills`, `rmc_toolkits` (py), `docs/` (md) and the top-level md files. Not
   scanned: the validation itself (`web_app/frontend/validation/`) and this document, whose Cases
   table names every test case. [AGENT_PLAN.md](../AGENT_PLAN.md) is scanned; it points at the
-  overlap below without naming it.
+  open leak below without naming it.
 - **Checks on the scanner:** every test case yields more than its id, and the scan finds every
   test case in its own truth (summary and traps, prose written from the same parameters). Its own
   rules are pinned on made-up cases (`holdoutScan.test.js`).
 
-**Known risks: the allow-list** (`HOLDOUT_ALLOWED` in `split.test.js`). Each entry allows an exact
-number of hits of one test case's kind of token in one file, so a new mention there, or a removed
-one, fails until the entry is reviewed.
+Every hit must sit in one of two lists in `split.test.js`, and each entry pins its exact number of
+hits, so a new mention, or a removed one, fails until the entry is reviewed. Any hit in neither list
+fails the test.
 
-| File | Case · token | Hits | Why |
+**Open leak, pending the user** (`HOLDOUT_LEAKS_PENDING_USER`). Text the model can read in arm B
+(the system prompt, the tool descriptions and results, `read_skill`'s output, every skill file)
+that names a held-out test case. It is a leak, not a known risk: the test prints it on every run
+and pins it line by line, and CI stays green only so that the decision stays with the user, whose
+text the skills are.
+
+| File:line | Case · token | Status |
+| --- | --- | --- |
+| `.claude/skills/coordination-shells/lacunar-spinel-shells.md:9`, `:31`, `:32` | test-breathing · cluster | Reaches arm B via `read_skill`; awaiting the user's decision (skill text is the user's). The test breathing case's cluster is the cluster of the skills' reference compound, whose published distortion this reference file describes: a model that has read it may expect a distortion where the case plants breathing only |
+
+The reference compound is the project's own data. The remedies are the user's: change the skill
+text, or a new, pinned test version (`TEST_SET_SHA256`, with a dated note here) whose breathing case
+uses another cluster. PR #71's skill drafts (read-only scan, 2026-10-19) carry the same three hits
+and no others.
+
+**Known risks: the allow-list** (`HOLDOUT_ALLOWED`). Only text no model can read, in any arm: the
+test checks that no allowed file is under `.claude/skills`, among the files `copilotSkills.js`
+bundles for the prompt and `read_skill`, or in the snapshots of what the model sees; that no app
+module (`src` outside `__tests__`) names it, so none can import it; and that no snapshot contains
+its matched text.
+
+| File | Case · token | Hits | Why it is not model-visible |
 | --- | --- | --- | --- |
-| `.claude/skills/coordination-shells/lacunar-spinel-shells.md` (lines 9, 31, 32) | breathing · cluster | 3 | **By design.** The test breathing case's cluster is the cluster of the skills' reference compound, whose published distortion this skill describes. A model that has read it may expect a distortion where the case plants breathing only |
-| `web_app/frontend/src/llm/README.md` (685) | breathing · cluster | 1 | Found 2026-10-19, to review: the same compound's cluster in the real-model check's 5 K question |
-| `web_app/frontend/src/workers/__tests__/triplets.test.js` (215) | breathing · cluster | 1 | Found 2026-10-19, to review: a synthetic cluster of that compound in a bond-angle engine test |
-| `docs/algorithms/ai-assistant.md` (1563, 1599) | breathing · cluster | 2 | Found 2026-10-19, to review: the cluster engine's synthetic checks use that compound's cluster |
-| `docs/algorithms/bond-geometry.md` (304) | breathing · cluster | 1 | Found 2026-10-19, to review: that compound's cluster among the bond-angle engine's test geometries |
-| `web_app/frontend/src/__tests__/fixtures/symmetryStructures.js` (65) | symmetry_lowering · composition | 1 | Found 2026-10-19, to review: a symmetry-finder fixture of a real orthorhombic perovskite with the case's composition, unrelated to the planted shift |
+| `web_app/frontend/src/llm/README.md` (685) | breathing · cluster | 1 | Doc only: the reference compound's cluster in the real-model check's 5 K question; no module imports the README |
+| `web_app/frontend/src/workers/__tests__/triplets.test.js` (215) | breathing · cluster | 1 | Test only: a synthetic cluster of that compound in a bond-angle engine test |
+| `docs/algorithms/ai-assistant.md` (1563, 1599) | breathing · cluster | 2 | Doc only: the cluster engine's synthetic checks use that compound's cluster |
+| `docs/algorithms/bond-geometry.md` (304) | breathing · cluster | 1 | Doc only: that compound's cluster among the bond-angle engine's test geometries |
+| `web_app/frontend/src/__tests__/fixtures/symmetryStructures.js` (65) | symmetry_lowering · composition | 1 | Test only: a symmetry-finder fixture of a real orthorhombic perovskite with the case's composition, imported only by the symmetry tests; unrelated to the planted shift |
 
-The reference compound is the project's own data, so its cluster will keep appearing where those
-data are discussed. If the overlap is judged a leak, the remedy is a new, pinned test version
-(`TEST_SET_SHA256`, with a dated note here), not an edit of the skills.
+These were found on 2026-10-19 and reviewed against that rule.
 
 ## The question and the verdict
 

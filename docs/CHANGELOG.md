@@ -12,8 +12,10 @@ Chronological record of notable changes, newest first. For current architecture 
   from `cases.js` at run time, not only its id. It scans `src` (js, jsx, md and the model-visible
   snapshots), every skill file, `rmc_toolkits`, `docs/` and the top-level docs; the validation and
   copilot-validation.md are not scanned. A bare element symbol is never a hit, and a failure prints
-  the matched text masked. The skills' reference compound (by design) and five hits found on
-  2026-10-19 sit in a reviewed allow-list with exact counts, listed as known risks in
+  the matched text masked. Only text no model can read may be allow-listed, and the test checks
+  that rule; five test- or doc-only hits found on 2026-10-19 are. The skills' reference compound
+  reaches arm B through `read_skill`, so it is an open leak pending the user: printed on every run
+  and pinned line by line. Both lists are in
   [copilot-validation.md](algorithms/copilot-validation.md#the-holdout-scan) (plan item 1.5).
 
 ### Tests: generated goldens at the orientation and site seams
