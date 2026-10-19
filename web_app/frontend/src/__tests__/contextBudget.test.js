@@ -88,9 +88,14 @@ const WINDOW_TOKENS = 32768;
 // The two largest skills as read_skill returns them (tool-message tokens).
 // The batch-1 skill drafts (#71, for the user's review) make
 // displacement-anisotropy the second largest (local-symmetry 6,546 / 4,684).
+// The skill fact sync (2026-10-19) adds 504 characters / 360 tokens to
+// coordination-shells (the CN-margin cut rule with its counts fallback, the
+// cluster scope and nulls) and 419 / 300 to displacement-anisotropy (the split
+// rule, the unrounded peak test, the inclusive cone); before it 7,354 / 5,261
+// and 6,990 / 5,001.
 const TWO_LARGEST_SKILLS_TODAY = Object.freeze([
-    { name: 'coordination-shells', chars: 7354, tokens: 5261 },
-    { name: 'displacement-anisotropy', chars: 6990, tokens: 5001 }
+    { name: 'coordination-shells', chars: 7858, tokens: 5621 },
+    { name: 'displacement-anisotropy', chars: 7409, tokens: 5301 }
 ]);
 
 // Candidate #6 (2026-10-19) added 90 tokens: the Demo's pair_correlations
@@ -102,23 +107,24 @@ const TWO_LARGEST_SKILLS_TODAY = Object.freeze([
 // joined shell's split (its parts and long − short; the tools +48).
 // The batch-1 skill drafts (#71) add 2,704: the skills' prompt index +189,
 // read_skill's enum +6 (local-order), the two largest skills read whole
-// +2,510 (7,814 → 10,324).
+// +2,510 (7,814 → 10,324). The skill fact sync adds 660 more: the two largest
+// skills +659 (10,324 → 10,983); the prompt index and the tools are unchanged.
 const DOCK_WORST_TURN_TODAY = Object.freeze({
     systemPrompt: 4951,
     toolJson: 6860,
     contextBlock: 2286,
     question: 70,
-    skills: 10324,
+    skills: 10983,
     analyses: 8724,
     replyReserve: 8192,
     firstRequest: 14165,
-    prompt: 33212,
-    needed: 41404,
-    headroom: -8636,
-    lmStudioHeadroom: -4540
+    prompt: 33872,
+    needed: 42064,
+    headroom: -9296,
+    lmStudioHeadroom: -5200
 });
 // By how much the dock's worst turn overflows the window today.
-const DOCK_OVERFLOW_TOKENS_TODAY = 8636;
+const DOCK_OVERFLOW_TOKENS_TODAY = 9296;
 
 // Arm B's first request on each dev case is 9.7k–11.2k tokens; the largest,
 // since plan item 4.6, is the fit-data case: its fit tools (assess_convergence,
@@ -128,23 +134,24 @@ const ARM_B_LARGEST_DEV_CASE = 'dev-fit-unconverged';
 // find_gr_peaks' description (candidate #6) added 16 tokens to its tools, and
 // 49 more with a joined shell's split (plan item 4.2). The batch-1 skill
 // drafts (#71) add 2,705 (the prompt index +189, read_skill's enum +5, the
-// two largest skills +2,510).
+// two largest skills +2,510). The skill fact sync adds 659 (the two largest
+// skills, 10,324 → 10,983).
 const ARM_B_WORST_TURN_TODAY = Object.freeze({
     systemPrompt: 4611,
     toolJson: 4642,
     contextBlock: 1574,
     question: 610,
-    skills: 10324,
+    skills: 10983,
     analyses: 8723,
     replyReserve: 8192,
     firstRequest: 11437,
-    prompt: 30483,
-    needed: 38675,
-    headroom: -5907,
-    lmStudioHeadroom: -1811
+    prompt: 31142,
+    needed: 39334,
+    headroom: -6566,
+    lmStudioHeadroom: -2470
 });
 // By how much arm B's worst turn (largest dev case) overflows the window today.
-const ARM_B_OVERFLOW_TOKENS_TODAY = 5907;
+const ARM_B_OVERFLOW_TOKENS_TODAY = 6566;
 
 // --- the turn ------------------------------------------------------------------------
 
@@ -353,8 +360,8 @@ describe('the worst realistic turn in a 32,768-token window (plan 5.5)', () => {
     // The run policy's minimum for an LM Studio model (48k) holds both worst
     // turns with the full reply reserve, under both of the guard's rules
     // (planContext's, and LM Studio's prompt + LMSTUDIO_REPLY_MIN_TOKENS):
-    // the dock's with 7,748 tokens to spare, arm B's (dev-fit-unconverged since 4.6) with 10,477
-    // (10,452 and 13,182 before the batch-1 skill drafts).
+    // the dock's with 7,088 tokens to spare, arm B's (dev-fit-unconverged since 4.6) with 9,818
+    // (7,748 and 10,477 before the skill fact sync; 10,452 and 13,182 before the batch-1 skill drafts).
     it('fits both worst turns in the live runs\' LM Studio minimum (48k, validation/runPolicy.js)', () => {
         const window = MIN_CONTEXT_TOKENS.lmstudio;
         expect(window).toBe(49152);
@@ -364,6 +371,6 @@ describe('the worst realistic turn in a 32,768-token window (plan 5.5)', () => {
             expect(plan.needed).toBe(turn.numbers.needed);
             expect(turn.numbers.prompt + LMSTUDIO_REPLY_MIN_TOKENS).toBeLessThanOrEqual(window);
         }
-        expect([window - dockTurn.numbers.needed, window - armBTurn.numbers.needed]).toEqual([7748, 10477]);
+        expect([window - dockTurn.numbers.needed, window - armBTurn.numbers.needed]).toEqual([7088, 9818]);
     });
 });

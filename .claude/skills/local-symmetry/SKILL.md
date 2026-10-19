@@ -38,8 +38,9 @@ average out: those are the displacement and cluster analyses' job.
    the point-group facts, never from memory: a change that lowers the symmetry cannot "lose" an
    inversion centre the higher group never had.
 4. **Is the change real?** A rung below `noise_floor_A` is within the noise of the site means. A
-   rung above it is a distortion of the average structure; say how large (the tolerance at which
-   it appears) and compare with the published low-temperature structure when there is one.
+   rung clearly above it (from 1.25 × `noise_floor_A`, the app's margin) is a distortion of the
+   average structure; say how large (the tolerance at which it appears) and compare with the
+   published low-temperature structure when there is one.
 5. **The group to report.** Report the group of the lowest rung clearly above the noise floor
    (from 1.25 × `noise_floor_A` up) as the average structure's group, with the Detected SG card's
    0.2 Å group beside it when they differ: the card's default can hide a real lowering (a 0.07 Å

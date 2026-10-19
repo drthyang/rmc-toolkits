@@ -23,8 +23,10 @@ back empty. What was not run is "not tested", never "absent".
 
 ## Steps
 
-1. **Sites:** `list_sites`. Note the sites with negative kurtosis (flat or split: two positions),
-   large positive kurtosis (heavy tails, an anharmonic well) or large anisotropy.
+1. **Sites:** `list_sites`. Note the split sites (two positions, by the app's rule: a resolved
+   PC1 whose excess kurtosis is ≤ −0.5 and at least 3 sampling errors below zero; `list_sites`
+   gives them a `delta_A`), the other sites with negative kurtosis (flat-topped), large positive
+   kurtosis (heavy tails, an anharmonic well) or large anisotropy.
 2. **Directions, per site:** `analyze_displacement_directions` with `site_ref`, one site per
    symmetry-inequivalent orbit, never pooled over sites whose local frames differ. Empty means no
    peak at ≥ 3σ. A significant map or tensor test alone is anisotropy, which thermal ellipsoids
@@ -33,8 +35,9 @@ back empty. What was not run is "not tested", never "absent".
    point and no general wavevector called ordered. A long wave (every |q_i| ≤ 0.25) is a box-scale
    correlation, not order. A split site whose element has an ordered point is order with that q (a
    superstructure), not random disorder.
-4. **Clusters:** for every element whose own first shell is short and closed (`find_gr_peaks` on
-   the A–A pair: dimers, trimers, tetrahedra), `analyze_clusters` in its `first_shell.window_A`.
+4. **Clusters:** for every element whose own first shell is closed and holds 0.5–4.5 neighbours of
+   its own kind (`find_gr_peaks` on the A–A pair: a dimer 1, a trimer 2, a tetrahedron 3, an
+   octahedron 4 per member), `analyze_clusters` in its `first_shell.window_A`.
    Empty means no shape distortion or pattern beyond independent atoms at the clusters' own size,
    no breathing, no rigidity, and a regular average cluster. An extended network (the tool says
    so) has no clusters to test.
@@ -43,8 +46,8 @@ back empty. What was not run is "not tested", never "absent".
    polyhedron (coordination-shells); a split explained by a split centre site is that site's
    disorder (step 1–3).
 6. **Average structure:** the context's ladder and noise floor. Empty means the group of the lowest
-   rung above the noise floor is the card's group, or `measure_symmetry_lowering` finds no site
-   shifted above the noise floor (local-symmetry).
+   rung clearly above the noise floor (from 1.25 × `noise_floor_A`) is the card's group, or
+   `measure_symmetry_lowering` finds no site shifted above the noise floor (local-symmetry).
 7. **Conclude.** "No order beyond thermal motion" only when steps 2–6 all came back empty; name
    each analysis and its result. When one found order, report that order: the analysis, the
    statistic, its effect size and σ.

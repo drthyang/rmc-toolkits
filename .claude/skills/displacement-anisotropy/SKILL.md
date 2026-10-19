@@ -26,13 +26,16 @@ and is invisible here.
 
 1. **Rank the sites:** `list_sites` (optionally for one element). Per site: U_iso (Å²), the
    principal RMS amplitudes, anisotropy = rms1/rms3, and Mardia's multivariate excess kurtosis
-   (0 for a Gaussian; > 0 heavy-tailed or peaked; < 0 flat or split, e.g. two wells). Sites come
-   sorted by |kurtosis|; the `largest_*_refs` name the extremes.
+   (0 for a Gaussian; > 0 heavy-tailed or peaked; < 0 flat-topped). A site is split (two wells)
+   only by the app's rule, not by a negative Mardia kurtosis alone: a resolved PC1 whose excess
+   kurtosis is ≤ −0.5 and at least 3 sampling errors below zero (`list_sites` then gives its static
+   displacement `delta_A`). Split sites come first (largest `delta_A`), then by |kurtosis|; the
+   `largest_*_refs` name the extremes.
    **A split site is not yet disorder.** Ordered antiphase displacements (a superstructure) give a
    site exactly the same cloud as random two-site disorder: only the correlation between cells
-   differs. Before calling a split or flat site (negative kurtosis) random off-centring, run
-   `analyze_modulations`: an ordered zone-boundary point (or order at a general wavevector) of that
-   element makes it order with that q, not disorder.
+   differs. Before calling a split site (`delta_A`) or a flat one (negative kurtosis) random
+   off-centring, run `analyze_modulations`: an ordered zone-boundary point (or order at a general
+   wavevector) of that element makes it order with that q, not disorder.
 2. **One site at a time:** `analyze_displacement_directions` with `site_ref`. Pooling an element
    over sites mixes their local frames (each vertex of an M₄ tetrahedron sits on its own 3m
    axis), so a preference every site shares in its own frame cancels in the pooled map: an
@@ -41,14 +44,15 @@ and is invisible here.
    `peak.significance_sigma` (the peak cell, corrected over all cells), the whole map's departure
    from isotropy, `orientation_tensor.anisotropy_significance_sigma` (Bingham), and the
    +u/−u asymmetry z (a skewness the ellipsoid cannot show). A local z-score is never a
-   significance. **A preferred direction needs the peak test.** The map and the tensor tests show
-   anisotropy, which every anisotropic thermal ellipsoid has (an O flattened across its bond,
-   thermal motion only: map 7.2σ, peak 2.3σ): say "anisotropic", not "a preferred direction".
+   significance. **A preferred direction needs the peak test:** `peak.significance_sigma` ≥ 3σ,
+   unrounded (2.96σ is never rounded to 3σ). The map and the tensor tests show anisotropy, which
+   every anisotropic thermal ellipsoid has (an O flattened across its bond, thermal motion only:
+   map 7.2σ, peak 2.3σ): say "anisotropic", not "a preferred direction".
 4. **Directions:** `peak.direction_uvw` and the tensor's principal axis are direct-lattice
    `[u v w]` directions (not plane normals); the map is not antipodally folded, so +u and −u
    differ. Name the nearest low-index family (<100>, <110>, <111>) only when the angle to it is
-   under 15° — half the smallest angle between two such families (<110> to <111> is 35.3°);
-   otherwise give the `[u v w]` as measured.
+   within 15° (the tools' cone, 15° included: under half the 35.3° between <110> and <111>, the
+   closest families); otherwise give the `[u v w]` as measured.
 5. **Size, not only significance.** With thousands of atoms a tiny effect reaches 3σ: quote the
    enhancement (× isotropic) or the anisotropy with its σ. For a cluster-level question
    (trigonal versus tetragonal distortion of an M₄ cluster), use `analyze_clusters`: its <100>,
@@ -60,8 +64,8 @@ and is invisible here.
 
 ## Judgment calls
 
-- The sphere resolution (the tool chooses from the point count; the page defaults to ν = 10)
-  and whether a result must hold at two resolutions (to confirm with the user).
+- The sphere resolution (the tool chooses from the point count; the page shows its default
+  resolution) and whether a result must hold at two resolutions (to confirm with the user).
 - Whether a 3–5σ direction with a small enhancement (under 1.2× isotropic) is reported as a
   finding or as a hint (to confirm with the user).
 - When to report per-axis kurtosis (only on axes the PCA resolves) (to confirm with the user).
@@ -97,7 +101,7 @@ and is invisible here.
 - **Effect size ignored:** thousands of clusters make a 1 % effect "significant"; the cluster
   tool requires both its z and its effect size to clear their thresholds.
 - **Numbers differ from the page:** the tool lets the engine choose the resolution while the
-  page keeps its own (ν = 10, smoothed); say which you quote.
+  page shows its default or the user's pick, its map smoothed; say which you quote.
 
 ## Report
 
