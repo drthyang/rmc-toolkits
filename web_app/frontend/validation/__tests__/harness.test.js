@@ -5,15 +5,34 @@
 // real engines, tools, skills, clarifier and answer checks; the record, its
 // transcript, the score, the provenance of numbers, safety, the spend cap.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { buildRunContext } from '../../src/llm/context/runContext';
+import { COPILOT_PROMPT_NO_TOOLS } from '../../src/llm/prompts/copilot';
+import { ANTI_REPEAT_TEMPERATURE, providerModel } from '../../src/llm/provider/model';
 import { buildCase, DEV_CASES } from '../cases';
 import { runLiveCase } from '../harness';
+import { loadRun } from '../runFolder';
 import { renderTranscript } from '../transcript';
 import { renderReport } from '../report';
 import { answerNumbers, traceNumbers } from '../provenance';
-import { createSpendTracker, memoryLedger, meteredCall } from '../spend';
+import { createSpendTracker, memoryLedger, meteredModel } from '../spend';
 import { loadSkills } from '../run';
 import { resolveModel } from '../models';
+
+// The provider providerModel sends through (src/llm/provider/contextGuard.js):
+// records each call and streams the next scripted reply. No server is contacted.
+const provider = vi.hoisted(() => ({ calls: [], replies: [] }));
+vi.mock('../../src/llm/provider/contextGuard', async (importOriginal) => ({
+    ...(await importOriginal()),
+    streamCopilotChat: (request) => {
+        provider.calls.push(request);
+        const reply = provider.replies.shift();
+        return typeof reply === 'function' ? reply(request) : (async function* stream() {
+            if (reply?.text) yield { content: reply.text };
+            yield { finishReason: 'stop' };
+        }());
+    }
+}));
 
 const skills = loadSkills();
 
@@ -44,7 +63,7 @@ describe('the live harness, scripted model', () => {
             + '"space_group": "Pm-3m", "chiral": false, "centrosymmetric": true, "polar": true}';
         const record = await runLiveCase({
             built: built('dev-thermal-null'), arm: 'B', model: MODEL, skills, commit: 'abc123',
-            callModel: scripted([
+            port: scripted([
                 { reasoning: 'First the sites, then the superstructure test.', calls: [['read_skill', { name: 'displacement-anisotropy' }], ['list_sites', {}], ['analyze_modulations', {}]] },
                 { text: answer }
             ])
@@ -75,7 +94,7 @@ describe('the live harness, scripted model', () => {
     it('arm C offers no skills; a window marked as the user\'s without asking is an unsafe action', async () => {
         const record = await runLiveCase({
             built: built('dev-offcentre'), arm: 'C', model: MODEL, skills,
-            callModel: scripted([
+            port: scripted([
                 { calls: [['compute_bond_angles', { end1: 'O', apex: 'Nb', end2: 'O', r12_min: 1.5, r12_max: 2.5, window_confirmed: true }]] },
                 { text: 'No order.\n\nVERDICT {"features": [], "space_group": "Pm-3m", "chiral": false, "centrosymmetric": true, "polar": false}' }
             ])
@@ -94,7 +113,7 @@ describe('the live harness, scripted model', () => {
         // Breathing triangles called rigid: analyze_clusters found breathing, no rigidity.
         const rigid = await runLiveCase({
             built: built('dev-breathing'), arm: 'C', model: MODEL,
-            callModel: scripted([
+            port: scripted([
                 { calls: [['analyze_clusters', { element: 'Mo', r_min: 2.4, r_max: 3.21 }]] },
                 { text: 'The Mo3 triangles move as rigid units.\n\nVERDICT {"features": [{"kind": "rigid_cluster", "element": "Mo"}], "space_group": null, "chiral": null, "centrosymmetric": null, "polar": null}' }
             ])
@@ -104,7 +123,7 @@ describe('the live harness, scripted model', () => {
         // The Jahn–Teller Cu read as four-coordinate: the whole shell holds 6 F.
         const square = await runLiveCase({
             built: built('dev-jahn-teller'), arm: 'C', model: MODEL,
-            callModel: scripted([
+            port: scripted([
                 { calls: [['find_gr_peaks', { pair: 'Cu-F' }]] },
                 { text: 'Cu is four-coordinated (square planar), with the next F shell at 2.25 Å.\n\nVERDICT {"features": [], "space_group": "Pm-3m", "chiral": false, "centrosymmetric": true, "polar": false}' }
             ])
@@ -121,7 +140,7 @@ describe('the live harness, scripted model', () => {
     it('THY-18: the gate sends a split site called disorder back to the superstructure test, which finds the order', async () => {
         const record = await runLiveCase({
             built: built('dev-zone-boundary'), arm: 'B', model: MODEL, skills,
-            callModel: scripted([
+            port: scripted([
                 { calls: [['list_sites', { element: 'Ti' }]] },
                 { text: 'Ti shows random two-site disorder along c (a split site).\n\nVERDICT {"features": [{"kind": "off_centre", "element": "Ti", "direction_uvw": [0, 0, 1], "magnitude_A": 0.1}], "space_group": "Pm-3m", "chiral": false, "centrosymmetric": true, "polar": false}' },
                 { calls: [['analyze_modulations', {}]] },
@@ -149,7 +168,7 @@ describe('the live harness, scripted model', () => {
     it('THY-18: a verdict written by reference is scored on the engine\'s numbers', async () => {
         const record = await runLiveCase({
             built: built('dev-symmetry-lowering'), arm: 'C', model: MODEL,
-            callModel: scripted([
+            port: scripted([
                 { calls: [['measure_symmetry_lowering', {}]] },
                 { text: '{{r1.sites.0.element}} is shifted {{r1.sites.0.shift_A}} Å along {{r1.sites.0.nearest_low_index.uvw}}: '
                     + 'the average structure is {{r1.lower.space_group}}, not {{r1.parent.space_group}}.\n\nOutcome: the shift the card hides.\n\n'
@@ -169,7 +188,7 @@ describe('the live harness, scripted model', () => {
     it('a call written as JSON text is run, and its withdrawn text is recorded apart from the reasons', async () => {
         const record = await runLiveCase({
             built: built('dev-chiral'), arm: 'C', model: MODEL,
-            callModel: scripted([
+            port: scripted([
                 { text: '{"name": "list_sites", "arguments": {}}' },
                 { text: 'Thermal motion only.\n\nVERDICT {"features": [], "space_group": "P2_13", "chiral": true, "centrosymmetric": false, "polar": false}' }
             ])
@@ -185,27 +204,121 @@ describe('the live harness, scripted model', () => {
 
     it('stops at the spend cap with the run recorded', async () => {
         const tracker = createSpendTracker({ capUSD: 0.01, prices: { inputPerMTok: 3, outputPerMTok: 15 }, ledger: memoryLedger() });
-        const callModel = meteredCall(scripted([{ text: 'x' }]), tracker, 'cap test');
+        const port = meteredModel(scripted([{ text: 'x' }]), tracker, 'cap test');
         let caught = null;
         try {
-            await runLiveCase({ built: built('dev-chiral'), arm: 'C', model: MODEL, callModel });
+            await runLiveCase({ built: built('dev-chiral'), arm: 'C', model: MODEL, port });
         } catch (failure) {
             caught = failure;
         }
         expect(caught?.name).toBe('SpendCapError');
         expect(caught.record).toMatchObject({ case: 'dev-chiral', error: { name: 'SpendCapError' } });
+        // Refused before it was sent: no request is recorded as sent.
+        expect(caught.record.requests).toEqual([]);
         expect(tracker.spent()).toBe(0);
     });
 
     it('charges what a request used and refuses one that could cross the cap', async () => {
         const ledger = memoryLedger();
         const tracker = createSpendTracker({ capUSD: 1, prices: { inputPerMTok: 3, outputPerMTok: 15 }, ledger });
-        const call = meteredCall(scripted([{ text: 'a'.repeat(2500) }]), tracker, 'one');
-        for await (const chunk of call({ messages: [{ role: 'user', content: 'b'.repeat(25000) }] })) void chunk;
+        const port = meteredModel(scripted([{ text: 'a'.repeat(2500) }]), tracker, 'one');
+        const sent = await port.prepare({ messages: [{ role: 'user', content: 'b'.repeat(25000) }], retry: null });
+        for await (const chunk of port.stream(sent, {})) void chunk;
         expect(ledger.load()).toHaveLength(1);
         expect(ledger.load()[0].outputTokens).toBe(1000);
         expect(tracker.spent()).toBeGreaterThan(0.015);
         expect(() => tracker.reserve({ messages: [{ role: 'user', content: 'c'.repeat(2.5e6) }] })).toThrow(/spend cap reached/);
+    });
+});
+
+// The harness runs on the turn module, as the dock does (protocol
+// 2026-10-19.3). Four things changed in what it sends or records; each is
+// pinned here.
+describe('the harness on the turn module: what changed', () => {
+    // A passage a looping reasoning model writes again and again.
+    const LOOP = 'Wait, let me reconsider the Nb–O window once more: the first shell spans 1.8 to 2.4 Å, '
+        + 'so the coordination number should be six, but the cut at 2.1 Å splits it, so let me check again. ';
+    // An answer that concludes nothing, so the evidence gate sends nothing back.
+    const ANSWER = 'The Nb site holds its average position.\n\nOutcome: answered.';
+
+    it('1. the request asked again after a loop runs at a temperature of 0.6 or more (providerModel, metered)', async () => {
+        provider.calls.length = 0;
+        provider.replies = [
+            () => (async function* stream() { for (let i = 0; i < 1000; i += 1) yield { reasoning: LOOP }; }()),
+            { text: ANSWER }
+        ];
+        const ledger = memoryLedger();
+        const tracker = createSpendTracker({ capUSD: 10, prices: { inputPerMTok: 3, outputPerMTok: 15 }, ledger });
+        // The port as validation/run.js builds it for an API model.
+        const port = meteredModel(providerModel({ ...MODEL, apiKey: 'test-key' }, { session: {} }), tracker, 'warmer');
+        const record = await runLiveCase({ built: built('dev-offcentre'), arm: 'C', model: MODEL, port });
+
+        expect(record.error).toBeNull();
+        expect(record.requests.map((request) => [request.why, request.sent.temperature])).toEqual([
+            ['first', MODEL.temperature], ['reminder', ANTI_REPEAT_TEMPERATURE]
+        ]);
+        expect(record.requests[1].sent.temperature).toBeGreaterThanOrEqual(0.6);
+        expect(provider.calls.map((call) => call.temperature)).toEqual([MODEL.temperature, ANTI_REPEAT_TEMPERATURE]);
+        // The key reaches the provider, never the record.
+        expect(provider.calls[1].apiKey).toBe('test-key');
+        expect(JSON.stringify(record)).not.toContain('test-key');
+        expect(ledger.load()).toHaveLength(2);
+    });
+
+    it('2. a model that refuses tools gets the no-tools prompt, as in the dock', async () => {
+        const port = (sent) => (async function* stream() {
+            if (sent.tools) throw Object.assign(new Error('scripted does not support tools'), { status: 400 });
+            yield { content: ANSWER };
+            yield { finishReason: 'stop' };
+        }());
+        const record = await runLiveCase({ built: built('dev-offcentre'), arm: 'C', model: MODEL, port });
+        expect(record.tools_unsupported).toMatch(/does not support tools/);
+        expect(record.requests.map((request) => request.why)).toEqual(['first', 'no_tools']);
+        expect(record.requests[1].sent.tools).toBeUndefined();
+        expect(record.requests[1].sent.messages[0]).toEqual({ role: 'system', content: COPILOT_PROMPT_NO_TOOLS });
+        expect(record.requests[0].sent.messages[0].content).not.toBe(COPILOT_PROMPT_NO_TOOLS);
+    });
+
+    it('3. provenance is traced against the context as the model read it, not the whole context', async () => {
+        // Twelve mixed PCA sites push the context past its budget: the model is
+        // shown the six with the largest |non_gaussianity| (refs 1–6).
+        const species = ['Ba', 'Sr', 'Ca', 'Mg', 'Zn', 'Cd', 'Hg', 'Pb', 'Sn', 'Ge', 'Si', 'Al'];
+        const pcaSites = {
+            sites: Array.from({ length: 12 }, (_, index) => ({
+                referenceNumber: index + 1, element: 'Nb', uIso: 0.0701 + index * 0.0012, rms: [0.311, 0.222, 0.133],
+                anisotropy: 2.34, nonGaussianity: 1.2 - index * 0.05, mixed: true,
+                elementCounts: Object.fromEntries(species.map((element, k) => [element, 100 + k]))
+            }))
+        };
+        const record = await runLiveCase({
+            built: built('dev-offcentre'), arm: 'C', model: MODEL, view: { pcaSites },
+            port: scripted([{ text: 'Site 1 has U_iso 0.0701 Å² and site 7 0.0773 Å².' }])
+        });
+        expect(record.error).toBeNull();
+        expect(record.context.sections).toContain('pca_displacements');
+        const sources = Object.fromEntries(record.provenance.numbers.map((number) => [number.literal, number.source]));
+        expect(sources['0.0701']).toBe('run context pca_displacements.sites[0].U_iso_A2');
+        // Site 7 is in the whole context but was trimmed from what the model read.
+        const whole = buildRunContext((await loadRun(built('dev-offcentre'), { pcaSites })).props);
+        expect(whole.pca_displacements.sites.map((site) => site.U_iso_A2)).toContain(0.0773);
+        expect(sources['0.0773']).toBeNull();
+    });
+
+    it('4. the record keeps every request as it was sent', async () => {
+        const received = [];
+        const replies = [{ calls: [['list_sites', {}]] }, { text: ANSWER }];
+        const port = (sent) => {
+            received.push(JSON.parse(JSON.stringify(sent)));
+            return scripted([replies[Math.min(received.length - 1, replies.length - 1)]])(sent);
+        };
+        const record = await runLiveCase({ built: built('dev-offcentre'), arm: 'C', model: MODEL, port });
+        expect(record.requests.map(({ round, why }) => [round, why])).toEqual([[0, 'first'], [1, 'tools']]);
+        expect(record.requests.map((request) => request.sent)).toEqual(received);
+        // Each as it was at its request: the first holds the question only.
+        expect(record.requests[0].sent.messages.map((message) => message.role)).toEqual(['system', 'user', 'assistant', 'user']);
+        expect(record.requests[1].sent.messages.at(-1)).toMatchObject({ role: 'tool' });
+        expect(record.requests[0].sent).toMatchObject({ toolChoice: 'auto', retry: null });
+        expect(record.tools_offered).toEqual(record.requests[0].sent.tools.map((tool) => tool.function.name));
     });
 });
 
