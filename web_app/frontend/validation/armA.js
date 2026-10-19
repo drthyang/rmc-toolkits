@@ -16,8 +16,8 @@
 // modulation engines decide for themselves (their verdicts): A+ calls them
 // directly and maps their answers to claims. Where the app has a rule, A+
 // reads it from where the app decides it (architecture candidate 8,
-// SWEEP_RULES below): the split site, the cluster elements and the lower
-// group's tolerance.
+// SWEEP_RULES below): the split site, the cluster elements, the lower
+// group's tolerance, a mode's polarisation and a joined shell's split.
 //
 // Each reading is recorded with the value it rests on, so a misleading
 // result can be traced to the page that misled.
@@ -217,6 +217,17 @@ export const runArmA = async (copilotRun) => {
  *                   tensor at the q that decided the order, its [u v w];
  *                   until then the PC1 of the element's most prolate site
  *                   (PC1/PC2 ≥ ARM_A_RULES.PROLATE_RATIO), a rule of A+'s own.
+ *   Jahn–Teller split  the shell catalogue's (plan item 4.2, protocol
+ *                   2026-10-19.15): for a shell joined across a deep trough,
+ *                   the long − short of its split (the last part's mean
+ *                   distance − the first's, from r²g: find_gr_peaks'
+ *                   first_shell.split.long_minus_short_A); until then the
+ *                   separation of the g(r) maxima arm A reads, which A+ still
+ *                   uses for a split shell the app does not join (it reads
+ *                   no split there). Which shells are claimed stays A+'s own
+ *                   joining rule (arm A's split shell, unless an off-centred
+ *                   centre explains it); the long axis has no app rule (the
+ *                   g(r) is orientation-averaged), so the claim has none.
  *
  * Arm A's rules (ARM_A_RULES) are the frozen protocol's and stay as they were.
  * What remains A+'s own is only how it joins the engines: one claim per
@@ -300,6 +311,25 @@ const modulationReading = (payload) => {
     };
 };
 
+// The shell catalogue's split of a joined shell as a reading, as
+// find_gr_peaks gives it (each part's count in the direction the join
+// decided): the value a Jahn–Teller claim's magnitude rests on.
+const splitReading = ({ centre, partner }, split) => {
+    const forward = split.direction !== 'reverse';
+    const [counted, around] = forward ? [partner, centre] : [centre, partner];
+    const parts = split.parts.map((part) => ({
+        window_A: [...part.window], mean_d_A: round(part.meanR, 4), cn: round(forward ? part.cn : part.reverseCn), share: round(part.share)
+    }));
+    const se = round(split.longMinusShortSe, 2);
+    return {
+        page: 'find_gr_peaks',
+        what: `${centre}-${partner} first shell split (joined across a deep trough)`,
+        value: { cn_of: `${counted}_per_${around}`, parts, long_minus_short_A: round(split.longMinusShort), long_minus_short_se_A: se },
+        reading: `${parts.map((part) => `${part.cn} at ${part.mean_d_A} Å`).join(' + ')} ${counted} per ${around}: `
+            + `long − short ${round(split.longMinusShort)}${se == null ? '' : ` ± ${se}`} Å`
+    };
+};
+
 // The cluster engine's verdict as a reading: its answers, and the two rows they mostly rest on.
 const clusterReading = (payload) => {
     const { verdict } = payload;
@@ -359,9 +389,16 @@ export const runArmSweep = async (copilotRun) => {
         const peak = await directionsOf(run, site, readings);
         features.push({ kind: 'off_centre', element, direction_uvw: peak ?? uvwOf(run.structure, site.axes[0]), magnitude_A: round(magnitude) });
     }
+    // The run's one shell reading (shells.js): the split by number of a shell
+    // joined across a deep trough, and the cluster windows below.
+    const catalogue = shellCatalogue({ plotFiles: run.plotFiles, structure: run.structure, runSettings: run.runSettings });
     for (const shell of splitShells(run, readings)) {
         if (found.has(shell.centre)) continue;
-        features.push({ kind: 'jahn_teller', element: shell.centre, magnitude_A: round(shell.width) });
+        // Long − short from the app's split where it reads one (plan item
+        // 4.2), else the maxima's separation arm A reads.
+        const split = catalogue?.shell(shell.centre, shell.partner)?.split ?? null;
+        if (split) readings.push(splitReading(shell, split));
+        features.push({ kind: 'jahn_teller', element: shell.centre, magnitude_A: round(split ? split.longMinusShort : shell.width) });
     }
 
     // A lowering of the average structure (batch 1, review L4): when the
@@ -385,7 +422,6 @@ export const runArmSweep = async (copilotRun) => {
     // shell and its window are the run's one shell reading (shells.js), the
     // window find_gr_peaks gives the model.
     const CLUSTER_CLAIMS = [['distorted', 'cluster_distortion'], ['breathing', 'cluster_breathing'], ['rigid', 'rigid_cluster']];
-    const catalogue = shellCatalogue({ plotFiles: run.plotFiles, structure: run.structure, runSettings: run.runSettings });
     for (const element of SWEEP_RULES.clusterElements(catalogue)) {
         const { window } = catalogue.shell(element, element);
         const result = await run.engine('clusters', { element, rMin: window[0], rMax: window[1] });

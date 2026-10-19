@@ -141,7 +141,13 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // note included, never a Workbench question's card — so a number only the
 // card held is unsourced, and one only a note or an error held is sourced;
 // what the model is sent is unchanged.
-export const PROTOCOL_VERSION = '2026-10-19.13';
+// 2026-10-19.15: find_gr_peaks gives a shell joined across a deep trough its
+// split by number (plan item 4.2) — each part's coordination number, share
+// and mean distance, and long − short with its sampling error, in
+// first_shell.split, its description and its joined-shell note (which no
+// longer quotes the peaks' separation); arm A+ reads a Jahn–Teller claim's
+// magnitude from it.
+export const PROTOCOL_VERSION = '2026-10-19.15';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one
 // follows the full method.

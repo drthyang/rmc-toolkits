@@ -38,6 +38,17 @@
 //               walk on overlapping peaks reaches into the second one (the
 //               Demo's Ta–Se: 3.86 Se per Ta in r ± FWHM, 3.25 to the
 //               inter-peak minimum, 3 in the ideal split).
+//   split       only for a joined shell (plan item 4.2, approved 2026-10-19):
+//               its parts, cut at the minimum of the smoothed g between each
+//               two successive resolved peaks in the shell (the first cut is
+//               the first peak's), the last part ending at the shell's
+//               boundary; each part's CN (the CN integral over exactly its
+//               window, so the parts sum to the shell's), its share of the
+//               shell's CN and its mean distance and spread (r²g over the
+//               part, as the shell's); long − short = the last part's mean −
+//               the first's, with its sampling error (each part's spread over
+//               √ its bonds in the box, the bonds taken as independent); the
+//               counts said in the direction the join decided (`direction`).
 //   separation  a shell is separated from the next when the smoothed g at its
 //               boundary is at most SEPARATION_G_FRACTION (2 %) of its peak;
 //               a closest-approach constraint limits the pair when the raw g
@@ -113,6 +124,9 @@ export const UNBONDED_APEX_FRACTION = 0.5;
 // count — the coordination is spread, as when the window edge cuts through a
 // shell (Demo Se–Ta–Se at 2.3–2.7 Å: 47 %; whole shells there: 83–96 %).
 export const MODAL_COORDINATION_SHARE = 0.6;
+// A split part's mean distance has a sampling error only with at least this
+// many bonds in the box (its spread over √ the bonds).
+const SPLIT_MIN_BONDS = 2;
 // Windows are rounded to this many decimals (0.01 Å, the grid).
 const WINDOW_DECIMALS = 2;
 // A caller's window covers a shell edge within half a rounding unit of it.
@@ -300,6 +314,16 @@ const cnOf = ({ x, radial }, density, [lo, hi]) => (
     Number.isFinite(density) && density > 0 && hi > lo ? 4 * Math.PI * density * integrate(x, radial, lo, hi) : null
 );
 
+// The mean distance and spread over exactly [lo, hi], from r² max(g, 0): the
+// moments of the bond lengths there. Nulls for a window holding nothing.
+const momentsOver = ({ x, radial }, [lo, hi]) => {
+    const weight = hi > lo ? integrate(x, radial, lo, hi) : 0;
+    if (!(weight > 0)) return { meanR: null, sdR: null };
+    const meanR = integrate(x, radial.map((value, i) => value * x[i]), lo, hi) / weight;
+    const second = integrate(x, radial.map((value, i) => value * (x[i] - meanR) ** 2), lo, hi) / weight;
+    return { meanR, sdR: Math.sqrt(Math.max(0, second)) };
+};
+
 /**
  * The geometry of the first shell of one partial g(r) (normalised to 1 at
  * large r, as RMCProfile writes it), and the CN of any window over it. With
@@ -308,7 +332,7 @@ const cnOf = ({ x, radial }, density, [lo, hi]) => (
  * the reverse direction. Null when no peak lies below PEAK_SEARCH_MAX_A.
  */
 const readShell = (data, { partnerDensity = null, centreDensity = null } = {}) => {
-    const { x, y, radial } = data;
+    const { x, y } = data;
     const peaks = extractPeaks(x, y, { rMax: PEAK_SEARCH_MAX_A, maxPeaks: 8 });
     if (!peaks.length) return null;
     const end = endIndex(x, Math.max(PEAK_SEARCH_MAX_A, peaks[0].r + BOUNDARY_REACH_A));
@@ -358,36 +382,41 @@ const readShell = (data, { partnerDensity = null, centreDensity = null } = {}) =
         }
     }
     const peaksInShell = peaks.filter((peak) => boundary < 0 || peak.r < x[boundary]).map((peak) => peak.r);
-    const geometry = { peaks, peaksInShell, peakG: height, joined, cnOver, hasDensity };
+    const moments = (range) => momentsOver(data, range);
+    const geometry = { peaks, peaksInShell, peakG: height, joined, cnOver, moments, hasDensity };
     if (boundary < 0) return { ...geometry, window: null };
 
     const window = [lo, roundWindowEdge(x[boundary])];
-    const weight = integrate(x, radial, window[0], window[1]);
-    let meanR = null;
-    let sdR = null;
-    if (weight > 0) {
-        meanR = integrate(x, radial.map((value, i) => value * x[i]), window[0], window[1]) / weight;
-        const second = integrate(x, radial.map((value, i) => value * (x[i] - meanR) ** 2), window[0], window[1]) / weight;
-        sdR = Math.sqrt(Math.max(0, second));
-    }
+    const { meanR, sdR } = moments(window);
+    // The minimum of the smoothed g between two resolved peaks (their grid
+    // r): the first lowest point on a flat bottom.
+    const minimumBetween = (fromR, toR) => {
+        const to = x.indexOf(toR);
+        let lowest = x.indexOf(fromR);
+        for (let i = lowest + 1; i <= to; i += 1) if (smooth[i] < smooth[lowest]) lowest = i;
+        return lowest;
+    };
     // The first peak alone: only with two resolved peaks in the shell, to the
-    // minimum of the smoothed g between the first two (the first lowest point
-    // on a flat bottom).
+    // minimum of the smoothed g between the first two.
     let firstPeak = null;
     if (peaksInShell.length >= 2) {
-        const from = x.indexOf(peaksInShell[0]);
-        const to = x.indexOf(peaksInShell[1]);
-        let lowest = from;
-        for (let i = from + 1; i <= to; i += 1) if (smooth[i] < smooth[lowest]) lowest = i;
+        const lowest = minimumBetween(peaksInShell[0], peaksInShell[1]);
         firstPeak = { window: [lo, roundWindowEdge(x[lowest])], troughRatio: Math.max(0, smooth[lowest]) / height };
     }
+    // A joined shell's parts: cut at the minimum between each two successive
+    // resolved peaks in it (the first cut is the first peak's), the last part
+    // ending at the shell's boundary. Rounded as every window is.
+    const splitEdges = joined && peaksInShell.length >= 2
+        ? [lo, ...peaksInShell.slice(1).map((r, k) => roundWindowEdge(x[minimumBetween(peaksInShell[k], r)])), window[1]]
+        : null;
     return {
         ...geometry,
         window,
         meanR,
         sdR,
         troughRatio: Math.max(0, smooth[boundary]) / height,
-        firstPeak
+        firstPeak,
+        splitEdges
     };
 };
 
@@ -422,13 +451,56 @@ export const countsCut = (summary) => {
     return { cut: false, by: null };
 };
 
+/**
+ * A joined shell's split (plan item 4.2): `parts` [{ window, cn, reverseCn,
+ * share, meanR, sdR }], cut where readShell cut them (splitEdges), each CN
+ * integrated over exactly its window (an empty window holds 0), so the parts
+ * sum to the shell's CN and their shares to 1; `longMinusShort` = the last
+ * part's mean distance − the first's; `longMinusShortSe` its sampling error,
+ * √(se_first² + se_last²) with se = the part's spread / √(its bonds in the
+ * box: the centres' count × its CN, halved for a same-element pair), the
+ * bonds taken as independent — the configuration's own sampling, not the
+ * fit's uncertainty (null without the centres' count); and `direction`, the
+ * count the join decided by: 'forward' (partner atoms per centre: the
+ * shell's own count is ideal, or there is no other) or 'reverse' (centre
+ * atoms per partner). Null for a shell that is not joined.
+ */
+const splitOf = (geometry, { cn, ratio, ideal, centreCount, sameElement }) => {
+    const edges = geometry.splitEdges;
+    if (!edges || !(cn > 0)) return null;
+    const parts = edges.slice(1).map((hi, k) => {
+        const window = [edges[k], hi];
+        const partCn = hi > edges[k] ? geometry.cnOver(window) : 0;
+        const { meanR, sdR } = geometry.moments(window);
+        const bonds = centreCount > 0 ? (centreCount * partCn) / (sameElement ? 2 : 1) : 0;
+        return {
+            window,
+            cn: partCn,
+            reverseCn: ratio == null ? null : (sameElement ? partCn : partCn * ratio),
+            share: partCn / cn,
+            meanR,
+            sdR,
+            se: bonds >= SPLIT_MIN_BONDS && Number.isFinite(sdR) ? sdR / Math.sqrt(bonds) : null
+        };
+    });
+    const first = parts[0];
+    const last = parts.at(-1);
+    return {
+        parts: parts.map(({ se, ...part }) => part),
+        longMinusShort: Number.isFinite(first.meanR) && Number.isFinite(last.meanR) ? last.meanR - first.meanR : null,
+        longMinusShortSe: first.se != null && last.se != null ? Math.hypot(first.se, last.se) : null,
+        direction: ideal != null || ratio == null ? 'forward' : 'reverse'
+    };
+};
+
 // One Shell (frozen) of a centre–partner pair, from its partial's geometry.
-const buildShell = (centre, partner, label, geometry, { partnerDensity, centreDensity, constraint, x, y }) => {
+const buildShell = (centre, partner, label, geometry, { partnerDensity, centreDensity, centreCount, constraint, x, y }) => {
     const ratio = Number.isFinite(centreDensity) && centreDensity > 0 && Number.isFinite(partnerDensity) && partnerDensity > 0
         ? centreDensity / partnerDensity
         : null;
     const { window } = geometry;
     const cn = window ? geometry.cnOver(window) : null;
+    const ideal = Number.isFinite(cn) ? (IDEAL_COORDINATION.find((count) => cnMatches(cn, count)) ?? null) : null;
     // A window and its CN; an empty one (a shell narrower than the cut) holds no atoms.
     const reading = (range) => {
         const value = range[1] > range[0] ? geometry.cnOver(range) : (geometry.hasDensity ? 0 : null);
@@ -448,11 +520,12 @@ const buildShell = (centre, partner, label, geometry, { partnerDensity, centreDe
         peakG: geometry.peakG,
         cn,
         reverseCn: Number.isFinite(cn) && ratio != null ? (centre === partner ? cn : cn * ratio) : null,
-        ideal: Number.isFinite(cn) ? (IDEAL_COORDINATION.find((count) => cnMatches(cn, count)) ?? null) : null,
+        ideal,
         joined: Boolean(window) && geometry.joined,
         troughRatio: window ? geometry.troughRatio : null,
         separated: window ? geometry.troughRatio <= SEPARATION_G_FRACTION : null,
         firstPeak: window && geometry.firstPeak ? { ...reading([...geometry.firstPeak.window]), troughRatio: geometry.firstPeak.troughRatio } : null,
+        split: window ? splitOf(geometry, { cn, ratio, ideal, centreCount, sameElement: centre === partner }) : null,
         cut: window
             ? {
                 // Never below the shell's start.
@@ -497,7 +570,12 @@ const buildCatalogue = (partials, structure, runSettings) => {
         const geometry = readShell(data, { partnerDensity, centreDensity });
         shells.set(key, geometry
             ? buildShell(centre, partner, label, geometry, {
-                partnerDensity, centreDensity, constraint: constraintOf(constraints, centre, partner), x: data.x, y: data.y
+                partnerDensity,
+                centreDensity,
+                centreCount: structure?.elementCounts?.[centre] ?? null,
+                constraint: constraintOf(constraints, centre, partner),
+                x: data.x,
+                y: data.y
             })
             : null);
     }
