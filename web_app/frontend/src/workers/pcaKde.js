@@ -226,7 +226,7 @@ const covariance3 = (points) => {
 
 // Standard errors of the eigenvalue gap an axis must clear to count as resolved
 // (AXIS_RESOLUTION_SIGMAS in pca_kde.py): a truly degenerate pair passes in < 1%.
-const AXIS_RESOLUTION_SIGMAS = 3;
+export const AXIS_RESOLUTION_SIGMAS = 3;
 
 // Kurtosis of a centered cloud in its PCA frame -- the port of `_shape_statistics`:
 //  - excessKurtosis[a] = m4/m2^2 - 3 along each principal axis (population
