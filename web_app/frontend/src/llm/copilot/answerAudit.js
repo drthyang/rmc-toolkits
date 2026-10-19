@@ -35,6 +35,8 @@
 // A false alarm under a correct answer would teach the user to ignore these.
 // Each finding is `{ rule, text }`; pure, no React.
 
+import { cnMatches } from '../context/shells';
+
 const NEGATION = /\b(not|no|never|neither|nor|none|without|lacks?|lacking|absence|absent|cannot|non|yet|stopped|ceased)\b|n't\b/i;
 // What makes a mention hypothetical, conditional or a question about it.
 const NOT_ASSERTED = new RegExp('\\b(whether|if|unless|until|once|when(?:ever)?|before|would|could|might|'
@@ -343,7 +345,8 @@ const PARTIAL_SHELL = /\bfirst[- ]peak\b|\bshort(?:est|er)?\s+bonds?\b|\bwithin\
 
 // A coordination number claimed for an element, against every whole-shell
 // count of it (find_gr_peaks' first shell, compute_bond_angles in a whole
-// shell) — not against a window the user chose, whose count stands.
+// shell) — not against a window the user chose, whose count stands. A claim
+// matches a count within half an atom (shells.js cnMatches).
 const coordinationRule = (text, facts) => {
     const counts = facts.flatMap((fact) => (Array.isArray(fact.coordination) ? fact.coordination : (fact.coordination ? [fact.coordination] : [])))
         .filter((count) => Number.isFinite(count.cn));
@@ -375,7 +378,7 @@ const coordinationRule = (text, facts) => {
                 const relevant = partners.length === 1 ? mine.filter((count) => count.partner === partners[0]) : mine;
                 const whole = relevant.filter((count) => count.whole_shell);
                 if (!whole.length) continue;
-                if (relevant.some((count) => (count.whole_shell || count.confirmed) && Math.abs(count.cn - n) <= 0.5)) continue;
+                if (relevant.some((count) => (count.whole_shell || count.confirmed) && cnMatches(count.cn, n))) continue;
                 const shells = whole.map((count) => `${count.cn} ${count.partner} per ${centre}${count.window ? ` in ${count.window[0]}–${count.window[1]} Å` : ''}`);
                 return [{
                     rule: 'coordination',

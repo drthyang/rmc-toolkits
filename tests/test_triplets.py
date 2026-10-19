@@ -13,6 +13,7 @@ from rmc_toolkits.triplets import (
     bond_angle_distribution,
     bond_angle_summary,
     bond_angles_from_rmc6f,
+    coordination_summary,
 )
 from rmc_toolkits.triplets_cli import main as triplets_main
 
@@ -754,6 +755,47 @@ class SummaryTests(unittest.TestCase):
             positions, elements, self.LATTICE, triplet=("Se", "Nb", "Se"), bond12=(1.0, 3.2)
         )
         json.dumps(summary)  # raises on any lingering numpy type
+
+    def test_summary_carries_the_coordination_summary(self):
+        positions, elements = self._configuration()
+        summary = bond_angle_summary(
+            positions, elements, self.LATTICE, triplet=("Se", "Nb", "Se"), bond12=(1.0, 3.2)
+        )
+        self.assertEqual(summary["coordinationSummary"], coordination_summary(summary["coordination"]))
+        counts = summary["coordination"]
+        self.assertAlmostEqual(
+            summary["coordinationSummary"]["mean"],
+            sum(n * count for n, count in enumerate(counts)) / summary["apexCount"],
+        )
+
+
+class CoordinationSummaryTests(unittest.TestCase):
+    """The four numbers compute_bond_angles' refusal and the Bond Geometry page
+    read; the same histograms as workers/__tests__/triplets.test.js."""
+
+    def test_mean_modal_count_and_shares(self):
+        # 2 atoms with no bond, 3 with one, 3 with two, 1 with three: the tie
+        # between one and two bonds goes to the lower count, as both readers did.
+        self.assertEqual(
+            coordination_summary([2, 3, 3, 1]),
+            {"mean": 12 / 9, "modal": 1, "modalShare": 3 / 9, "unbondedShare": 2 / 9},
+        )
+        # The Demo's Se-Ta-Se at 2.3-2.7 A: 47 % share the modal count, 3.
+        demo = coordination_summary([0, 7, 231, 7596, 4930, 2457, 779])
+        self.assertEqual(demo["modal"], 3)
+        self.assertEqual(round(demo["modalShare"] * 100), 47)
+        self.assertEqual(demo["unbondedShare"], 0)
+        self.assertEqual(demo["mean"], 59936 / 16000)
+        self.assertEqual(
+            coordination_summary([0, 0, 0, 0, 0, 0, 16]),
+            {"mean": 6.0, "modal": 6, "modalShare": 1.0, "unbondedShare": 0.0},
+        )
+
+    def test_none_without_central_atoms(self):
+        none = {"mean": None, "modal": None, "modalShare": None, "unbondedShare": None}
+        self.assertEqual(coordination_summary([]), none)
+        self.assertEqual(coordination_summary([0]), none)
+        self.assertEqual(coordination_summary(np.array([], dtype=np.int64)), none)
 
 
 class WorkBudgetTests(unittest.TestCase):

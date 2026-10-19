@@ -2,7 +2,8 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { describe, expect, it } from 'vitest';
-import { ambiguousWindows, buildClarifier, buildShellCatalog, readQuestion, resolveClarification } from '../copilot/clarify';
+import { ambiguousWindows, buildClarifier, readQuestion, resolveClarification } from '../copilot/clarify';
+import { shellCatalogue } from '../context/shells';
 
 // A cubic 10 Å cell with 100 A and 100 B atoms, and partial g(r)s built from
 // Gaussian shells (normalised to 1 at large r).
@@ -42,12 +43,12 @@ describe('readQuestion', () => {
 
 describe('the shell catalog', () => {
     it('finds a split first shell and the coordination of each window', () => {
-        const catalog = buildShellCatalog({
+        const catalog = shellCatalogue({
             plotFiles: partials([series('In-Se', [[2.52, 0.06, 25], [2.74, 0.12, 12]])]),
             structure
         });
         const shell = catalog.shell('In', 'Se');
-        expect(shell.peaks).toHaveLength(2);
+        expect(shell.peaksInShell).toHaveLength(2);
         const options = ambiguousWindows(shell);
         expect(options.map((option) => option.label)).toEqual(['Whole first shell', 'First peak only']);
         expect(options[0].cn - options[1].cn).toBeGreaterThan(0.15 * options[0].cn);
@@ -56,14 +57,40 @@ describe('the shell catalog', () => {
     });
 
     it('asks where a shell runs into the next only when the cut changes the count', () => {
-        const merged = buildShellCatalog({
+        const merged = shellCatalogue({
             plotFiles: partials([series('In-Se', [[2.6, 0.12, 20], [3.25, 0.2, 9]])]),
             structure
         });
         const options = ambiguousWindows(merged.shell('In', 'Se'));
         expect(options.map((option) => option.label)).toEqual(['Cut at the minimum', 'Cut 0.2 Å earlier', 'Cut 0.2 Å later']);
-        const clean = buildShellCatalog({ plotFiles: partials([series('In-Se', [[2.6, 0.05, 20]])]), structure });
+        const clean = shellCatalogue({ plotFiles: partials([series('In-Se', [[2.6, 0.05, 20]])]), structure });
         expect(ambiguousWindows(clean.shell('In', 'Se'))).toBeNull();
+    });
+});
+
+describe('the clarifier reads the run\'s one shell reading (shells.js)', () => {
+    it('its catalogue is the run\'s, and "First peak only" ends at the minimum between the two peaks', () => {
+        const run = { plotFiles: partials([series('In-Se', [[2.52, 0.06, 25], [2.74, 0.12, 12]])]), structure };
+        const clarifier = buildClarifier(run);
+        expect(clarifier.catalog).toBe(shellCatalogue(run));
+        const shell = clarifier.catalog.shell('In', 'Se');
+        const [whole, first] = ambiguousWindows(shell);
+        expect(whole.window).toEqual(shell.window);
+        expect(first.window).toEqual(shell.firstPeak.window);
+        expect(first.cn).toBe(shell.firstPeak.cn);
+        expect(first.window[1]).toBeGreaterThan(shell.peaksInShell[0]);
+        expect(first.window[1]).toBeLessThan(shell.peaksInShell[1]);
+    });
+
+    it('asks about a cut window on the CN margin, the same reading the catalogue gives', () => {
+        const run = { plotFiles: partials([series('In-Se', [[2.52, 0.06, 25], [2.74, 0.12, 12]])]), structure };
+        const clarifier = buildClarifier(run);
+        const tool = { shellWindows: (args) => [{ centre: 'In', partner: 'Se', window: [args.lo, args.hi], apply: ([lo, hi]) => ({ ...args, lo, hi }) }] };
+        const { firstPeak, window } = clarifier.catalog.shell('In', 'Se');
+        expect(clarifier.catalog.window('In', 'Se', firstPeak.window).cnMargin.cut).toBe(true);
+        expect(clarifier.beforeCall(tool, { lo: firstPeak.window[0], hi: firstPeak.window[1] }).kind).toBe('cut');
+        expect(clarifier.catalog.window('In', 'Se', window).cnMargin.cut).toBe(false);
+        expect(clarifier.beforeCall(tool, { lo: window[0], hi: window[1] })).toBeNull();
     });
 });
 
@@ -130,9 +157,9 @@ describe('a split shell whose bond lengths are well resolved (review L1)', () =>
     const run = { plotFiles: partials([jt]), structure };
 
     it('is one shell of CN 6, with the first peak alone (CN 4, to the trough) as the alternative', () => {
-        const shell = buildShellCatalog(run).shell('In', 'Se');
+        const shell = shellCatalogue(run).shell('In', 'Se');
         expect(shell.cn).toBeCloseTo(6, 1);
-        expect(shell.peaks).toHaveLength(2);
+        expect(shell.peaksInShell).toHaveLength(2);
         const options = ambiguousWindows(shell);
         expect(options.map((option) => option.label)).toEqual(['Whole first shell', 'First peak only']);
         expect(options[1].cn).toBeCloseTo(4, 1);

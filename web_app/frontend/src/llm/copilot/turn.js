@@ -217,10 +217,12 @@ const turnMessages = (plan, { question, history }) => buildCopilotMessages({
 // elements and the tools offered, tools on or off), the context facts the
 // answer must not contradict, and the context {{ctx.…}} references read: the
 // one the model was shown. The verification module replaces them with one
-// object.
+// object. The shells are the run's one shell reading (context/shells.js),
+// with the run settings' closest-approach constraints, as the context and
+// find_gr_peaks read them.
 const loopChecks = (plan, { run, askUser }) => {
     const clarifier = buildClarifier(
-        { plotFiles: run.plotFiles, structure: run.structure, symmetry: run.symmetry },
+        { plotFiles: run.plotFiles, structure: run.structure, runSettings: run.runSettings, symmetry: run.symmetry },
         { noiseFloor: plan.context.symmetry?.noise_floor_A ?? null }
     );
     return {

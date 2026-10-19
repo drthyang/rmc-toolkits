@@ -22,6 +22,10 @@
 //              exists: each such sentence is mapped (FIRM_RULES) to the code
 //              that enforces it, and that code is exercised (a probe), not
 //              grepped.
+//   value      every value a skill quotes as measured on the Demo that a
+//              table binds (VALUES: a phrase, the number as written, and what
+//              the tool measures there now) equals the tool's, rounded as the
+//              skill writes it (candidate #6: the shell readings).
 //
 // The tables live in tables.js; skillLint.test.js runs the lint on the skills
 // the app bundles, against an allow-list of today's violations.
@@ -189,6 +193,51 @@ const bindingDetail = (binding, result) => {
     }
 };
 
+// --- check 4: measured values ------------------------------------------------------------
+
+const decimalsOf = (text) => (String(text).split('.')[1] || '').length;
+
+/** A measured value as a skill would write it: 3 significant digits (as the tools show numbers). */
+export const showValue = (value) => (Number.isFinite(value) ? String(Number(value.toPrecision(3))) : String(value));
+const showValues = (values, unit) => values.map((value) => (unit === '%' && Number.isFinite(value) ? `${showValue(value * 100)} %` : showValue(value))).join('–');
+
+/**
+ * One measured value against one flat text: `{ problem, at, end, stated,
+ * measured, context }`. `entry.number` reads the value as written (group n,
+ * and m for a pair such as a window), `entry.unit: '%'` reads 47 as 0.47;
+ * `measured` is what the tool shows on the Demo (a number, or [lo, hi]). They
+ * agree when the measurement, rounded to the decimals the skill writes,
+ * equals the stated number: "3.9" against 3.25 differs, "3" against 2.75 does
+ * not (a count written as a whole number, within half an atom). `stated` and
+ * `measured` come back as text ("2.33–2.71", "2.21–2.65").
+ */
+export const evaluateValue = (entry, flat, measured) => {
+    const at = flat.indexOf(entry.find);
+    if (at < 0) return { problem: 'stale', at: 0, end: 0, context: entry.find };
+    const start = Math.max(0, at - (entry.before ?? 0));
+    const window = flat.slice(start, at + entry.find.length + (entry.after ?? 120));
+    // With group indices ('d'), so a finding names the number's own line.
+    const match = new RegExp(entry.number.source, `${entry.number.flags.replace('d', '')}d`).exec(window);
+    if (!match) return { problem: 'no-number', at, end: at + entry.find.length, context: window.trim() };
+    const keys = ['n', 'm'].filter((key) => match.groups?.[key] != null);
+    const texts = keys.map((key) => match.groups[key]);
+    const values = Array.isArray(measured) ? measured : [measured];
+    const scale = entry.unit === '%' ? 100 : 1;
+    const agree = values.length === texts.length && values.every((value, index) => (
+        Number.isFinite(value) && Number((value * scale).toFixed(decimalsOf(texts[index]))) === Number(texts[index].replace(/[−–]/g, '-'))
+    ));
+    const numberAt = start + match.indices.groups[keys[0]][0];
+    const end = start + match.indices.groups[keys.at(-1)][1];
+    return {
+        problem: agree ? null : 'differs',
+        at: numberAt,
+        end,
+        stated: texts.join('–') + (entry.unit === '%' ? ' %' : ''),
+        measured: showValues(values, entry.unit),
+        context: flat.slice(Math.min(start + match.index, at), start + match.index + match[0].length)
+    };
+};
+
 // --- check 3: firm rules ----------------------------------------------------------------
 
 // "*Firm rule in the app:*", also "*Firm rule in the app (THY-18):*"; the
@@ -208,13 +257,15 @@ export const firmRuleSentences = (flat) => [...flat.matchAll(FIRM_RULE)].map((ma
 
 /**
  * Every finding on the skills: `[{ check, kind, file, line, fragment, context,
- * detail }]`. `files` maps a repository path (.claude/skills/<name>/<file>.md)
- * to its text; `tools` is the set of tool names the Copilot can offer,
- * `fields` the parameter and field names the model sees; `bindings`,
- * `notGates` and `firmRules` are the tables (tables.js). Firm-rule probes run
- * here, each given `probeContext`: a probe that throws is a finding.
+ * detail }]` (a value finding also carries `stated` and `measured`). `files`
+ * maps a repository path (.claude/skills/<name>/<file>.md) to its text;
+ * `tools` is the set of tool names the Copilot can offer, `fields` the
+ * parameter and field names the model sees; `bindings`, `notGates`,
+ * `firmRules` and `values` are the tables (tables.js). Firm-rule probes and
+ * value measurements run here, each given `probeContext`: one that throws is a
+ * finding.
  */
-export const lintSkills = async ({ files, tools, fields, bindings = [], notGates = [], firmRules = [], probeContext = {} }) => {
+export const lintSkills = async ({ files, tools, fields, bindings = [], notGates = [], firmRules = [], values = [], probeContext = {} }) => {
     const findings = [];
     const texts = Object.entries(files)
         .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -222,8 +273,8 @@ export const lintSkills = async ({ files, tools, fields, bindings = [], notGates
     const named = new Map();
 
     for (const [file, { flat, lineAt }] of texts) {
-        const add = (check, kind, at, context, detail) => findings.push({
-            check, kind, file, line: lineAt(at), fragment: clip(context), context, detail
+        const add = (check, kind, at, context, detail, extra = {}) => findings.push({
+            check, kind, file, line: lineAt(at), fragment: clip(context), context, detail, ...extra
         });
 
         // 1. Tools.
@@ -277,6 +328,27 @@ export const lintSkills = async ({ files, tools, fields, bindings = [], notGates
                 add('firm-rule', 'broken', sentence.at, sentence.text,
                     `${rule.enforcedBy} does not enforce it any more: ${String(failure?.message || failure).split('\n')[0]}`);
             }
+        }
+
+        // 4. Measured values.
+        for (const entry of values.filter((item) => item.file === file)) {
+            let measured;
+            try {
+                measured = await entry.measure(probeContext);
+            } catch (failure) {
+                add('value', 'broken', Math.max(0, flat.indexOf(entry.find)), entry.find,
+                    `${entry.tool} could not be measured: ${String(failure?.message || failure).split('\n')[0]}`);
+                continue;
+            }
+            const result = evaluateValue(entry, flat, measured);
+            if (!result.problem) continue;
+            const detail = result.problem === 'differs'
+                ? `states ${result.stated} for ${entry.what}; ${entry.tool} gives ${result.measured} on the Demo`
+                : result.problem === 'stale'
+                    ? `the value entry "${entry.what}" no longer finds "${clip(entry.find, 50)}": rebind it to the new text, or remove it`
+                    : `states no number for ${entry.what}, which ${entry.tool} measures`;
+            add('value', result.problem, result.at, result.context, detail,
+                result.problem === 'differs' ? { stated: result.stated, measured: result.measured } : {});
         }
     }
     return { findings, named };
