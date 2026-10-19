@@ -128,9 +128,12 @@ model adding to them ([the bar after batch 1](#arm-a-results-no-model-2026-10-14
 The judgment subset holds dev cases where A+'s fixed joining rules (`armA.js` `runArmSweep`) are
 ambiguous or wrong, so a model that reads the tools with judgment has room to add.
 
-- **The cases.** Each has `judgment: true`, a `situation` (`cases.js` `JUDGMENT_SITUATIONS`) and
-  `devOnly`. Their parameters sit apart in `validation/judgmentCases.js`; `cases.js` appends them to
-  `DEV_CASES` and builds them with its kinds. Every case before them builds byte for byte as before.
+- **The cases.** Each has `judgment: true` and a `situation` (`cases.js` `JUDGMENT_SITUATIONS`).
+  They were `devOnly` until protocol 2026-10-19.11, when their held-out matches joined
+  `TEST_CASES` (one per dev case, the same situation and kind, written blind from
+  `validation/judgment-spec.md`); `split.test.js` pairs them by situation and kind. The dev cases'
+  parameters sit apart in `validation/judgmentCases.js`; `cases.js` appends them to `DEV_CASES` and
+  builds them with its kinds. Every case before them builds byte for byte as before.
 
   | Situation | Case | Kind and option | Planted | The fixed rule at issue |
   | --- | --- | --- | --- | --- |

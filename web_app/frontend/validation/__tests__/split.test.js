@@ -58,24 +58,28 @@ describe('the dev / test split', () => {
     });
 
     // Plan item 1.6, part ii: cases where A+'s fixed joining rules are
-    // ambiguous or wrong. Dev only until their held-out matches exist, which a
-    // fresh author writes from validation/judgment-spec.md alone; until then no
-    // test case is a judgment case, and the test set's hash above is unchanged.
-    it('the judgment subset (plan 1.6 ii): dev only, every situation covered, the truth says which', () => {
+    // ambiguous or wrong. Since protocol 2026-10-19.11 every dev judgment case
+    // has a held-out match, written blind from validation/judgment-spec.md:
+    // the same situation, kind and option, one match per dev case.
+    it('the judgment subset (plan 1.6 ii): paired by situation, every situation covered, the truth says which', () => {
         const judged = DEV_CASES.filter((item) => item.judgment);
+        const matched = TEST_CASES.filter((item) => item.judgment);
         expect(judged.map((item) => item.id)).toEqual([
             'dev-jt-off-centre', 'dev-eight-site', 'dev-octahedral-clusters', 'dev-weak-order-a', 'dev-weak-order-b'
         ]);
-        expect(TEST_CASES.some((item) => item.judgment || item.situation)).toBe(false);
-        judged.forEach((item) => {
+        expect(matched.length).toBe(judged.length);
+        [...judged, ...matched].forEach((item) => {
             expect(item.judgment, item.id).toBe(true);
-            expect(item.devOnly, item.id).toMatch(/^judgment subset \(plan item 1\.6 ii\)/);
+            expect(item.devOnly, item.id).toBeUndefined();
             expect(Object.keys(JUDGMENT_SITUATIONS), item.id).toContain(item.situation);
             expect(buildCase(item, { partials: false }).truth.judgment, item.id).toEqual({ situation: item.situation });
         });
+        // One match per dev case: the same situation and kind, as many of each.
+        const signature = (items) => items.map((item) => `${item.situation}/${item.kind}`).sort();
+        expect(signature(matched)).toEqual(signature(judged));
         expect([...new Set(judged.map((item) => item.situation))].sort()).toEqual(Object.keys(JUDGMENT_SITUATIONS).sort());
         // Every other case says nothing of the kind, in its item or its truth.
-        DEV_CASES.filter((item) => !item.judgment).forEach((item) => {
+        [...DEV_CASES, ...TEST_CASES].filter((item) => !item.judgment).forEach((item) => {
             expect(item.situation, item.id).toBeUndefined();
             expect(buildCase(item, { partials: false }).truth.judgment, item.id).toBeUndefined();
         });
