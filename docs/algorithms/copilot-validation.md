@@ -52,8 +52,9 @@ meters it for an API model (`spend.js` `meteredModel`).
 
 Nine kinds, each a **dev** case (for improving tools and skills) and a held-out **test** case (for
 reported numbers only): the same physics with other elements, directions, magnitudes or
-structures. Each case is an `.rmc6f` supercell (reference sites and cell indices; coordinates
-wrapped into [0, 1) as RMCProfile writes them) with its partial g(r). `run.js write` saves each as
+structures, plus one dev-only case with fit data ([below](#the-fit-data-dev-case)). Each case is
+an `.rmc6f` supercell (reference sites and cell indices; coordinates wrapped into [0, 1) as
+RMCProfile writes them) with its partial g(r). `run.js write` saves each as
 `<out>/<case>/rmc_run/`, a run folder the Workbench opens, named as the harness names every run
 (the Workbench names a run after its folder), with the truth beside it in `<out>/<case>/truth.json`.
 
@@ -73,10 +74,51 @@ Thermal rms: 0.05–0.09 Å. Supercells: 6–8 cells a side, 1,024–2,560 atoms
 
 **The split is enforced in code** (`__tests__/split.test.js`):
 - the test set is pinned by a sha256 of its configurations, partials and truths;
+- every paired dev kind has a test case of the same kind; a dev-only case (`devOnly`) has a kind
+  no test case has;
 - dev and test share no id, and no tool, skill, app source or doc names a test case, its
   material, its planted lengths or its directions ([the holdout scan](#the-holdout-scan));
 - `--split test` needs `--final` and a clean git tree, and every record names its commit;
 - a supervisor finding on a test case may only report a bug, with the user's approval.
+
+### The fit-data dev case
+
+**dev-fit-unconverged** (plan item 4.6, kind `unconverged_fit`, `devOnly` in `cases.js`) is the one
+dev-only case. No other case has fit files, so without it `assess_convergence`,
+`compare_fit` and the rmc-fit-assessment skill were never exercised. It has no test twin and
+gives no reported number.
+- **The configuration:** rock-salt MgO (a = 4.212 Å, 6 × 6 × 6 cells, 1,728 atoms), independent
+  isotropic Gaussian displacements only (Mg 0.062, O 0.066 Å rms), seed 110. The structural
+  answer is "no order", Fm-3m, centrosymmetric, achiral, non-polar.
+- **The run folder:** besides `rmc_run.rmc6f` and `rmc_run_PDFpartials.csv`, RMCProfile's X-ray
+  file family in the Demo's formats (`runFolder.js` `RUN_FILES`, `caseFiles`):
+  `rmc_run_FQ1.csv` (Q, F(Q)_RMC, F(Q)_Expt), `rmc_run_FT_XFQ1.csv` (its Fourier transform: r(A),
+  X_ray-calc, X_ray_exp_renorm) and `rmc_run-00.log` (400 rows, 10 minutes apart: clock time,
+  moves accepted and generated, the χ² of F(Q)_1 and of X_ray_(R)1, Fortran E10.3). The
+  `.rmc6f` header carries the run counters (216,000 moves generated, 16,257 accepted: 9.4
+  accepted moves per atom). The run module detects the kinds (`xray_sq`, `xpdf`, `r_value`) as
+  for a user's run. The "calculated" columns are the configuration's own X-ray G(r)
+  (Faber–Ziman, f = Z) and its Lorch-windowed transform F(Q); the "experimental" ones carry the
+  planted difference and noise (G(r) 0.004, F(Q) 0.002), from a second seeded stream (111).
+- **The planted fit truth** (`truth.fit`, not scored):
+  - *Not converged.* X_ray_(R)1's χ² falls fast, then slowly: 0.01 + 1.0·e^(−t/25) +
+    0.02·e^(−t/600) per log row t. The plot's end looks flat, but ln χ² still drops 0.034 over
+    the last tenth; the watchdog and `assess_convergence` say *improving*.
+  - *One missed feature.* The measured G(r) has a Gaussian peak at 2.55 Å (height 0.15, sd
+    0.08 Å, data above the model) in the empty gap between the Mg–O and the Mg–Mg/O–O shells,
+    which the configuration does not reproduce. `compare_fit` puts 97 % of the G(r) misfit in
+    r = 2.17–3.33 Å, its largest residual at 2.545 Å (model − data −0.15).
+  - *One measurement in two spaces.* In F(Q) the same peak is a slow oscillation (period
+    2π/2.55 ≈ 2.5 Å⁻¹) fading as 1/Q: 95 % of the F(Q) misfit lies in Q = 0.5–4.58 Å⁻¹. That is
+    not a scale or box-size error, and the context marks the FT file as the same measurement.
+- **How it is scored:** as every case, on its structure (no spurious claim and the four symmetry
+  fields); `scoring.js` and the verdict schema are unchanged. The fit truth is exercised where
+  the app checks it: the context (`convergence`, `datasets` with Rw, `partial_weights`,
+  `configuration_optimization`), the two fit tools, and the answer check's convergence rule
+  (an answer that says "converged" gets a finding and the Outcome "not verified", whatever its
+  score). The record keeps every step and `truth.fit`, so a supervisor can read which fit tools
+  ran and what the answer made of them. `__tests__/fitCase.test.js` pins all of this with a
+  scripted model.
 
 ## The holdout scan
 
@@ -283,6 +325,24 @@ The protocol moves because the run's conditions are now part of it: a record und
 protocol does not say which window it ran under, so it cannot be set beside one under this. No arm
 B or C run exists under an earlier protocol; arms A, A+ and D have no model and are unaffected.
 
+**Protocol 2026-10-19.6 (plan item 4.6: the fit-data dev case).** dev-fit-unconverged joins the dev
+set ([Cases](#cases)). The question, the scoring, the verdict schema, the tools and the skills are
+unchanged; the run module reads the new files exactly as it reads a user's run.
+- **Arms A and A+ on it**, appended to `arm-a-dev.json` (`arm-a --split dev` at 2383578): both
+  score 1. Neither claims anything, and both read Fm-3m with its facts, A from the 0.2 Å card and
+  A+ at the noise floor (0.034 Å). A+'s cluster engine finds extended Mg and O networks, not
+  finite clusters, and its modulation test no zone-boundary order. D scores 1. The re-run's other
+  27 dev records equal the committed ones apart from protocol and commit, and stay as recorded.
+- **The means:** over the nine paired dev kinds they stay A 0.81 and A+ 0.99; over all ten dev
+  cases they are A 0.825 and A+ 0.99. The test set and `TEST_SET_SHA256` are unchanged.
+- **Arm B on dev:** the new case's first request is the dev set's largest (11,178 tokens: the two
+  fit tools and four more context sections). `contextBudget.test.js` now pins its worst turn:
+  35,906 tokens needed, 3,138 over 32,768 (dev-symmetry-lowering's was 35,119, 2,351 over). The
+  snapshots of what the model sees (the Demo, dev-offcentre) are unchanged.
+- **What the model is told:** nothing about the case. Its id, its kind and the id's stem reach no
+  request and no tool result (`caseBlind.test.js`, which now also checks that the dev cases
+  between them offer every tool its sweep calls: the fit tools only here).
+
 ## Records, transcripts, findings
 
 Each live run writes:
@@ -303,8 +363,10 @@ harness, so each record states it:
   is one fresh question (the app sends up to eight earlier turns). A case has `structure`,
   `symmetry`, `pair_correlations` and `datasets` (its partial g(r)). It has no
   `configuration_optimization` (no move counters), `run_settings`, `partial_weights` or
-  `convergence`, and no `pca_displacements` unless the PCA table is on. Read from the context as
-  the model was shown it (the turn's `start`);
+  `convergence`, and no `pca_displacements` unless the PCA table is on. The exception is
+  dev-fit-unconverged, whose fit files add `configuration_optimization`, both fitted datasets
+  with their Rw, `partial_weights` and `convergence` (it has no `run_settings` either). Read from
+  the context as the model was shown it (the turn's `start`);
 - `requests` (since protocol 2026-10-19.4): every model request as it was sent, in order, as
   `{ round, why, sent }`, and since 2026-10-19.5 `num_ctx`, the context the guard sent Ollama for
   it (null on other servers, or when the guard refused it): `why` is `first`, `tools` (the
@@ -440,7 +502,7 @@ each model a window that holds the worst turn (`MIN_CONTEXT_TOKENS`):
 
 48k holds the worst realistic turn of the dock and of arm B (two skills read whole, a full round of
 analyses, the 8,192-token reply reserve; `src/__tests__/contextBudget.test.js`), with 10,590 and
-14,033 tokens to spare.
+13,246 tokens to spare (arm B's worst is dev-fit-unconverged since protocol 2026-10-19.6).
 
 **The pre-run check.** `run.js live` calls `preflight` before every run. It reads the model's
 server the way the guard does: `detectServer`, then LM Studio's `GET /api/v0/models`
@@ -578,6 +640,10 @@ more than 0.01 on the case score: on these cases the question "does the model ad
 reduces to whether B *matches* A+ — reaches the engines' conclusions, no over-claim — and to what
 the score does not measure (the answer checks, the evidence gate, number provenance,
 reproducibility). B − A (0.81) is still where the Copilot's value over the default pages shows.
+
+The dev-only fit-data case (protocol 2026-10-19.6) is not in these tables, whose means are over the
+nine paired kinds: A and A+ both score 1 on it, so over all ten dev cases the means are A 0.825
+and A+ 0.99.
 
 ## What the model sees (snapshot tests)
 
