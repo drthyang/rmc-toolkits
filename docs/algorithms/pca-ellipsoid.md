@@ -1024,7 +1024,10 @@ $-0.74$ against exactly $-3.00$, for the same frozen site.)
   whether or not the two wells are resolved. A symmetric split site and a heavy-tailed single well
   therefore give **opposite** signs (`test_symmetric_split_site_is_platykurtic` pins the analytic
   $-1.21$ along the split for $d=0.15$, $s=0.08$ Å; the site's Mardia value is $\kappa/5 \approx -0.24$). Before 0.6.0 the UI tooltip said "positive = split sites", which was
-  the wrong way round.
+  the wrong way round. The AI Copilot's `list_sites` calls a site split when PC1 is resolved and
+  $\kappa_1 \le -0.5$, at least three sampling errors below zero, and gives its static displacement
+  $\sqrt{\lambda_1 - (\lambda_2+\lambda_3)/2}$ with a sampling error built from $\mathrm{SE}_a$ below
+  ([ai-assistant.md](ai-assistant.md), Step 20).
 
 Kurtosis is computed on the raw cloud, not on the KDE, is blind to skew, and — as a fourth moment —
 is dominated by the tails: a handful of outlying copies can set it.

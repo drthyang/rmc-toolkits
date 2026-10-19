@@ -601,7 +601,7 @@ In this repository the host tools live in `src/copilotTools.js`:
 
 | Tool | What it runs |
 |---|---|
-| `list_sites` | the per-site PCA table, through the worker or `/api/pca/sites` |
+| `list_sites` | the per-site PCA table, through the worker or `/api/pca/sites`: per-axis kurtosis on resolved axes, PC1 as `[u v w]`, and a split site's static displacement with its sampling error (`delta_A`, `delta_se_A`) |
 | `analyze_displacement_directions` | the orientation engine with calibrated significances and `[u v w]` (Show in Displacement Directions selects the site and resolution) |
 | `compute_bond_angles` | the triplets engine (Show in Bond Geometry fills the triplet and windows, then computes); the sin θ-corrected histogram, and a whole shell of ~6 or ~4 neighbours read against an ideal octahedron or tetrahedron |
 | `analyze_clusters` | the cluster engine (`workers/clusters.js`, `/api/clusters`): the shape of an element's finite clusters (M₄ tetrahedra, dimers, trimers) against a shuffle null of independent atoms, and the average cluster's own distortion |
