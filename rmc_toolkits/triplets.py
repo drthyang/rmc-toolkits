@@ -49,6 +49,10 @@ count is exactly twice the number of physical bonds; ``unique_bonds12`` /
 ``unique_bonds23`` report the physical (undirected) count -- half the
 directed one when the end element is the central one, the directed count
 otherwise. Per-central-atom coordination is the directed count per B.
+The app payload summarises it (``coordination_summary``): the mean count,
+the most common count (the lowest one on a tie), its share of the central
+atoms and the share with no bond -- what compute_bond_angles' window refusal
+and the Bond Geometry page read, so neither recomputes it.
 
 Angle counting
 --------------
@@ -856,6 +860,28 @@ def bond_angle_distribution(
 LENGTH_BINS = 40
 
 
+def coordination_summary(coordination: Sequence[int]) -> dict:
+    """The coordination histogram (``coordination[n]`` = central atoms with
+    exactly n window-1 bonds) in four numbers, camelCase for the payload:
+    ``mean`` bonds per central atom, the ``modal`` count (the lowest n on a
+    tie), ``modalShare`` (its share of the central atoms) and
+    ``unbondedShare`` (the share with no bond). Every value is None without
+    central atoms. ``workers/triplets.js`` (``coordinationSummaryOf``) is its
+    port; the triplets fixture pins the two equal.
+    """
+    counts = np.asarray(coordination, dtype=np.int64)
+    total = int(counts.sum()) if counts.size else 0
+    if total == 0:
+        return {"mean": None, "modal": None, "modalShare": None, "unbondedShare": None}
+    modal = int(np.argmax(counts))  # the first maximum: the lowest n wins a tie
+    return {
+        "mean": float(np.dot(np.arange(counts.size), counts) / total),
+        "modal": modal,
+        "modalShare": float(counts[modal] / total),
+        "unbondedShare": float(counts[0] / total),
+    }
+
+
 def bond_angle_summary(
     fractional: np.ndarray,
     elements: Sequence[str],
@@ -927,6 +953,8 @@ def bond_angle_summary(
         ),
         # coordination[n] = how many central atoms have exactly n window-1 bonds.
         "coordination": coordination.tolist(),
+        # Its mean, modal count and shares (coordination_summary).
+        "coordinationSummary": coordination_summary(coordination),
     }
 
 

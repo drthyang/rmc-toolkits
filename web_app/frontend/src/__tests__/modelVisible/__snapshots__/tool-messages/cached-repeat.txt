@@ -1,0 +1,6 @@
+# The tool messages the model reads: an identical call repeated
+# echo({ value: 2 }), then echo({ value: "2" }): the same validated arguments, answered from the cache with a note
+## messages[3] · tool · call_1_0
+{"ref":"r1","checks":[{"level":"ok","text":"fine"}],"data":{"value":2,"list":[1,2,3]}}
+## messages[5] · tool · call_2_0
+{"ref":"r2","note":"identical call earlier in this question — the same result is repeated; change the arguments or answer","checks":[{"level":"ok","text":"fine"}],"data":{"value":2,"list":[1,2,3]}}

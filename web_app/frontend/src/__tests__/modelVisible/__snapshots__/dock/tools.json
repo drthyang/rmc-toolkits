@@ -1,0 +1,445 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "read_run_data",
+      "description": "Read one section of the run summary in full (the context you were given is trimmed to fit). Sections: structure (cell lengths/angles of one unit cell, supercell, atom counts); configuration_optimization (move counters from the .rmc6f header); run_settings (the RMCProfile .dat control file: constraints, move sizes, fitted data); symmetry (detected space group, tolerance ladder, Wyckoff orbits with displacement); pair_correlations (partial g(r) first peaks vs the average-structure neighbour distance); datasets (per-dataset Rwp); convergence (ln(chi^2) history of the last .log column).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "section": {
+            "type": "string",
+            "enum": ["structure", "configuration_optimization", "run_settings", "symmetry", "pair_correlations", "datasets", "convergence"],
+            "description": "Which section to read."
+          }
+        },
+        "required": ["section"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "assess_convergence",
+      "description": "Classify the convergence of the ln(chi^2) history (the last .log column — one fit term, not the total) with the dashboard watchdog heuristics, and report the slope per log row over the last 10 %, 25 % and 50 % of the run. Status: improving | converged | stalled | diverging.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "find_gr_peaks",
+      "description": "Analyse one partial g(r) (from the run's partial-PDF file): its peaks below r_max (position, approximate FWHM) and its first coordination shell, which does not depend on r_max — the window from onset to the first deep minimum (use first_shell.window_A for compute_bond_angles: it holds the whole shell, split shells included), mean distance and spread from r²g(r), coordination numbers in both directions with their sensitivity to the cut, whether the shell is separated from the next, for a split shell joined across a deep trough its parts (CN, share, mean distance) and the long − short bond difference, and whether the pair's hard minimum-distance constraint cuts the distribution.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pair": {
+            "type": "string",
+            "enum": ["Ga-Ga", "Ga-Ta", "Ga-Se", "Ta-Ta", "Ta-Se", "Se-Se"],
+            "description": "Element pair, as labelled in the partials file."
+          },
+          "r_max": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 20,
+            "description": "List the peaks up to this r (Å). Default 6."
+          },
+          "max_peaks": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8,
+            "description": "Default 3."
+          }
+        },
+        "required": ["pair"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "compare_fit",
+      "description": "Where the model misses the measured data, for one fitted dataset: the R-factor (as the dashboard's Rwp) over consecutive ranges of r or Q, the share of the squared residual in each range, and the largest residual features (position, model above or below the data, size relative to the data's rms). Use it for \"where does the fit fail\" and \"is the misfit at short or long range\"; run it once per dataset (a G(r) and its F(Q) are separate entries).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dataset": {
+            "type": "string",
+            "enum": ["xray_sq", "xpdf"],
+            "description": "xray_sq: X-ray F(Q); xpdf: X-ray G(r)"
+          },
+          "n_ranges": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 12,
+            "description": "Equal-width ranges over the data. Default 6."
+          }
+        },
+        "required": ["dataset"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "highlight_cards",
+      "description": "Point at the Workbench cards you are talking about: the first card is brought on screen (its page opens, it scrolls into view) and the cards get a breathing blue edge until you highlight something else or the user clicks. Call it before explaining what a card shows; [] clears. On a plot card (marks: yes) you can also mark x positions, e.g. the g(r) peaks you name (r in Å). Cards: model-info — Model information (Dashboard): cell, supercell, atoms per element, move counters; detected-sg — Detected SG (Dashboard): space group of the average structure and its tolerance ladder; chi2-history — χ² history (Dashboard): ln χ² of the last .log column against time, with the convergence badge; plot:GTS_250K_FQ1.csv — F(Q) (GTS_250K_FQ1.csv) (Dashboard): the fitted X-ray F(Q), model against data (x: Q in Å⁻¹); plot:GTS_250K_FT_XFQ1.csv — xPDF (GTS_250K_FT_XFQ1.csv) (Dashboard): the fitted X-ray G(r), model against data (x: r in Å); plot:GTS_250K_PDFpartials.csv — Partial g(r) (GTS_250K_PDFpartials.csv) (Dashboard): the partial g(r) of every element pair (x: r in Å); kde-slice — KDE slice (Atomic Density): density map of one element in a slab through the folded cell; slab-in-cell — Slab in cell (Atomic Density): where that slab sits in the unit cell; density-cell — Folded unit cell (3D) (Atomic Density): every atom folded into one unit cell, by element; bond-angles — Bond-angle distribution (Bond Geometry): the A–B–C angle histogram computed on the page; bond-cell — Folded cell with bonds (3D) (Bond Geometry): the folded atom cloud with the detected bonds; bond-windows — Partial g(r) windows (Bond Geometry): the bond windows on the partial g(r); pca-density — Displacement density (3D) (PCA Ellipsoid): the selected site's displacement cloud: KDE shell or isosurface and thermal ellipsoid; pca-stats — Site statistics (PCA Ellipsoid): U_iso, principal RMS amplitudes, anisotropy, kurtosis and the axes in the crystal; pca-sites — Site ellipsoids (3D) (PCA Ellipsoid): every site of the unit cell as its thermal ellipsoid; the selected site in orange; direction-sphere — Displacement-direction sphere (3D) (Displacement Directions): where the selected site's displacements point, as enhancement over isotropic on the sphere; direction-views — Axis views (Displacement Directions): that sphere seen down a, b and c; direction-sites — Site ellipsoids (3D) (Displacement Directions): the unit-cell site picker of the Displacement Directions page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cards": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "description": "Card ids, the main one first."
+          },
+          "marks": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "properties": {
+                "x": {
+                  "type": "number",
+                  "description": "Position on the plot's x axis (r in Å, Q in Å⁻¹, …)."
+                },
+                "label": {
+                  "type": "string",
+                  "description": "A short label, e.g. \"Ta–Se 2.52 Å\"."
+                }
+              },
+              "required": ["x"]
+            },
+            "description": "Optional marks on the first card when it is a plot."
+          }
+        },
+        "required": ["cards"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_sites",
+      "description": "List every reference site of the RMC configuration with its displacement statistics from a PCA of its displacement cloud: U_iso (Å²), principal RMS amplitudes (Å), anisotropy, Mardia and per-axis kurtosis, PC1 as [u v w], and a split site's static displacement (Å) with its sampling error. Use it to find the most disordered, anisotropic or anharmonic sites (their `ref`).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "element": {
+            "type": "string",
+            "enum": ["Ga", "Se", "Ta"],
+            "description": "Only the sites holding this element."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "analyze_displacement_directions",
+      "description": "Histogram the displacement directions of one site (site_ref, from list_sites) or of every atom of one element (element; \"all\" pools every atom) on the sphere, and test them: the peak direction (Cartesian and crystal [u v w]) with its calibrated significance, the whole-map test against isotropy, the +u/−u asymmetry, and the orientation-tensor anisotropy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_ref": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Reference site number."
+          },
+          "element": {
+            "type": "string",
+            "enum": ["Ga", "Se", "Ta", "all"],
+            "description": "Pool every atom of this element instead of one site."
+          },
+          "frequency": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 24,
+            "description": "Sphere resolution (10ν²+2 cells). Default: chosen from the point count."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "compute_bond_angles",
+      "description": "Bond-angle distribution A–B–C with B the central atom (RMCProfile triplets): every pair of B neighbours, A within [r12_min, r12_max] Å of B and C within [r23_min, r23_max] Å (default: the A–B window). Returns the angle modes, mean ± sd, a 10° histogram, bond lengths and the B coordination, and for about six or four neighbours the split against an ideal octahedron or tetrahedron. Use the whole first coordination shell (find_gr_peaks' first_shell.window_A): a window that cuts the shell is put to the user first, and refused unless the user chose it (window_confirmed).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "end1": {
+            "type": "string",
+            "enum": ["Ga", "Se", "Ta"],
+            "description": "Element A."
+          },
+          "apex": {
+            "type": "string",
+            "enum": ["Ga", "Se", "Ta"],
+            "description": "Element B, the central atom."
+          },
+          "end2": {
+            "type": "string",
+            "enum": ["Ga", "Se", "Ta"],
+            "description": "Element C."
+          },
+          "r12_min": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 15,
+            "description": "A–B window minimum (Å)."
+          },
+          "r12_max": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 15,
+            "description": "A–B window maximum (Å)."
+          },
+          "r23_min": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 15,
+            "description": "B–C window minimum (Å); give both or neither."
+          },
+          "r23_max": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 15,
+            "description": "B–C window maximum (Å)."
+          },
+          "bin_width": {
+            "type": "number",
+            "minimum": 0.05,
+            "maximum": 30,
+            "description": "Histogram bin (degrees). Default 1."
+          },
+          "window_confirmed": {
+            "type": "boolean",
+            "description": "true only when the user chose or typed this window (in the question, or through ask_user). A window that cuts the coordination shell is refused unless it is set."
+          }
+        },
+        "required": ["end1", "apex", "end2", "r12_min", "r12_max"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "analyze_clusters",
+      "description": "Shape of the finite clusters one element forms — the M4 tetrahedra of a lacunar spinel, dimers, trimers — with bonds in [r_min, r_max] Å in the average structure (take the window from find_gr_peaks: first_shell.window_A of that element pair). Every cluster in the configuration is compared with a shuffle null in which each atom keeps its own site's displacements but takes them from a random other cluster: is there a distortion beyond independent atoms, which edge pattern (tetrahedra: E/T2 modes, trigonal vs one edge), along which lattice axis (<100>/<110>/<111>), and is the average cluster itself distorted. Use it for cluster or polyhedron distortion, Jahn–Teller, dimerization or trimerization questions; single-site displacement directions cannot show these.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "element": {
+            "type": "string",
+            "enum": ["Ga", "Se", "Ta"],
+            "description": "Element whose atoms form the clusters."
+          },
+          "r_min": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 8,
+            "description": "Bond window minimum (Å)."
+          },
+          "r_max": {
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 8,
+            "description": "Bond window maximum (Å)."
+          }
+        },
+        "required": ["element", "r_min", "r_max"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "analyze_modulations",
+      "description": "Look for order that enlarges the unit cell — a superstructure the folded average structure and detect_symmetry cannot show (cell doubling as in low-temperature phases, octahedral tilts, charge-density waves). Fourier-transforms every site's displacements over the supercell's cell grid and compares the zone-boundary points (½,0,0)…(½,½,½) and the strongest modes with the configuration's own diffuse background (ratio to the median power, percentile). Optionally one element.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "element": {
+            "type": "string",
+            "enum": ["Ga", "Se", "Ta"],
+            "description": "Only this element (default: each element)."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "detect_symmetry",
+      "description": "Run the space-group finder on the average structure (the folded reference sites) at a position tolerance in Å, as the Detected SG card does: group, number (only when it is certain), operations, and the Wyckoff orbits. Compare tolerances to see which symmetry the local distortion breaks. Does not change the card.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tolerance_A": {
+            "type": "number",
+            "minimum": 0.001,
+            "maximum": 1,
+            "description": "Position tolerance (Å); the card default is 0.2."
+          }
+        },
+        "required": ["tolerance_A"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "measure_symmetry_lowering",
+      "description": "How far each average site sits from the position a higher-symmetry (parent) group puts it at: the size and direction of a coherent shift every copy of a site shares (a polar off-centring of the average structure), which the displacement analyses cannot show — each site's cloud is centred on its own mean. The parent is the group at parent_tolerance_A (default 0.2 Å, the Detected SG card's); the lower group is the one at tolerance_A (default 0.038 Å, just above the sampling noise floor). Each shift is in Å with its crystal [u v w], measured with the parent on the majority of the atoms, against the noise floor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent_tolerance_A": {
+            "type": "number",
+            "minimum": 0.001,
+            "maximum": 1,
+            "description": "Tolerance of the parent group (Å). Default 0.2."
+          },
+          "tolerance_A": {
+            "type": "number",
+            "minimum": 0.001,
+            "maximum": 1,
+            "description": "Tolerance of the lower group (Å). Default 0.038."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "orient_3d_view",
+      "description": "Turn one of the Workbench's 3D views so the user sees what you describe: look down a crystal direction [u v w] (or an axis a, b, c; PC1–PC3 for a site's principal axes), centre a site, ring sites in blue, select a site as a click would, or reset. The view's page opens and its card breathes. \"Looking down [u v w]\" puts that direction toward the viewer, with c (or b) up. Views: density-cell (Atomic Density: every atom folded into one unit cell, by element); bond-cell (Bond Geometry: the folded atom cloud with the detected bonds); pca-density (PCA Ellipsoid: the selected site's displacement cloud: KDE shell or isosurface and thermal ellipsoid); pca-sites (PCA Ellipsoid: every site of the unit cell as its thermal ellipsoid; the selected site in orange; sites); direction-sphere (Displacement Directions: where the selected site's displacements point, as enhancement over isotropic on the sphere); direction-sites (Displacement Directions: the unit-cell site picker of the Displacement Directions page; sites).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "card": {
+            "type": "string",
+            "enum": ["density-cell", "bond-cell", "pca-density", "pca-sites", "direction-sphere", "direction-sites"],
+            "description": "Which 3D view."
+          },
+          "along": {
+            "type": "string",
+            "description": "Direction to look down: \"[111]\", \"[1 -1 0]\", \"[0.71 0.71 1]\", or \"a\", \"b\", \"c\", \"PC1\"…; a plane in parentheses, \"(111)\", looks along its normal"
+          },
+          "center_site": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Site ref to centre (views with sites)."
+          },
+          "highlight_sites": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maxItems": 24,
+            "description": "Site refs to ring in blue (views with sites)."
+          },
+          "select_site": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Select this site on the page (the direction sphere and the density then show it)."
+          },
+          "reset": {
+            "type": "boolean",
+            "description": "Back to the default view first."
+          }
+        },
+        "required": ["card"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "current_view",
+      "description": "What the user has on screen: the page, its cards, the cards highlighted, and for each 3D view on the page the direction it looks down and the selected site. Use it when the user says \"this\", \"here\" or \"what I'm looking at\".",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "ask_user",
+      "description": "Ask the user ONE short clarifying question and wait for the answer. Only when the answer changes which analysis you run or its parameters (which coordination shell or r-window, which site or pair, which tolerance, which run or dataset) and neither the run context nor an analysis can settle it. Offer 2–4 short options, each with a one-line description (e.g. the window in Å), and your default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "One short question."
+          },
+          "options": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "description": "A short choice, a few words."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Optional: one line saying what it means, e.g. \"2.33–2.96 Å, both Ta–Se peaks\"."
+                }
+              },
+              "required": ["label"]
+            },
+            "description": "The choices, the most likely first."
+          },
+          "allow_other": {
+            "type": "boolean",
+            "description": "Let the user type another answer. Default true."
+          },
+          "default": {
+            "type": "string",
+            "description": "The label of the option you would pick yourself."
+          }
+        },
+        "required": ["question", "options"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "read_skill",
+      "description": "Read one of your skills — the method to follow for a kind of question (listed in the system prompt) — or, with `reference`, one of the reference files it lists. Read the skill before the analysis it covers, then follow its steps and its checklist.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": ["coordination-shells", "displacement-anisotropy", "local-symmetry", "rmc-fit-assessment"],
+            "description": "The skill."
+          },
+          "reference": {
+            "type": "string",
+            "description": "Optional: a reference the skill lists, by its name."
+          }
+        },
+        "required": ["name"]
+      }
+    }
+  }
+]

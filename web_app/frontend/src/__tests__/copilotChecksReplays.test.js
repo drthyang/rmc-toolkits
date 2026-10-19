@@ -9,27 +9,29 @@
 //   - the questions the Workbench asks itself (llm/copilot/clarify.js), each
 //     case, the clear questions that never ask, the model's own ask_user next
 //     to them, and cancel.
+// Each question runs through the turn module (llm/copilot/turn.js), as the
+// app runs it: the turn builds the context, ask_user, the Workbench's
+// questions, the evidence gate, the answer checks and the references from the
+// run props. Two cases stay on the agent loop itself, each said where it is.
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { plotDataFromText, structureFromRmc6f } from '../browserData';
 import { buildCopilotTools } from '../copilotTools';
 import { runCopilotTurn } from '../llm/copilot/agentLoop';
-import { contextAuditFacts } from '../llm/copilot/answerAudit';
 import { buildAskUserTool } from '../llm/copilot/askUser';
 import { buildClarifier } from '../llm/copilot/clarify';
-import { buildEvidenceGate } from '../llm/copilot/evidence';
 import { buildRunTools } from '../llm/copilot/runTools';
-import { pointGroupFacts } from '../llm/context/pointGroups';
+import { runTurn } from '../llm/copilot/turn';
+import { createVerification } from '../llm/copilot/verification';
 import { buildRunContext } from '../llm/context/runContext';
-import { shownContext } from '../llm/prompts/copilot';
 import { describeSymmetry, toleranceLadder } from '../symmetryModel';
-import { handlePcaMessage } from '../workers/pcaKdeWorker';
+import { inProcessEngine } from '../workers/pcaKdeWorker';
 
 const read = (name) => readFileSync(new URL(`../../public/demo/${name}`, import.meta.url), 'utf8');
 const RMC6F = read('GTS_250K.rmc6f');
 const structure = structureFromRmc6f({ path: 'Demo/GTS_250K.rmc6f', text: RMC6F });
-const request = (kind, params) => handlePcaMessage({ kind, ...params }, async () => RMC6F);
+const request = inProcessEngine(RMC6F);
 const partialsName = 'GTS_250K_PDFpartials.csv';
 const plotFiles = [{
     name: partialsName,
@@ -43,14 +45,13 @@ const rValueFile = {
     plotData: { chiColumn: logs[0].chiColumn, series: [{ y: logs.flatMap((log) => log.series[0].y) }] }
 };
 const symmetry = { ...describeSymmetry(structure, 0.2), toleranceA: 0.2, ladder: toleranceLadder(structure, 1.0) };
-const context = buildRunContext({ runName: 'Demo', plotFiles, rValueFile, structure, symmetry });
+// The run props the turn reads, and the tools the app offers beside the
+// turn's own ask_user: the tools over the run data and the engine tools.
+const run = { runName: 'Demo', plotFiles, rValueFile, structure, symmetry };
 const tools = [
     ...buildRunTools({ plotFiles, rValueFile, structure, symmetry }),
-    ...buildCopilotTools({ request, structure, elements: Object.keys(structure.elementCounts).sort() }),
-    buildAskUserTool()
+    ...buildCopilotTools({ request, structure, elements: Object.keys(structure.elementCounts).sort() })
 ];
-const clarifier = buildClarifier({ plotFiles, structure, symmetry }, { noiseFloor: context.symmetry?.noise_floor_A ?? null });
-const auditContext = contextAuditFacts(context, pointGroupFacts);
 const toolNamed = (name) => tools.find((tool) => tool.name === name);
 
 // A scripted model: each request takes the next reply ({ text, calls }), or
@@ -73,34 +74,48 @@ const scriptedModel = (replies) => {
     return { callModel, requests };
 };
 
-// One question: the events, the requests the model got, the cards asked.
-// The evidence gate, as the app builds it (useCopilot.js): on by default.
-const evidence = buildEvidenceGate({
-    catalog: clarifier.catalog, offered: tools.map((tool) => tool.name), elements: Object.keys(structure.elementCounts)
+// The user: answers each question with `answer` (an object or a function of
+// the request), else picks the default option.
+const answeringUser = (asked, answer) => vi.fn(async (req) => {
+    asked.push(req);
+    const index = req.defaultIndex ?? 0;
+    return typeof answer === 'function' ? answer(req) : (answer ?? { answer: req.options[index].label, source: 'option', index });
 });
-const replay = async (question, replies, { answer = null, withClarifier = true, withEvidence = true, signal } = {}) => {
+
+// One question through the turn, as the app runs it: the loop's events (the
+// turn's own start and request events left out), the requests the model got,
+// the cards asked. The evidence gate is on (THY-18).
+const TURN_ONLY = ['start', 'request'];
+const replay = async (question, replies, { answer = null } = {}) => {
     const asked = [];
-    const askUser = vi.fn(async (req) => {
-        asked.push(req);
-        const index = req.defaultIndex ?? 0;
-        return typeof answer === 'function' ? answer(req) : (answer ?? { answer: req.options[index].label, source: 'option', index });
-    });
     const { callModel, requests } = scriptedModel([...replies]);
     const events = [];
-    for await (const event of runCopilotTurn({
-        callModel,
-        messages: [{ role: 'system', content: 'S' }, { role: 'user', content: question }],
-        tools,
-        signal,
-        toolContext: { askUser },
-        auditContext,
-        clarifier: withClarifier ? clarifier : null,
-        evidence: withEvidence ? evidence : null,
-        referenceContext: shownContext(context)
-    })) events.push(event);
+    for await (const event of runTurn({ question, run, model: callModel, tools, askUser: answeringUser(asked, answer) })) {
+        if (!TURN_ONLY.includes(event.type)) events.push(event);
+    }
     const ends = events.filter((event) => event.type === 'tool_end');
     const lastToolMessage = () => JSON.parse(requests.at(-1).filter((message) => message.role === 'tool').at(-1).content);
     return { events, requests, asked, done: events.at(-1), ends, lastToolMessage };
+};
+
+// On the agent loop itself, for what the turn does not do: its ask_user comes
+// with the Workbench's questions (one ask-user port serves both), and an abort
+// ends a turn with a `stopped` event where the loop throws. The verification
+// as the turn builds it.
+const context = buildRunContext(run);
+const clarifier = buildClarifier({ plotFiles, structure, symmetry }, { noiseFloor: context.symmetry?.noise_floor_A ?? null });
+const loopReplay = async (question, replies, { answer = null } = {}) => {
+    const asked = [];
+    const loopTools = [...tools, buildAskUserTool()];
+    const { callModel } = scriptedModel([...replies]);
+    for await (const event of runCopilotTurn({
+        model: callModel,
+        messages: [{ role: 'system', content: 'S' }, { role: 'user', content: question }],
+        tools: loopTools,
+        toolContext: { askUser: answeringUser(asked, answer) },
+        verification: createVerification({ context, catalog: clarifier.catalog, offered: loopTools.map((tool) => tool.name) })
+    })) void event;
+    return { asked };
 };
 
 const angles = (r12_min, r12_max, end = 'Se', apex = 'Ta') => ({
@@ -191,10 +206,13 @@ describe('the questions the Workbench asks itself', () => {
     });
 
     it('(a) a split shell: which Ta–Se window, and the chosen one is not asked about again', async () => {
+        // The first peak alone ends at the minimum between the two Ta–Se
+        // peaks (shells.js, approved 2026-10-19): 2.21–2.65 Å, CN 3.2 — no
+        // longer r ± FWHM (2.33–2.71 Å, CN 3.9).
         const run = await replay('What are the Se–Ta–Se bond angles?', [
             (body) => {
-                expect(body.messages.at(-1).content).toMatch(/the user chose "First peak only" for the Ta–Se bonds: the window 2\.33–2\.71 Å \(CN 3\.9 Se per Ta\)/);
-                return angles(2.33, 2.71);
+                expect(body.messages.at(-1).content).toMatch(/the user chose "First peak only" for the Ta–Se bonds: the window 2\.21–2\.65 Å \(CN 3\.2 Se per Ta\)/);
+                return angles(2.21, 2.65);
             },
             answer('The short bonds only.')
         ], { answer: () => ({ answer: 'First peak only', source: 'option', index: 1 }) });
@@ -202,8 +220,9 @@ describe('the questions the Workbench asks itself', () => {
         expect(run.asked[0]).toMatchObject({ question: 'Which Ta–Se window should the analysis use?', defaultIndex: 0 });
         expect(run.asked[0].options.map((option) => option.label)).toEqual(['Whole first shell', 'First peak only']);
         expect(run.asked[0].options[0].description).toBe('2.21–3.23 Å, both peaks (2.52 and 2.74 Å): CN 6 Se per Ta');
-        // The model's 2.33–2.71 Å is the user's choice: it runs as asked.
-        expect(run.lastToolMessage().data.window_ab_A).toEqual([2.33, 2.71]);
+        expect(run.asked[0].options[1].description).toBe('2.21–2.65 Å, the shortest bonds: CN 3.2 Se per Ta');
+        // The model's 2.21–2.65 Å is the user's choice: it runs as asked.
+        expect(run.lastToolMessage().data.window_ab_A).toEqual([2.21, 2.65]);
     });
 
     it('(b) a window that cuts the shell: the user picks the whole shell, and the analysis runs in it', async () => {
@@ -346,12 +365,14 @@ describe('the questions the Workbench asks itself', () => {
         const step = run.ends.find((end) => end.name === 'compute_bond_angles');
         expect(step.status).toBe('ok');
         expect(step.args.r12_max).toBeGreaterThan(2.9);
-        // Without the clarifier, the model's ask_user works alone.
-        const alone = await replay('Compute the bond angles around Ta.', [{ calls: [ask] }, answer('Done.')], { withClarifier: false });
+        // Without the clarifier, the model's ask_user works alone (the loop:
+        // the turn offers ask_user only with the Workbench's questions).
+        const alone = await loopReplay('Compute the bond angles around Ta.', [{ calls: [ask] }, answer('Done.')]);
         expect(alone.asked.map((req) => req.question)).toEqual(['Which run?']);
     });
 
     it('stops cleanly when the turn is cancelled while the Workbench\'s question waits', async () => {
+        // The loop throws the abort (the turn ends with a `stopped` event).
         const controller = new AbortController();
         const { callModel, requests } = scriptedModel([answer('never')]);
         const askUser = vi.fn((req, { signal }) => new Promise((_, reject) => {
@@ -360,7 +381,7 @@ describe('the questions the Workbench asks itself', () => {
         }));
         const run = (async () => {
             for await (const event of runCopilotTurn({
-                callModel, messages: [{ role: 'user', content: 'Compute the bond angles around Ta.' }], tools,
+                model: callModel, messages: [{ role: 'user', content: 'Compute the bond angles around Ta.' }], tools,
                 signal: controller.signal, toolContext: { askUser }, clarifier
             })) void event;
         })();

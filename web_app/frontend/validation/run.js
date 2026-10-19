@@ -6,30 +6,56 @@
 //
 //   npx vite-node validation/run.js -- write   --split dev --out <dir>
 //   npx vite-node validation/run.js -- arm-a   --split dev [--out <dir>]
-//   npx vite-node validation/run.js -- live    --arm B --model qwen3.8-27b --split dev [--runs 3] [--cases id,id] [--out <dir>]
+//   npx vite-node validation/run.js -- live    --arm B --model qwen3.8-27b --split dev [--runs 3] [--cases id,id] [--out <dir>] [--pca-table]
 //   npx vite-node validation/run.js -- report  --in <dir> [--in <dir>…] [--out <file>]
-//   npx vite-node validation/run.js -- findings <file.jsonl>
+//   npx vite-node validation/run.js -- findings <file.jsonl | folder of .json records>
+//   npx vite-node validation/run.js -- shell-cuts [--out <file.json>]
+//
+// `shell-cuts` (dev cases and the Demo only, no model): the two readings of a
+// window that cuts a coordination shell side by side on every natural window
+// (shellCuts.js), the evidence for the cut-rule recommendation of candidate #6.
 //
 // The held-out test set: `--split test` also needs `--final` and a clean git
 // tree (its commit is recorded in every record), so its numbers always come
 // from committed code. API models run the test set only, under their spend cap.
+// Its cases are sealed: they load through holdoutLoader.js (casesFor, with
+// --final), the only module that may import them, and `write --split test`
+// needs --final too. Arms A, A+ and D on the test set are recorded with
+// `arm-a --split test --final --out validation/holdout/arm-a-test.json`: a
+// test-set record written inside the repository goes under validation/holdout/
+// (or the gitignored validation/runs/ and validation/cases-out/).
+//
+// `--pca-table` (live, dev set only) gives each run the PCA table, as after a
+// visit to the PCA Ellipsoid page, to check that context section's effect;
+// its records say so (`view.pcaSites`, `context.sections`) and go to their own
+// folder by default (…_pca-table).
+//
+// Before every live run the run policy's pre-run check (runPolicy.js
+// preflight) reads the model's server: a server of another kind, or none, or
+// an LM Studio model loaded with less than 48k, stops the batch with what was
+// found, what is needed and how to reload the model; nothing is sent and no
+// record is written, so the same command resumes once it is fixed.
 
 import { execSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { streamCopilotChat } from '../src/llm/provider/contextGuard';
+import { providerModel } from '../src/llm/provider/model';
 import { buildCase, casesOf } from './cases';
-import { loadRun } from './runFolder';
+import { casesFor, HOLDOUT_DIR } from './holdoutLoader';
+import { caseFiles, loadRun, RUN_NAME } from './runFolder';
+import { openRunFolder } from '../src/openRunFolder';
 import { runArmA, runArmSweep } from './armA';
+import { renderShellCuts, shellCutRows } from './shellCuts';
 import { scoreVerdict } from './scoring';
 import { truthVerdict } from './verdict';
 import { ARMS, PROTOCOL_VERSION, runLiveCase } from './harness';
 import { renderTranscript } from './transcript';
 import { renderReport } from './report';
 import { resolveModel } from './models';
-import { createSpendTracker, meteredCall } from './spend';
-import { parseFindings } from './findings';
+import { createSpendTracker, meteredModel } from './spend';
+import { parseFindingFiles, parseFindings } from './findings';
+import { noteWindowAfter, preflight, readServer, windowSummary } from './runPolicy';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '../../..');
@@ -74,8 +100,11 @@ export const guardSplit = ({ split, final, clean }) => {
     if (!clean) throw new Error('the test set runs from a clean git tree, so every record names the commit it measured');
 };
 
-const selectCases = (split, only) => {
-    const cases = casesOf(split);
+// The cases of a split, the test set through the loader: from the command
+// line only with --final, whatever the environment (CI's flag opens the
+// sealed set for its tests, never for the CLI).
+export const selectCases = async (split, only, { final = false } = {}) => {
+    const cases = await casesFor(split, { final: final === true, env: {} });
     if (!only) return cases;
     const wanted = String(only).split(',').map((id) => id.trim());
     const unknown = wanted.filter((id) => !cases.some((item) => item.id === id));
@@ -100,18 +129,61 @@ export const loadSkills = () => {
     return { files, references, load: async (path) => readFileSync(join(REPO, path), 'utf8') };
 };
 
+/**
+ * One live run under the run policy (runPolicy.js): the pre-run check (a
+ * RunPolicyError before anything is sent: the server is not the model's
+ * kind, or an LM Studio model's loaded window is below the minimum), the run
+ * through `base` (the model port: each request as sent carries the context
+ * guard's plan, the num_ctx Ollama was sent among it; metered under
+ * `tracker` for an API model, as `note`), and the window read again after.
+ * A spend cap still throws its SpendCapError, with the run's record.
+ */
+export const liveRun = async ({
+    built, arm, model, runIndex, base, tracker = null, note = null, skills = null, commit = null, pcaTable = false, limits = {}
+}) => {
+    const server = await preflight(model);
+    const port = tracker ? meteredModel(base, tracker, note) : base;
+    let record;
+    try {
+        record = await runLiveCase({ built, arm, model, runIndex, port, skills, commit, pcaTable, limits, server });
+    } catch (failure) {
+        if (failure?.record) noteWindowAfter(failure.record.policy, await readServer(model));
+        throw failure;
+    }
+    noteWindowAfter(record.policy, await readServer(model));
+    return record;
+};
+
+// A test-set file written inside the repository goes under validation/holdout/
+// (committed, sealed) or a gitignored output folder; anywhere else it would
+// put the held-out cases where builders read.
+const TEST_OUTPUT_DIRS = [HOLDOUT_DIR, 'validation/runs', 'validation/cases-out'].map((dir) => `web_app/frontend/${dir}/`);
+export const guardTestOutput = (split, path) => {
+    if (split !== 'test') return;
+    const inside = relative(REPO, resolve(path));
+    if (inside.startsWith('..') || isAbsolute(inside)) return;
+    if (!TEST_OUTPUT_DIRS.some((dir) => `${inside}/`.startsWith(dir))) {
+        throw new Error(`a test-set file inside the repository goes under ${HOLDOUT_DIR}/ (or validation/runs/, validation/cases-out/), not ${inside}`);
+    }
+};
+
 const commands = {
-    // Each case as a run folder the Workbench opens (Choose folder), plus its truth.
+    // Each case as <out>/<case>/rmc_run/, the run folder the Workbench opens
+    // (Choose folder), named as the harness names every run: the Workbench
+    // names a run after its folder, and a case id names the case's kind. The
+    // truth sits beside the folder (<out>/<case>/truth.json), not in it.
     write: async (args) => {
+        const split = args.split || 'dev';
         const out = resolve(args.out || 'validation/cases-out');
-        for (const item of selectCases(args.split || 'dev', args.cases)) {
+        guardTestOutput(split, out);
+        for (const item of await selectCases(split, args.cases, { final: args.final })) {
             const built = buildCase(item);
             const dir = join(out, built.id);
-            mkdirSync(dir, { recursive: true });
-            writeFileSync(join(dir, built.rmc6fName), built.rmc6f);
-            writeFileSync(join(dir, built.partialsName), built.partials);
+            const runDir = join(dir, RUN_NAME);
+            mkdirSync(runDir, { recursive: true });
+            for (const { name, text } of caseFiles(built)) writeFileSync(join(runDir, name), text);
             writeFileSync(join(dir, 'truth.json'), `${JSON.stringify({ id: built.id, split: built.split, question: built.question, truth: built.truth }, null, 1)}\n`);
-            console.log(`wrote ${dir}`);
+            console.log(`wrote ${runDir} (truth: ${join(dir, 'truth.json')})`);
         }
     },
 
@@ -119,11 +191,12 @@ const commands = {
     'arm-a': async (args) => {
         const split = args.split || 'dev';
         guardSplit({ split, final: args.final, clean: split === 'test' ? treeClean() : true });
+        if (args.out) guardTestOutput(split, args.out);
         const commit = commitOf();
         const records = [];
-        for (const item of selectCases(split, args.cases)) {
+        for (const item of await selectCases(split, args.cases, { final: args.final })) {
             const built = buildCase(item);
-            const run = loadRun(built, { ladder: false });
+            const run = await loadRun(built, { ladder: false });
             for (const result of [await runArmA(run), await runArmSweep(run), { arm: 'D', readings: [], verdict: truthVerdict(built.truth) }]) {
                 const score = scoreVerdict(built.truth, result.verdict);
                 records.push({
@@ -150,15 +223,18 @@ const commands = {
             if (!model.arms.includes(arm) && !args['allow-arm']) throw new Error(`${model.name} runs arm ${model.arms.join(', ')} by default (--allow-arm to override within the cap)`);
         }
         guardSplit({ split, final: args.final, clean: split === 'test' ? treeClean() : true });
+        const pcaTable = Boolean(args['pca-table']);
+        if (pcaTable && split !== 'dev') throw new Error('--pca-table is a dev check: --split dev only');
         const runs = Number(args.runs || model.runsPerCase || 3);
-        const out = resolve(args.out || `validation/runs/${new Date().toISOString().slice(0, 10)}_${model.name.replace(/[^\w.-]+/g, '-')}_${arm}_${split}`);
+        const out = resolve(args.out || `validation/runs/${new Date().toISOString().slice(0, 10)}_${model.name.replace(/[^\w.-]+/g, '-')}_${arm}_${split}${pcaTable ? '_pca-table' : ''}`);
+        guardTestOutput(split, out);
         mkdirSync(out, { recursive: true });
         const commit = commitOf();
         const skills = arm === 'B' ? loadSkills() : null;
-        const session = {};
-        const callModel = (request) => streamCopilotChat({
-            baseUrl: model.baseUrl, model: model.model, temperature: model.temperature, apiKey: model.apiKey, session, ...request
-        });
+        // The app's production model port, bound to this model (the warmer
+        // retry, the context guard, the provider's tool_choice form); one
+        // context-size session for the batch.
+        const base = providerModel(model, { session: {} });
         let tracker = null;
         if (model.api) {
             const ledgerPath = resolve(args.ledger || 'validation/runs/api-spend.jsonl');
@@ -173,7 +249,7 @@ const commands = {
             });
             console.log(`API spend so far $${tracker.spent().toFixed(2)} of $${model.capUSD}`);
         }
-        for (const item of selectCases(split, args.cases)) {
+        for (const item of await selectCases(split, args.cases, { final: args.final })) {
             const built = buildCase(item);
             for (let index = 0; index < runs; index += 1) {
                 const id = `${built.id}__${arm}__${model.name}__r${index + 1}`.replace(/[^\w.-]+/g, '-');
@@ -181,11 +257,14 @@ const commands = {
                     console.log(`${id}: already recorded, kept`);
                     continue;
                 }
-                const metered = tracker ? meteredCall(callModel, tracker, id) : callModel;
                 let record;
                 try {
-                    record = await runLiveCase({ built, arm, model, runIndex: index, callModel: metered, skills, commit });
+                    record = await liveRun({ built, arm, model, runIndex: index, base, tracker, note: id, skills, commit, pcaTable });
                 } catch (failure) {
+                    if (failure?.name === 'RunPolicyError') {
+                        console.log(`${id}: NOT STARTED (run policy)`);
+                        throw failure;
+                    }
                     if (failure?.name !== 'SpendCapError') throw failure;
                     record = failure.record;
                     writeFileSync(join(out, `${id}.json`), `${JSON.stringify(record, null, 1)}\n`);
@@ -195,8 +274,9 @@ const commands = {
                 }
                 writeFileSync(join(out, `${id}.json`), `${JSON.stringify(record, null, 1)}\n`);
                 writeFileSync(join(out, `${id}.md`), renderTranscript(record));
-                console.log(`${id}: score ${record.score.score.toFixed(2)} in ${Math.round(record.wall_ms / 1000)} s`
+                console.log(`${id}: score ${record.score.score.toFixed(2)} in ${Math.round(record.wall_ms / 1000)} s, window ${windowSummary(record.policy)}`
                     + `${record.error ? ` (error: ${record.error.message})` : ''}${tracker ? `  [$${tracker.spent().toFixed(2)} spent]` : ''}`);
+                record.policy.warnings.forEach((warning) => console.log(`${id}: run policy warning: ${warning}`));
             }
         }
     },
@@ -214,10 +294,46 @@ const commands = {
         else console.log(text);
     },
 
+    // A findings file (JSON lines), or a folder of records, one JSON file each
+    // (validation/findings/decisions).
     findings: async (args) => {
-        const results = parseFindings(readFileSync(resolve(args._[1]), 'utf8'));
+        const path = resolve(args._[1]);
+        if (statSync(path).isDirectory()) {
+            const results = parseFindingFiles(readdirSync(path).map((name) => ({ name, text: readFileSync(join(path, name), 'utf8') })));
+            results.forEach((result) => console.log(`${result.file}: ${result.ok ? 'ok' : result.errors.join('; ')}`));
+            if (results.some((result) => !result.ok)) process.exitCode = 1;
+            return;
+        }
+        const results = parseFindings(readFileSync(path, 'utf8'));
         results.forEach((result) => console.log(`line ${result.line}: ${result.ok ? 'ok' : result.errors.join('; ')}`));
         if (results.some((result) => !result.ok)) process.exitCode = 1;
+    },
+
+    // Both cut readings on the dev cases' natural windows and the Demo's
+    // (shellCuts.js), with the Demo's historical Ta–Se windows beside them.
+    // Development evidence only: the held-out test set is never read.
+    'shell-cuts': async (args) => {
+        if (args.split && args.split !== 'dev') throw new Error('shell-cuts reads the dev cases only (and the Demo)');
+        const rows = [];
+        for (const item of casesOf('dev')) {
+            const run = await loadRun(buildCase(item), { ladder: false });
+            rows.push(...await shellCutRows({ name: item.id, props: run.props, engine: run.engine }));
+        }
+        const demoDir = join(REPO, 'web_app/frontend/public/demo');
+        const demo = await openRunFolder(readdirSync(demoDir).sort().map((name) => ({
+            path: `Demo/${name}`, file: new File([readFileSync(join(demoDir, name))], name, { lastModified: 0 })
+        })), { ladder: false });
+        rows.push(...await shellCutRows({ name: 'demo', props: demo.props, engine: demo.engine }, {
+            extraWindows: {
+                'Ta|Se': [
+                    ['spot check, 2026-10-10', [2.3, 2.7]],
+                    ['first peak by r ± FWHM, before 2026-10-19', [2.33, 2.71]],
+                    ['review window', [2.33, 2.96]]
+                ]
+            }
+        }));
+        console.log(renderShellCuts(rows));
+        if (args.out) writeFileSync(resolve(args.out), `${JSON.stringify(rows, null, 1)}\n`);
     }
 };
 

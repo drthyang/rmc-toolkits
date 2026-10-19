@@ -12,7 +12,7 @@ places:
 - **code:** a firm rule the app enforces. Either a tool refuses or flags a result (as
   `compute_bond_angles` now refuses a window that cuts the coordination shell, in
   `src/copilotTools.js`), or a check on the answer itself flags a contradiction
-  (`src/llm/copilot/answerAudit.js`: "converged" against an improving run, a group called chiral
+  (`src/llm/copilot/verification/facts.js`: "converged" against an improving run, a group called chiral
   or centrosymmetric against its point group, a preferred direction no analysis found);
 - **an eval scenario:** a scripted-model replay on the Demo run
   (`src/__tests__/copilotSkillReplays.test.js`): the right behaviour passes and the old wrong one

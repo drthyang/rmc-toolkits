@@ -24,6 +24,11 @@
 //   and skill changes always need the user's approval (batched per cycle).
 // - The held-out test set is never used for tuning: a finding on a test case
 //   may only report a bug, and it needs the user's approval too.
+//
+// A batch of findings is a JSON-lines file (findings/batch-1.jsonl,
+// parseFindings). Decisions on the validation itself are one JSON file per
+// record, named by the record's id (findings/decisions/<id>.json,
+// parseFindingFiles), so that parallel changes never edit the same file.
 
 import { splitOf } from './cases';
 
@@ -107,4 +112,31 @@ export const parseFindings = (text) => String(text || '').split('\n').map((line,
             return { line, finding: null, ok: false, errors: [`not JSON: ${failure.message}`] };
         }
         return { line, finding, ...validateFinding(finding) };
+    });
+
+// A record's id is its file name without `.json`: the date it was decided
+// and a slug, so the id order is the order of the decisions.
+export const RECORD_ID = /^\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/**
+ * Records kept one per file, so that parallel changes never touch the same
+ * file (validation/findings/decisions/<id>.json): `files` are `{ name, text }`
+ * as read from the folder. Every `*.json` file is one finding, validated by
+ * the same schema as a line of a findings file; the others are ignored. In id
+ * order; a malformed file or id is an error, never dropped.
+ */
+export const parseFindingFiles = (files) => (files || [])
+    .filter(({ name }) => typeof name === 'string' && name.endsWith('.json'))
+    .map(({ name, text }) => ({ id: name.slice(0, -'.json'.length), file: name, text }))
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .map(({ id, file, text }) => {
+        const idErrors = RECORD_ID.test(id) ? [] : [`the file name is the record's id, YYYY-MM-DD-slug.json (lower-case words and dashes), got ${file}`];
+        let finding;
+        try {
+            finding = JSON.parse(text);
+        } catch (failure) {
+            return { id, file, finding: null, ok: false, errors: [...idErrors, `not JSON: ${failure.message}`] };
+        }
+        const { errors } = validateFinding(finding);
+        return { id, file, finding, ok: !idErrors.length && !errors.length, errors: [...idErrors, ...errors] };
     });

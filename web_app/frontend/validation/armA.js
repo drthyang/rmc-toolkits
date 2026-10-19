@@ -12,20 +12,40 @@
 //
 // Arm A+ (control), the engine sweep: every Copilot engine run exhaustively
 // with its own thresholds and fixed rules joining them, no model. What arm B
-// adds over A+ is what the language model itself adds.
+// adds over A+ is what the language model itself adds. The cluster and
+// modulation engines decide for themselves (their verdicts): A+ calls them
+// directly and maps their answers to claims. Where the app has a rule, A+
+// reads it from where the app decides it (architecture candidate 8,
+// SWEEP_RULES below): the split site, the cluster elements, the lower
+// group's tolerance, a mode's polarisation and a joined shell's split.
 //
 // Each reading is recorded with the value it rests on, so a misleading
 // result can be traced to the page that misled.
 
 import { pointGroupFacts } from '../src/llm/context/pointGroups';
-import { extractPeaks, firstShell } from '../src/llm/context/pairCorrelations';
-import { symmetryNoiseFloor } from '../src/llm/context/runContext';
+import { clusterElementsOf, extractPeaks, shellCatalogue } from '../src/llm/context/shells';
+import { lowerGroupTolerance, NOISE_FLOOR_MARGIN, symmetryNoiseFloor } from '../src/llm/context/runContext';
 import { describeSymmetry } from '../src/symmetryModel';
 import { unitCellVectors } from '../src/pcaCrystalFrame';
-import {
-    AXIS_ENHANCEMENT, CLUSTER_EFFECT, CLUSTER_Z, buildCopilotTools, cartesianToUvw
-} from '../src/copilotTools';
+import { cartesianToUvw, splitDisplacement } from '../src/copilotTools';
+import { isSplitSite, splitSiteEvidence } from '../src/workers/clusters';
 import { normalizeVerdict } from './verdict';
+
+// What the arms read of a case: the run as the Copilot is handed it
+// (runFolder.js loadRun: a CopilotRun, or the promise loadRun returns), its
+// structure, plot files and run settings, its engine, elements and engine
+// tools.
+const readRun = async (copilotRun) => {
+    const run = await copilotRun;
+    return {
+        structure: run.props.structure,
+        plotFiles: run.props.plotFiles,
+        runSettings: run.props.runSettings ?? null,
+        engine: run.engine,
+        elements: run.elements,
+        tools: run.tools
+    };
+};
 
 /** Arm A's reading rules, fixed before any run. */
 export const ARM_A_RULES = Object.freeze({
@@ -68,7 +88,7 @@ const symmetryReading = (described, tolerance, source) => {
 
 // PCA Ellipsoid rows → split sites (one claim per element: its largest).
 const splitSites = async (run, readings) => {
-    const payload = await run.request('sites');
+    const payload = await run.engine('sites');
     const found = new Map();
     for (const site of payload.sites || []) {
         if (!site.rms || !site.axes) continue;
@@ -90,7 +110,7 @@ const splitSites = async (run, readings) => {
 
 // Displacement Directions page on one site, at the page's defaults.
 const directionsOf = async (run, site, readings) => {
-    const payload = await run.request('orientation', {
+    const payload = await run.engine('orientation', {
         referenceNumber: site.referenceNumber, frequency: ARM_A_RULES.FREQUENCY, smoothing: ARM_A_RULES.SMOOTHING, geometry: false
     });
     const significant = payload.peakSignificance >= ARM_A_RULES.SIGMA;
@@ -153,8 +173,9 @@ const splitShells = (run, readings) => {
     return found;
 };
 
-/** Arm A: the default pages, read by ARM_A_RULES. */
-export const runArmA = async (run) => {
+/** Arm A: the default pages, read by ARM_A_RULES. `copilotRun`: loadRun's run (or its promise). */
+export const runArmA = async (copilotRun) => {
+    const run = await readRun(copilotRun);
     const readings = [];
     const card = describeSymmetry(run.structure, ARM_A_RULES.CARD_TOLERANCE_A);
     const symmetry = symmetryReading(card, ARM_A_RULES.CARD_TOLERANCE_A, 'Detected SG card');
@@ -173,43 +194,193 @@ export const runArmA = async (run) => {
     return { arm: 'A', readings, verdict: normalizeVerdict({ features, ...symmetry.verdict }) };
 };
 
-/** Arm A+'s extra rules (the engine sweep), fixed before any run. */
+/**
+ * Arm A+'s rules (the engine sweep). Since architecture candidate 8
+ * (2026-10-19) every one is the app's, imported from the module that decides
+ * it, so A+ and the Copilot cannot read a run two ways:
+ *
+ *   split site      isSplitSite (workers/clusters.js: PC1 resolved, κ₁ ≤ −0.5
+ *                   and ≥ 3 sampling errors below 0), with list_sites' static
+ *                   displacement δ = √(rms1² − rms⊥²) (splitDisplacement);
+ *                   until then A+ used arm A's (PC1/PC2 ≥ 1.3, κ₁ ≤ −0.5).
+ *   cluster elements  clusterElementsOf (llm/context/shells.js): an element
+ *                   whose own first shell holds 0.5–4.5 neighbours, the
+ *                   evidence gate's rule; until then a same-element first
+ *                   shell peaking below 3.6 Å.
+ *   lower group     lowerGroupTolerance (llm/context/runContext.js):
+ *                   NOISE_FLOOR_MARGIN (1.25) × the sampling noise floor,
+ *                   measure_symmetry_lowering's default and the Workbench's
+ *                   tolerance question's margin; until then the floor itself.
+ *
+ *   polarisation    the modulation engine's (plan item 4.3, protocol
+ *                   2026-10-19.12): the leading axis of the element's power
+ *                   tensor at the q that decided the order, its [u v w];
+ *                   until then the PC1 of the element's most prolate site
+ *                   (PC1/PC2 ≥ ARM_A_RULES.PROLATE_RATIO), a rule of A+'s own.
+ *   Jahn–Teller split  the shell catalogue's (plan item 4.2, protocol
+ *                   2026-10-19.15): for a shell joined across a deep trough,
+ *                   the long − short of its split (the last part's mean
+ *                   distance − the first's, from r²g: find_gr_peaks'
+ *                   first_shell.split.long_minus_short_A); until then the
+ *                   separation of the g(r) maxima arm A reads, which A+ still
+ *                   uses for a split shell the app does not join (it reads
+ *                   no split there). Which shells are claimed stays A+'s own
+ *                   joining rule (arm A's split shell, unless an off-centred
+ *                   centre explains it); the long axis has no app rule (the
+ *                   g(r) is orientation-averaged), so the claim has none.
+ *
+ * Arm A's rules (ARM_A_RULES) are the frozen protocol's and stay as they were.
+ * What remains A+'s own is only how it joins the engines: one claim per
+ * element, an ordered mode explains its element's split sites, and an
+ * off-centred centre its own split shell.
+ *
+ * The table holds the app's functions themselves, and A+ calls them through
+ * it: a test checks they are the app's (one definition).
+ */
 export const SWEEP_RULES = Object.freeze({
-    // Same-element first shells shorter than this are tried as clusters.
-    CLUSTER_SHELL_MAX_A: 3.6
+    splitSite: isSplitSite,
+    staticDisplacement: splitDisplacement,
+    clusterElements: clusterElementsOf,
+    lowerGroupTolerance
 });
 
-const significantChange = (row) => Number.isFinite(row?.z) && Math.abs(row.z) >= CLUSTER_Z
-    && Number.isFinite(row?.change) && Math.abs(row.change) >= CLUSTER_EFFECT;
+/**
+ * A+'s split sites, by the app's rule: each site row of the 'sites' request
+ * read as list_sites reads it (isSplitSite, through its evidence record: κ₁,
+ * its z = κ₁/√(24/n), PC1 resolved), a split site's static displacement
+ * δ ± its sampling error as list_sites gives it (delta_A, delta_se_A), and
+ * per element the split site with the largest δ (one claim per element).
+ * `run` holds the engine and the structure (the cell for [u v w]).
+ */
+export const appSplitSites = async (run, readings) => {
+    const payload = await run.engine('sites');
+    const found = new Map();
+    for (const site of payload.sites || []) {
+        if (!site.rms || !site.axes) continue;
+        // The values the rule reads, for the record; the rule decides.
+        const evidence = splitSiteEvidence(site);
+        const split = SWEEP_RULES.splitSite(site) ? SWEEP_RULES.staticDisplacement(site) : null;
+        readings.push({
+            page: 'list_sites', what: `site ${site.referenceNumber} ${site.element}`,
+            value: {
+                rms_A: site.rms.map((r) => round(r)),
+                pc1_resolved: Boolean(site.axisResolved?.[0]),
+                pc1_excess_kurtosis: round(evidence.observed),
+                pc1_kurtosis_z: round(evidence.z),
+                pc1_uvw: uvwOf(run.structure, site.axes[0]),
+                ...(split ? { delta_A: round(split.delta), delta_se_A: round(split.se, 2) } : {})
+            },
+            reading: split ? `split site along PC1, static shift δ = ${round(split.delta)} ± ${round(split.se, 2)} Å` : 'not a split site'
+        });
+        if (!split) continue;
+        const current = found.get(site.element);
+        if (!current || split.delta > current.magnitude) found.set(site.element, { site, magnitude: split.delta });
+    }
+    return { payload, found };
+};
 
-/** Arm A+: every engine, its own thresholds, fixed joining rules; no model. */
-export const runArmSweep = async (run) => {
+// An engine Finding as the readings record it: "answer (because)".
+const said = (finding) => `${finding.answer} (${finding.because})`;
+const qText = (q) => `(${q.map((value) => round(value, 3) ?? 0).join(', ')})`;
+const sameQ = (a, b) => a.length === b.length && a.every((value, axis) => value === b[axis]);
+// A direct-lattice [u v w] as A+'s other direction claims give it (two decimals, cartesianToUvw's).
+const uvwText = (uvw) => uvw.map((value) => Number(value.toFixed(2)) + 0);
+
+// The point of an element's payload entry at q (a zone-boundary point or a strongest mode).
+const pointAt = (entry, q) => [...(entry.zoneBoundary || []), ...(entry.strongest || [])].find((point) => sameQ(point.q, q)) ?? null;
+
+// The modulation engine's verdicts, per element tested, as a reading, with
+// the polarisation of each ordered point (the direction a claim rests on).
+const modulationReading = (payload) => {
+    const tested = (payload.elements || []).filter((entry) => entry.sites);
+    const named = (name) => tested.filter((entry) => entry.verdict[name].answer === true)
+        .map((entry) => `${entry.element} at ${entry.verdict[name].decidedBy.map(qText).join(', ')}`);
+    const polarisations = (entry) => ['cellDoubling', 'generalOrder']
+        .flatMap((name) => (entry.verdict[name].answer === true ? entry.verdict[name].decidedBy : []))
+        .map((q) => ({ q, polarisation: pointAt(entry, q)?.polarisation }))
+        .filter((item) => item.polarisation)
+        .map(({ q, polarisation }) => ({ q: qText(q), uvw: uvwText(polarisation.uvw), share: round(polarisation.share) }));
+    return {
+        value: Object.fromEntries(tested.map((entry) => {
+            const verdicts = Object.fromEntries(Object.entries(entry.verdict).map(([name, finding]) => [name, said(finding)]));
+            const rows = polarisations(entry);
+            return [entry.element, rows.length ? { ...verdicts, polarisation: rows } : verdicts];
+        })),
+        reading: [['cellDoubling', 'cell doubling'], ['generalOrder', 'order at a general q'], ['longWave', 'long wave']]
+            .map(([name, label]) => `${label}: ${named(name).join('; ') || 'none'}`).join('; ')
+    };
+};
+
+// The shell catalogue's split of a joined shell as a reading, as
+// find_gr_peaks gives it (each part's count in the direction the join
+// decided): the value a Jahn–Teller claim's magnitude rests on.
+const splitReading = ({ centre, partner }, split) => {
+    const forward = split.direction !== 'reverse';
+    const [counted, around] = forward ? [partner, centre] : [centre, partner];
+    const parts = split.parts.map((part) => ({
+        window_A: [...part.window], mean_d_A: round(part.meanR, 4), cn: round(forward ? part.cn : part.reverseCn), share: round(part.share)
+    }));
+    const se = round(split.longMinusShortSe, 2);
+    return {
+        page: 'find_gr_peaks',
+        what: `${centre}-${partner} first shell split (joined across a deep trough)`,
+        value: { cn_of: `${counted}_per_${around}`, parts, long_minus_short_A: round(split.longMinusShort), long_minus_short_se_A: se },
+        reading: `${parts.map((part) => `${part.cn} at ${part.mean_d_A} Å`).join(' + ')} ${counted} per ${around}: `
+            + `long − short ${round(split.longMinusShort)}${se == null ? '' : ` ± ${se}`} Å`
+    };
+};
+
+// The cluster engine's verdict as a reading: its answers, and the two rows they mostly rest on.
+const clusterReading = (payload) => {
+    const { verdict } = payload;
+    const row = (record) => (record ? { obs: round(record.observed), null: round(record.null), z: round(record.z, 2), change: round(record.change, 2) } : null);
+    if (verdict.window.extendedNetwork.because !== 'finite_clusters') {
+        return { value: { window: said(verdict.window.extendedNetwork) }, reading: `no clusters: ${verdict.window.extendedNetwork.because}` };
+    }
+    const names = ['distorted', 'lessDistorted', 'breathing', 'rigid', 'staticDistortion', 'splitMemberSites', 'trigonalLean', 'favouredAxes'];
+    return {
+        value: {
+            ...Object.fromEntries(names.map((name) => [name, said(verdict[name])])),
+            ladder_width: row(verdict.lessDistorted.evidence[0]),
+            breathing_sd: row(verdict.breathing.evidence[0])
+        },
+        reading: names.map((name) => `${name} ${said(verdict[name])}`).join('; ')
+    };
+};
+
+/** Arm A+: every engine, its own thresholds, fixed joining rules; no model. `copilotRun` as in runArmA. */
+export const runArmSweep = async (copilotRun) => {
+    const run = await readRun(copilotRun);
     const readings = [];
-    const tools = Object.fromEntries(buildCopilotTools({ request: run.request, structure: run.structure, elements: run.elements })
-        .map((tool) => [tool.name, tool]));
-    // Symmetry at the sampling noise floor: the local-symmetry skill's rule
-    // (a group change below the floor is noise).
+    // The run's engine tools, as the Copilot is offered them.
+    const tools = Object.fromEntries(run.tools.map((tool) => [tool.name, tool]));
+    // Symmetry at the lower group's tolerance, the app's: NOISE_FLOOR_MARGIN ×
+    // the sampling noise floor (a group change below the floor is noise, and
+    // a group counts only where it holds clearly above it).
     const floor = symmetryNoiseFloor(run.structure.basis);
-    const tolerance = Number((floor ?? ARM_A_RULES.CARD_TOLERANCE_A).toPrecision(2));
-    const symmetry = symmetryReading(describeSymmetry(run.structure, tolerance), tolerance, 'detect_symmetry at the noise floor');
+    const tolerance = SWEEP_RULES.lowerGroupTolerance(run.structure.basis);
+    const symmetry = symmetryReading(describeSymmetry(run.structure, tolerance), tolerance, `detect_symmetry at ${NOISE_FLOOR_MARGIN} × the noise floor`);
+    symmetry.reading.noise_floor_A = round(floor);
     readings.push(symmetry.reading);
 
-    const { payload: sites, found } = await splitSites(run, readings);
+    const { found } = await appSplitSites(run, readings);
     const features = [];
 
-    // Superstructure: the modulation tool's own rules, for an ordered
-    // zone-boundary point and (batch 1, review L4) a general wavevector.
-    const modulations = await tools.analyze_modulations.run({});
-    readings.push({ page: 'analyze_modulations', what: 'zone-boundary points and general modes', value: null, reading: modulations.checks.map((c) => c.text).join(' ') });
+    // Superstructure: the modulation engine's verdict, a cell doubling (an
+    // ordered zone-boundary point) or (batch 1, review L4) order at a general
+    // wavevector, each a modulation claim at the q that decided it.
+    const modulations = await run.engine('modulations', {});
+    readings.push({ page: 'analyze_modulations', what: 'zone-boundary points and general modes (engine verdict)', ...modulationReading(modulations) });
+    const tested = (modulations.elements || []).filter((entry) => entry.sites);
+    const orderedAt = (name) => tested.filter((entry) => entry.verdict[name].answer === true)
+        .map((entry) => ({ entry, q: entry.verdict[name].decidedBy[0] }));
     const modulated = new Set();
-    for (const { element, q } of [...modulations.facts.modulation.ordered, ...(modulations.facts.modulation.general || [])]) {
-        if (modulated.has(element)) continue;
-        modulated.add(element);
-        // Polarisation: PC1 of the element's most prolate site.
-        const site = (sites.sites || []).filter((s) => s.element === element && s.axes)
-            .sort((x, y) => (y.rms[0] / y.rms[1]) - (x.rms[0] / x.rms[1]))[0];
-        const prolate = site && site.rms[0] / site.rms[1] >= ARM_A_RULES.PROLATE_RATIO;
-        features.push({ kind: 'modulation', element, q, direction_uvw: prolate ? uvwOf(run.structure, site.axes[0]) : null });
+    for (const { entry, q } of [...orderedAt('cellDoubling'), ...orderedAt('generalOrder')]) {
+        if (modulated.has(entry.element)) continue;
+        modulated.add(entry.element);
+        // Polarisation: the engine's, at the q that decided the order (plan item 4.3).
+        const polarisation = pointAt(entry, q)?.polarisation;
+        features.push({ kind: 'modulation', element: entry.element, q, direction_uvw: polarisation ? uvwText(polarisation.uvw) : null });
     }
 
     // Split sites not explained by an ordered mode.
@@ -218,14 +389,22 @@ export const runArmSweep = async (run) => {
         const peak = await directionsOf(run, site, readings);
         features.push({ kind: 'off_centre', element, direction_uvw: peak ?? uvwOf(run.structure, site.axes[0]), magnitude_A: round(magnitude) });
     }
+    // The run's one shell reading (shells.js): the split by number of a shell
+    // joined across a deep trough, and the cluster windows below.
+    const catalogue = shellCatalogue({ plotFiles: run.plotFiles, structure: run.structure, runSettings: run.runSettings });
     for (const shell of splitShells(run, readings)) {
         if (found.has(shell.centre)) continue;
-        features.push({ kind: 'jahn_teller', element: shell.centre, magnitude_A: round(shell.width) });
+        // Long − short from the app's split where it reads one (plan item
+        // 4.2), else the maxima's separation arm A reads.
+        const split = catalogue?.shell(shell.centre, shell.partner)?.split ?? null;
+        if (split) readings.push(splitReading(shell, split));
+        features.push({ kind: 'jahn_teller', element: shell.centre, magnitude_A: round(split ? split.longMinusShort : shell.width) });
     }
 
     // A lowering of the average structure (batch 1, review L4): when the
-    // group at the noise floor is not the card's, the shift tool measures
-    // each element's coherent shift from the card's group, above the floor.
+    // group at the lower tolerance is not the card's, the shift tool measures
+    // each element's coherent shift from the card's group, above the floor
+    // (its lower group at the same tolerance, the tool's default).
     if (tools.measure_symmetry_lowering && symmetry.verdict.space_group
         && symmetry.verdict.space_group !== describeSymmetry(run.structure, ARM_A_RULES.CARD_TOLERANCE_A)?.spaceGroup) {
         const lowering = await tools.measure_symmetry_lowering.run({ parent_tolerance_A: ARM_A_RULES.CARD_TOLERANCE_A, tolerance_A: tolerance });
@@ -235,42 +414,21 @@ export const runArmSweep = async (run) => {
         }
     }
 
-    // Clusters: every element whose own first shell is short and closed.
-    const partials = run.plotFiles.find((file) => file.plotKind === 'pdf_partials');
-    for (const series of partials?.plotData?.series || []) {
-        const match = /^([A-Z][a-z]?)\s*-\s*([A-Z][a-z]?)$/.exec((series.label || '').trim());
-        if (!match || match[1] !== match[2]) continue;
-        const shell = firstShell(series.x, series.y);
-        if (!shell || shell.boundaryR == null || shell.peakR > SWEEP_RULES.CLUSTER_SHELL_MAX_A) continue;
-        const element = match[1];
-        const window = [Number(shell.onsetR.toFixed(2)), Number(shell.boundaryR.toFixed(2))];
-        const result = await tools.analyze_clusters.run({ element, r_min: window[0], r_max: window[1] });
-        const local = result.data.local;
-        readings.push({
-            page: 'analyze_clusters', what: `${element} clusters in ${window[0]}–${window[1]} Å`,
-            value: local ? { ladder_width: local.ladder_width_A, breathing_sd: local.breathing_sd_A } : null,
-            reading: result.checks.map((c) => c.text).join(' ')
+    // Clusters: every element whose own first shell holds 0.5–4.5 neighbours
+    // (the evidence gate's rule, clusterElementsOf), read by the cluster
+    // engine's verdict: distorted (the edge spread above the shape null, or a
+    // pattern: an axis family, a trigonal lean), breathing, rigid (never with
+    // split member sites, where the null mixes the sites' static choices). The
+    // shell and its window are the run's one shell reading (shells.js), the
+    // window find_gr_peaks gives the model.
+    const CLUSTER_CLAIMS = [['distorted', 'cluster_distortion'], ['breathing', 'cluster_breathing'], ['rigid', 'rigid_cluster']];
+    for (const element of SWEEP_RULES.clusterElements(catalogue)) {
+        const { window } = catalogue.shell(element, element);
+        const result = await run.engine('clusters', { element, rMin: window[0], rMax: window[1] });
+        readings.push({ page: 'analyze_clusters', what: `${element} clusters in ${window[0]}–${window[1]} Å (engine verdict)`, ...clusterReading(result) });
+        CLUSTER_CLAIMS.forEach(([finding, kind]) => {
+            if (result.verdict[finding].answer === true) features.push({ kind, element });
         });
-        if (!local) continue;
-        const width = local.ladder_width_A;
-        const breathing = local.breathing_sd_A;
-        const kinds = new Set();
-        const breathes = significantChange(breathing) && breathing.change > 0;
-        // "Less than independent atoms" means rigid only for unimodal sites:
-        // for split sites the null mixes static choices, and a collective
-        // breathing alone lowers the shape spread.
-        const rigidReadable = !found.has(element) && !breathes;
-        if (significantChange(width)) {
-            if (width.change > 0) kinds.add('cluster_distortion');
-            else if (rigidReadable) kinds.add('rigid_cluster');
-        }
-        if (breathes) kinds.add('cluster_breathing');
-        else if (significantChange(breathing) && rigidReadable) kinds.add('rigid_cluster');
-        // An axis family the clusters favour is a shape distortion too.
-        Object.values({ ...(local.long_axis_within_15deg || {}), ...(local.short_axis_within_15deg || {}) }).forEach((entry) => {
-            if (entry.z >= CLUSTER_Z && entry.null > 0 && entry.obs / entry.null >= AXIS_ENHANCEMENT) kinds.add('cluster_distortion');
-        });
-        kinds.forEach((kind) => features.push({ kind, element }));
     }
     return { arm: 'A+', readings, verdict: normalizeVerdict({ features, ...symmetry.verdict }) };
 };

@@ -1,20 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-// The transcript of one assistant turn, folded from the agent loop's events
-// (agentLoop.js). A turn is an ordered list of items — text segments (one per
-// model request, with that request's reasoning) and tool steps — plus the
-// final verdict. Pure: `applyTurnEvent(turn, event, now)` returns a new turn.
+// The transcript of one assistant turn, folded from the turn's events
+// (turn.js, agentLoop.js). A turn is an ordered list of items — text segments
+// (one per model request, with that request's reasoning) and tool steps —
+// plus the final verdict. Pure: `applyTurnEvent(turn, event, now)` returns a
+// new turn. A step keeps its tool_end as the loop sent it: its severity
+// (`status`, or 'running' / 'stopped'), how the call ended (`resultStatus`,
+// the tool contract's, tools.js; null while running and once stopped), the
+// app's `note` and the user's `choice`. The step cards read those, never the
+// text the model read (questionReply).
 
 import { createReferenceStore, fillReferences } from './references';
 
 // Every text segment of an ended turn with its {{r<n>.…}} references filled
-// from the turn's own steps (each keeps its ref and the data it sent): the
-// answer arrives filled, but text written beside earlier calls, or the part
-// a Stop leaves, would show the raw references otherwise.
-const fillTexts = (items) => {
+// from the turn's own steps (each keeps its ref and the data it sent) and
+// its {{ctx.…}} ones from the context as the model read it (the start
+// event's `shown`): the answer arrives filled, but text written beside
+// earlier calls, or the part a Stop leaves, would show the raw references
+// otherwise.
+const fillTexts = (items, shown = null) => {
     if (!items.some((item) => item.kind === 'text' && item.text?.includes('{{'))) return items;
-    const store = createReferenceStore();
+    const store = createReferenceStore({ context: shown });
     items.forEach((item) => { if (item.kind === 'tool' && item.ref) store.put(item.ref, item.data); });
     return items.map((item) => (item.kind === 'text' && item.text?.includes('{{')
         ? { ...item, text: fillReferences(item.text, store).text }
@@ -44,6 +51,10 @@ const closeTexts = (items) => items.map((item) => (item.kind === 'text' && item.
 
 export const applyTurnEvent = (turn, event, now = 0) => {
     switch (event.type) {
+        case 'start':
+            // The context as the model read it, for the {{ctx.…}} the earlier
+            // text segments cite (fillTexts).
+            return { ...turn, shown: event.shown ?? null };
         case 'round':
             return {
                 ...turn,
@@ -76,10 +87,15 @@ export const applyTurnEvent = (turn, event, now = 0) => {
                     interactive: Boolean(event.interactive),
                     app: Boolean(event.app),
                     reading: Boolean(event.reading),
+                    // Set when it ends (tool_end's `analysis`).
+                    analysis: false,
                     status: 'running',
+                    resultStatus: null,
                     data: null,
                     checks: [],
                     error: null,
+                    note: null,
+                    choice: null,
                     ms: null,
                     cached: false,
                     pageParams: null
@@ -91,13 +107,18 @@ export const applyTurnEvent = (turn, event, now = 0) => {
                 items: turn.items.map((item) => (item.kind === 'tool' && item.id === event.id ? {
                     ...item,
                     status: event.status,
+                    resultStatus: event.resultStatus ?? null,
                     args: event.args ?? item.args,
                     data: event.data,
                     checks: event.checks || [],
                     error: event.error,
+                    note: event.note ?? null,
+                    choice: event.choice ?? null,
                     ms: event.ms,
                     cached: Boolean(event.cached),
                     ref: event.ref ?? null,
+                    // An analysis by the verification's one definition (isAnalysis).
+                    analysis: Boolean(event.analysis),
                     pageParams: event.pageParams ?? null
                 } : item))
             };
@@ -109,7 +130,7 @@ export const applyTurnEvent = (turn, event, now = 0) => {
         case 'done': {
             // The verdict line is shown as the chip, not repeated in the text;
             // the answer comes filled, earlier segments are filled here.
-            const filled = fillTexts(turn.items);
+            const filled = fillTexts(turn.items, turn.shown);
             const items = event.outcome
                 ? updateLastText(filled, () => ({ text: event.outcome.body }))
                 : filled;
@@ -137,7 +158,7 @@ export const applyTurnEvent = (turn, event, now = 0) => {
  * unfinished so a later question does not read it as a complete answer.
  */
 export const closeTurn = (turn, stoppedBy) => {
-    const items = fillTexts(turn.items);
+    const items = fillTexts(turn.items, turn.shown);
     // The partial text, or an answer the evidence gate withdrew.
     const partial = turn.text || [...items].reverse().find((item) => item.kind === 'text' && item.text)?.text
         || turn.gates?.at(-1)?.text || '';
@@ -152,13 +173,43 @@ export const closeTurn = (turn, stoppedBy) => {
     };
 };
 
+// The results of a question that never reached the user.
+const NOT_ASKED = ['error', 'skipped', 'unknown_tool'];
+
+/**
+ * How a question step stands, as its card and the screen reader say it, read
+ * from the step's result (never from the text the model read): `{ state,
+ * text }`.
+ *   'waiting'    it runs: the card shows the options;
+ *   'stopped'    Stop or a restart came before the reply: "Not answered";
+ *   'not_asked'  it never reached the user (refused by the loop, malformed,
+ *                nobody to ask: resultStatus 'error', 'skipped' or
+ *                'unknown_tool'); `text` is the error;
+ *   'skipped'    the user skipped (choice.source 'skipped'): the default
+ *                stands, if there is one;
+ *   'answered'   the user chose an option or typed an answer; `text` is it.
+ */
+export const questionReply = (step) => {
+    if (step.status === 'running') return { state: 'waiting', text: '' };
+    if (step.status === 'stopped') return { state: 'stopped', text: 'Not answered' };
+    if (NOT_ASKED.includes(step.resultStatus)) return { state: 'not_asked', text: step.error || '' };
+    const answer = step.data?.answer;
+    if (step.choice?.source === 'skipped') {
+        return { state: 'skipped', text: answer ? `Skipped: the Copilot uses its default, ${answer}.` : 'Skipped.' };
+    }
+    return { state: 'answered', text: answer == null ? '' : String(answer) };
+};
+
 /**
  * "3 analyses · 1 warning · 1 failed" for a turn's footer, or '' without
- * steps. A clarifying question (an interactive step) and reading a skill are
- * not analyses.
+ * analyses. It counts the steps that ended as analyses (tool_end's
+ * `analysis`: the verification's isAnalysis, which the computed Outcome
+ * counts too): not a clarifying question, a skill read or a view tool, nor a
+ * call that never ran (an unknown tool, one skipped by the budget) or a step
+ * stopped before its end.
  */
 export const stepSummary = (items) => {
-    const steps = items.filter((item) => item.kind === 'tool' && !item.interactive && !item.reading);
+    const steps = items.filter((item) => item.kind === 'tool' && item.analysis);
     if (!steps.length) return '';
     const count = (status) => steps.filter((item) => item.status === status).length;
     const parts = [`${steps.length} ${steps.length === 1 ? 'analysis' : 'analyses'}`];

@@ -47,15 +47,16 @@ It is **docked beside the pages**, not over them, and it **points at the page** 
   established, a **Check** line says so under it and the Outcome chip drops to **Not verified**,
   whatever the model said of its own answer. See *Checks on the answer* below.
 
-How one question runs:
+How one question runs (one turn of `copilot/turn.js`, which builds the prompt, the tools offered
+and the checks from the run props; *The turn* below):
 
 ```
         question
            │
-   ┌───────▼────────┐   tools offered    ┌──────────────┐
-   │  agent loop    │ ─────────────────▶ │    model     │
-   │ (agentLoop.js) │ ◀───────────────── │ (client.js)  │
-   └───────┬────────┘  tool calls / text └──────────────┘
+   ┌───────▼────────┐   tools offered    ┌──────────────────────────┐
+   │  agent loop    │ ─────────────────▶ │ model port (model.js) →  │
+   │ (agentLoop.js) │ ◀───────────────── │ contextGuard / client.js │
+   └───────┬────────┘  tool calls / text └──────────────────────────┘
            │ validate → run → fit to budget
    ┌───────▼─────────────────────────────┐
    │ tools: run data (runTools.js) and   │   result + deterministic checks
@@ -119,13 +120,21 @@ inputs on its page, stays the *user's* action.
    ~6,000-character budget and records each trim with an `*_omitted` count. The context travels with
    every question, so simple questions need no tool.
 2. **`prompts/system.js` + `prompts/copilot.js`**
-   - `SYSTEM_PROMPT` holds the domain rules: what Rwp means, that the history is ln(χ²) of one fit
+   - `SYSTEM_PROMPT` (`systemPrompt(method)`) holds the domain rules, each part of each ground-rule
+     sentence marked a definition (what a context field is), an inference (which field to use, what
+     a pattern is evidence of: the method) or conduct (`GROUND_RULES`); with method `'off'` no
+     inference part is sent. The rules: what Rwp means, that the history is ln(χ²) of one fit
      term, and "quote the numbers, don't guess".
    - `COPILOT_PROMPT` adds how to work with tools: say why before each call, read the `checks`,
      change the arguments on a `fail`, never repeat an identical call. It also asks for the verdict
-     line. `copilotSystemPrompt()` adds `ASK_RULES` when `ask_user` is offered.
+     line. `copilotSystemPrompt()` adds `ASK_RULES` when `ask_user` is offered. `TOOL_RULES` and
+     `ASK_RULES` are lists of sentences with their method sentences marked
+     (`TOOL_RULE_SENTENCES`, `ASK_RULE_SENTENCES`, `METHOD_SENTENCES`): with the turn's method
+     `'off'` (*The turn*) they are sent without them, and `EVIDENCE_RULES` and the skills' index
+     are not sent.
    - `buildCopilotMessages()` puts the context, inside a fenced JSON block, ahead of the
-     conversation. Earlier turns travel as question + final answer only (the newest 8 messages: 4 exchanges).
+     conversation. Earlier turns travel as question + final answer only (the newest
+     `HISTORY_MESSAGES` = 8 messages: 4 exchanges); the turn module turns its history into them.
    - `prompts/templates.js` holds the watchdog's rigid `STATUS: …` prompt and its parser.
 3. **`provider/client.js`** is a hand-rolled OpenAI-compatible client (`/models`,
    `/chat/completions`) with an SSE stream parser over `fetch` + `ReadableStream`.
@@ -135,10 +144,17 @@ inputs on its page, stays the *user's* action.
      unchanged.
    - Each fragment's provider data (`extra_content`, where Gemini puts its `thought_signature`)
      is kept, because it must be echoed back.
-   - An HTTP failure carries its `status`.
-   - **`provider/contextGuard.js` + `provider/ollama.js`**: every Copilot request goes through
-     `streamCopilotChat()`, which never sends a request the model would cut (*The context window*
-     below). Ollama's requests use its native `/api/chat` (NDJSON) with a fitting `num_ctx`.
+   - An HTTP failure carries its `status` and its parsed error body (`httpError`).
+   - **`provider/contextGuard.js` + `provider/ollama.js`**: the context guard decides each request
+     before it is sent (`planCopilotChat()`: the server kind, Ollama's `num_ctx` and `num_predict`,
+     LM Studio's loaded context, or a refusal), and `streamCopilotChat()` sends it under that plan,
+     never a request the model would cut (*The context window* below). Ollama's requests use its
+     native `/api/chat` (NDJSON) with a fitting `num_ctx`.
+   - **`provider/model.js`**: the model port, the one seam between a turn and whatever answers it
+     (*The turn* below). `providerModel(settings, { session })` is the production port. Every
+     provider quirk sits behind it: the server kind, the form each server takes `tool_choice` in,
+     the guard's plan in the request as sent, and the typed failures (`ContextLimitError`,
+     `ToolsUnsupportedError`).
    - `checkConnection()` turns failures into actionable hints: a bare `TypeError` means "server
      down **or** CORS blocked", and 401 / 429 name the key and quota problems.
 4. **`copilot/toolCalls.js`** turns streamed fragments into calls.
@@ -150,46 +166,88 @@ inputs on its page, stays the *user's* action.
      are accepted for number fields.
 5. **`copilot/tools.js`** holds the tool contract (below) and `executeToolCall()`: parse, validate,
    run with a timeout, and give the tool its own `AbortSignal`, which is aborted on Stop or timeout.
-   A thrown error becomes a failed step whose message the model reads. `fitToBudget()` halves the
-   largest array, recording `*_omitted`, until a result fits. It never trims silently.
-6. **`copilot/agentLoop.js`**: `runCopilotTurn()` is a pure async generator of UI events. The model
-   call is injected, so the tests script the model's replies. Its rules:
-   - **Budgets.** ≤ 6 rounds of tool calls; ≤ 4 calls per round (extra calls are answered
-     "skipped"); 120 s per call; no new round after 10 min. Each result is fitted to 3,000
+   It decides how every call ends (*How a call ends*, below): one ToolResult with its
+   `resultStatus`, from `executeToolCall` (ok, refused, error) or the constructors for a call that
+   did not run. A thrown error becomes an error result whose message the model reads.
+   `toolMessage()` writes the message the model reads; `fitToBudget()` halves the largest array,
+   recording `*_omitted`, until a result fits. It never trims silently.
+6. **`copilot/agentLoop.js`**: `runCopilotTurn()` is a pure async generator of UI events, the turn
+   module's internal module (`copilot/turn.js` is its one production caller). It calls a model
+   port, so the tests script the model's replies, and before each model call it emits the request
+   as sent (`request`). It records each tool step with the turn's verification and forwards its
+   ToolResult as `tool_end` (the status, the note, the choice beside the severity): it picks which
+   constructor answers a call, never the status, and keeps no store — the events are the
+   transcript the dock and the harness both read. What ends the
+   turn, and why each request is made, is the turn policy's (`copilot/turnPolicy.js`, *The turn
+   policy* below): the loop reports each event (the turn began, a reply, a round of calls, the
+   model refused its tools) and does what the step says; the policy judges each answer through the
+   verification (*Evidence, numbers by reference, the computed verdict*). Its rules:
+   - **Budgets.** ≤ 6 rounds of tool calls and no new round after 10 min (the policy's); ≤ 4 calls
+     per round (extra calls are answered "skipped") and 120 s per call (the loop's: they refuse a
+     call, never end a turn). Each result is fitted to 3,000
      characters, and a turn's tool messages to 12,000 in total. Older results are compacted to
      their checks first, so a small local context window keeps the run context and the rules.
    - **Duplicate calls.** An identical call (same validated arguments) returns the cached result
      with a note.
-   - **Final round.** When the budget is used, a last request goes out with `tool_choice: 'none'`.
-     If it still answers with tool calls only (Ollama ignores `tool_choice`), a fixed
-     "budget used" answer with `Outcome: not achieved` closes the turn.
-   - **No tool support.** A 4xx saying the model "does not support tools" retries the turn once
-     without tools, under the tool-free prompt. Other 400s, such as a schema error, are shown.
+   - **Final round.** When the budget is used, a last request goes out with `tool_choice: 'none'`
+     (the port enforces it on Ollama by sending no tools). Its calls are never run. If it still
+     answers with tool calls only (a server that takes the field but does not honour it: LM Studio,
+     Gemini and Anthropic are not verified), a fixed "budget used" answer with `Outcome: not
+     achieved` closes the turn (the policy's empty-final ending).
+   - **No tool support.** The port's `ToolsUnsupportedError` on the turn's first request retries
+     the turn once without tools, under the tool-free prompt. The loop reacts to the type only:
+     other errors, a schema 400 among them, are shown, whatever their text says.
+   - **Preparing.** A request the port refuses in `prepare` (the context guard, a spend cap) is
+     thrown before its `request` event. `prepare` may probe the server, so it runs under the stall
+     clock (`beforeStall`).
    - **Message rules.** Every listed call gets exactly one `tool` message. Arguments are echoed as
      valid JSON (`'{}'` when unparseable). Whitespace-only assistant content is sent as `null`
      (Anthropic rejects empty text blocks).
 7. **`copilot/runTools.js`** holds the tools over data the module already receives:
    - `read_run_data(section)`: one context section as built, before the budget trim;
    - `assess_convergence`: the watchdog heuristics plus tail slopes;
-   - `find_gr_peaks(pair)`: partial-g(r) peaks and the first coordination shell — its window,
-     mean distance, coordination numbers and their sensitivity to the cut, whether it is separated
-     from the next shell — and whether the pair's minimum-distance constraint cuts the distribution;
+   - `find_gr_peaks(pair)`: partial-g(r) peaks below `r_max` (a display) and the first
+     coordination shell as the run reads it (`context/shells.js`, the one shell reading the
+     context, the Workbench's questions, the evidence gate, the answer checks and
+     `compute_bond_angles` also read): `first_shell` — its window, peaks, mean distance,
+     coordination numbers both ways and their sensitivity to the cut, whether it is separated from
+     the next shell, and for two or more resolved peaks `first_peak_only` (to the minimum between
+     the first two: window, CN, trough; the old `first_peak_window_A`, r ± FWHM, left on
+     2026-10-19); for a shell joined across a deep trough, `split` (plan item 4.2): its parts short
+     to long (window, mean distance and spread, CN in the direction the join decided, share) and
+     `long_minus_short_A` ± `long_minus_short_se_A` (the configuration's sampling error), which
+     the joined-shell note quotes by path instead of the peaks' separation — and whether the
+     pair's minimum-distance constraint cuts the distribution. The shell does not depend on
+     `r_max`;
    - `compare_fit(dataset)`: where the model misses the data, as Rw and the share of the misfit
      per range of r or Q, and the largest residual features.
 8. **`copilot/askUser.js`**: the `ask_user` tool (*Asking the user* below).
-   **`copilot/outcome.js`**: `parseOutcome()` splits the verdict line from the answer. It is
-   lenient about Markdown and dashes, strict about the three statuses, and takes the last line.
+   **`copilot/verification/`**: "is this answer verified?" — the evidence gate, the checks on the
+   answer, numbers by reference and the computed Outcome behind one interface (*Evidence, numbers
+   by reference, the computed verdict* below). Inside it, `outcome.js` `parseOutcome()` splits the
+   verdict line from the answer: lenient about Markdown and dashes, strict about the three
+   statuses, and it takes the last line.
    **`copilot/turnState.js`** folds loop events into a turn: ordered text segments (with
-   reasoning) and tool steps.
+   reasoning) and tool steps; the footer counts the steps that ended as analyses
+   (`tool_end.analysis`). Each step keeps its `resultStatus` (null while running and once
+   stopped), `note` and `choice`; `questionReply(step)` reads a question's state from them
+   (waiting, stopped, not asked, skipped, answered), the one wording of the card and the screen
+   reader's line.
 9. **`watchdog/`**: slope heuristics over the ln(χ²) history are the **source of truth** for the
    badge. The LLM only writes the tooltip note, and only when the status flips or enough new data
    arrived.
 10. **`useAssistant.js`, `useCopilot.js` and `components/`**
     - `useAssistant()` holds the settings, the connection probe (with auto-connect) and the run
       context.
-    - `useCopilot()` holds the conversation: Stop, which models cannot call tools, and a new
-      conversation when `runKey` changes. It also builds the memory (`conversationMemory`): a
-      question without an answer is dropped.
+    - `useCopilot()` is the dock's adapter of the turn module: the conversation's React state,
+      Stop, the question card (its ask-user port), the card-focus effects, which models cannot call
+      tools (passed to the turn as `toolsEnabled: false`), and a new conversation when `runKey`
+      changes. It hands each turn the conversation so far (`turnHistory`); the turn builds the
+      memory from it (a question without an answer is dropped). Each question remembers the
+      `configKey` it was asked under: after a new configuration the history holds only the
+      questions asked under the current one, and `configurationBreaks` says where the dock draws
+      its divider. It describes the turn
+      (`describeTurn`) for the composer's status line and the tool list.
     - `CopilotChat` is the dock (`components/dockLayout.js` holds its pure size rules): the rail,
       then the panel, and the resize handle. The panel mounts on first open, so nothing is fetched
       before that, and stays mounted while collapsed, so a running answer continues. It composes
@@ -215,6 +273,224 @@ inputs on its page, stays the *user's* action.
       card for the model, and run() resolves the ids, keeps marks for plot cards (`marks: true`),
       and reports what was shown and what was not on screen.
 
+## The turn: one question (`copilot/turn.js`)
+
+One module runs one question. The dock (`useCopilot.js`) and the validation harness
+(`validation/harness.js`) are its two adapters: each passes what is its own and gets the events
+back. Neither builds a prompt, a tool the turn adds, or a check, so the two cannot drift apart
+(before this module the harness lost the warmer retry and the no-tools prompt).
+
+```js
+runTurn({
+  question, run,           // required; run = CopilotChat's eight run props (the run module's)
+  model,                   // required: a model port (below)
+  tools = [],              // the caller's tools, in order; never ask_user or read_skill (a TypeError)
+  askUser = null,          // the ask-user port; null: no ask_user tool and no Workbench questions
+  skills = null,           // the host's bundle { files, references, load } (parsed here) or { list, load }
+  history = [],            // [{ question, answer }], oldest first
+  signal = null, clock = { now: Date.now },
+  toolContext = null,      // more context for a tool's run() (the dock's card-focus controller)
+  config = {}              // { toolsEnabled = true, method = 'full', limits = {}, phrasings = null }
+}) → AsyncIterable<event>
+
+describeTurn(spec) → { offered: { tools, skills, askUser, view }, prompt: 'tools' | 'view' | 'no_tools',
+                       method, toolsActive, shown, skillsError }   // pure: the same assembly, not run
+```
+
+- **What it builds.** The run context and the context as the model reads it (`shown`: trimmed to
+  its budget); the tools offered (the caller's, then `ask_user` with an ask-user port and tools on,
+  then `read_skill` with skills, tools on and method `'full'`), each as the model reads it under the
+  method; the system prompt for them; the
+  history window (an unanswered question is dropped, each answer compacted to
+  `MEMORY_ANSWER_CHARS` = 2,000 characters, the newest `HISTORY_MESSAGES` = 8 messages kept); the
+  Workbench's questions (`clarify.js`); and one verification (`createVerification`, *Evidence,
+  numbers by reference, the computed verdict*): the run context, its shell catalogue, the tools
+  offered, the method, the caller's claim phrasings (`config.phrasings`: the validation harness
+  passes the verdict's words) and, when the limits state it, the send-backs per turn
+  (`config.limits.maxEvidenceGates`; the loop's own limits do not hold it).
+- **The method** (`config.method`, `copilot/method.js`, `TURN_METHODS`): `'full'` (the default:
+  the dock, the validation's arm B) sends the skills and the method in the prompt, the tool
+  descriptions and the checks, byte for byte as before the switch; `'off'` (the validation's arm C,
+  plan item 1.8) sends none of the method. One pure function, `planTurn`, decides from it: no
+  `read_skill` and no skills' index; no `EVIDENCE_RULES`, no method sentence of `TOOL_RULES` or
+  `ASK_RULES` and no inference part of the domain rules (`prompts/system.js`; the tool-free prompt
+  too); each tool offered through `toolAsSent` — its description without its `method`
+  advice, and each check of its results without the advice it lists (*The tool contract*). The
+  tools, their refusals, the Workbench's questions, the evidence gate and the answer checks run
+  under both. `start.method` says which one a turn followed.
+- **Tools are active** exactly when `config.toolsEnabled` holds and at least one tool is offered;
+  inactive, the request carries no tools and the prompt is the no-tools one. The memory of models
+  that refused tools stays with the caller (the dock passes `toolsEnabled: false` for them).
+- **Events.** Every event the loop emits (`agentLoop.js`), shape unchanged, each with `at`
+  (`clock.now()`), and:
+  - `start { offered, prompt, method, toolsActive, shown, skillsError }`: first, exactly once
+    (`describeTurn` for this question);
+  - `request { round, why, sent }`: before each model call, after the port's `prepare`; `sent` is
+    the request as sent (after the notes, the gate's send-backs, compaction, the Workbench's
+    appended answer and the retry temperature; from `providerModel`, with the context guard's
+    plan); `why` is `first`, `tools`, `reminder`, `gate`, `final` or `no_tools`. A request the
+    port refuses in `prepare` (the guard, a spend cap) was never sent and has no `request` event:
+    `round` is followed by `failed`;
+  - exactly one terminal event, always last, each with its `stoppedBy` (a key of the turn policy's
+    `STOPPED_BY`): `done` (the loop's, the policy's one shape), `stopped { error, stoppedBy }` (an
+    abort: `'stopped'`) or `failed { error, message, hint, stoppedBy }` (`'error'`, a stall
+    included; `explainModelError`: a context-limit refusal or a spend cap lands here too).
+- **Order.** `start`, then a Workbench question (a `tool_start` / `tool_end` pair, `app: true`), then
+  per request: `round`, `request`, the text and reasoning deltas, the tool pairs (sharing an id). A
+  `gate` is always followed by a `retract`. `tools_unsupported` comes at most once, before any tool
+  step, and a new `round` and `request` under the no-tools prompt follow it.
+- **Errors.** Invalid input (a reserved tool name, no model, a blank question) throws a TypeError at
+  the first `next()`; after `start` the iterator never throws. A malformed skill is `skillsError`,
+  never a throw: the turn runs without skills.
+- **State.** None between calls: the caller passes the history, the clock and whether tools are on.
+
+**The model port** (`provider/model.js`): `{ prepare?(intent, { signal }) → sent, stream(sent,
+{ signal }) → fragments }`, a bare function being `stream` with an identity `prepare`; either may
+return a promise. The intent is `{ messages, tools, toolChoice, retry }`, `retry` null or
+`'warmer'` (the request asked again after a looping reply). Every provider quirk sits behind this
+port, none in the turn or the loop.
+
+`providerModel(settings, { session })` is the production port:
+- **`prepare`** (async) detects the server (`detectServer`: only `localhost` or port 11434 is
+  probed), puts the tool choice in that server's form, and asks the context guard for its plan
+  (`planCopilotChat`). It returns the request exactly as it goes out:
+  `{ baseUrl, model, temperature, messages, tools, toolChoice, plan }`. A `'warmer'` retry runs at
+  `ANTI_REPEAT_TEMPERATURE` = 0.6 or above. The plan is plain JSON:
+  - Ollama: `{ server: 'ollama', version, estimate, needed, numCtx, numPredict, loadedContext,
+    maxContext }`;
+  - LM Studio: `{ server: 'lmstudio', estimate, needed, loadedContext }` (`loadedContext` null:
+    not loaded; the request loads it and its window is checked at the reply's first fragment);
+  - any other server: `{ server: 'openai' }`.
+
+  With tools, the plan adds `toolChoice`, the form. A request the guard refuses throws
+  `ContextLimitError` here, before anything is sent. `sent` never holds the API key, which joins
+  the request only as it goes out, so no event or record carries it.
+- **`stream`** sends `sent` under its plan, through `streamCopilotChat(request, { plan })`. Its
+  first argument keeps the request's own fields, which the model-visible snapshots capture. It
+  throws a `ToolsUnsupportedError` when the model cannot take the request's tools. It throws
+  `ContextLimitError` only after sending: Ollama read under 0.4 of the prompt, or a model LM
+  Studio loaded for the request (JIT) has too small a window, so the reply is stopped unseen.
+
+**Typed failures.** The loop reacts to these by type, never by text:
+
+| Error | Raised by | When | The loop |
+| --- | --- | --- | --- |
+| `ContextLimitError` (`needed`, `available`) | `prepare`; `stream` after sending | The request would not fit the model's window | Thrown: the turn's `failed` |
+| `ToolsUnsupportedError` (`status`, `server`, `cause`; the provider's message) | `stream`, before any fragment, only for a request with tools | The provider's response says the model cannot take tools | First request: retried without tools (`tools_unsupported`); later: thrown |
+
+`isToolsUnsupported(error, { server })` reads the provider's response by its shape first:
+- Ollama: HTTP 400 with `{ "error": "<model> does not support tools" }`;
+- OpenAI: HTTP 400 with `{ "error": { "param": "tools", "code": "unsupported_parameter" } }`.
+
+The text pattern is the fallback for providers with no known shape (LM Studio, Gemini,
+Anthropic), and this is its one place: a 4xx saying tools, tool calling or function calling are
+not supported. A schema 400, a 5xx, a failure after the reply began, an abort and a request
+without tools are never read as one.
+
+**The tool choice, per provider** (`toolChoiceForm`, `TOOL_CHOICE_FORMS`):
+
+| Server | `'auto'` (every round but the last) | `'none'` (the final round) |
+| --- | --- | --- |
+| OpenAI, Gemini, Anthropic (OpenAI-compatible), LM Studio | `body`: `"tool_choice": "auto"` beside the tools | `body`: `"tool_choice": "none"` beside the tools |
+| Ollama (native `/api/chat`) | `omitted`: no field (the native API has none; its default is auto), the tools sent | `tools_withheld`: no tools sent, so the model cannot call one |
+
+The Ollama final round changed with the model port (protocol 2026-10-19.7). Before it the tools
+were still offered there, and a reply of calls only ended on the loop's "budget used" answer.
+The earlier calls and results still travel as messages, and the plan's estimate counts what is
+sent (no tool schemas).
+
+The validation meters the port (`validation/spend.js` `meteredModel`): a request that could cross
+the spend cap is refused in `prepare`, after the guard's plan, so it is never sent.
+
+**What stays in the adapters.** The dock: React state, Stop, the question card (its ask-user port),
+the card-focus effects (it maps events to focus), the unsupported-model memory, the `runKey`
+reset and the `configKey` history window; it closes a turn on its terminal event's `stoppedBy`
+and shows that ending's note. The harness: the case's run (the run module), its compute-only tools, the simulated user,
+the arm's skills and method (arm C: `'off'`), the verdict's words for the gate
+(`validation/verdict.js` `VERDICT_PHRASINGS`, as `config.phrasings`), its port, and the record (every request as sent, the
+steps as their `tool_end`s, the score; number provenance against what the model was told — each
+tool message it read and `start.shown`; the safety counts from each step's result status; the
+method; `stopped_by` from every terminal event).
+
+## The turn policy: what ends a turn (`copilot/turnPolicy.js`)
+
+One module decides when a turn ends and why each request is made (architecture candidate #10). It
+owns every counter that ends a turn — the rounds of tools, the turn's time, the rounds that added
+nothing, the one reminder and the warmer retry, the last-request note, the answer the evidence gate
+withdrew — and the order of the steps, behind one event-driven interface. The agent loop is its one
+caller: the loop streams the model, runs the calls and keeps the messages; it tells the policy what
+happened and does what the step says, so it cannot ask in the wrong order, add the last-request
+note twice or end a turn twice.
+
+```js
+createTurnPolicy({ limits, clock, tools, judge }) → { next(event) → step }
+STOPPED_BY               // the one set of endings: { [stoppedBy]: { cutShort, note } }
+stoppedByFailure(error)  // a turn that threw: 'stopped' for an AbortError, else 'error'
+```
+
+- **Configuration.** `limits` `{ maxRounds, maxTurnMs, maxNoProgressRounds }` (numbers, `Infinity`
+  allowed; the loop fills them from `DEFAULT_LIMITS`); `clock.now()` — the turn starts when the
+  policy is created, and a Workbench question before the first request is a wait; `tools`, whether
+  the first request carries tools; `judge`, the verification's (*Evidence, …*). The policy decides
+  when: whether a send-back is allowed, the `stoppedBy` an answer is judged under, which answer
+  stands. The verification decides what, and caps its own send-backs (`maxSendBacks`).
+- **Events**, in order: `start`, then each request's `reply`, followed by a `round` when it had
+  calls, or `no_tools` when the model refused its tools.
+
+  | Event | Fields |
+  | --- | --- |
+  | `start` | `waitedMs`: the Workbench's question before the first request |
+  | `reply` | `text` (none when looped), `calls` (an array), `looped` (stopped for repeating itself), `cut` (at the length limit) |
+  | `round` | `progressed` (anything new: a result that was not an error or a repeat, a user's answer), `waitedMs` (the user's answers in it) |
+  | `no_tools` | the first request's model cannot take tools (the port's `ToolsUnsupportedError`) |
+- **Steps.**
+
+  | Step | The loop |
+  | --- | --- |
+  | `{ next: 'ask', round, why, toolChoice, retry, notes, sendBack }` | adds the `notes` (`addNote`), then asks: `why` is `first`, `tools`, `reminder`, `gate`, `final` or `no_tools`; `toolChoice` `'auto'`, `'none'` (the request that asks for the answer) or undefined (no tools); `retry` `'warmer'` or null. With a `sendBack` (the verification's), it first withdraws the reply (`gate`, `retract`) and sends the nudge |
+  | `{ next: 'run' }` | runs the reply's calls, then reports their `round` |
+  | `{ next: 'end', done, say }` | yields `say` as text when there is one, then `done` |
+- **The one `done` shape**, built only here: `{ type: 'done', text, rawText, outcome, rounds,
+  stoppedBy, cut, reason, audit, references, gates }`. An answer: the verification's fields,
+  `reason` null, `rawText` as the model wrote it (the text when no reference changed it). The last
+  request came back empty with nothing standing: the fixed "budget used" answer (`say`), an Outcome
+  of `not achieved` with its note and body only (no `computed` or `reasons`: the harness copies the
+  Outcome whole into `record.final`), `rawText` = text, `references` null, `gates` []. An empty
+  reply after its reminder, before the last request: text and `rawText` '', `outcome` null,
+  `stoppedBy` `'empty'`, `reason` (why it was empty), `references` null, `gates` [].
+- **`STOPPED_BY`**, the endings the dock, the computed Outcome and the harness read:
+
+  | `stoppedBy` | `cutShort` | The dock's note | When |
+  | --- | --- | --- | --- |
+  | `answer` | no | (none) | the model answered |
+  | `max_rounds` | yes | Answered after using the analysis budget for one question. | the round budget or the turn's time was spent |
+  | `no_progress` | yes | Answered when repeated analyses stopped adding anything new. | two rounds in a row added nothing |
+  | `empty` | no | The model returned an empty reply. (with the reason) | nothing after the reminder, before the last request |
+  | `stopped` | no | Stopped. | Stop (an `AbortError`) |
+  | `error` | no | Stopped by an error. | any other error, a stall (`ModelTimeoutError`) included |
+
+  `cutShort` makes the computed Outcome partial (`verification/verdict.js`); `CopilotView` shows
+  the note; `useCopilot` closes a turn on its terminal event's `stoppedBy` (`stoppedByFailure` for
+  its own failure); the harness records `stopped_by` from every terminal event (`record.final`
+  is unchanged).
+- **Invariants.** `toolChoice` is undefined exactly when tools are off. A step's notes hold 0–2
+  messages, in order (the reminder, then the last-request note); the last-request note is added
+  once; the request that becomes the last gets why `final`, unless it is the first. One reminder a
+  turn; after a looping reply every later request is asked warmer. Turn time = now − start − the
+  waits reported, read at most once per event and never in round 0. In a reply without calls the
+  order is: the reminder, then the answer the gate withdrew stands, then the empty endings, then
+  the judge. The judge gets only non-empty text, and the withdrawn answer with `canSendBack` false.
+  `canSendBack` = tools on, this request not the last, and turn time left (and the verification's
+  own cap). Exactly one `end` a turn.
+- **Errors.** A TypeError for bad configuration, an event out of order or malformed (calls on a
+  request that allowed none, `no_tools` after tools ran), a send-back the policy did not allow, or a
+  judge that answers otherwise than `{ sendBack }`, `{ done }` or null. The judge's own errors
+  propagate (the turn's `failed`); a judge returning null gives the empty ending.
+- **What stays in the loop.** The calls per round and the questions (`maxCallsPerRound`,
+  `maxQuestions`: they refuse a call and never end a turn), the per-call time, the stall clock and
+  the request deadline (they throw: the turn's `failed`, `'error'`), loop detection
+  (`repeatsItself`), calls written as text, compaction, the messages, and `DEFAULT_LIMITS`.
+
 ## Asking the user (`ask_user`)
 
 The spot check's worst answer was a guess: asked for "Se–Ta–Se angles against an ideal
@@ -234,11 +510,16 @@ offer two, so the agent asks:
   field. It takes focus when it appears unless the user is typing in a field, and the log never
   scrolls its question out of view. A collapsed dock marks the rail ("a question for you").
   Answered, it keeps the question and the reply.
-- **The loop** waits. `useCopilot` passes `askUser(request, { signal })` in the tools' context; the
+- **The loop** waits. `useCopilot` hands the turn its ask-user port, `askUser(request, { signal })`,
+  which the turn offers `ask_user` with and puts in the tools' context; the
   card settles it, and the answer returns as the tool's result (`answerResult()`: the chosen label
   and its meaning with "use exactly this choice", a typed answer verbatim, or a skip as "use your
-  default and say you assumed it"). Stop, a new run or an unmount rejects it with an AbortError:
-  the turn closes as *Stopped*, the card reads *Not answered*, and the next question works.
+  default and say you assumed it"), with the reply beside it as the step's `choice`
+  (`replyChoice()`: `{ source: 'option' | 'other' | 'skipped', index }`), which the card and the
+  record read; the model never sees it. A question that never reached the user (malformed, nobody
+  to ask, or refused by the loop) ends `error` or `skipped`, with no choice: the card reads *Not
+  asked*. Stop, a new run or an unmount rejects it with an AbortError: the turn closes as
+  *Stopped*, the card reads *Not answered*, and the next question works.
 - **The contract.** `interactive: true` marks a tool that waits for the user: never answered from
   the duplicate-call cache, no time limit, its wait not counted toward the turn's 10 min, at most
   `maxQuestions` (2) questions per request and one per step (`agentLoop.js`). It is not a view
@@ -272,7 +553,7 @@ the sin θ factor depletes near 180°.
 
 gemma4 never asked; so where the computed signals show a real ambiguity that changes the result,
 the Workbench shows the question card itself, with the options it computed and a default
-(`copilot/clarify.js`, `buildClarifier`). The card is an `ask_user` step marked `app: true`
+(`copilot/clarify.js`, `buildClarifier`, over the run's shell catalogue `context/shells.js`). The card is an `ask_user` step marked `app: true`
 ("The Workbench asks before the analysis"); it counts toward the two questions per request, and
 the model's own `ask_user` still works beside it.
 
@@ -287,7 +568,8 @@ the model's own `ask_user` still works beside it.
     which window — the whole first shell (default), the first peak only, or a cut 0.2 Å either
     side of the minimum — only when the coordination number changes by ≥ max(0.5, 15 %) between
     them. The Demo's "Se–Ta–Se bond angles": whole shell 2.21–3.23 Å (CN 6) or first peak
-    2.33–2.71 Å (CN 3.9). The Ta–Ta shell runs into the next (6 % of the peak at the minimum) but
+    2.21–2.65 Å (CN 3.2; to the minimum between the two Ta–Se peaks since 2026-10-19, before
+    r ± FWHM: 2.33–2.71 Å, CN 3.9). The Ta–Ta shell runs into the next (6 % of the peak at the minimum) but
     a cut 0.2 Å either side changes its CN by < 0.5: not asked;
   - *displacement directions of an element with several sites whose site symmetry is not
     cubic:* one site of each orbit (default; its sites are equivalent by symmetry) or all pooled
@@ -298,7 +580,11 @@ the model's own `ask_user` still works beside it.
 
   The answer joins the user's question for the model: `(The Workbench asked: "…" — the user
   chose Se–Ta–Se: Se around Ta in the whole first Ta–Se shell, 2.21–3.23 Å (CN 6). Use exactly
-  this.)`. The conversation still shows the question as typed.
+  this.)`. The conversation still shows the question as typed. The question's step sends no
+  tool message and takes no ref: its `note` is the text the model read in its place (this one, or
+  before a call the note that call carries) and its `choice` the user's reply, with `confirmed`
+  (whether the answer keeps the user's own window: the clarifier choice's flag, true for "Keep …",
+  never read from the label).
 - **Before an analysis runs** (`beforeCall`, for tools that declare `shellWindows(args)`:
   `compute_bond_angles`, `analyze_clusters`): a window that overlaps a first shell but holds less
   of it by the same margin is put to the user — the whole first shell (default) or the window as
@@ -323,10 +609,11 @@ return `facts` beside their data (not sent to the model): `assess_convergence` i
 `detect_symmetry` its group with the point group's facts, `analyze_displacement_directions`
 whether a direction is significant (its peak ≥ 3σ), `analyze_modulations` the ordered points,
 `analyze_clusters` what its clusters showed, `find_gr_peaks` and `compute_bond_angles` the
-coordination they counted; the run context adds the watchdog's status
-and the tolerance ladder's groups (`contextAuditFacts`). When the model answers,
-`auditAnswer()` (`copilot/answerAudit.js`) reads the answer, sentence by sentence and clause by
-clause, for a clear positive claim they contradict:
+coordination they counted, `measure_symmetry_lowering` its shifts (no check reads them yet); the
+run context adds the watchdog's status and the tolerance ladder's groups. When the model answers,
+the verification's checks (one row per facts key, the facts catalogue FACTS,
+`copilot/verification/facts.js`) read the answer, sentence by sentence and clause by clause, for a
+clear positive claim they contradict:
 
 | Check | Fires on |
 |---|---|
@@ -354,34 +641,97 @@ answer, and the computed Outcome is **Not verified** (below). gemma4:26b's corre
 
 ## Evidence, numbers by reference, the computed verdict (THY-18)
 
-Three rules keep an answer tied to what the engines computed in that question.
+Three rules keep an answer tied to what the engines computed in that question. One module holds
+them, the verification (`copilot/verification/`, architecture candidate #4): it answers "is this
+answer verified?", one verification per turn.
 
-- **The evidence gate** (`copilot/evidence.js`). An answer that concludes something needs, in
+```js
+createVerification({ context, catalog, offered, phrasings, maxSendBacks = 2, method = 'full' }) → verification
+verification.record(step, show) → { ref, analysis, ...show(ref) }
+verification.judge(text, { canSendBack, rounds, stoppedBy, cut }) → { sendBack } | { done } | null
+verification.claims        // the claim rows the turn checks: [{ id, what, prompt, analyses, need }]
+isAnalysis(step)           // the one definition of an analysis
+```
+
+- **Who calls it.** The turn builds it (`turnChecks`: the run context, its shell catalogue, the
+  tools offered, tools on or off, the method, `config.phrasings` and `config.limits.maxEvidenceGates`
+  when set); the agent loop records every tool step with it, in the order the model reads them, and
+  the turn policy judges every answer with its `judge`. `context` gives `{{ctx.…}}` (its shown, trimmed form only), the checks'
+  context facts (the watchdog, the ladder's groups, the parents) and the gate's elements; `offered:
+  []` means no claim row (no gate), while references are still filled and the checks and the
+  Outcome computed (the loop's default without a verification).
+- **record(step, show).** `step` is the call's ToolResult (*The tool contract*: `resultStatus`,
+  `args`, `error`, `checks`, `facts`, …) with the tool's `name` and kind (`interactive`,
+  `reading`, `view`); a step with no known `resultStatus` is a TypeError. The verification reads
+  the step's severity (`severityOf`) and whether it ran (`ran`: not an unknown tool or a skipped
+  call) from it; a `refused` step ran. `show(ref)` builds the tool message, once and
+  synchronously, and the ref then resolves to exactly the data it returns (a callback: the ref is
+  written into the message before the data is fitted to the budget). Refs are r1, r2, … in record
+  order; a step with an error takes none, and its facts are dropped. `analysis` (`isAnalysis`:
+  executed, and not a question, a skill read or a view) rides on `tool_end`; the dock footer
+  counts it, as the Outcome does.
+- **judge(text, …), in a fixed order.** 1. fill the references; 2. decide a send-back on the
+  FILLED text: it needs `canSendBack` (tools can still run: not the final round, the turn's time
+  not spent), an unmet claim not sent back yet this turn, in CLAIMS order, and fewer than
+  `maxSendBacks` send-backs so far — the raw text becomes the standing answer; 3. run the checks on
+  the answer, in FACTS order; 4. add the unfilled-reference finding; 5. add the missing-evidence
+  findings, whether tools were on, off or unsupported; 6. compute the Outcome, which the model's
+  Outcome line (read from the filled text) can only lower. Blank text judges the standing answer
+  (never sent back again), or gives null when there is none; the turn policy never sends blank text
+  (it keeps the withdrawn answer and judges it with `canSendBack` false), and the empty endings are
+  its own. `sendBack` is `{ id, what, missing, nudge, notice }`; `done` is the turn's `done` event. One
+  verification serves one turn: record or judge after `done` throws. A phrasing for an unknown
+  claim, or an `asserted` pattern that is not a global RegExp, is a TypeError; model text and tool
+  facts never throw.
+- **The catalogues are data.** CLAIMS (`claims.js`, one row per claim, in send-back order) and
+  FACTS (`facts.js`, one row per facts key, in check order: the producing tools, the shape in the
+  dataShape notation, the phrasings it reads, `contradicts` — the `lowering` row has none yet, so
+  the missing consumer shows), over one reading of the text (`reading.js`, `phrasings.js`).
+  `EVIDENCE_RULES` stays written by hand in `prompts/copilot.js`; `verificationCatalogue.test.js`
+  binds it to CLAIMS: `evidenceSentence` renders it from the rows byte for byte, each row's prompt
+  names its first analysis, and `promptGaps` pins what the sentence does not say (coordination
+  also takes `compute_bond_angles`; a lowering falls back to `detect_symmetry`; "no order" needs a
+  per-site map and each finite cluster, and neither `find_gr_peaks` nor
+  `measure_symmetry_lowering`). Generating the sentence from the catalogue is the user's call.
+- **The evidence gate** (CLAIMS). An answer that concludes something needs, in
   this turn, the analysis that gives the evidence for it: order between cells, or a split site
   called random disorder, needs `analyze_modulations` (ordered antiphase displacements give a site
   the same cloud); a preferred direction `analyze_displacement_directions`; distorted, breathing or
   rigid clusters `analyze_clusters`; a coordination number, a split shell or a Jahn–Teller
-  distortion `find_gr_peaks` or `compute_bond_angles`; a lowering of the average structure
-  `measure_symmetry_lowering`; and "no order beyond thermal motion" every one of them —
-  `analyze_modulations`, a per-site directions map, and `analyze_clusters` for every element whose
-  own first shell holds at most 4.5 neighbours (`CLUSTER_CN_MAX`: a dimer 1, a trimer 2, a
+  distortion `find_gr_peaks` or `compute_bond_angles` (`anyOf`); a lowering of the average structure
+  `measure_symmetry_lowering`, `detect_symmetry` where it is not offered (`firstOffered`); and "no
+  order beyond thermal motion" every one of them (`allOf`) — `analyze_modulations`, a per-site
+  directions map, and `analyze_clusters` for every element whose own first shell holds at most 4.5
+  neighbours (`context/shells.js` `clusterElementsOf`, `CLUSTER_CN_MAX`: a dimer 1, a trimer 2, a
   tetrahedron 3, an octahedron 4 per member). A model cannot be forced to call a tool (not every
   model takes `tool_choice`), so the check runs after the answer: the agent loop withdraws it and
-  sends it back once per rule, at most twice a turn (`maxEvidenceGates`), with what to run (a
+  sends it back once per claim, at most twice a turn (`DEFAULT_MAX_SEND_BACKS`), with what to run (a
   **gate** event; the footer says so), never on the final round or once the turn's time is spent.
   An answer that still lacks its evidence stands, with an `evidence` finding under it (with tools
   off too), and a withdrawn answer is kept if the model then writes nothing. Claims are read as the answer checks read them (`asserts`: not
   negated, hypothetical or asked), and only in a sentence about this run: one that names an
   element of the run (Ti, Mo₃, TaSe₆) or the run itself (this structure, the clusters, site 3) — a
   definition ("A superstructure is order that enlarges the cell") needs no analysis; "no order" is
-  always about the run. The gate never asks for a tool the turn does not offer.
-- **Numbers by reference** (`copilot/references.js`). Every tool message carries a `ref` (r1,
+  always about the run. The gate never asks for a tool the turn does not offer. Under the turn's
+  method `'off'` (the validation's arm C, *The turn*) it checks the same claims, but its send-back
+  names no analysis and no tool, since which analysis a conclusion needs is the method: "Your answer
+  concludes … , but this conclusion needs its evidence from an analysis run in this question. …"
+  (`OFF_NUDGE`). The gate event's notice and the end-of-turn finding, which the model never reads,
+  still name the missing analyses. The app's own phrasings read prose; a caller adds its own
+  through `phrasings` (`{ [claim id]: { asserted, literal } }`): the validation harness adds the
+  verdict schema's words (`validation/verdict.js` `VERDICT_PHRASINGS`: `off_centre`, the cluster
+  kinds, `jahn_teller`, `symmetry_lowering`, and `"features": []` as "no order"), which the app
+  itself no longer reads.
+- **Numbers by reference** (filled by the verification; the store is `copilot/references.js`).
+  Every tool message carries a `ref` (r1,
   r2, … in the order of the turn); the model writes `{{r2.peak.significance_sigma}}` — the ref, then
   the path in the data it was shown, array items by index (`{{r3.sites.0.shift_A}}`) — or
   `{{ctx.<path>}}` for the run context as the model read it (trimmed), and the app writes the
   engine's value in place where the answer is shown, recorded and checked. A number keeps the tool's rounding, a list of scalars reads
-  `[a, b, c]`. A reference that names nothing stays as written and is a `reference` finding.
-- **The computed verdict** (`copilot/verdict.js`). The Outcome chip is the app's: **not verified**
+  `[a, b, c]`. A reference that names nothing stays as written and is a `reference` finding. The
+  dock fills the earlier text segments of a turn, and a stopped one, the same way (`turnState.js`,
+  `{{ctx.…}}` from the turn's `start.shown`).
+- **The computed verdict** (`verification/verdict.js`). The Outcome chip is the app's: **not verified**
   when a check contradicts the answer, a reference names nothing or a conclusion's evidence did not
   run; **not achieved** when analyses ran and none succeeded; **partial** when the turn or the
   reply was cut short, an analysis failed and was not rerun successfully, or one warned;
@@ -475,7 +825,9 @@ each analysis adds up to 3,000 characters more.
   estimate errs high there too and `num_predict` never reaches into the prompt.
 - **It refuses rather than cuts.** When the request cannot fit even the model's maximum, the turn
   stops before anything is sent, with the sizes and what to do (a new conversation, analyses off,
-  a model with a longer context). LM Studio fixes the context when a model is loaded: when the
+  a model with a longer context). The decision is made in the model port's `prepare`
+  (`planCopilotChat`), so the refused request has no `request` event, and every request that is
+  sent carries the plan it was sized by (`sent.plan`). LM Studio fixes the context when a model is loaded: when the
   loaded model's window (`GET /api/v0/models`) cannot hold the prompt and 4,096 tokens of reply,
   the turn stops with the context length to load it with. A model not loaded yet is loaded by the
   request itself (JIT), with LM Studio's default context: its window is read at the reply's first
@@ -489,6 +841,13 @@ each analysis adds up to 3,000 characters more.
 - **A cut reply says so.** A reply that stops at the length limit (`done_reason` /
   `finish_reason` `length`) ends with a warning in the turn's footer instead of passing as a
   whole answer.
+- **How large a window.** The worst realistic turn (two skills read whole, a full round of
+  analyses, the reply reserve) does not fit 32k: at 32k the guard can refuse it
+  (`src/__tests__/contextBudget.test.js`; the fix, on-demand skill references, waits for the
+  user's skill review). 48k holds it. The validation's live runs keep the guard as it is and load
+  every LM Studio model with at least 48k, refusing a run below it before anything is sent
+  (`validation/runPolicy.js`; [copilot-validation.md](../../../../docs/algorithms/copilot-validation.md),
+  *The run policy*).
 
 ## Robust on local models
 
@@ -500,26 +859,32 @@ pieces the agent loop uses so a turn always ends with an answer or a reason:
 | --- | --- | --- |
 | No token for minutes (server busy, stopped) | Cancels the request; the error says the server may be busy | `stallMs` 180 s |
 | A reply that never ends | Cancels it; the error suggests a narrower question or a faster model | `requestMaxMs` 600 s |
-| Reasoning (or text) repeating a passage | Stops it when caught (`repeatsItself`: its last 200 characters 4 times in the last 8,000), asks again once with `antiRepeat` (temperature ≥ 0.6) | one reminder |
+| Reasoning (or text) repeating a passage | Stops it when caught (`repeatsItself`: its last 200 characters 4 times in the last 8,000), asks again once warmer (`retry: 'warmer'`: the model port sends it at temperature ≥ 0.6, `ANTI_REPEAT_TEMPERATURE`; in the dock and the harness alike) | one reminder |
 | Reasoning only, no answer, no call | One reminder, then `done` with `stoppedBy: 'empty'` and a `reason` the footer shows | one reminder |
 | A call written as JSON text | Run as a call (`textToolCalls`: the whole reply must be the call, naming a known tool); the text is retracted | |
 | Calls that repeat earlier ones or fail | Two such rounds in a row end the analyses: the next request asks for the answer (`stoppedBy: 'no_progress'`) | `maxNoProgressRounds` 2 |
 | A long turn | Earlier results are compacted to their checks and top-level numbers (`keyNumbers`), once | `turnCharBudget` |
-| A long conversation | Earlier answers above 2,000 characters are re-sent as their sentences with numbers and their Outcome line (`compactAnswer`) | `MEMORY_ANSWER_CHARS` |
+| A long conversation | Earlier answers above 2,000 characters are re-sent as their sentences with numbers and their Outcome line (`compactAnswer`, in the turn's history window) | `MEMORY_ANSWER_CHARS` (`turn.js`) |
 | Out of memory, context overflow, no model loaded, connection lost | The error gets a line on what to do (`explainModelError`) | |
 
-Notes to the model (a reminder, the last-round note) join the last user message when that is the
-last message: Gemma's chat template refuses two user messages in a row.
+The reminder, the warmer retry, the no-progress rule and the endings are the turn policy's (*The
+turn policy*); the loop finds the loop, the calls written as text and whether a round added
+anything. Notes to the model (a reminder, the last-round note) join the last user message when that
+is the last message: Gemma's chat template refuses two user messages in a row.
 
 ## The tool contract (the `tools` prop)
 
-The host passes engine tools as plain objects; the module validates and runs them:
+The host passes engine tools as plain objects; the module validates and runs them. `ask_user` and
+`read_skill` are the turn's own (it adds them from its ask-user port and the `skills` prop): a host
+tool with either name is refused, and the dock says so in its error line.
 
 ```js
 {
   name: 'compute_bond_angles',           // /^[a-z][a-z0-9_]{0,63}$/, unique
-  description: '…',                      // what it computes and when to use it, for the model
+  description: '…',                      // what it computes and returns, for the model
+  method: 'Use the whole first …',       // its method advice, apart (optional; below)
   parameters: { type: 'object', properties: {…}, required: [...] },
+  dataShape: { triplet: 'string', 'mean_deg?': 'number|null', … },   // the shape of `data` (below)
   label: (args) => 'Bond angles Se–Ta–Se',   // step-card title (optional)
   page: 'geometry',                      // host page key for the step's button (optional)
   pageParams: (args) => ({ … }),         // what that page loads to show the same analysis (optional)
@@ -530,7 +895,7 @@ The host passes engine tools as plain objects; the module validates and runs the
                                          // its bond windows, checked against the shells before it runs (optional)
   resultBudget: 9000,                    // its own result budget in characters (read_skill) (optional)
   keep: true,                            // its result is never compacted later in the question (optional)
-  run: async (args, { signal, focus, askUser }) => ({ data, checks, facts }),
+  run: async (args, { signal, focus, askUser }) => ({ data, checks, facts, choice }),
 }
 ```
 
@@ -538,16 +903,39 @@ The host passes engine tools as plain objects; the module validates and runs the
   important rows first: budget trimming halves arrays from the end.
 - `checks` is a list of `{ level: 'ok' | 'note' | 'warn' | 'fail', text }`, computed from the
   full result. `fail` means "this does not answer as asked".
+- **Method advice** (`copilot/method.js`): text that tells the model which analysis answers which
+  question, where to take a parameter from, which window is right or what to run next — what the
+  skills teach. The turn's method `'off'` (the validation's arm C) sends none of it, so it is kept
+  apart from what a tool does:
+  - a spec's `method` holds the advice split out of its `description`, which keeps what the tool
+    does and returns. A string is sent after the description and a space with method `'full'`; a
+    list of parts puts each back in order, a string after the description and a space, `{ after,
+    text }` right after the one place `after` appears in the description (advice inside a
+    sentence). With `'full'` the description goes out byte for byte as it was before the advice was
+    split out; with `'off'` alone. A part whose `after` is not found exactly once is a TypeError at
+    the turn's first `next()`;
+  - a check built with `methodCheck(level, ...parts)` (parts: strings and `{ method: '…' }`) has the
+    whole text in `text`, as the dock reads it and as the step cards, the record and arm A+ read it,
+    and lists its advice in `method`; with `'off'` the turn sends `text` without it (`checkText`). A
+    refusal still refuses. In this repository: `compute_bond_angles`' cut-window refusal,
+    no-angles failure and octahedron note, the pooled-directions note, `analyze_clusters`' window
+    failures and split-site note, `find_gr_peaks`' split-shell notes and unseparated-shell warning,
+    `detect_symmetry`'s point-group note.
 - `signal` aborts on Stop or timeout. Stop the work if you can.
 - `focus` is the dock's card-focus controller, for view tools: `await focus.show(ids, { marks })`,
   `focus.onClear(undo)` (runs when the highlight ends), `focus.state()`.
 - `askUser(request, { signal })` shows a question card and resolves with the user's reply
-  (`{ answer, source: 'option' | 'other' | 'skipped', index }`), for interactive tools.
+  (`{ answer, source: 'option' | 'other' | 'skipped', index }`), for interactive tools. An
+  interactive tool returns the reply beside its result as `choice` (`{ source, index }`): kept on
+  the step, never sent (another tool's `choice`, or a malformed one, is dropped).
 - `facts` (optional, not sent to the model) are findings the final answer must not contradict
-  (*Checks on the answer*): `{ convergence }`, `{ groups: [{ symbol, point_group, centrosymmetric,
+  (*Checks on the answer*), one key per row of the verification's facts catalogue (FACTS, with
+  each key's producing tools and shape): `{ convergence }`, `{ groups: [{ symbol, point_group, centrosymmetric,
   sohncke, polar }] }`, `{ direction: { subject, significant, anisotropic, peak_sigma, map_sigma } }`,
   `{ modulation: { elements, ordered, general } }`, `{ cluster: { element, members, distorted, breathing,
-  rigid, split, … } }`, `{ coordination: { centre, partner, window, cn, whole_shell, confirmed } }`.
+  rigid, split, … } }`, `{ coordination: { centre, partner, window, cn, whole_shell, confirmed } }`,
+  `{ lowering: { parent, lower, shifted } }`. A key no row names is kept and read by nothing;
+  `src/__tests__/verificationFacts.test.js` checks the real tools' facts against the rows.
 - The loop gives every result the model reads a `ref` (r1, r2, …) and keeps the data it sent, for
   numbers by reference (*Evidence, numbers by reference, the computed verdict*).
 - `shellWindows(args)` names the bond windows a call will use, so the Workbench can ask before a
@@ -556,11 +944,97 @@ The host passes engine tools as plain objects; the module validates and runs the
 - Parameters may be arrays (`items`, `minItems`, `maxItems`) and objects (their own `properties` /
   `required`); a list sent as JSON text or a bare comma list is accepted.
 
+**How a call ends (architecture candidate #11, the tool transcript).** The contract decides it;
+the loop only forwards it. Every call ends as one ToolResult:
+
+```js
+{ resultStatus, args, data, checks, error, facts?, ms, cached, note,
+  choice?: { source: 'option' | 'other' | 'skipped', index, confirmed: true | false | null } }
+
+RESULT_STATUSES                                  // 'ok' | 'refused' | 'error' | 'unknown_tool' | 'skipped', closed
+executeToolCall(tool, raw, { signal, timeoutMs, context }) → ToolResult   // ok | refused | error
+skippedCall(args, reason, n)                     // SKIP_REASONS: 'call_limit' | 'one_question' | 'question_limit'
+unknownToolCall(args, name, names) · repeatedCall(cached) · withNote(result, note)
+questionResult(request, reply, { args, ms, confirmed })   // a Workbench question the user answered
+toolResult(fields)                               // the checked constructor the others call
+severityOf(result) → 'ok' | 'warn' | 'failed'    // the step's status (the dock, the Outcome)
+ran(result)                                      // not unknown_tool, not skipped
+toolMessage(result, { budget, ref }) → { content, data } · compactToolMessage(content)
+```
+
+| `resultStatus` | When | The model reads |
+| --- | --- | --- |
+| `ok` | the tool answered | the ref, the note, the checks, the data |
+| `refused` | the tool answered with a `fail` check (its own refusal: a cut window) | the same; it ran, is an analysis and backs its claim |
+| `error` | arguments that are not JSON or that the schema refuses, a throw, the time limit | the error (and the dropped-key notes) |
+| `unknown_tool` | no tool has that name | the error, with the names offered |
+| `skipped` | the loop did not run it: past the calls per round, a second question in a round, past the questions per request | the error, saying why |
+
+- **Invariants.** A non-empty `error` exactly for `error`, `unknown_tool` and `skipped`, which
+  then have no data, no ref and no facts; a `fail` check exactly for `refused` (beside an error a
+  check may be anything); `cached` (an identical earlier call repeated, with `REPEAT_NOTE`) only
+  for `ok` or `refused`; a `choice` only on `ok`. The constructors throw a TypeError on a result
+  that breaks one (a thrown error with no text of its own reads "the tool failed without saying
+  why"). `note` is what the app adds for the model beside the result — the Workbench's (its
+  choice applied or asked, before a repeat's) — and for a Workbench question, which sends no
+  message of its own, the text the model read in its place. `choice.confirmed` says whether a
+  window question's answer keeps the user's own window (the clarifier choice's flag); null for
+  any other question.
+- **The message.** `toolMessage(result)` is the only writer of the bytes the model reads: the
+  ref (with no error), the error, the note, the checks, then the data fitted to the budget less
+  the rest, in that key order. The status and the choice are never sent.
+  `compactToolMessage` shortens an earlier one to its ref, checks and headline numbers by reading
+  its own JSON back. `src/__tests__/modelVisible/toolMessages.test.js` pins every message no other
+  snapshot covers (a call that did not run, the questions, unreadable arguments, a throw, the time
+  limit, a repeat, the Workbench's notes, the budget, the compaction, `highlight_cards`) as raw
+  strings.
+- **The event stream is the transcript.** `tool_end` carries the result as it ended: `status`
+  (`severityOf`), `resultStatus`, `args`, `data` (as the model read it), `checks`, `error`, `note`,
+  `choice`, `ms`, `cached`, `ref`, `analysis`, `pageParams`. Nothing re-derives a status from an
+  error's text or a data field: the dock (`turnState.js`, `QuestionCard`, the screen reader's line,
+  `ToolStep`, which shows the note sent to the model) and the validation harness (each record
+  step's `result_status`, `note`, `choice`, `ref`, `analysis`; its safety counts) read the same
+  events, and the verification records the ToolResult itself.
+
+**The data's shape (`dataShape`).** With numbers by reference the model writes
+`{{r3.sites.0.shift_A}}`: the paths of a tool's `data` are an interface it writes against, and a key
+renamed or dropped breaks every reference to it. So a tool that returns data declares the shape of
+that data on its own spec (`copilot/dataShape.js`, plain data that reads like the JSON):
+
+```js
+dataShape: {
+  note: 'string',                        // a JSON type: number (finite), string, boolean, null
+  'element?': 'string',                  // ? : the key may be absent
+  sites: [{ ref: 'number', shift_A: 'number|null', direction_uvw: oneOf(['number', 'number', 'number'], 'null') }],
+  cn: { '*_per_*': 'number' },           // a key with * : any keys whose names fit it
+  window_A: ['number', 'number']         // [shape] a list; [shape, shape, …] a tuple
+}
+```
+
+It is internal: `toRequestTools` sends a tool's name, description and parameters only. It describes
+`data` as the tool returns it, before the result budget (which halves the largest list and records
+`<key>_omitted` beside it). `checkShape(value, shape)` lists every mismatch by its reference path;
+`src/__tests__/toolDataShapes.test.js` runs every tool on the Demo and on each dev case of the
+validation and checks every result against its shape, both ways: no key the shape does not declare,
+and every declared key returned by some call (the forms those runs cannot reach are listed there).
+**A PR that changes what a tool returns changes its `dataShape` in the same diff**, so the change
+shows; the engine tools' shapes sit beside the summarizers that build their data
+(`src/copilotTools.js`), the run tools' in their specs (`copilot/runTools.js`, with
+`read_run_data`'s sections). The view tools (`highlight_cards`, `orient_3d_view`, `current_view`)
+describe the screen and declare none yet.
+
 `pages` (`{ key: label }`) and `onOpenPage(key, params)` let a step offer **Show in \<page\>**.
 
 - `params` is the tool's `pageParams(args)`, computed from the validated arguments. Without
   `pageParams`, the button reads **Open \<page\>** and `params` is null.
 - `runKey` names the open run; when it changes, the conversation restarts.
+- `configKey` (optional, null by default) names the configuration the run shows. When it changes
+  and `runKey` does not (a Live Data save brought a new `.rmc6f`), the conversation stays on
+  screen, a divider ends the earlier answers ("New configuration saved — earlier answers were about
+  the previous one"; after an answer still running, which was asked about the previous one), and
+  the next question is sent with only the questions asked under the current configuration as
+  memory: the first one after the change is sent as in a fresh conversation. A host that passes
+  none keeps one configuration per run.
 - `onOpenChange(open)` reports the dock opening and collapsing.
 - `cards` lists what the agent may point at: `{ id, page, title, about, kind?, file?, marks?, view3d?, sites? }`.
   Each card element carries `data-copilot-card="<id>"`. `kind` / `file` tie a card to the data the
@@ -574,13 +1048,13 @@ In this repository the host tools live in `src/copilotTools.js`:
 
 | Tool | What it runs |
 |---|---|
-| `list_sites` | the per-site PCA table, through the worker or `/api/pca/sites` |
+| `list_sites` | the per-site PCA table, through the worker or `/api/pca/sites`: per-axis kurtosis on resolved axes, PC1 as `[u v w]`, and a split site's static displacement with its sampling error (`delta_A`, `delta_se_A`) |
 | `analyze_displacement_directions` | the orientation engine with calibrated significances and `[u v w]` (Show in Displacement Directions selects the site and resolution) |
 | `compute_bond_angles` | the triplets engine (Show in Bond Geometry fills the triplet and windows, then computes); the sin θ-corrected histogram, and a whole shell of ~6 or ~4 neighbours read against an ideal octahedron or tetrahedron |
-| `analyze_clusters` | the cluster engine (`workers/clusters.js`, `/api/clusters`): the shape of an element's finite clusters (M₄ tetrahedra, dimers, trimers) against a shuffle null of independent atoms, and the average cluster's own distortion |
-| `analyze_modulations` | the modulation engine (`workers/modulations.js`, `/api/modulations`): each element's displacement power at the zone-boundary points and its strongest modes against the configuration's diffuse background — order that enlarges the cell, which the folded average cannot show, and correlation between cells at a general wavevector (incommensurate or short-range) |
-| `detect_symmetry` | the symmetry finder at any tolerance, without changing the card (browser-loaded runs only), with the point group's facts (inversion, Sohncke, polar) |
-| `measure_symmetry_lowering` | the size and direction of the coherent shift of a symmetry lowering: each average site's distance from the position a parent group puts it at, against the noise floor (browser-loaded runs only) |
+| `analyze_clusters` | the cluster engine (`workers/clusters.js`, `/api/clusters`): the shape of an element's finite clusters (M₄ tetrahedra, dimers, trimers) against a shuffle null of independent atoms, and the average cluster's own distortion. The engine returns its own verdict (distorted, breathing, rigid, split member sites, …); the tool shapes the data and says each finding (`CLUSTER_SENTENCES`), and its `facts` are the verdict's answers |
+| `analyze_modulations` | the modulation engine (`workers/modulations.js`, `/api/modulations`): each element's displacement power at the zone-boundary points and its strongest modes against the configuration's diffuse background — order that enlarges the cell, which the folded average cannot show, and correlation between cells at a general wavevector (incommensurate or short-range). The engine returns each point's calibrated σ (corrected over every element's points, whichever the call names), each point's polarisation (the direction the atoms move in that mode, with its share of the power) and each element's verdict (cell doubling, general order, long wave); the tool renders them (`MODULATION_SENTENCES`), the polarisation of ordered points only, and never prints a ratio or σ below its bar rounded onto it |
+| `detect_symmetry` | the symmetry finder at any tolerance, without changing the card, with the point group's facts (inversion, Sohncke, polar); offered when the run's structure has an average-structure basis (a browser-loaded run, or a server folder through `/api/structure`, which above the finder's 2000-site cap sends only its size; not a coords-only file). Above the cap it answers "not analysed", in both runtimes |
+| `measure_symmetry_lowering` | the size and direction of the coherent shift of a symmetry lowering: each average site's distance from the position a parent group puts it at, against the noise floor; offered as `detect_symmetry` is |
 | `orient_3d_view` (view) | turns a 3D view (`src/copilotViewTools.js`): look down `[u v w]` / a, b, c / PC1–3 (c up, or b looking down c), centre or ring sites, select a site, reset |
 | `current_view` (view) | the page on screen, its cards, the highlight, and each 3D view's direction and site |
 
@@ -605,8 +1079,9 @@ terminates. A server folder goes to Flask with the request cancelled on abort.
 
   The Copilot sets the context length of its own requests through Ollama's native API (*The
   context window* above), so `OLLAMA_CONTEXT_LENGTH` is not needed for it.
-- **LM Studio** (local): <https://lmstudio.ai>. Load a tool-capable model with a large context (the
-  Copilot refuses a turn the loaded context cannot hold, and says how large to load it), enable
+- **LM Studio** (local): <https://lmstudio.ai>. Load a tool-capable model with a large context, 48k
+  or more for a turn that reads two skills (the Copilot refuses a turn the loaded context cannot
+  hold, and says how large to load it), enable
   **CORS** in the Developer/server settings, and start the local server
   (default `http://localhost:1234/v1`).
 - **OpenAI / Gemini / Anthropic** (cloud): pick the provider and paste an API key. There is no server
@@ -720,7 +1195,7 @@ This module is designed to be lifted into its own repository:
 
 - Run data and engine tools enter **only as props** to `CopilotChat` (`runName`, `plotFiles`,
   `rValueFile`, `structure`, `symmetry`, `runSettings`, `pcaSites`, `liveData`, `tools`, `pages`,
-  `onOpenPage`, `runKey`, `onOpenChange`, `cards`, `onMarks`, `onLayoutChange`, `className`,
+  `onOpenPage`, `runKey`, `configKey`, `onOpenChange`, `cards`, `onMarks`, `onLayoutChange`, `className`,
   `storageKey`, `skills`) and `WatchdogBadge` (`rValueFile`). The host renders `CopilotChat` once, as the
   last child of its app grid, and places it by its `data-mode`: a column right of the pages
   (`docked`) or a row under them (`sheet`). The page cards it may point at carry
@@ -745,17 +1220,65 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
 `__tests__/` covers everything that doesn't need a live model:
 
 - **Context and prompts:** context assembly and the character budget; the watchdog heuristics and
-  reply parsing; the prompt builders and conversation memory.
+  reply parsing; the prompt texts; the domain rules' split (`systemPrompt.test.js`: every part of
+  every ground-rule sentence classified, the classification pinned sentence by sentence, method
+  `'off'` with every definition and conduct part and no inference part).
+- **The turn** (`turn.test.js`, at its interface: a scripted model port, a fake ask-user and a fake
+  clock): the order of the events and the single terminal event, why each request was made, the
+  tools offered and the prompt for them (the tools-on rule, the reserved names, "when to ask"), the
+  method (`'full'`: each description with its advice; `'off'`: no skills, no `EVIDENCE_RULES`, no
+  method sentence, descriptions and checks without their advice, a check whose advice is not in its
+  text failing its call), the
+  history window (the dock's turns as history, compaction), the warmer retry at 0.6 or more through
+  `providerModel` (and the API key never in a request event), `stopped` and `failed`, invalid input.
+  `method.test.js`: a description with its advice put back or left out, a check's text with or
+  without its advice, a tool as the turn offers it.
+  `src/__tests__/modelVisible/turnRequests.test.js`: the turn's first request for a dock-shaped and
+  a harness-shaped spec equals the snapshot files (it needs the host's run module, so it sits
+  beside them: this folder imports nothing from the host).
+- **The turn policy** (`turnPolicy.test.js`, at its interface: rows of events → steps with a fake
+  clock and a stub judge): every ending, the last-request note once, `first` against `final`, a
+  reminder and the last-request note in one request, the warmer retry, the waits off the turn's
+  time (read at most once an event), when a send-back is allowed (the last request, out of time,
+  tools off, the verification's own cap), the withdrawn answer, `no_tools`, the 11 `done` keys on
+  every end, the TypeErrors, `stoppedByFailure` and `STOPPED_BY`; in the loop, the three ending
+  paths share one key set and the dock folds the new shape as it folded the old ones.
+  `src/__tests__/turnEndings.test.jsx` reaches every ending through the dock (`CopilotView`) and the
+  harness from the same scripted model: both read the same `stoppedBy`, the dock shows its note,
+  a stall is `'error'` and Stop `'stopped'` in both, and the empty paths' `record.final` is pinned.
 - **Streaming:** SSE parsing, including tool-call fragments split mid-arguments and Gemini-style
   whole calls with `extra_content`; tool-call assembly and argument validation.
 - **The context window** (`contextGuard.test.js`): the estimate errs high; the plan keeps a loaded
   context that fits, asks for a fitting one over a 4,096 default, keeps it across the
-  conversation, caps it at the model's maximum and refuses beyond it; server detection never
-  probes a cloud URL; the native NDJSON stream (thinking, content, whole tool calls, usage,
-  `length`, errors, a tools-unsupported 400) and the message conversion; LM Studio's refusal; a
-  reply whose server read only part of the prompt stops the turn.
+  conversation, caps it at the model's maximum and refuses beyond it; `planCopilotChat` decides
+  from the probes alone (the session written only when the request is sent, which then goes out
+  under that plan); server detection never probes a cloud URL; the native NDJSON stream
+  (thinking, content, whole tool calls, usage, `length`, errors, a tools-unsupported 400 with its
+  body) and the message conversion; LM Studio's refusal; a reply whose server read only part of
+  the prompt stops the turn.
+- **The model port** (`modelPort.test.js`, `providerModel` over fake servers, nothing mocked above
+  fetch): `prepare` per server (the plan, the tool choice's form, a cloud never probed, the key
+  never in `sent`), Ollama's final request without tools and its estimate without their schemas,
+  the refusal in `prepare` with nothing sent; `stream` under the plan (Ollama's `num_ctx` and
+  `num_predict`; LM Studio and the cloud with the body as before); `ToolsUnsupportedError` from
+  Ollama's and OpenAI's shapes and the fallback text, and never from a schema 400, a 5xx, a request
+  without tools, a failure mid-reply or an abort; the loop over the port (an Ollama turn whose
+  final reply is the answer; a model without tools asked again without them). In `turn.test.js`,
+  a refused request has no `request` event.
   `copilotChat.test.jsx` runs a turn on a mocked Ollama loaded at 4,096 (native requests with
   `num_ctx` ≥ 16,384 and no `/v1` call), a refused turn, and a cut reply.
+- **How a call ends** (`tools.test.js`, the tool contract at its interface): every result status
+  and who decides it, with the exact texts the model reads (the skip reasons, the unknown tool, the
+  repeat's note), the constructors' TypeErrors, an interactive tool's `choice` passed through and
+  no other's, the tool message and its compaction, `severityOf`, `ran` and the budget helpers; and
+  the invariant table over one turn that reaches every status, a repeat, the model's question and
+  the Workbench's. `src/__tests__/toolOutcomes.test.jsx` runs one scripted turn on a dev case
+  through the dock (`CopilotView`) and the harness alike — every status, each step's end the same
+  in both — and pins the drift list: the dock's footer beside `failed_calls` and `refused_calls`,
+  `unknown_tool_calls`, "asked before", a skipped question on the card and in the screen reader's
+  line, the note on the step and in the record, provenance against what the model was told, a
+  step running at a stop listed as stopped. The validation's scripted records are pinned as files
+  (`validation/__tests__/__snapshots__/records/`, the transcript's added keys left out).
 - **The agent loop, against a scripted model:**
   - the call → result → answer cycle; argument errors fed back and corrected;
   - `ask_user` replays on the Demo's Ta–Se shell: an ambiguous Se–Ta–Se question finds the shells,
@@ -764,25 +1287,47 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
     limit and the wait off the turn clock; one question per step, two per request, never cached;
   - unknown tools, thrown errors, duplicate calls, the per-step limit;
   - the final `tool_choice: 'none'` round and an empty last round;
-  - the tools-unsupported fallback, and a schema 400 that must surface;
+  - the tools-unsupported fallback on the port's typed error only (an untyped error with the same
+    text is thrown), and a schema 400 that must surface;
+  - a request refused in `prepare` (no `request` event) and a `prepare` that hangs (the stall
+    clock);
   - abort and timeout, which also abort the tool's signal;
   - per-result and per-turn budgets.
 - **Skills:** skill files (front matter, references, a misnamed skill), `read_skill` (its budget,
   references on demand, never compacted) (`skills.test.js`); the repository's own skills parse,
   are drafts with every section, and reach the agent whole (`src/__tests__/copilotSkills.test.js`);
   one replay per skill on the Demo (`copilotSkillReplays.test.js`); the cut-shell refusal and its
-  confirmed escape (`copilotTools.test.js`).
-- **Checks and the Workbench's questions:** the answer checks with their negated and qualified
-  phrasings (`answerAudit.test.js`); the evidence gate, numbers by reference and the computed
-  verdict on their own (`evidence.test.js`) and in the loop (`agentLoop.test.js`); the clarifier on synthetic shells — split,
+  confirmed escape (`copilotTools.test.js`). The skill lint (`src/__tests__/skillLint.test.js`,
+  tables in `skillLint/tables.js`) reads every skill and reference file and never edits them: every
+  tool a skill names is one the builders offer; every gate number equals the constant that decides
+  it (each number after a comparator is bound or listed as no gate); every "*Firm rule in the app:*"
+  is mapped to the check or refusal that enforces it, and that code is exercised; every value a skill
+  quotes as measured on the Demo that `VALUES` binds (the shell readings: `find_gr_peaks`, the shell
+  catalogue, the bond-angle counts summary) equals the tool's there, rounded as the skill writes it.
+  Today's violations sit in its allow-list with why (a value entry with its line, the skill's value
+  and the tool's: the coordination-shells skill's old first peak, 2.33–2.71 Å and 3.9, against
+  2.21–2.65 Å and 3.25); a new one fails, and so does an entry a fix cleared.
+- **Checks and the Workbench's questions:** the verification at its interface, steps recorded and
+  the answer judged — the answer checks with their negated and qualified phrasings
+  (`answerChecks.test.js`); the evidence gate under both methods, the fixed order, numbers by
+  reference, the computed verdict, the errors (`verification.test.js`); the catalogues and the
+  binding of `EVIDENCE_RULES` to CLAIMS (`verificationCatalogue.test.js`); the reference store
+  (`references.test.js`) and the dock's reducer and footer (`turnState.test.js`); the real tools'
+  facts against FACTS (`src/__tests__/verificationFacts.test.js`); the verdict's words through
+  the harness's phrasings (`validation/__tests__/verdictPhrasings.test.js`); and in the loop
+  (`agentLoop.test.js`); the clarifier on synthetic shells — split,
   merged, clean, word-like element symbols, the tolerance ladder, typed windows
   (`clarify.test.js`); and on the Demo with the real engines and context
-  (`src/__tests__/copilotChecksReplays.test.js`, the evidence gate on, as in the app): a
+  (`src/__tests__/copilotChecksReplays.test.js`, each question through the turn module, as in the
+  app; two loop-level cases said in place): a
   contradicted answer is not verified, gemma4's correct answers stay *achieved* and are never sent
   back, a cluster conclusion sent back for its analysis and its numbers filled from it, each Workbench question (an element alone, a split shell, a
   cut window kept or replaced, one site or pooled), the clear questions that never ask, the
   model's own `ask_user` beside them within two per request, and cancel. In the dock
   (`copilotChat.test.jsx`): the Workbench's card before any model request, the lowered chip.
+  Real answers (`src/__tests__/answerCorpus.test.js`): the gate's claims and send-back and the
+  checks that fire, pinned per answer with a judgement of each, and the false alarms counted
+  ([copilot-validation.md](../../../../docs/algorithms/copilot-validation.md#the-answer-corpus-plan-item-35)).
 - **Rendering:** Outcome parsing, the Markdown pipeline with its card chips, and
   `copilotChat.test.jsx`, which drives the dock end to end against a mocked server: nothing is
   fetched before it opens, Show in hands over the page parameters, Esc keeps the conversation, a
@@ -792,6 +1337,18 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   page clears it. The `ask_user` card: it waits on one request, takes focus, moves with the arrow
   keys, sends the option picked by its number key back to the model, which computes in that window;
   *Other…*; Stop while waiting; a run change drops the question; a collapsed dock marks the rail.
+- **What the model sees** (`src/__tests__/modelVisible/`): snapshot files of every system-prompt
+  variant (with method `'off'` too), the dock's and the validation harness's first request and tool
+  list (both through the turn module; arms B and C, arm C's request checked for every skill name,
+  skill step, method sentence and piece of tool advice), one tool message per tool on the Demo
+  (and the two whose checks carry advice, as arm C reads them), and every tool message no other
+  file covers, raw (`toolMessages.test.js`: a call that did not run, the questions, unreadable
+  arguments, a throw, the time limit, a repeat, the Workbench's notes, the budget, the compaction,
+  `highlight_cards`). A diff there is a change to what the model sees: call it out in the PR
+  ([copilot-validation.md](../../../../docs/algorithms/copilot-validation.md#what-the-model-sees-snapshot-tests)).
+- **The shape of each tool's data:** the notation and its checker (`dataShape.test.js`), and every
+  live tool's results on the Demo and the dev cases against its `dataShape`
+  (`src/__tests__/toolDataShapes.test.js`, *The tool contract*).
 - **Pointing:** the focus controller (`focus.test.js`: levels, page switch and wait, clearing,
   undo callbacks, re-rendered cards), card references (`cardRefs.test.js`), `highlight_cards`
   (`viewTools.test.js`), the dock's size rules (`dockLayout.test.js`), and list/object arguments

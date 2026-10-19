@@ -1,0 +1,327 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
+// The turn: one module runs one question. Its interface is two functions:
+//
+//   runTurn(spec)      → AsyncIterable<TurnEvent>   the question, run
+//   describeTurn(spec) → TurnDescription            the same assembly, not run (pure)
+//
+// Behind that interface sits everything a question needs besides the screen,
+// which the dock (useCopilot.js) and the validation harness
+// (validation/harness.js) each used to assemble, and which had drifted apart
+// between them: the run context and the context as the model reads it, the
+// tools offered (the caller's, then ask_user, then read_skill), the system
+// prompt for those tools, the history window, the Workbench's own questions
+// (clarify.js), the verification (verification/: the evidence gate, the
+// checks on the answer, numbers by reference and the computed Outcome), the
+// loop (agentLoop.js) with its model calls through the model port
+// (provider/model.js), and one terminal event that says how the turn ended.
+// The dock and the harness are its two adapters; neither builds any of this.
+// The module keeps no state between calls: the caller passes the history, the
+// clock and whether tools are on (the dock remembers which models refused
+// them).
+//
+// The spec:
+//   question      the user's question (required)
+//   run           CopilotChat's eight run props, as the run module
+//                 (src/copilotRun.js) gives them (required)
+//   model         a model port, or a bare stream function (required to run)
+//   tools         the caller's tools, in order: the tools over the run props
+//                 (runTools.js), the module's view tools, the host's tools.
+//                 Never ask_user or read_skill: the turn adds those itself
+//                 (a TypeError otherwise)
+//   askUser       (request, { signal }) → Promise<{ source, index?, answer? }>,
+//                 rejecting with an AbortError on abort; null: no ask_user
+//                 tool and no Workbench questions
+//   skills        the host's bundle { files, references?, load? } (parsed
+//                 here; a malformed skill is `skillsError`, never thrown), or
+//                 already parsed skills { list, load? }, or null
+//   history       [{ question, answer }], oldest first: the conversation so far
+//   signal        aborts the turn (the `stopped` event)
+//   clock         { now() } in ms (Date.now by default): turn time and `at`
+//   toolContext   more context for a tool's run() beside its signal and
+//                 askUser (the dock's card-focus controller)
+//   config        { toolsEnabled = true, method = 'full', limits = {}, phrasings = null }:
+//                 limits are the loop's budgets, and `maxEvidenceGates`, when
+//                 set, the verification's send-backs per turn (a run policy
+//                 states it); phrasings are claim phrasings the verification
+//                 reads beside its own ({ [claim id]: { asserted, literal } }:
+//                 the validation harness's verdict words)
+//
+// The method (method.js): 'full' is the Copilot as it ships; 'off' (the
+// validation's arm C) sends none of the method. One pure function, planTurn,
+// decides from it what the model reads: the prompt's sections (no skills'
+// index, no EVIDENCE_RULES, no method sentence of TOOL_RULES or ASK_RULES and
+// no inference part of the domain rules with 'off', the tool-free prompt
+// included; prompts/copilot.js, prompts/system.js), read_skill (only with 'full'), and each
+// tool as offered (toolAsSent: its description with its `method` advice
+// with 'full', without it with 'off', and with 'off' its checks without
+// their advice). With 'full' every request is byte for byte what it was
+// before the switch. The evidence gate checks under both; with 'off' its
+// send-back names no analysis (the verification's method, claims.js).
+//
+// Invariants:
+//   - ask_user is offered only with an askUser port and tools on; read_skill
+//     only with skills, tools on and method 'full'; both after `tools`, in
+//     that order;
+//   - tools are active exactly when config.toolsEnabled holds and at least
+//     one tool is offered; inactive, the request has no tools and the prompt
+//     is the no-tools one;
+//   - the history becomes messages: an unanswered question is dropped, each
+//     answer is compacted to MEMORY_ANSWER_CHARS, and the newest
+//     HISTORY_MESSAGES messages are kept (prompts/copilot.js);
+//   - invalid input throws (a TypeError) on the first next(); after `start`
+//     the iterator never throws.
+//
+// The events: every event the loop emits (agentLoop.js), shape unchanged,
+// each with `at` (clock.now()), and:
+//   { type: 'start', offered, prompt, method, toolsActive, shown, skillsError }
+//       first, exactly once: describeTurn(spec) for this question
+//   { type: 'request', round, why, sent }      before each model call (the loop's)
+//   exactly one terminal event, always last, each with its `stoppedBy`, a key
+//   of STOPPED_BY (turnPolicy.js: the one set of endings the dock and the
+//   harness read):
+//   { type: 'done', … }                        the loop's, passed on as it is: the
+//                                              turn policy's one shape (answer,
+//                                              max_rounds, no_progress, empty)
+//   { type: 'stopped', error, stoppedBy }      aborted (an AbortError): 'stopped'
+//   { type: 'failed', error, message, hint, stoppedBy }
+//                                              any other error, a stall included:
+//                                              'error'; the message and what to do
+//                                              (robustness.js explainModelError); a
+//                                              context-limit refusal and a spend cap
+//                                              land here
+// Order: start; a Workbench question (a tool_start/tool_end pair, `app`);
+// then per request: round, request, text/reasoning deltas, tool_start/tool_end
+// pairs (sharing an id); a gate is always followed by a retract;
+// tools_unsupported at most once, before any tool step, followed by a new
+// round and request under the no-tools prompt.
+//
+// Seams: the verification is one object the turn builds (turnChecks) and
+// the loop records with and judges by (through the turn policy, which decides
+// when a turn ends); provider quirks stay behind the model port.
+
+import { runCopilotTurn } from './agentLoop';
+import { ASK_USER, buildAskUserTool } from './askUser';
+import { buildClarifier } from './clarify';
+import { TURN_METHODS, toolAsSent, toolDescription } from './method';
+import { compactAnswer, explainModelError } from './robustness';
+import { READ_SKILL, buildReadSkillTool, parseSkillFiles, skillIndex } from './skills';
+import { usableTools } from './tools';
+import { stoppedByFailure } from './turnPolicy';
+import { createVerification, shownContext } from './verification';
+import { buildRunContext } from '../context/runContext';
+import { buildCopilotMessages, copilotSystemPrompt } from '../prompts/copilot';
+import { asModelPort } from '../provider/model';
+
+// The longest earlier answer re-sent whole as memory.
+export const MEMORY_ANSWER_CHARS = 2000;
+// The methods a turn can follow (method.js): 'full', the skills and the
+// method in the prompt, the descriptions and the checks; 'off', none of it.
+export { TURN_METHODS };
+// The tools the turn adds itself, never the caller.
+export const TURN_OWN_TOOLS = Object.freeze([ASK_USER, READ_SKILL]);
+
+const DEFAULT_CLOCK = Object.freeze({ now: () => Date.now() });
+
+const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+const invalid = (message) => {
+    throw new TypeError(`turn: ${message}`);
+};
+
+// The spec, checked and with its defaults. `running` asks for what running
+// needs beyond a description: the question and the model.
+const readSpec = (spec, { running }) => {
+    if (!isObject(spec)) invalid('the spec must be an object');
+    const {
+        question, run, model = null, tools = [], askUser = null, skills = null, history = [], signal = null,
+        clock = DEFAULT_CLOCK, toolContext = null, config = {}
+    } = spec;
+    if (running && (typeof question !== 'string' || !question.trim())) invalid('question must be a non-empty string');
+    if (!isObject(run)) invalid('run must be the run props (CopilotChat\'s eight run props)');
+    if (running) asModelPort(model);
+    if (!Array.isArray(tools)) invalid('tools must be an array');
+    const own = tools.find((tool) => tool && TURN_OWN_TOOLS.includes(tool.name));
+    if (own) invalid(`tools must not contain ${own.name}: the turn adds it (askUser, skills)`);
+    // A tool's method advice must put back into its description (method.js),
+    // whatever this turn's method: a malformed spec fails in every arm.
+    usableTools(tools).forEach((tool) => toolDescription(tool, 'full'));
+    if (askUser != null && typeof askUser !== 'function') invalid('askUser must be a function or null');
+    if (skills != null && !(isObject(skills) && (isObject(skills.files) || Array.isArray(skills.list)))) {
+        invalid('skills must be { files, references?, load? }, { list, load? } or null');
+    }
+    if (!Array.isArray(history) || !history.every(isObject)) invalid('history must be an array of { question, answer }');
+    if (signal != null && typeof signal.aborted !== 'boolean') invalid('signal must be an AbortSignal or null');
+    if (!clock || typeof clock.now !== 'function') invalid('clock must have now()');
+    if (toolContext != null && !isObject(toolContext)) invalid('toolContext must be an object or null');
+    if (!isObject(config)) invalid('config must be an object');
+    const { toolsEnabled = true, method = 'full', limits = {}, phrasings = null } = config;
+    if (typeof toolsEnabled !== 'boolean') invalid('config.toolsEnabled must be a boolean');
+    if (!TURN_METHODS.includes(method)) invalid(`config.method must be one of ${TURN_METHODS.join(', ')}`);
+    if (!isObject(limits)) invalid('config.limits must be an object');
+    // Its rows and patterns are the verification's to check (createVerification).
+    if (phrasings != null && !isObject(phrasings)) invalid('config.phrasings must be { [claim id]: { asserted, literal } } or null');
+    return {
+        question, run, model, tools, askUser, skills, history, signal, clock, toolContext,
+        config: { toolsEnabled, method, limits, phrasings }
+    };
+};
+
+// The skills a turn may offer, { list, load, error }: the host's bundle is
+// parsed here, and a malformed skill is reported, never thrown.
+const readSkills = (skills) => {
+    if (!skills) return { list: [], load: null, error: null };
+    const load = typeof skills.load === 'function' ? skills.load : null;
+    if (Array.isArray(skills.list)) return { list: skills.list, load, error: null };
+    try {
+        return { list: parseSkillFiles(skills.files, { available: skills.references || null }), load, error: null };
+    } catch (failure) {
+        return { list: [], load, error: failure?.message || String(failure) };
+    }
+};
+
+// The assembly, pure: the context, the tools offered, the prompt they get.
+// The method switch is here: read_skill only with method 'full', each tool
+// as the model reads it under the method (toolAsSent), and the method passed
+// to the prompt (turnMessages).
+const planTurn = ({ run, tools, askUser, skills, config }) => {
+    const context = buildRunContext(run);
+    const { list, load, error } = readSkills(skills);
+    const on = config.toolsEnabled;
+    const asks = on && typeof askUser === 'function';
+    const reads = on && config.method === 'full' && list.length > 0;
+    const offered = [
+        ...usableTools(tools),
+        ...(asks ? [buildAskUserTool()] : []),
+        ...(reads ? [buildReadSkillTool(list, { load })] : [])
+    ].map((tool) => toolAsSent(tool, config.method));
+    const toolsActive = on && offered.length > 0;
+    const view = offered.some((tool) => Boolean(tool.view));
+    return {
+        context,
+        shown: shownContext(context),
+        skills: list,
+        skillsError: error,
+        offered: {
+            tools: offered,
+            skills: reads ? list.map((skill) => skill.name) : [],
+            askUser: asks,
+            view
+        },
+        toolsActive,
+        prompt: toolsActive ? (view ? 'view' : 'tools') : 'no_tools',
+        method: config.method
+    };
+};
+
+const describe = (plan) => ({
+    offered: plan.offered,
+    prompt: plan.prompt,
+    method: plan.method,
+    toolsActive: plan.toolsActive,
+    shown: plan.shown,
+    skillsError: plan.skillsError
+});
+
+// The earlier questions as messages: each answered one with its answer
+// compacted; an unanswered one (stopped or failed before any text) dropped.
+const historyMessages = (history) => history.flatMap(({ question, answer }) => {
+    const text = typeof answer === 'string' ? answer.trim() : '';
+    if (!text || typeof question !== 'string' || !question.trim()) return [];
+    return [{ role: 'user', content: question }, { role: 'assistant', content: compactAnswer(text, MEMORY_ANSWER_CHARS) }];
+});
+
+const turnMessages = (plan, { question, history }) => buildCopilotMessages({
+    context: plan.context,
+    history: historyMessages(history),
+    userText: question,
+    toolsEnabled: plan.toolsActive,
+    viewTools: plan.prompt === 'view',
+    askUser: plan.toolsActive && plan.offered.askUser,
+    skills: plan.toolsActive && plan.offered.skills.length ? skillIndex(plan.skills) : '',
+    method: plan.method
+});
+
+// The two checks the loop runs with: the Workbench's own questions (only
+// with someone to ask) and the verification (verification/: the evidence
+// gate on the run's shells, its elements and the tools offered, tools on or
+// off; the checks on the answer against the context's facts; {{ctx.…}}
+// against the context the model was shown; the Outcome), under the turn's
+// method (with 'off' a send-back names no analysis), with the caller's claim
+// phrasings and, when the limits state it, its send-backs per turn. The
+// shells are the run's one shell reading (context/shells.js), with the run
+// settings' closest-approach constraints, as the context and find_gr_peaks
+// read them.
+const turnChecks = (plan, { run, askUser, config }) => {
+    const clarifier = buildClarifier(
+        { plotFiles: run.plotFiles, structure: run.structure, runSettings: run.runSettings, symmetry: run.symmetry },
+        { noiseFloor: plan.context.symmetry?.noise_floor_A ?? null }
+    );
+    const sendBacks = config.limits.maxEvidenceGates;
+    return {
+        clarifier: askUser ? clarifier : null,
+        verification: createVerification({
+            context: plan.context,
+            catalog: clarifier.catalog,
+            offered: plan.offered.tools.map((tool) => tool.name),
+            phrasings: config.phrasings,
+            method: plan.method,
+            ...(sendBacks != null ? { maxSendBacks: sendBacks } : {})
+        })
+    };
+};
+
+// The terminal event of a turn that threw: Stop ends it as `stopped`, any
+// other error (a stall, a refusal, a spend cap) as `failed`, each with its
+// ending (turnPolicy.js stoppedByFailure).
+const ending = (error) => {
+    const stoppedBy = stoppedByFailure(error);
+    return stoppedBy === 'stopped'
+        ? { type: 'stopped', error, stoppedBy }
+        : { type: 'failed', error, ...explainModelError(error), stoppedBy };
+};
+
+/**
+ * What a turn with this spec offers and sends, without running it: `{ offered:
+ * { tools, skills, askUser, view }, prompt: 'tools' | 'view' | 'no_tools',
+ * method, toolsActive, shown, skillsError }`. Pure; `question` and `model`
+ * are not needed. `offered.tools` are the tool objects in the order sent,
+ * `offered.skills` the skill names read_skill offers.
+ */
+export const describeTurn = (spec) => describe(planTurn(readSpec(spec, { running: false })));
+
+/**
+ * One question, as events (see the header). Throws a TypeError on invalid
+ * input at the first next(); never throws after `start`.
+ */
+export async function* runTurn(spec) {
+    const turn = readSpec(spec, { running: true });
+    const plan = planTurn(turn);
+    const messages = turnMessages(plan, turn);
+    const checks = turnChecks(plan, turn);
+    const stamp = (event) => ({ ...event, at: turn.clock.now() });
+    yield stamp({ type: 'start', ...describe(plan) });
+    let answered = false;
+    try {
+        for await (const event of runCopilotTurn({
+            model: turn.model,
+            messages,
+            tools: plan.offered.tools,
+            limits: turn.config.limits,
+            signal: turn.signal,
+            toolsEnabled: plan.toolsActive,
+            // The tool-free prompt under the turn's method (with 'off', the
+            // domain rules' definitions and conduct only).
+            noToolsSystemPrompt: copilotSystemPrompt({ toolsEnabled: false, method: plan.method }),
+            toolContext: { ...(turn.toolContext || {}), ...(turn.askUser ? { askUser: turn.askUser } : {}) },
+            clock: turn.clock,
+            ...checks
+        })) {
+            if (event.type === 'done') answered = true;
+            yield stamp(event);
+        }
+        if (!answered) yield stamp(ending(new Error('The turn ended without an answer.')));
+    } catch (error) {
+        yield stamp(ending(error));
+    }
+}

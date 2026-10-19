@@ -2,8 +2,12 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 // Regression tests for the 0.6.0 audit of the displacement-direction engine —
-// the JS twin of tests/test_orientation_fixes.py. Engine-level expectations
-// are shared verbatim with the Python suite so the two engines cannot drift.
+// the JS twin of the rules in tests/test_orientation_fixes.py. The values the
+// two engines must share (recommendedFrequency boundaries, tie-family cells,
+// neighbour checksums, polygon starts, the 8-well peaks and every significance
+// statistic on the golden cloud) are not copied here: they come from one
+// generated golden, orientation_fixture.json, checked in
+// src/__tests__/orientationParity.test.js.
 
 import { describe, it, expect } from 'vitest';
 
@@ -23,7 +27,7 @@ import {
     siteOrientationHistogram
 } from '../orientation.js';
 import { siteDisplacementsFromRmc6f } from '../pcaKde.js';
-import { handlePcaMessage } from '../pcaKdeWorker.js';
+import fixture from '../../__tests__/fixtures/orientation_fixture.json';
 
 // Deterministic Gaussian sampler (same construction as orientation.test.js).
 const makeRng = (seed) => {
@@ -91,13 +95,8 @@ describe('non-finite input', () => {
     });
 });
 
-// orientation.physics.10/.25, orientation.numerics.30 — shared verbatim with
-// RECOMMENDED_FREQUENCY_PINS in tests/test_orientation_fixes.py.
-const RECOMMENDED_FREQUENCY_PINS = [
-    [0, 1], [294, 1], [300, 1], [503, 1], [504, 2], [774, 2], [1000, 2], [1103, 2],
-    [1104, 3], [12000, 9], [12023, 9], [12024, 10], [10000000, 24]
-];
-
+// orientation.physics.10/.25, orientation.numerics.30 (the boundary table
+// both engines share is in orientation_fixture.json).
 describe('recommendedFrequency floors to the target occupancy', () => {
     it('never drops below 12 points per cell (except at the dodecahedron floor)', () => {
         for (let n = 1; n < 20000; n += 7) {
@@ -105,12 +104,6 @@ describe('recommendedFrequency floors to the target occupancy', () => {
             if (frequency > MIN_FREQUENCY) expect(n / (10 * frequency * frequency + 2)).toBeGreaterThanOrEqual(12);
             if (frequency < 24) expect(n / (10 * (frequency + 1) ** 2 + 2)).toBeLessThan(12);
         }
-    });
-
-    it('matches the Python pins', () => {
-        RECOMMENDED_FREQUENCY_PINS.forEach(([n, expected]) => expect(recommendedFrequency(n)).toBe(expected));
-        expect(recommendedFrequency(1000, { targetPerCell: 5 })).toBe(4);
-        expect(recommendedFrequency(5000, { maxFrequency: 3 })).toBe(3);
     });
 });
 
@@ -136,11 +129,6 @@ const bodyDiagonalCloud = (copies = 200, length = 0.1) => {
     }
     return points;
 };
-
-// Shared verbatim with AXIS_CELLS_NU3 in tests/test_orientation_fixes.py.
-// +x and +y are exact two-way ties at nu = 3; since review:4 they go to the
-// lower index of the pair (35, 14; previously 36, 15 by the walk's path).
-const AXIS_CELLS_NU3 = [35, 14, 16, 85, 70, 62];
 
 describe('centrosymmetric tie-break', () => {
     it('keeps an exactly centrosymmetric axis cloud at zero asymmetry', () => {
@@ -170,16 +158,9 @@ describe('centrosymmetric tie-break', () => {
         const minus = assignCells(tiling, directions.map((u) => u.map((value) => -value)));
         minus.forEach((cell, index) => expect(cell).toBe(tiling.antipode[plus[index]]));
     });
-
-    it('pins the axis cells shared with the Python engine', () => {
-        const tiling = goldbergTiling(3);
-        expect(assignCells(tiling, [[1, 0, 0], [0, 1, 0], [0, 0, 1], [-1, 0, 0], [0, -1, 0], [0, 0, -1]]))
-            .toEqual(AXIS_CELLS_NU3);
-    });
 });
 
-// <111>, <100> and <110> (26 directions), in the order of _special_directions
-// in tests/test_orientation_fixes.py.
+// <111>, <100> and <110> (26 directions).
 const specialDirections = () => {
     const signs = [1, -1];
     const directions = [];
@@ -214,37 +195,8 @@ const lowestIndexRule = (tiling, directions, tolerance = 1e-12) => directions.ma
     return flip ? tiling.antipode[cell] : cell;
 });
 
-// Shared verbatim with SPECIAL_DIRECTION_CELLS in tests/test_orientation_fixes.py.
-const SPECIAL_DIRECTION_CELLS = {
-    1: [0, 1, 2, 6, 5, 9, 11, 10, 2, 9, 1, 11, 0, 10, 1, 8, 3, 11, 2, 6, 5, 9, 0, 7, 4, 10],
-    2: [1, 16, 10, 26, 15, 27, 39, 38, 18, 40, 8, 34, 9, 30, 2, 24, 7, 35, 5, 17, 14, 29, 0, 21, 11, 31],
-    3: [5, 43, 49, 77, 28, 56, 83, 91, 35, 85, 14, 70, 16, 62, 6, 47, 57, 89, 7, 45, 26, 68, 1, 40, 75, 80],
-    4: [6, 71, 81, 130, 48, 98, 145, 159, 59, 148, 23, 120, 29, 104, 8, 79, 96, 155, 12, 76, 43, 115,
-        1, 68, 128, 137],
-    10: [33, 405, 460, 761, 257, 561, 858, 983, 320, 880, 110, 690, 155, 590, 287, 525, 919, 927, 128,
-        635, 223, 656, 77, 377, 736, 792],
-    11: [37, 485, 551, 915, 306, 673, 1033, 1193, 381, 1061, 128, 830, 182, 710, 343, 633, 1110, 1119,
-        152, 765, 268, 788, 90, 454, 887, 954]
-};
-// Shared verbatim with WELL_MODEL_PEAKS in tests/test_orientation_fixes.py.
-// Before the tie rule Python put the nu=2 peak at [0.5, 0.309, 0.809] and JS
-// at [0.309, 0.809, 0.5].
-const WELL_MODEL_PEAKS = {
-    2: { peakCell: 1, peakDirection: [0.3090169943749474, 0.8090169943749473, 0.5], occupiedCells: 8 },
-    4: { peakCell: 6, peakDirection: [0.42532540417601994, 0.5877852522924731, 0.6881909602355868], occupiedCells: 8 }
-};
-
-// Atoms on the eight <111> wells: 30 at +[111], 30 at -[111], 20 at each other.
-const wellModel = (length = 0.1) => {
-    const rows = [];
-    specialDirections().slice(0, 8).forEach((direction) => {
-        const weight = Math.abs(direction[0] + direction[1] + direction[2]) === 3 ? 30 : 20;
-        for (let k = 0; k < weight; k += 1) rows.push(direction.map((value) => value * length / Math.sqrt(3)));
-    });
-    return rows;
-};
-
-// review:4
+// review:4 (the cells both engines give the 26 directions, and the 8-well
+// <111> model's peaks, are in orientation_fixture.json).
 describe('exact tie resolution (lowest index)', () => {
     it('resolves <111>, <100> and <110> by the lowest-index rule at every frequency', () => {
         const directions = specialDirections();
@@ -261,39 +213,11 @@ describe('exact tie resolution (lowest index)', () => {
             expect(assignCells(tiling, vertices), `nu=${frequency}`).toEqual(lowestIndexRule(tiling, vertices));
         }
     });
-
-    it('matches the Python pins for the special directions', () => {
-        Object.entries(SPECIAL_DIRECTION_CELLS).forEach(([frequency, expected]) => {
-            expect(assignCells(goldbergTiling(Number(frequency)), specialDirections()), `nu=${frequency}`).toEqual(expected);
-        });
-    });
-
-    it('gives an 8-well <111> model the same peak as the Python engine', () => {
-        Object.entries(WELL_MODEL_PEAKS).forEach(([frequency, expected]) => {
-            const result = orientationHistogram(wellModel(), { frequency: Number(frequency), geometry: false });
-            expect(result.peakCell, `nu=${frequency}`).toBe(expected.peakCell);
-            result.peakDirection.forEach((value, i) => expect(Math.abs(value - expected.peakDirection[i])).toBeLessThan(1e-12));
-            expect(result.counts.filter((count) => count > 0).length).toBe(expected.occupiedCells);
-        });
-    });
 });
 
 // orientation.parity.17 — cyclic neighbour / polygon order must not depend on
-// the atan2 branch cut. Shared verbatim with tests/test_orientation_fixes.py.
-const NEIGHBOR_CHECKSUMS = { 4: 13107810, 6: 68604861, 10: 524199205, 38: 108147532718 };
-const POLYGON_STARTS_NU38 = {
-    2052: [0.008313449390497447, 0.01625704168659895, 0.9998332836802503],
-    4275: [0.9998332836802503, 0.00831344939049745, -0.016257041686598955]
-};
-
-const neighborChecksum = (neighbors) => {
-    let total = 0;
-    neighbors.forEach((row, cell) => {
-        row.forEach((neighbor, slot) => { total += (slot + 1) * (neighbor + 1) * ((cell % 97) + 1); });
-    });
-    return total;
-};
-
+// the atan2 branch cut (the neighbour checksums and nu = 38 polygon starts
+// both engines give are in orientation_fixture.json).
 describe('canonical cyclic order', () => {
     it('starts every neighbour row at its smallest index', () => {
         for (const frequency of [3, 6, 10]) {
@@ -302,19 +226,6 @@ describe('canonical cyclic order', () => {
                 expect(valid[0]).toBe(Math.min(...valid));
             });
         }
-    });
-
-    it('matches the Python neighbour checksums', () => {
-        Object.entries(NEIGHBOR_CHECKSUMS).forEach(([frequency, expected]) => {
-            expect(neighborChecksum(goldbergTiling(Number(frequency)).neighbors)).toBe(expected);
-        });
-    });
-
-    it('matches the Python polygon start vertices', () => {
-        const tiling = goldbergTiling(38);
-        Object.entries(POLYGON_STARTS_NU38).forEach(([cell, vertex]) => {
-            vertex.forEach((value, axis) => expect(tiling.polygons[Number(cell)][0][axis]).toBeCloseTo(value, 12));
-        });
     });
 });
 
@@ -355,16 +266,8 @@ describe('element "all" normalisation', () => {
         }
         expect(siteOrientationHistogram(parsed, { element: 'Se', frequency: 2, geometry: false }).element).toBe('Se');
     });
-
-    it('normalises element "all" in the worker transport like the Flask route', async () => {
-        const text = twoSiteRmc6f();
-        const result = await handlePcaMessage(
-            { kind: 'orientation', element: 'all', frequency: 2, geometry: false },
-            async () => text
-        );
-        expect(result.totalPoints).toBe(128);
-        expect('element' in result).toBe(false);
-    });
+    // The worker transport's 'all': the request contract
+    // (fixtures/analysis_requests.json, src/__tests__/analysisRequests.test.js).
 });
 
 // orientation.numerics.2/.14, orientation.parity.11/.16, orientation.physics.21
@@ -457,60 +360,9 @@ describe('special functions match scipy', () => {
     });
 });
 
-// Deterministic, RNG-free cloud — identical to golden_cloud() in
-// tests/test_orientation_fixes.py.
-const goldenCloud = ({ nSphere = 900, nLobe = 60, lobe = [0.3, -0.5, 0.81] } = {}) => {
-    const points = [];
-    for (let i = 0; i < nSphere; i += 1) {
-        const z = 1 - (2 * i + 1) / nSphere;
-        const r = Math.sqrt(1 - z * z);
-        const phi = i * 2.399963229728653;
-        const radius = 0.05 + 0.03 * ((i * 7) % 11) / 11;
-        points.push([r * Math.cos(phi) * radius, r * Math.sin(phi) * radius, z * radius]);
-    }
-    const length = Math.hypot(...lobe);
-    const unit = lobe.map((value) => value / length);
-    for (let j = 0; j < nLobe; j += 1) {
-        const jitter = [Math.cos(j * 1.3), Math.sin(j * 1.7), Math.cos(j * 0.9)].map((value) => 0.02 * value);
-        points.push(unit.map((value, axis) => (value + jitter[axis]) * 0.12));
-    }
-    return points;
-};
-
-// Shared verbatim with GOLDEN_PEAK in tests/test_orientation_fixes.py:
-// [frequency, smoothing, nLobe, expected fields].
-const GOLDEN_PEAK = [
-    [6, 1, 60, { peakCell: 181, peakCount: 39, peakExpected: 2.5649892741371745,
-        peakLocalPValue: 3.6267987030691646e-32, peakPValue: 1.3129011305110377e-29,
-        peakSignificance: 11.238918217145391 }],
-    [10, 2, 60, { peakCell: 480, peakCount: 45, peakExpected: 0.8960392805524379,
-        peakLocalPValue: 2.4905767221833515e-59, peakPValue: 2.4955578756277183e-56,
-        peakSignificance: 15.770175177825124 }],
-    [null, 0, 60, { peakCell: 10, peakCount: 72, peakExpected: 23.631937108780438,
-        peakLocalPValue: 1.0240227941836545e-15, peakPValue: 4.300895735571259e-14,
-        peakSignificance: 7.460770577845533 }],
-    [10, 2, 0, { peakCell: 436, peakCount: 2, peakExpected: 0.9029912627020413,
-        peakLocalPValue: 0.22861236738599036, peakPValue: 1.0,
-        peakSignificance: -22.629329003077444 }],
-    [2, 0, 6, { peakCell: 10, peakCount: 27, peakExpected: 22.30264064641154,
-        peakLocalPValue: 0.18477705092278982, peakPValue: 0.999812237582693,
-        peakSignificance: -3.5567124319438927 }]
-];
-
-const assertGolden = (table) => {
-    table.forEach(([frequency, smoothing, nLobe, expected]) => {
-        const result = orientationHistogram(goldenCloud({ nLobe }), { frequency, smoothing, geometry: false });
-        Object.entries(expected).forEach(([key, value]) => {
-            if (typeof value === 'boolean' || Number.isInteger(value) || value === null) {
-                expect(result[key], `${frequency}/${smoothing}/${nLobe} ${key}`).toBe(value);
-            } else {
-                // Relative tolerance: p-values reach 1e-142.
-                expect(Math.abs(result[key] - value), `${frequency}/${smoothing}/${nLobe} ${key}`)
-                    .toBeLessThanOrEqual(1e-9 * Math.abs(value));
-            }
-        });
-    });
-};
+// The golden cloud (tests/generate_orientation_fixture.py, stored in the
+// fixture): an RNG-free Fibonacci sphere plus a tight lobe of 60 points.
+const goldenCloud = () => [...fixture.inputs['golden-sphere'], ...fixture.inputs['golden-lobe'].slice(0, 60)];
 
 const isotropicUnits = (gauss, n) => {
     const points = [];
@@ -520,8 +372,6 @@ const isotropicUnits = (gauss, n) => {
 
 // orientation.numerics.1/.26, orientation.physics.20
 describe('peak significance (look-elsewhere-corrected Poisson tail)', () => {
-    it('matches the Python golden values', () => assertGolden(GOLDEN_PEAK));
-
     it('reads isotropic clouds as not significant at the UI defaults', () => {
         const gauss = makeRng(2024);
         const significance = [];
@@ -547,52 +397,15 @@ describe('peak significance (look-elsewhere-corrected Poisson tail)', () => {
     });
 });
 
-// orientation.numerics.3, orientation.physics.7 — shared verbatim with
-// GOLDEN_MAP in tests/test_orientation_fixes.py.
-const GOLDEN_MAP = [
-    [6, 1, 60, { mapChiSquare: 800.1657022469657, mapDegreesOfFreedom: 361,
-        mapNullSd: 26.89394588964023, mapNullSkewness: 0.178121379052147,
-        mapExpectedPairs: 1288.2313214115104,
-        mapPValue: 8.22254884213926e-33, mapSignificance: 11.87251368423015 }],
-    [10, 2, 60, { mapChiSquare: 2596.980147082603, mapDegreesOfFreedom: 1001,
-        mapNullSd: 44.93009360956353, mapNullSkewness: 0.13854679111724788,
-        mapExpectedPairs: 466.6502011243447,
-        mapPValue: 5.115170092676409e-113, mapSignificance: 22.56203637660662 }],
-    [null, 0, 60, { mapChiSquare: 109.05527451398147, mapDegreesOfFreedom: 41,
-        mapNullSd: 9.050975709801982, mapNullSkewness: 0.4503623992125751,
-        mapExpectedPairs: 10991.483242707845,
-        mapPValue: 4.869112256098684e-08, mapSignificance: 5.331542086891653 }],
-    // A Fibonacci sphere is far more uniform than counting noise: X^2 lies
-    // below the reference's support, so the deviate sits at the floor.
-    [10, 2, 0, { mapChiSquare: 206.08354289942974, mapDegreesOfFreedom: 1001,
-        mapNullSd: 44.942491392316214, mapNullSkewness: 0.14177901437232995,
-        mapExpectedPairs: 410.1132665642458,
-        mapPValue: 1.0, mapSignificance: -37.0470962993612 }],
-    [2, 0, 6, { mapChiSquare: 2.8616952082936087, mapDegreesOfFreedom: 41,
-        mapNullSd: 9.05071282835656, mapNullSkewness: 0.450877377382182,
-        mapExpectedPairs: 9789.110678651203,
-        mapPValue: 1.0, mapSignificance: -8.886765298073716 }]
-];
+// orientation.numerics.3, orientation.physics.7
 
-// Deterministic unequal cell probabilities, built identically in Python
-// (_pinned_probabilities in tests/test_orientation_fixes.py).
-const pinnedProbabilities = (cells) => {
+// Deterministic unequal cell probabilities.
+const unequalProbabilities = (cells) => {
     const raw = [];
     for (let i = 1; i <= cells; i += 1) raw.push(1 + 0.3 * Math.sin(i));
     const total = raw.reduce((sum, value) => sum + value, 0);
     return raw.map((value) => value / total);
 };
-
-// Shared verbatim with PEARSON_MOMENTS in tests/test_orientation_fixes.py:
-// [N, C, exact mean, variance, third central moment of X^2] for
-// pinnedProbabilities(C), from full multinomial enumeration.
-const PEARSON_MOMENTS = [
-    [3, 4, 3.0, 4.218531116561122, 13.943752126285027],
-    [6, 5, 4.0, 6.91373687143512, 29.01155630009905],
-    [9, 4, 3.0, 5.406177038853709, 20.39545791721937],
-    [12, 3, 2.0, 3.6728421787498275, 12.957998592922594],
-    [2, 7, 6.0, 7.183146093091783, 43.811413401314184]
-];
 
 // Exact moments of X^2 by enumerating every multinomial outcome.
 const exactPearsonMoments = (used, p) => {
@@ -627,17 +440,12 @@ const exactPearsonMoments = (used, p) => {
 };
 
 describe('map significance (Pearson X^2, exact-moment reference)', () => {
-    it('matches the Python golden values', () => assertGolden(GOLDEN_MAP));
-
     it('has the exact multinomial null moments', () => {
-        PEARSON_MOMENTS.forEach(([used, cells, ...expected]) => {
-            const p = pinnedProbabilities(cells);
-            const moments = pearsonNullMoments(used, p);
-            const exact = exactPearsonMoments(used, p);
-            expected.forEach((value, i) => {
-                relClose(moments[i], value, 1e-12);
-                relClose(exact[i], value, 1e-12);
-            });
+        // The golden's cases (whose moments Python's engine gives, checked in
+        // orientationParity.test.js), against full enumeration here.
+        fixture.pearsonMoments.forEach(({ used, probabilities }) => {
+            const moments = pearsonNullMoments(used, probabilities);
+            exactPearsonMoments(used, probabilities).forEach((value, i) => relClose(moments[i], value, 1e-12));
         });
     });
 
@@ -692,35 +500,13 @@ describe('map significance (Pearson X^2, exact-moment reference)', () => {
         expect(populated.mapExpectedPairs).toBeGreaterThanOrEqual(MAP_TEST_MIN_PAIRS);
         expect(Number.isFinite(populated.mapSignificance)).toBe(true);
         // The helper is the engine's path.
-        const p = pinnedProbabilities(12);
+        const p = unequalProbabilities(12);
         expect(mapTest(30, 12, p).deviate).toBeGreaterThan(0);
     });
 });
 
-// orientation.numerics.4/.13, orientation.physics.6 — shared verbatim with
-// GOLDEN_ASYMMETRY in tests/test_orientation_fixes.py.
-const GOLDEN_ASYMMETRY = [
-    [6, 1, 60, { antipodalAsymmetry: 0.2, antipodalAsymmetryNull: 0.3401168600567151,
-        antipodalAsymmetryNullSd: 0.019345746381926036,
-        antipodalAsymmetryZ: -7.2427735425923245, antipodalAsymmetrySignificant: false }],
-    [null, 0, 60, { antipodalAsymmetry: 0.08333333333333333,
-        antipodalAsymmetryNull: 0.11738132743663726,
-        antipodalAsymmetryNullSd: 0.01946344130131603,
-        antipodalAsymmetryZ: -1.7493306335813166,
-        antipodalAsymmetrySignificant: false }],
-    [10, 2, 0, { antipodalAsymmetry: 0.19111111111111112,
-        antipodalAsymmetryNull: 0.5672222222222222,
-        antipodalAsymmetryNullSd: 0.020957040126511128,
-        antipodalAsymmetryZ: -17.94676675907692, antipodalAsymmetrySignificant: false }],
-    [4, 0, 400, { antipodalAsymmetry: 0.3415384615384615,
-        antipodalAsymmetryNull: 0.1752318529176018,
-        antipodalAsymmetryNullSd: 0.01673666421475673,
-        antipodalAsymmetryZ: 9.936663990320547, antipodalAsymmetrySignificant: true }]
-];
-
+// orientation.numerics.4/.13, orientation.physics.6
 describe('antipodal asymmetry null (conditional binomial split)', () => {
-    it('matches the Python golden values', () => assertGolden(GOLDEN_ASYMMETRY));
-
     it('stays below the statistic bound and rarely flags a centrosymmetric site', () => {
         const gauss = makeRng(11);
         const small = orientationHistogram(isotropicUnits(gauss, 216), { frequency: 10, smoothing: 2, geometry: false });
@@ -758,45 +544,8 @@ describe('antipodal asymmetry null (conditional binomial split)', () => {
     });
 });
 
-// orientation.physics.9/.24, orientation.numerics.27 — shared verbatim with
-// GOLDEN_ANISOTROPY in tests/test_orientation_fixes.py.
-const GOLDEN_ANISOTROPY = [
-    [6, 1, 60, { orientationAnisotropy: 0.12495614840544977, orientationEffectivePoints: 960.0,
-        orientationAnisotropyNull: 0.05182412242070032,
-        orientationBinghamStatistic: 18.73684781045718,
-        orientationBinghamPValue: 0.0021515346560243643,
-        orientationAnisotropySignificance: 2.855045282725758 }],
-    [10, 2, 0, { orientationEffectivePoints: 900.0, orientationAnisotropyNull: 0.05352372348458313,
-        orientationBinghamPValue: 0.9999999999999987,
-        orientationAnisotropySignificance: -7.9084691847240896 }],
-    [4, 0, 400, { orientationAnisotropy: 0.6150392816231949, orientationEffectivePoints: 1300.0,
-        orientationAnisotropyNull: 0.04453442987940475,
-        orientationBinghamStatistic: 614.6941425286471,
-        orientationBinghamPValue: 1.3514132534260834e-130,
-        orientationAnisotropySignificance: 24.286800999672977 }],
-    [2, 0, 6, { orientationAnisotropy: 0.013271734268148538, orientationEffectivePoints: 906.0,
-        orientationAnisotropyNull: 0.05334619820786263,
-        orientationBinghamStatistic: 0.19947859577278887,
-        orientationBinghamPValue: 0.9991194624727917,
-        orientationAnisotropySignificance: -3.127820820781734 }]
-];
-const GOLDEN_ANISOTROPY_AMPLITUDE2 = {
-    orientationEffectivePoints: 725.3165446406116,
-    orientationAnisotropyNull: 0.05962162122187657,
-    orientationBinghamStatistic: 129.85364394492348,
-    orientationBinghamPValue: 2.5564292957448824e-26,
-    orientationAnisotropySignificance: 10.549388830489368
-};
-
+// orientation.physics.9/.24, orientation.numerics.27
 describe('orientation anisotropy null (Bingham test)', () => {
-    it('matches the Python golden values', () => {
-        assertGolden(GOLDEN_ANISOTROPY);
-        const weighted = orientationHistogram(goldenCloud(), { frequency: 6, smoothing: 1, weight: 'amplitude2', geometry: false });
-        Object.entries(GOLDEN_ANISOTROPY_AMPLITUDE2).forEach(([key, value]) => {
-            expect(Math.abs(weighted[key] - value), key).toBeLessThanOrEqual(1e-9 * Math.abs(value));
-        });
-    });
-
     it('reports the isotropic expectation and stays calibrated on noise', () => {
         const gauss = makeRng(21);
         const anisotropy = [];

@@ -304,8 +304,8 @@ Five details matter for interpretation:
    synthetic $8^3$ site (and `np.array_equal` is `False`).
 4. **For large element-pooled clouds the two frames genuinely differ.** The orientation engine
    never subsamples; the KDE path caps its fit at `MAX_PCA_FIT_POINTS = 20000` points with
-   `rng_seed = 0`, and the two engines draw *different* subsets above that (*PCA Ellipsoid page*
-   → Step 2, "Subsampling"). Above 20 000 pooled points the PCA-KDE page's frame is a subsample
+   `rng_seed = 0` (the same rows in both engines, *PCA Ellipsoid page* → Step 2,
+   "Subsampling"). Above 20 000 pooled points the PCA-KDE page's frame is a subsample
    fit and this page's is the full fit — a real difference, not round-off. (Per-site
    `site_ellipsoids`, which is what the site picker and the panel header show, is not
    subsampled either.)
@@ -402,10 +402,12 @@ The map becomes Poisson confetti — and confetti on a sphere looks exactly like
 eye. This is the single easiest way to over-read this kind of plot, which is also why calibrated
 tests (`peakSignificance`, `mapSignificance`, §6.3) are computed and displayed.
 
-**Pinned in both suites.** `tests/test_orientation.py` and `orientation.test.js` pin
-`recommendedFrequency(774) == 2`, `(300) == 1`, `(12000) == 9`; `tests/test_orientation_fixes.py`
-and `orientationFixes.test.js` share the full boundary table (503 → 1, 504 → 2, 1103 → 2,
-1104 → 3, 12023 → 9, 12024 → 10, …) verbatim.
+**One golden for both engines.** The full boundary table (503 → 1, 504 → 2, 774 → 2, 1103 → 2,
+1104 → 3, 12000 → 9, 12023 → 9, 12024 → 10, …, plus a target of 5 and a cap of 3) is written once
+from the Python engine into `orientation_fixture.json` (`tests/generate_orientation_fixture.py`);
+`orientationParity.test.js` holds the JS port to it and `tests/test_orientation_fixture.py` fails
+when the file no longer matches Python. The rule itself (never below 12 per cell) is tested in both
+suites over $N = 1$–20 000.
 
 Bounds: `MIN_FREQUENCY = 1` ([orientation.py:85](../../rmc_toolkits/orientation.py)),
 `MAX_FREQUENCY = 64` (line 86, $C = 40\,962$ cells). `recommended_frequency` never exceeds 24 on
@@ -563,9 +565,10 @@ that rotated 185 of the 1002 exported `neighbors` rows at $\nu = 10$ (76/362 at 
 number changed, but the payloads disagreed element by element. `_angular_order` / `angularOrder`
 now rotate every cycle to start at its **smallest integer key** — the neighbour's cell index for
 `neighbors`, the incident triangle's index for `polygons` — which is identical in both engines.
-The CCW orientation is untouched (a rotation, not a re-sort), and both suites pin a checksum of the
-`neighbors` table at $\nu \in \{4, 6, 10, 38\}$ plus the two $\nu = 38$ polygon start vertices
-verbatim.
+The CCW orientation is untouched (a rotation, not a re-sort). The generated golden
+(`orientation_fixture.json`) holds a checksum of the `neighbors` table at
+$\nu \in \{4, 6, 10, 38\}$ and the two $\nu = 38$ polygon start vertices as Python gives them, and
+the JS port is checked against it.
 
 `polygons` is stored padded to six vertices; a pentagon repeats its last vertex, and `sizes`
 carries the true count (5 or 6). The JSON returned to the browser is trimmed back to `sizes`.
@@ -775,9 +778,9 @@ $m(-\mathbf{u}) = \texttt{antipode}[m(\mathbf{u})]$ holds **bit-for-bit for ever
 ties included, and an exactly centrosymmetric cloud has $n_m = n_{\text{antipode}(m)}$ in every
 cell. Away from ties the nearest centre is unique and the fold changes nothing (verified: zero of
 312 000 real-data assignments changed, both GaNb₄Se₈ runs at $\nu \in \{2, 3, 10\}$). Both suites
-assert the equivariance on random directions plus every tie family, and pin the $\pm$axis cells at
-$\nu = 3$ verbatim across engines (`[35, 14, 16, 85, 70, 62]` since (e); `[36, 15, 16, 86, 71, 62]`
-before it).
+assert the equivariance on random directions plus every tie family, and the generated golden holds
+the $\pm$axis cells at $\nu = 3$ that both engines are checked against (`[35, 14, 16, 85, 70, 62]`
+since (e); `[36, 15, 16, 86, 71, 62]` before it).
 
 **(e) Exact ties go to the lowest cell index, the same cell in both engines.** The fold makes each
 engine inversion-equivariant. Within the resolved hemisphere, though, the walk still left a tied
@@ -805,10 +808,11 @@ Measured results:
   directions identically at every $\nu = 1$–30 and 38.
 - Both suites check the rule against a brute-force scan over all cells: for those 26 directions at
   all 31 frequencies, and for every Voronoi vertex (a three-way tie) at $\nu \in \{3, 5, 10\}$.
-- Both suites pin, verbatim, the 26 directions' cells at $\nu \in \{1, 2, 3, 4, 10, 11\}$ and the
-  well model's peak at $\nu \in \{2, 4\}$ (`SPECIAL_DIRECTION_CELLS`, `WELL_MODEL_PEAKS`).
+- The generated golden holds the 26 directions' cells at $\nu \in \{1, 2, 3, 4, 10, 11\}$ and the
+  well model's whole payload at $\nu \in \{2, 4\}$ (peak cell and direction, counts), and both
+  engines are checked against it.
 - $+\hat{x}$ and $+\hat{y}$ at $\nu = 3$ are two-way ties. They moved to the lower index of each
-  pair, which is why the pinned axis cells changed.
+  pair, which is why the axis cells changed.
 
 **Two entry points, one of which normalises and folds.** `assign_cells` / `assignCells` (the
 public wrapper) calls `_normalize` first and applies the hemisphere fold of (d), so callers may
@@ -991,8 +995,9 @@ $$\mu_3[X^2] = 8(C-1) + \frac{22A + 4C^2 - 36C + 32}{N} + \frac{B - 22A - 4C^2 +
 $A$ and $B$ vanish for equal cells, where $\mu_3 = (C-1)\,[\,8 + 4(C-8)/N - 4(C-6)/N^2\,]$. Both
 are evaluated from the per-cell excess $\delta_m = 1/p_m - C$ ($A = \sum_m \delta_m$,
 $B = \sum_m \delta_m(\delta_m - C)$), so no large terms cancel. Both suites check all three moments
-against full enumeration of the multinomial for small $N$ and $C$ with unequal $p$
-(`PEARSON_MOMENTS`, shared verbatim, agreement $\le 2\times10^{-14}$).
+against full enumeration of the multinomial for small $N$ and $C$ with unequal $p$ (agreement
+$\le 2\times10^{-14}$); the generated golden holds Python's moments for five such cases
+(`pearsonMoments`), and the JS engine is checked against them.
 
 *The reference.* A Pearson type III (shifted gamma) with exactly those three moments. With
 $\sigma = \sqrt{\operatorname{Var}}$ (`mapNullSd`), $\gamma = \mu_3/\sigma^3$ (`mapNullSkewness`),
@@ -1565,7 +1570,7 @@ independently computed in each language — not a shared-golden parity suite.
 | Every centre self-assigns | $\nu = 7$ | $\nu = 7$ |
 | Unnormalised input accepted | yes | — |
 | **Monte-Carlo area cross-check** (assignment Voronoi fractions × $4\pi$ = analytic $\Omega_m$) | 200 000 dirs, $\nu = 3$, rtol 12 % | 60 000 dirs, $\nu = 2$, tol 15 % |
-| `recommendedFrequency` at 774 / 300 / 12000 = 2 / 1 / 9, plus the exact boundary table | **pinned** | **pinned (shared verbatim)** |
+| `recommendedFrequency` at 774 / 300 / 12000 = 2 / 1 / 9, plus the exact boundary table | **the generated golden** ([test_orientation_fixture.py](../../tests/test_orientation_fixture.py)) | **the same golden** ([orientationParity.test.js](../../web_app/frontend/src/__tests__/orientationParity.test.js)) |
 | Isotropic cloud: $\langle\mathcal{E}\rangle \approx 1$, significance < 1.5, \|anisotropy\| < 0.05 | 20 000 pts, $\nu=8$ | same |
 | Lobed cloud peaks on the long axis, $\mathcal{E}_{\text{peak}} > 2$, significance > 3 | yes | yes |
 | One-sided cloud: peak > 4× its antipode, $\mathcal{A} > 0.5$ and $> 3\mathcal{A}_{\text{null}}$ | yes | yes |
@@ -1589,19 +1594,30 @@ independently computed in each language — not a shared-golden parity suite.
 - **Cross-engine goldens (since the 0.6.0 audit).** The parallel suites above are index-agnostic
   — if the two engines ever enumerated the icosahedron, its faces, the geodesic lattice or the
   angular ordering in a different order, `centers[i]` would mean different cells and all of them
-  would still pass. [tests/test_orientation_fixes.py](../../tests/test_orientation_fixes.py) and
-  [orientationFixes.test.js](../../web_app/frontend/src/workers/__tests__/orientationFixes.test.js)
-  therefore share **pinned values verbatim**: the `recommendedFrequency` boundary table, the
-  $\pm$axis cells at $\nu = 3$, the cells of the 26 $\langle 100\rangle$/$\langle 110\rangle$/$\langle 111\rangle$
-  directions at six frequencies and an 8-well model's peak (Step 5 (e)), `neighbors` checksums at $\nu \in \{4,6,10,38\}$ and two $\nu = 38$
-  polygon starts, and — on an RNG-free "golden cloud" (a Fibonacci-spiral sphere plus a tight
-  lobe, built identically in both languages) — `peakCell`, the whole peak test, the map test
-  (including its exact null SD, skewness and expected pairs), the antipodal null and the Bingham
-  anisotropy test (both `count` and `amplitude2` weights) at several $(\nu, \text{smoothing})$
-  settings, to $10^{-9}$ relative. The map test's exact null moments are also pinned, as
-  `PEARSON_MOMENTS`, against full multinomial enumeration. The JS special functions are
-  additionally pinned against `scipy.special` values, including the non-half-integer shapes the
-  map reference uses.
+  would still pass. Both engines are therefore held to **one generated golden**,
+  [orientation_fixture.json](../../web_app/frontend/src/__tests__/fixtures/orientation_fixture.json),
+  written from the Python engine by
+  [tests/generate_orientation_fixture.py](../../tests/generate_orientation_fixture.py) (until
+  2026-10 the same values were copied by hand into both suites). It holds 21 full payloads, with
+  each payload's whole key set: an RNG-free "golden cloud" (a Fibonacci-spiral sphere plus a
+  tight lobe) at the $(\nu, \text{smoothing})$ settings and weights the suites used to pin, the
+  8-well model (Step 5 (e)), isotropic, one-sided, prolate (PCA frame, amplitude weight, a
+  quantile cut), a map too sparse for its test (`mapSignificance` null), singly occupied pairs
+  (`antipodalAsymmetryZ` null), and three demo-run sites plus the pooled Ga cloud, at
+  $\nu = 2$–10. Integer `counts` are stored for every case; the other per-cell values and the
+  tiling for one case of each weight, frame, smoothing and cut. Beside them: the
+  `recommendedFrequency` boundary table, the $\pm$axis cells at $\nu = 3$ and the cells of the 26
+  $\langle 100\rangle$/$\langle 110\rangle$/$\langle 111\rangle$ directions at six frequencies,
+  `neighbors` checksums at $\nu \in \{4,6,10,38\}$ and two $\nu = 38$ polygon starts, and the map
+  test's exact null moments (`pearsonMoments`). [orientationParity.test.js](../../web_app/frontend/src/__tests__/orientationParity.test.js)
+  checks the JS port against it, and [tests/test_orientation_fixture.py](../../tests/test_orientation_fixture.py)
+  re-runs the generator on the committed inputs so the file cannot go stale. Both compare by one
+  rule (`goldenCompare.js` ↔ `tests/golden_compare.py`): integers, booleans and nulls exactly,
+  other numbers to $10^{-9}$ relative + $10^{-12}$, p-values to $10^{-9}$ relative alone, and the
+  axis sets eigenspace by eigenspace to $10^{-9}$ (see *Different eigensolvers* below). Measured on the
+  fixture: floats $\le 6\times10^{-13}$ relative, p-values $\le 3\times10^{-12}$. The JS special
+  functions are additionally pinned against `scipy.special` values, including the
+  non-half-integer shapes the map reference uses.
 - **Measured for this document, they do agree.** Running both engines on identical inputs on the
   dev machine: at $\nu = 4$, `centers`, `areas`, `sizes`, `antipode` and even the *per-cell
   polygon vertex order* match to $\le 9\times 10^{-16}$ (and, since the canonical cycle start of
@@ -1634,7 +1650,12 @@ independently computed in each language — not a shared-golden parity suite.
   **near-degenerate** covariance the axes within the degenerate subspace are arbitrary and the
   two can return different ones. This affects `frame="pca"` (the sphere is then rotated
   differently in the two runtimes) and `orientationAxes`. It does not affect the `cartesian`
-  frame at all.
+  frame at all. The golden therefore compares `pcaAxes` and `orientationAxes` eigenspace by
+  eigenspace, with the eigenvalues it stores beside each case (`spectra`): an axis separated from
+  its neighbours by more than $10^{-6}$ of the largest eigenvalue up to its sign, a group closer
+  than that by the projector onto its span. The 8-well model is such a case: its PC2/PC3 and its
+  tensor axes 2/3 are exactly degenerate (relative gap $3\times10^{-16}$), and the two engines
+  return different orthonormal pairs spanning the same plane.
 - **Cosmetic-only differences:** Python reports `pentagonCount` from the actual count, JS
   hard-codes 12 (both after the same construction assertion); JS adds `browserOrientation:
   true`, Flask adds `source`; Python's tiling cache is bounded (`maxsize=8`), the JS `Map` is
@@ -3037,13 +3058,13 @@ returns **ν = 2** (42 cells). At ν = 10 the expected count per cell is ≈ 1. 
 
 **2. Every surviving vector is binned — there is no point budget, and no RNG.** Unlike the PCA-KDE
 path, which explicitly caps its fit with `subsample(points, maxFitPoints, rngSeed)`
-([`workers/pcaKde.js:196, 326`](../../web_app/frontend/src/workers/pcaKde.js)), the orientation engine
+([`workers/pcaKde.js`](../../web_app/frontend/src/workers/pcaKde.js), `fitSubsampleIndices`), the orientation engine
 subsamples **nothing**: every vector above the amplitude cutoff enters the histogram, however many
 there are. Two consequences. First, the map is fully **deterministic** given the options — re-running
 it cannot shift a lobe, so a feature that moves between runs is a data change, not sampling noise.
 Second, a very large site costs time and memory linearly, with no ceiling. Readers arriving from
-*PCA Ellipsoid page* → Step 2 ("Subsampling") should not carry that page's cap — or the fact that
-its two engines draw *different* 20 000-point subsets — over to this one.
+*PCA Ellipsoid page* → Step 2 ("Subsampling") should not carry that page's cap — or its seeded
+20 000-point draw — over to this one.
 
 Relatedly, the **reachable resolution range is ν = 2 … 24**: `recommendedFrequency` caps at
 `maxFrequency = 24` and `FREQUENCY_OPTIONS` stops at 24, so the engine's `MAX_FREQUENCY = 64` is a

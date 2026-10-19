@@ -2,8 +2,10 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { buildRunContext, seriesStats } from '../context/runContext';
-import { elementDensity, extractPeaks, firstShell, gJustAbove, isIdealCoordination } from '../context/pairCorrelations';
+import { BOUNDARY_REACH_A, PEAK_SEARCH_MAX_A, extractPeaks, shellCatalogue } from '../context/shells';
 import { classifyConvergence } from '../watchdog/heuristics';
+import { oneOf } from './dataShape';
+import { methodCheck } from './method';
 
 // Copilot tools over the run data this module already receives as props
 // (plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites) — so
@@ -12,7 +14,10 @@ import { classifyConvergence } from '../watchdog/heuristics';
 // `tools` prop. Each tool is offered only when its data exists for this run.
 // Given the host's card catalog, each tool also names the cards it reads
 // (`cards(args)`), which breathe while it runs: a card's `kind` (a plot kind,
-// 'r_value', 'symmetry', 'model') and `file` tie it to the data.
+// 'r_value', 'symmetry', 'model') and `file` tie it to the data. Each declares
+// the shape of its `data` (`dataShape`, dataShape.js): the paths the model
+// quotes by reference. Method advice in a description or a check is marked
+// (`method`, method.js), so the validation's arm C reads none.
 
 const roundSig = (value, digits = 3) => (
     Number.isFinite(value) && value !== 0 ? Number(value.toPrecision(digits)) : (Number.isFinite(value) ? value : null)
@@ -27,6 +32,111 @@ const SECTION_NOTES = {
     pair_correlations: 'partial g(r) first peaks vs the average-structure neighbour distance',
     datasets: 'per-dataset Rwp',
     convergence: 'ln(chi^2) history of the last .log column'
+};
+
+// Each section's shape as buildRunContext (context/runContext.js) builds it
+// and read_run_data returns it, untrimmed.
+const XYZ = ['number|null', 'number|null', 'number|null'];
+const SECTION_SHAPES = {
+    structure: {
+        cell_A: XYZ,
+        angles_deg: XYZ,
+        supercell: ['number', 'number', 'number'],
+        total_atoms: 'number',
+        'elements?': { '*': 'number' }
+    },
+    configuration_optimization: {
+        'moves_generated?': 'number',
+        'moves_tried?': 'number',
+        'moves_accepted?': 'number',
+        'acceptance_ratio?': 'number|null',
+        'accepted_moves_per_atom?': 'number|null',
+        'accumulated_time_h?': 'number|null'
+    },
+    run_settings: {
+        'title?': 'string',
+        'material?': 'string',
+        'phase?': 'string',
+        'temperature?': 'string',
+        // Labelled by element pair (atom) when the counts line up, else as listed.
+        'min_distances_A?': oneOf({ '*-*': 'number' }, ['number']),
+        'max_move_A?': oneOf({ '*': 'number' }, ['number']),
+        'time_limit?': 'string',
+        'save_period?': 'string',
+        'weight_optimization?': 'boolean',
+        'flags?': ['string'],
+        'fitted_data?': [{ type: 'string', 'file?': 'string', 'fit?': 'string', 'fitted_in?': 'string' }],
+        'independent_datasets?': 'number'
+    },
+    symmetry: {
+        space_group: 'string',
+        'point_group?': 'string',
+        'n_ops?': 'number',
+        'tolerance_A?': 'number',
+        'max_residual_A?': 'number',
+        'note?': 'string',
+        'ladder?': [{ sg: 'string', 'pg?': 'string', holds_A: ['number|null', 'number|null'], n_ops: 'number' }],
+        'point_group_facts?': ['string'],
+        'noise_floor_A?': 'number',
+        'noise_floor_note?': 'string',
+        'sites?': [{
+            element: 'string',
+            multiplicity: 'number',
+            'wyckoff?': 'string',
+            'site_sym?': 'string',
+            'frac?': XYZ,
+            'mean_disp_A?': 'number',
+            'max_disp_A?': 'number'
+        }],
+        'sites_omitted?': 'number'
+    },
+    pca_displacements: {
+        note: 'string',
+        sites: [{
+            ref: 'number',
+            element: 'string',
+            U_iso_A2: 'number|null',
+            'rms_axes_A?': XYZ,
+            anisotropy: 'number|null',
+            'non_gaussianity?': 'number',
+            'degenerate?': 'boolean',
+            'zero_spread?': 'boolean',
+            'mixed?': 'boolean',
+            'element_counts?': { '*': 'number' }
+        }],
+        'sites_omitted?': 'number'
+    },
+    pair_correlations: [{
+        pair: 'string',
+        'avg_structure_d_A?': 'number',
+        'gr_peaks_A?': [{ r: 'number|null', fwhm: 'number|null' }],
+        'first_shell?': {
+            mean_d_A: 'number',
+            to_A: 'number',
+            'cn_*_per_*': 'number',
+            'first_peak_to_A?': 'number|null',
+            'first_peak_cn?': 'number|null',
+            'gap_g_fraction?': 'number|null'
+        },
+        'cut_at_min_distance?': { at_A: 'number', g_fraction: 'number|null' }
+    }],
+    datasets: [{ kind: 'string', 'title?': 'string', 'rwp?': 'number', 'same_measurement_as?': 'string' }],
+    convergence: {
+        quantity: 'string',
+        n_steps: 'number',
+        first: 'number|null',
+        last: 'number|null',
+        min: 'number|null',
+        max: 'number|null',
+        watchdog_status: 'string',
+        recent_slope_per_step: 'number|null',
+        history: ['number|null'],
+        'change_over_last_10pct?': 'number|null',
+        'non_finite_steps?': 'number',
+        'non_finite_note?': 'string',
+        'column?': 'string',
+        'final_chi_squared?': 'number'
+    }
 };
 
 // Least-squares slope per log row over the last `fraction` of the finite values.
@@ -74,6 +184,11 @@ const readRunDataTool = (context, cardIds) => {
             properties: { section: { type: 'string', enum: sections, description: 'Which section to read.' } },
             required: ['section']
         },
+        // The section's name, and the section under that name (one of these).
+        dataShape: {
+            section: 'string',
+            ...Object.fromEntries(sections.map((key) => [`${key}?`, SECTION_SHAPES[key]]))
+        },
         label: ({ section }) => `Read ${String(section || '').replace(/_/g, ' ')}`,
         cards: ({ section }) => cardIds((card) => (SECTION_CARD_KINDS[section] || []).includes(card.kind)),
         run: async ({ section }) => ({ data: { section, [section]: context[section] }, checks: [] })
@@ -90,6 +205,18 @@ const convergenceTool = (rValueFile, cardIds) => {
             + 'not the total) with the dashboard watchdog heuristics, and report the slope per log row over '
             + 'the last 10 %, 25 % and 50 % of the run. Status: improving | converged | stalled | diverging.',
         parameters: { type: 'object', properties: {} },
+        dataShape: {
+            column: 'string|null',
+            quantity: 'string',
+            status: 'string',
+            n_steps: 'number',
+            first: 'number|null',
+            last: 'number|null',
+            min: 'number|null',
+            total_drop: 'number|null',
+            slope_per_step: { last_10pct: 'number|null', last_25pct: 'number|null', last_50pct: 'number|null' },
+            'non_finite_steps?': 'number'
+        },
         label: () => 'Convergence check',
         page: 'dashboard',
         cards: () => cardIds((card) => card.kind === 'r_value'),
@@ -129,38 +256,76 @@ const convergenceTool = (rValueFile, cardIds) => {
     };
 };
 
-// g(r) at the closest-approach constraint above this fraction of the first
-// peak: the distribution is cut there, atoms pile up against the constraint.
-export const CONSTRAINT_PILEUP_FRACTION = 0.02;
-// g(r) at the shell boundary above this fraction of the first peak: the first
-// shell is not separated from the next, and its CN depends on the cut.
-export const SHELL_OVERLAP_FRACTION = 0.02;
-
-const grPeaksTool = (plotFiles, context, structure, cardIds) => {
-    const partials = (plotFiles || []).find(
+// The shell block, the first peak, the checks, the facts and the constraint
+// come from the run's one shell reading (context/shells.js); this tool only
+// shows it. Its peaks_A list is the caller's display, below r_max.
+const grPeaksTool = (run, cardIds) => {
+    const partials = (run?.plotFiles || []).find(
         (file) => file.plotKind === 'pdf_partials' && file.plotData?.series?.length
     );
     if (!partials) return null;
     const series = partials.plotData.series.filter((entry) => pairKey(entry.label));
     if (!series.length) return null;
     const labels = series.map((entry) => entry.label.trim());
-    const constraints = context.run_settings?.min_distances_A;
+    const catalogue = shellCatalogue(run);
     return {
         name: 'find_gr_peaks',
-        description: 'Analyse one partial g(r) (from the run\'s partial-PDF file) below r_max: the peaks '
-            + '(position, approximate FWHM) and the first coordination shell — its window from onset to the '
-            + 'first deep minimum (use first_shell.window_A for compute_bond_angles: it holds the whole shell, '
-            + 'split shells included), mean distance and spread from r²g(r), coordination numbers in both '
-            + 'directions with their sensitivity to the cut, whether the shell is separated from the next, '
-            + 'and whether the pair\'s hard minimum-distance constraint cuts the distribution.',
+        description: 'Analyse one partial g(r) (from the run\'s partial-PDF file): its peaks below r_max '
+            + '(position, approximate FWHM) and its first coordination shell, which does not depend on r_max — the '
+            + 'window from onset to the first deep minimum (it holds '
+            + 'the whole shell, split shells included), mean distance and spread from r²g(r), coordination numbers in '
+            + 'both directions with their sensitivity to the cut, whether the shell is separated from the next, '
+            + 'for a split shell joined across a deep trough its parts (CN, share, mean distance) and the long − short '
+            + 'bond difference, and whether the pair\'s hard minimum-distance constraint cuts the distribution.',
+        // The method advice (method.js), inside the window's parenthesis: sent with method 'full'.
+        method: [{ after: 'to the first deep minimum (', text: 'use first_shell.window_A for compute_bond_angles: ' }],
         parameters: {
             type: 'object',
             properties: {
                 pair: { type: 'string', enum: labels, description: 'Element pair, as labelled in the partials file.' },
-                r_max: { type: 'number', minimum: 1, maximum: 20, description: 'Search up to this r (Å). Default 6.' },
+                r_max: { type: 'number', minimum: 1, maximum: 20, description: 'List the peaks up to this r (Å). Default 6.' },
                 max_peaks: { type: 'integer', minimum: 1, maximum: 8, description: 'Default 3.' }
             },
             required: ['pair']
+        },
+        // No peak below r_max and no shell: pair, r_max_A and peaks_A [] only. The cn keys name the
+        // count each way, <partner>_per_<centre> (Se_per_Ta). The first peak
+        // alone (first_peak_only) only for a shell of two or more resolved
+        // peaks; its cn only with the cell. The split (plan item 4.2) only for
+        // a shell joined across a deep trough (shells.js): its parts, short
+        // to long, each one's cn in the direction the join decided (one key),
+        // and long − short with its sampling error.
+        dataShape: {
+            pair: 'string',
+            r_max_A: 'number',
+            peaks_A: [{ r: 'number|null', fwhm: 'number|null' }],
+            'first_shell?': {
+                window_A: ['number|null', 'number|null'],
+                peaks_in_shell_A: ['number|null'],
+                'mean_d_A?': 'number|null',
+                'sd_d_A?': 'number|null',
+                'cn?': { '*_per_*': 'number|null' },
+                'cn_if_cut_0p2A_earlier_later?': ['number|null', 'number|null'],
+                trough_g_fraction: 'number|null',
+                'first_peak_only?': {
+                    window_A: ['number|null', 'number|null'],
+                    'cn?': { '*_per_*': 'number|null' },
+                    trough_g_fraction: 'number|null'
+                },
+                'split?': {
+                    parts: [{
+                        window_A: ['number|null', 'number|null'],
+                        mean_d_A: 'number|null',
+                        sd_d_A: 'number|null',
+                        cn: { '*_per_*': 'number|null' },
+                        share: 'number|null'
+                    }],
+                    long_minus_short_A: 'number|null',
+                    long_minus_short_se_A: 'number|null'
+                }
+            },
+            'min_distance_constraint_A?': 'number',
+            'g_at_constraint_fraction?': 'number|null'
         },
         label: ({ pair }) => `g(r) peaks ${pair || ''}`.trim(),
         page: 'dashboard',
@@ -170,25 +335,26 @@ const grPeaksTool = (plotFiles, context, structure, cardIds) => {
             const peaks = extractPeaks(entry.x, entry.y, { rMax, maxPeaks });
             const data = { pair, r_max_A: rMax, peaks_A: peaks.map((peak) => ({ r: roundSig(peak.r, 4), fwhm: roundSig(peak.fwhm, 2) })) };
             const checks = [];
-            if (!peaks.length) {
+            const [a, b] = pair.split('-').map((element) => element.trim());
+            // The first coordination shell, as the run reads it: peaks below
+            // 8 Å, the closing minimum to max(8, r₁ + 3) Å, whatever r_max is.
+            const shell = catalogue?.shell(a, b) ?? null;
+            if (!peaks.length && !shell) {
                 checks.push({ level: 'fail', text: `No peak above 15 % of the maximum below ${rMax} Å.` });
                 return { data, checks };
             }
-            const first = peaks[0];
-            const [a, b] = pair.split('-').map((element) => element.trim());
-            data.first_peak_window_A = [roundSig(Math.max(0, first.r - first.fwhm), 3), roundSig(first.r + first.fwhm, 3)];
-
-            // The first coordination shell, over a range wide enough to find
-            // its boundary even when the caller's r_max stops short of it.
-            const shell = firstShell(entry.x, entry.y, {
-                rMax: Math.max(rMax, first.r + 3),
-                partnerDensity: elementDensity(structure, b),
-                centreDensity: elementDensity(structure, a)
-            });
-            const step = entry.x.length > 1 ? Math.abs(entry.x[1] - entry.x[0]) : 0;
-            if (shell?.boundaryR != null) {
+            if (!peaks.length) {
+                checks.push({
+                    level: 'note',
+                    text: `No peak above 15 % of the maximum below ${rMax} Å (r_max); the first shell, read from the peaks below `
+                        + `${PEAK_SEARCH_MAX_A} Å, lies beyond it.`
+                });
+            }
+            const firstR = peaks.length ? peaks[0].r : shell.peaks[0].r;
+            const perA = `${b}_per_${a}`;
+            if (shell?.window) {
                 const block = {
-                    window_A: [roundSig(Math.max(0, shell.onsetR - step), 3), roundSig(shell.boundaryR, 3)],
+                    window_A: [...shell.window],
                     peaks_in_shell_A: shell.peaksInShell.map((r) => roundSig(r, 4))
                 };
                 if (Number.isFinite(shell.meanR)) {
@@ -196,80 +362,99 @@ const grPeaksTool = (plotFiles, context, structure, cardIds) => {
                     block.sd_d_A = roundSig(shell.sdR, 2);
                 }
                 if (Number.isFinite(shell.cn)) {
-                    block.cn = { [`${b}_per_${a}`]: roundSig(shell.cn) };
-                    const partnerDensity = elementDensity(structure, a);
-                    const ownDensity = elementDensity(structure, b);
-                    if (a !== b && partnerDensity && ownDensity) {
-                        block.cn[`${a}_per_${b}`] = roundSig(shell.cn * partnerDensity / ownDensity);
-                    }
-                    block.cn_if_cut_0p2A_earlier_later = shell.cnRange.map((value) => roundSig(value));
+                    block.cn = { [perA]: roundSig(shell.cn) };
+                    if (a !== b && Number.isFinite(shell.reverseCn)) block.cn[`${a}_per_${b}`] = roundSig(shell.reverseCn);
+                    block.cn_if_cut_0p2A_earlier_later = [shell.cut.earlier.cn, shell.cut.later.cn].map((value) => roundSig(value));
                 }
                 block.trough_g_fraction = roundSig(shell.troughRatio, 2);
-                // A split shell joined across a deep trough: the first peak alone.
-                if (shell.split) {
+                // Two or more resolved peaks: the first alone, to the minimum
+                // between the first two.
+                if (shell.firstPeak) {
                     block.first_peak_only = {
-                        window_A: [block.window_A[0], roundSig(shell.split.firstBoundaryR, 3)],
-                        cn: { [`${b}_per_${a}`]: roundSig(shell.split.firstCn) },
-                        trough_g_fraction: roundSig(shell.split.firstTroughRatio, 2)
+                        window_A: [...shell.firstPeak.window],
+                        ...(Number.isFinite(shell.firstPeak.cn) ? { cn: { [perA]: roundSig(shell.firstPeak.cn) } } : {}),
+                        trough_g_fraction: roundSig(shell.firstPeak.troughRatio, 2)
+                    };
+                }
+                // A shell joined across a deep trough: its split by number
+                // (shells.js, plan item 4.2), each part's count in the
+                // direction the join decided — the one whose sum is ideal.
+                const { split } = shell;
+                const forward = split?.direction !== 'reverse';
+                const [counted, around] = forward ? [b, a] : [a, b];
+                const splitKey = `${counted}_per_${around}`;
+                if (split) {
+                    block.split = {
+                        parts: split.parts.map((part) => ({
+                            window_A: [...part.window],
+                            mean_d_A: roundSig(part.meanR, 4),
+                            sd_d_A: roundSig(part.sdR, 2),
+                            cn: { [splitKey]: roundSig(forward ? part.cn : part.reverseCn) },
+                            share: roundSig(part.share, 3)
+                        })),
+                        long_minus_short_A: roundSig(split.longMinusShort, 3),
+                        long_minus_short_se_A: roundSig(split.longMinusShortSe, 2)
                     };
                 }
                 data.first_shell = block;
-                if (shell.split && Number.isFinite(shell.cn)) {
-                    // Said in the direction whose summed count is the ideal one.
-                    const ratio = a !== b ? (elementDensity(structure, a) || 0) / (elementDensity(structure, b) || 1) : 1;
-                    const forward = isIdealCoordination(shell.cn) || !(ratio > 0);
-                    const [whole, part, counted, around] = forward
-                        ? [shell.cn, shell.split.firstCn, b, a]
-                        : [shell.cn * ratio, shell.split.firstCn * ratio, a, b];
-                    checks.push({
-                        level: 'note',
-                        text: `One split shell across a deep trough: the peaks at ${shell.peaksInShell.map((r) => roundSig(r, 4)).join(' and ')} Å `
-                            + `(${roundSig(shell.peaksInShell.at(-1) - shell.peaksInShell[0], 2)} Å apart) hold ${roundSig(part)} ${counted} per ${around} `
-                            + `in the first peak alone (to ${roundSig(shell.split.firstBoundaryR, 3)} Å) and ${roundSig(whole)} together, an ideal `
-                            + 'polyhedral count: first_shell.window_A holds both, the short and long bonds of one distorted polyhedron (e.g. '
-                            + 'Jahn–Teller). The first peak alone (first_peak_only) cuts the polyhedron; use it only if the user chooses it.'
-                    });
+                const inShell = shell.peaksInShell.map((r) => roundSig(r, 4));
+                if (block.split && shell.firstPeak) {
+                    const { parts, long_minus_short_A: longMinusShort, long_minus_short_se_A: se } = block.split;
+                    const counts = parts.map((part, k) => `${part.cn[splitKey]} ${k ? '' : `${counted} per ${around} `}at ${part.mean_d_A} Å`);
+                    const bonds = parts.length === 2 ? 'the short and long bonds' : `the ${parts.length} bond lengths, short to long,`;
+                    // Which window to use is method (method.js): arm C's method 'off' sends the reading alone.
+                    checks.push(methodCheck('note',
+                        `One split shell across a deep trough: ${counts.join(' + ')} (first_shell.split.parts), `
+                            + `${roundSig(forward ? shell.cn : shell.reverseCn)} together, an ideal polyhedral count: ${bonds} of one distorted `
+                            + `polyhedron (e.g. Jahn–Teller). Long − short ${longMinusShort}${se != null ? ` ± ${se}` : ''} Å `
+                            + `(first_shell.split: long_minus_short_A${se != null ? ' ± long_minus_short_se_A, the configuration\'s sampling error' : ''}); `
+                            + `${parts.map((part) => `${Math.round(part.share * 100)} %`).join(' / ')} of the shell's count. `
+                            + 'first_shell.window_A holds every part; the first peak alone (first_peak_only, to '
+                            + `${roundSig(shell.firstPeak.window[1], 3)} Å) cuts the polyhedron`,
+                        { method: '; use it only if the user chooses it' },
+                        '.'));
                 }
-                if (shell.troughRatio > SHELL_OVERLAP_FRACTION) {
-                    checks.push({
-                        level: 'warn',
-                        text: `The first shell is not separated from the next: at its boundary (${roundSig(shell.boundaryR, 3)} Å) `
-                            + `g(r) is still ${Math.round(shell.troughRatio * 100)} % of the peak, so ${a}–${b} distances fill the gap `
-                            + 'between shells'
-                            + (Number.isFinite(shell.cn)
-                                ? ` and the coordination number depends on the cut (${roundSig(shell.cnRange[0])}–${roundSig(shell.cnRange[1])} `
-                                    + `for a cut 0.2 Å earlier or later). Ask whether the crystal has ${a}–${b} distances there.`
-                                : '.')
-                    });
+                if (!shell.separated) {
+                    // What to ask about the gap is method (method.js): arm C's method 'off' sends the reading alone.
+                    const head = `The first shell is not separated from the next: at its boundary (${roundSig(shell.window[1], 3)} Å) `
+                        + `g(r) is still ${Math.round(shell.troughRatio * 100)} % of the peak, so ${a}–${b} distances fill the gap `
+                        + 'between shells';
+                    checks.push(Number.isFinite(shell.cn)
+                        ? methodCheck('warn',
+                            `${head} and the coordination number depends on the cut (${roundSig(shell.cut.earlier.cn)}–${roundSig(shell.cut.later.cn)} `
+                                + 'for a cut 0.2 Å earlier or later).',
+                            { method: ` Ask whether the crystal has ${a}–${b} distances there.` })
+                        : { level: 'warn', text: `${head}.` });
                 }
-                if (shell.peaksInShell.length > 1 && !shell.split) {
-                    checks.push({
-                        level: 'note',
-                        text: `The first shell holds ${shell.peaksInShell.length} peaks (${shell.peaksInShell.map((r) => roundSig(r, 4)).join(', ')} Å): `
-                            + 'a split shell, e.g. two bond lengths of one distorted polyhedron. Use first_shell.window_A, not the first-peak window.'
-                    });
+                if (shell.peaksInShell.length > 1 && !shell.joined) {
+                    const alone = Number.isFinite(shell.firstPeak?.cn) && Number.isFinite(shell.cn)
+                        ? ` The first peak alone (first_peak_only, to ${roundSig(shell.firstPeak.window[1], 3)} Å) holds `
+                            + `${roundSig(shell.firstPeak.cn)} ${b} per ${a} of the shell's ${roundSig(shell.cn)}.`
+                        : '';
+                    checks.push(methodCheck('note',
+                        `The first shell holds ${shell.peaksInShell.length} peaks (${inShell.join(', ')} Å): `
+                            + 'a split shell, e.g. two bond lengths of one distorted polyhedron.',
+                        { method: ' Use first_shell.window_A, not the first peak alone.' },
+                        alone));
                 }
+            } else if (shell) {
+                const reach = Math.max(PEAK_SEARCH_MAX_A, shell.peaks[0].r + BOUNDARY_REACH_A);
+                checks.push({ level: 'note', text: `No minimum closes the first shell below ${roundSig(reach, 3)} Å.` });
             } else {
-                checks.push({ level: 'note', text: `No minimum closes the first shell below ${roundSig(Math.max(rMax, first.r + 3), 3)} Å.` });
+                checks.push({ level: 'note', text: `No first shell is read: no peak below ${PEAK_SEARCH_MAX_A} Å, where the shells are read.` });
             }
 
-            const key = pairKey(pair);
-            const constraintEntry = constraints && !Array.isArray(constraints)
-                ? Object.entries(constraints).find(([label]) => pairKey(label) === key)
-                : null;
-            if (constraintEntry && Number.isFinite(constraintEntry[1])) {
-                const limit = constraintEntry[1];
+            if (shell?.constraint) {
+                const { limitA: limit, gFraction, limited } = shell.constraint;
                 data.min_distance_constraint_A = limit;
-                // g just above the constraint (the first two grid points),
+                // g just above the constraint (its first 2.5 grid steps),
                 // relative to the first peak: a cut-off tail piles up there.
-                const atLimit = gJustAbove(entry.x, entry.y, limit);
-                const fraction = shell ? atLimit / shell.peakG : 0;
-                if (fraction > CONSTRAINT_PILEUP_FRACTION || first.r - first.fwhm / 2 <= limit + 0.05) {
-                    data.g_at_constraint_fraction = roundSig(fraction, 2);
+                if (limited) {
+                    data.g_at_constraint_fraction = roundSig(gFraction, 2);
                     checks.push({
                         level: 'warn',
                         text: `The ${limit} Å closest-approach constraint cuts this distribution: g(r) just above it is `
-                            + `${Math.round(fraction * 100)} % of the first peak, so ${a}–${b} pairs pile up against the constraint — `
+                            + `${Math.round(gFraction * 100)} % of the first peak, so ${a}–${b} pairs pile up against the constraint — `
                             + 'it is constraint-limited; the constraint, not the data, shapes the low-r side of the peak.'
                     });
                 }
@@ -277,7 +462,7 @@ const grPeaksTool = (plotFiles, context, structure, cardIds) => {
             if (!checks.some((check) => check.level === 'warn')) {
                 checks.push({
                     level: 'ok',
-                    text: `First peak at ${roundSig(first.r, 4)} Å`
+                    text: `First peak at ${roundSig(firstR, 4)} Å`
                         + (data.first_shell?.mean_d_A ? `; first shell to ${data.first_shell.window_A[1]} Å, mean ${data.first_shell.mean_d_A} Å` : '')
                         + (data.first_shell?.cn ? `, CN ${Object.entries(data.first_shell.cn).map(([k, v]) => `${v} ${k.replace(/_/g, ' ')}`).join(', ')}` : '')
                         + '.'
@@ -285,7 +470,7 @@ const grPeaksTool = (plotFiles, context, structure, cardIds) => {
             }
             // For the coordination answer check: the whole first shell's count,
             // each way (B around A, and A around B for a mixed pair).
-            if (shell?.boundaryR != null && Number.isFinite(shell.cn)) {
+            if (shell?.window && Number.isFinite(shell.cn)) {
                 const window = data.first_shell.window_A;
                 const counts = [{ centre: a, partner: b, window, cn: roundSig(shell.cn), whole_shell: true, confirmed: false }];
                 const reverse = data.first_shell.cn[`${a}_per_${b}`];
@@ -336,7 +521,9 @@ const fitTool = (plotFiles, cardIds) => {
         description: 'Where the model misses the measured data, for one fitted dataset: the R-factor (as the '
             + 'dashboard\'s Rwp) over consecutive ranges of r or Q, the share of the squared residual in each range, '
             + 'and the largest residual features (position, model above or below the data, size relative to the '
-            + 'data\'s rms). Use it for "where does the fit fail" and "is the misfit at short or long range"; run it once '
+            + 'data\'s rms).',
+        // The method advice (method.js): sent with method 'full', after the description.
+        method: 'Use it for "where does the fit fail" and "is the misfit at short or long range"; run it once '
             + 'per dataset (a G(r) and its F(Q) are separate entries).',
         parameters: {
             type: 'object',
@@ -349,6 +536,26 @@ const fitTool = (plotFiles, cardIds) => {
                 n_ranges: { type: 'integer', minimum: 2, maximum: 12, description: 'Equal-width ranges over the data. Default 6.' }
             },
             required: ['dataset']
+        },
+        // Fewer than 10 points: the first five keys only. A range and a
+        // residual are named by the axis: r_A / r in real space, Q_A / Q in
+        // reciprocal space.
+        dataShape: {
+            dataset: 'string',
+            kind: 'string',
+            axis: 'string',
+            model_series: 'string',
+            data_series: 'string',
+            'rw?': 'number|null',
+            'range?': ['number|null', 'number|null'],
+            'by_range?': [oneOf(
+                { r_A: ['number|null', 'number|null'], rw: 'number|null', share_of_misfit: 'number|null' },
+                { Q_A: ['number|null', 'number|null'], rw: 'number|null', share_of_misfit: 'number|null' }
+            )],
+            'largest_residuals?': [oneOf(
+                { r: 'number|null', model_minus_data: 'number|null', relative_to_data_rms: 'number|null' },
+                { Q: 'number|null', model_minus_data: 'number|null', relative_to_data_rms: 'number|null' }
+            )]
         },
         label: ({ dataset }) => `Fit residual ${dataset || ''}`.trim(),
         page: 'dashboard',
@@ -451,7 +658,7 @@ export const buildRunTools = (run, { cards = [] } = {}) => {
     return [
         readRunDataTool(context, cardIds),
         convergenceTool(run?.rValueFile, cardIds),
-        grPeaksTool(run?.plotFiles, context, run?.structure, cardIds),
+        grPeaksTool(run, cardIds),
         fitTool(run?.plotFiles, cardIds)
     ].filter(Boolean);
 };

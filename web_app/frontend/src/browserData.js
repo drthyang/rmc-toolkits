@@ -28,6 +28,15 @@ export const fileSignature = (items) => items
     .sort()
     .join('|');
 
+// The run's configuration as one string: the fileSignature of its .rmc6f
+// entries alone, so a plot or .log that changes leaves it as it was. A Flask
+// /api/files listing and a browser-loaded run's files give it alike; App.jsx
+// compares it to tell that a new configuration was saved (configEpoch, and
+// the AI Copilot's configKey).
+export const configurationSignature = (items) => fileSignature(
+    (items || []).filter((file) => file?.type === 'file' && /\.rmc6f$/i.test(file.name || ''))
+);
+
 export const detectPlotKind = (name) => {
     if (/-EXAFS-.+_Q_OUTPUT\.csv$/.test(name)) return 'exafs_q';
     if (/-EXAFS-.+_R_OUTPUT\.csv$/.test(name)) return 'exafs_r';
@@ -795,6 +804,54 @@ export const readAndParseLocalPlotFile = async (file) => {
     return plotDataFromText({ ...file, text });
 };
 
+// --- the Dashboard's plot files: one source for the screen and the Copilot ----
+//
+// Which files the Dashboard charts and in what order, its χ² history and the
+// structure's point cap. The Dashboard and the Copilot's run (copilotRun.js)
+// both read them from here, so what the model is told the run holds is what
+// the screen shows.
+
+/** The structure's sampled points, as the Dashboard asks for them (worker and Flask /api/structure). */
+export const DASHBOARD_MAX_POINTS = 100;
+
+export const DASHBOARD_PLOT_ORDER = Object.freeze(['r_value', 'bragg', 'xray_sq', 'neutron_sq', 'exafs_q', 'exafs_r', 'xpdf', 'npdf', 'pdf_partials']);
+
+/** A file the Dashboard charts: a known plot kind other than a STOG data file. */
+export const isDashboardPlotFile = (file) => Boolean(file.plotKind) && file.plotKind !== 'stog';
+
+const dashboardLogParts = (name) => {
+    const match = name.match(/^(.+)-(\d{2,})\.log$/);
+    return match ? { stem: match[1].toLowerCase(), sequence: Number(match[2]) } : null;
+};
+
+/** The Dashboard's order: by kind, then a run's logs by stem and sequence, then by name. */
+export const compareDashboardPlotFiles = (a, b) => {
+    const kindOrder = DASHBOARD_PLOT_ORDER.indexOf(a.plotKind) - DASHBOARD_PLOT_ORDER.indexOf(b.plotKind);
+    if (kindOrder !== 0) return kindOrder;
+
+    const aLog = dashboardLogParts(a.name);
+    const bLog = dashboardLogParts(b.name);
+    if (aLog && bLog) {
+        const stemOrder = aLog.stem.localeCompare(bLog.stem);
+        if (stemOrder !== 0) return stemOrder;
+        if (aLog.sequence !== bLog.sequence) return aLog.sequence - bLog.sequence;
+    }
+
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+};
+
+/** Every plot file the Dashboard lists (hidden ones included), in its order: a new array. */
+export const dashboardPlotFiles = (files) => files.filter(isDashboardPlotFile).sort(compareDashboardPlotFiles);
+
+/** One plot file as the Dashboard holds it once read: with its plotData, or its parseError. */
+export const parseDashboardPlotFile = async (file) => {
+    try {
+        return { ...file, plotData: await readAndParseLocalPlotFile(file) };
+    } catch (plotError) {
+        return { ...file, parseError: plotError.message || 'Could not parse plot file' };
+    }
+};
+
 // --- R-value (chi^2 history) logs: which ones belong to one run ---------------
 //
 // RMCProfile writes <stem>-00.log, <stem>-01.log, … for one run (restarts append
@@ -907,9 +964,23 @@ export const combineRValueFiles = (rValueFiles, structurePath = null) => {
     });
 };
 
+/**
+ * The χ² history the Dashboard charts: the r_value logs of `plotFiles` (in the
+ * Dashboard's order) that are not hidden, combined for the run the structure
+ * file names. `hiddenPaths` is any iterable of file paths.
+ */
+export const chartedRValueFile = (plotFiles, hiddenPaths = [], structurePath = null) => {
+    const hidden = hiddenPaths instanceof Set ? hiddenPaths : new Set(hiddenPaths);
+    return combineRValueFiles(
+        plotFiles.filter((file) => file.plotKind === 'r_value' && !hidden.has(file.path)),
+        structurePath
+    );
+};
+
 // Build a run object from { path, file } pairs. Shared by the <input webkitdirectory>
-// path (buildLocalRun) and the File System Access path (buildLocalRunFromHandle).
-const makeRunFromEntries = async (entries) => {
+// path (buildLocalRun), the File System Access path (buildLocalRunFromHandle), the
+// Demo, and the Copilot's in-process run (openRunFolder.js).
+export const makeRunFromEntries = async (entries) => {
     const files = entries
         .filter(({ path }) => isSupportedFile(basename(path)))
         .map(({ path, file }) => ({

@@ -1,0 +1,31 @@
+{
+  "id": "2026-10-10-gemma4-no-trans-angles",
+  "fidelity": "quoted",
+  "model": "gemma4:26b (Ollama)",
+  "date": "2026-10-10",
+  "run": "Demo (GaTa4Se8, 250 K)",
+  "question": "Se–Ta–Se angles against an ideal octahedron",
+  "source": {
+    "file": ".claude/skills/coordination-shells/SKILL.md",
+    "lines": "81",
+    "commit": "f316293",
+    "note": "the spot check's answer after the window fixes, as the skill quotes it (the README, line 668: \"says there are no near-180° angles; 20 % lie at 150–170°\"); the whole answer is not in the repo"
+  },
+  "text": "There are no near-180° angles",
+  "steps": [
+    { "name": "find_gr_peaks", "args": { "pair": "Ta-Se" } },
+    { "name": "compute_bond_angles", "args": { "end1": "Se", "apex": "Ta", "end2": "Se", "r12_min": 2.33, "r12_max": 2.96 } }
+  ],
+  "stepsSource": "the llm README's spot-check table (line 668): \"find_gr_peaks, then its two-peak window 2.33–2.96 Å (coordination 5.89)\"",
+  "reproduces": [
+    { "step": 2, "path": "data.coordination.mean", "value": 5.89 }
+  ],
+  "expected": {
+    "claims": [],
+    "gateSendBack": null,
+    "auditFindings": []
+  },
+  "judgements": [
+    { "on": "silence", "right": true, "reason": "Wrong (20 % of the angles lie above 135°), but no check reads claims about an angle distribution; the tool now gives the sin θ-corrected histogram and the octahedral split instead." }
+  ]
+}

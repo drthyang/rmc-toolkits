@@ -33,6 +33,7 @@ const TRIPLETS = {
     sinCorrected: [0, 1],
     density: [0, 1],
     coordination: [0, 0, 1],
+    coordinationSummary: { mean: 2, modal: 2, modalShare: 1, unbondedShare: 0 },
     apexCount: 16,
     lengths12: { uniqueBonds: 96, meanLength: 2.6 },
     angleCount: 240,

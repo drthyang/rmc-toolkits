@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { describe, expect, it } from 'vitest';
+import { checkText, toolDescription } from '../copilot/method';
 import { buildRunTools } from '../copilot/runTools';
 
 const grid = (n, step) => Array.from({ length: n }, (_, i) => i * step);
@@ -79,8 +80,9 @@ describe('buildRunTools', () => {
 
         const tase = await tool.run({ pair: 'Ta-Se' });
         expect(tase.data.peaks_A.map((peak) => peak.r)).toEqual([2.6, 4.4]);
-        expect(tase.data.first_peak_window_A[0]).toBeLessThan(2.6);
-        expect(tase.data.first_peak_window_A[1]).toBeGreaterThan(2.6);
+        // One resolved peak in the shell: no first-peak window (never r ± FWHM).
+        expect(tase.data.first_peak_window_A).toBeUndefined();
+        expect(tase.data.first_shell.first_peak_only).toBeUndefined();
         // The shell runs from the onset to the deep minimum before 4.4 Å.
         const [low, high] = tase.data.first_shell.window_A;
         expect(low).toBeLessThan(2.45);
@@ -123,7 +125,10 @@ describe('buildRunTools', () => {
         expect(data.first_shell.cn.Ta_per_Se).toBeCloseTo(3, 1);
         expect(data.first_shell.trough_g_fraction).toBeLessThan(0.02);
         expect(checks.map((check) => check.level)).toEqual(['ok']);
-        expect(checks[0].text).toMatch(/CN 6 Se per Ta, 3 Ta per Se/);
+        // The CN of exactly the quoted window: it starts one grid step before
+        // the onset (g at 1 % of its peak), so the ~0.2 % of the shell below
+        // it is not counted (before 2026-10-19 the tool integrated from r = 0).
+        expect(checks[0].text).toMatch(/CN 5\.99 Se per Ta, 3 Ta per Se/);
     });
 
     it('warns when the first shell is not separated from the next, with the cut sensitivity', async () => {
@@ -143,6 +148,10 @@ describe('buildRunTools', () => {
         expect(checks[0].level).toBe('warn');
         expect(checks[0].text).toMatch(/not separated from the next/);
         expect(checks[0].text).toMatch(/depends on the cut/);
+        // What to ask about the gap is method (method.js): arm C reads the reading alone.
+        expect(checks[0].text).toMatch(/for a cut 0\.2 Å earlier or later\)\. Ask whether the crystal has Ta–Ta distances there\.$/);
+        expect(checks[0].method).toEqual([' Ask whether the crystal has Ta–Ta distances there.']);
+        expect(checkText(checks[0], 'off')).toMatch(/^The first shell is not separated from the next: .* for a cut 0\.2 Å earlier or later\)\.$/);
     });
 
     it('holds a split shell whole and says so', async () => {
@@ -155,11 +164,43 @@ describe('buildRunTools', () => {
         const { data, checks } = await tool.run({ pair: 'Ta-Se' });
         const [first, second] = data.peaks_A;
         expect(data.first_shell.peaks_in_shell_A).toEqual([first.r, second.r]);
-        // The shell window reaches past the second peak; the first-peak window does not.
+        // The shell window reaches past the second peak; the first peak alone
+        // ends at the minimum between the two (approved 2026-10-19).
         expect(data.first_shell.window_A[1]).toBeGreaterThan(second.r + second.fwhm / 2);
-        expect(data.first_peak_window_A[1]).toBeLessThan(second.r + second.fwhm / 2);
+        const alone = data.first_shell.first_peak_only;
+        expect(alone.window_A[0]).toBe(data.first_shell.window_A[0]);
+        expect(alone.window_A[1]).toBeGreaterThan(first.r);
+        expect(alone.window_A[1]).toBeLessThan(second.r);
+        expect(alone.trough_g_fraction).toBeGreaterThan(0.2);
+        // No cell in this run: no CN for it.
+        expect(alone.cn).toBeUndefined();
+        expect(data.first_peak_window_A).toBeUndefined();
         expect(checks.map((check) => check.level)).toEqual(['note', 'ok']);
         expect(checks[0].text).toMatch(/first shell holds 2 peaks/);
+    });
+
+    it('gives the first peak alone its CN, beside the whole shell\'s, when the run has a cell', async () => {
+        // The Demo's shape: 3 Se at 2.52 Å (σ 0.06) and 3 at 2.74 Å (σ 0.10) around each Ta.
+        const L = 20;
+        const counts = { Ta: 400, Se: 800 };
+        const rhoSe = counts.Se / L ** 3;
+        const x = grid(600, 0.01);
+        const normal = (r, r0, s) => Math.exp(-((r - r0) ** 2) / (2 * s * s)) / (s * Math.sqrt(2 * Math.PI));
+        const y = x.map((r) => (r > 0 ? (3 * normal(r, 2.52, 0.06) + 3 * normal(r, 2.74, 0.1)) / (4 * Math.PI * rhoSe * r * r) : 0));
+        const { find_gr_peaks: tool } = toolMap({
+            structure: { latticeVectors: [[L, 0, 0], [0, L, 0], [0, 0, L]], elementCounts: counts },
+            plotFiles: [{ plotKind: 'pdf_partials', plotData: { series: [{ label: 'Ta-Se', x, y }] } }]
+        });
+        const { data, checks } = await tool.run({ pair: 'Ta-Se' });
+        expect(data.first_shell.cn.Se_per_Ta).toBeCloseTo(6, 1);
+        const alone = data.first_shell.first_peak_only;
+        expect(alone.cn.Se_per_Ta).toBeGreaterThan(3);
+        expect(alone.cn.Se_per_Ta).toBeLessThan(4);
+        // Not joined (no deep trough between the two peaks): no split by number.
+        expect(data.first_shell.split).toBeUndefined();
+        expect(checks[0].text).toBe(`The first shell holds 2 peaks (${data.first_shell.peaks_in_shell_A.join(', ')} Å): a split shell, e.g. two `
+            + 'bond lengths of one distorted polyhedron. Use first_shell.window_A, not the first peak alone. The first peak alone '
+            + `(first_peak_only, to ${alone.window_A[1]} Å) holds ${alone.cn.Se_per_Ta} Se per Ta of the shell's ${data.first_shell.cn.Se_per_Ta}.`);
     });
 
     it('joins a split shell across a deep trough when the two peaks make an octahedron (review L1)', async () => {
@@ -180,7 +221,57 @@ describe('buildRunTools', () => {
         expect(data.first_shell.first_peak_only.cn.F_per_Cu).toBeCloseTo(4, 1);
         expect(data.first_shell.first_peak_only.window_A[1]).toBeLessThan(2.2);
         expect(checks.map((check) => check.level)).toEqual(['note', 'ok']);
-        expect(checks[0].text).toMatch(/^One split shell across a deep trough: .* hold 4 F per Cu in the first peak alone .* and 6 together/);
+        expect(checks[0].text).toMatch(/^One split shell across a deep trough: 4 F per Cu at 1\.93 Å \+ 2 at 2\.25 Å \(first_shell\.split\.parts\), 6 together/);
+    });
+
+    it('gives a joined shell its split by number, the parts and long − short by path, and quotes them (plan item 4.2)', async () => {
+        // The CuF6 above: 4 F at 1.93 Å and 2 at 2.25 Å (σ 0.05 Å), 200 Cu.
+        const L = 20;
+        const counts = { Cu: 200, F: 1200 };
+        const x = grid(600, 0.005);
+        const normal = (r, r0, s) => Math.exp(-((r - r0) ** 2) / (2 * s * s)) / (s * Math.sqrt(2 * Math.PI));
+        const toolFor = (shells, elementCounts = counts) => toolMap({
+            structure: { latticeVectors: [[L, 0, 0], [0, L, 0], [0, 0, L]], elementCounts },
+            plotFiles: [{
+                plotKind: 'pdf_partials',
+                plotData: {
+                    series: [{
+                        label: 'Cu-F',
+                        x,
+                        y: x.map((r) => (r > 0 ? shells.reduce((sum, [r0, s, n]) => sum + n * normal(r, r0, s), 0) / (4 * Math.PI * (elementCounts.F / L ** 3) * r * r) : 0))
+                    }]
+                }
+            }]
+        }).find_gr_peaks;
+        const { data, checks } = await toolFor([[1.93, 0.05, 4], [2.25, 0.05, 2]]).run({ pair: 'Cu-F' });
+        const { split } = data.first_shell;
+        expect(split.parts.map((part) => part.window_A)).toEqual([data.first_shell.first_peak_only.window_A, [data.first_shell.first_peak_only.window_A[1], data.first_shell.window_A[1]]]);
+        expect(split.parts.map((part) => part.mean_d_A)).toEqual([1.93, 2.25]);
+        expect(split.parts.map((part) => part.cn)).toEqual([{ F_per_Cu: 4 }, { F_per_Cu: 2 }]);
+        expect(split.parts.map((part) => part.share)).toEqual([0.667, 0.333]);
+        expect(split.parts.map((part) => part.sd_d_A)).toEqual([0.05, 0.05]);
+        expect(split.long_minus_short_A).toBe(0.32);
+        // 0.05 Å over √800 and √400 bonds.
+        expect(split.long_minus_short_se_A).toBeCloseTo(0.05 * Math.sqrt(1 / 800 + 1 / 400), 3);
+        expect(checks[0].text).toBe('One split shell across a deep trough: 4 F per Cu at 1.93 Å + 2 at 2.25 Å (first_shell.split.parts), 6 together, '
+            + 'an ideal polyhedral count: the short and long bonds of one distorted polyhedron (e.g. Jahn–Teller). '
+            + `Long − short 0.32 ± ${split.long_minus_short_se_A} Å (first_shell.split: long_minus_short_A ± long_minus_short_se_A, the configuration's `
+            + 'sampling error); 67 % / 33 % of the shell\'s count. first_shell.window_A holds every part; the first peak alone (first_peak_only, '
+            + `to ${data.first_shell.first_peak_only.window_A[1]} Å) cuts the polyhedron; use it only if the user chooses it.`);
+
+        // 2 + 2 + 2: every part, short to long.
+        const ortho = await toolFor([[1.95, 0.03, 2], [2.12, 0.03, 2], [2.32, 0.03, 2]]).run({ pair: 'Cu-F' });
+        expect(ortho.data.first_shell.split.parts.map((part) => part.mean_d_A)).toEqual([1.95, 2.12, 2.32]);
+        expect(ortho.data.first_shell.split.long_minus_short_A).toBe(0.37);
+        expect(ortho.checks[0].text).toMatch(/^One split shell across a deep trough: 2 F per Cu at 1\.95 Å \+ [\d.]+ at 2\.12 Å \+ 2 at 2\.32 Å .* the 3 bond lengths, short to long, of one distorted polyhedron .* Long − short 0\.37 ± [\d.]+ Å .*; 33 % \/ 33 % \/ 33 % of the shell's count\./);
+
+        // Joined by the reverse count (1 + 0.5 F per Cu; 4 + 2 Cu per F with
+        // Cu four times as dense): the parts are said as Cu per F.
+        const reverse = await toolFor([[1.93, 0.05, 1], [2.25, 0.05, 0.5]], { Cu: 1200, F: 300 }).run({ pair: 'Cu-F' });
+        expect(reverse.data.first_shell.cn).toEqual({ F_per_Cu: 1.5, Cu_per_F: 6 });
+        expect(reverse.data.first_shell.split.parts.map((part) => part.cn)).toEqual([{ Cu_per_F: 4 }, { Cu_per_F: 2 }]);
+        expect(reverse.data.first_shell.split.long_minus_short_A).toBe(0.32);
+        expect(reverse.checks[0].text).toMatch(/^One split shell across a deep trough: 4 Cu per F at 1\.93 Å \+ 2 at 2\.25 Å \(first_shell\.split\.parts\), 6 together/);
     });
 
     it('flags a distribution cut at the closest-approach constraint even when its half-maximum clears it', async () => {
@@ -195,6 +286,22 @@ describe('buildRunTools', () => {
         expect(data.peaks_A[0].r - data.peaks_A[0].fwhm / 2).toBeGreaterThan(2.25);
         expect(data.g_at_constraint_fraction).toBeGreaterThan(0.05);
         expect(checks.find((check) => check.level === 'warn').text).toMatch(/2\.2 Å closest-approach constraint cuts this distribution/);
+    });
+
+    it('no longer calls a distribution cut because its half maximum lies within 0.05 Å of the constraint (the FWHM clause, dropped)', async () => {
+        // A sharp peak on a 0.005 Å grid, 0.07 Å above a 2.43 Å constraint: g
+        // just above the constraint is ~1 % of the peak, so nothing piles up.
+        const x = grid(2000, 0.005);
+        const y = x.map((r) => gaussian(r, 2.5, 0.02, 8));
+        const { find_gr_peaks: tool } = toolMap({
+            runSettings: { atoms: ['Ga', 'Se'], minimumDistancesA: [3.0, 2.43, 3.0] },
+            plotFiles: [{ plotKind: 'pdf_partials', plotData: { series: [{ label: 'Ga-Se', x, y }] } }]
+        });
+        const { data, checks } = await tool.run({ pair: 'Ga-Se' });
+        expect(data.peaks_A[0].r - data.peaks_A[0].fwhm / 2).toBeLessThanOrEqual(2.43 + 0.05);
+        expect(data.min_distance_constraint_A).toBe(2.43);
+        expect(data.g_at_constraint_fraction).toBeUndefined();
+        expect(checks.map((check) => check.level)).toEqual(['ok']);
     });
 
     it('compare_fit: locates the misfit by range and names the largest residual features', async () => {
@@ -240,10 +347,28 @@ describe('buildRunTools', () => {
         expect(checks.some((check) => /poorest at Q = /.test(check.text))).toBe(true);
     });
 
-    it('fails clearly when no peak is found below r_max', async () => {
+    it('reads the run\'s first shell whatever r_max is, and fails only when the run has none', async () => {
+        // No caller picks the range (shells.js): below r_max there is no peak
+        // to show, but the shell the context reads is the tool's too.
         const { find_gr_peaks: tool } = toolMap({ plotFiles: [partialsFile()] });
-        const { checks } = await tool.run({ pair: 'Ta-Se', r_max: 1.5 });
-        expect(checks).toEqual([{ level: 'fail', text: 'No peak above 15 % of the maximum below 1.5 Å.' }]);
+        const { data, checks } = await tool.run({ pair: 'Ta-Se', r_max: 1.5 });
+        expect(data.peaks_A).toEqual([]);
+        expect(data.first_shell.peaks_in_shell_A).toEqual([2.6]);
+        expect(checks[0]).toEqual({
+            level: 'note',
+            text: 'No peak above 15 % of the maximum below 1.5 Å (r_max); the first shell, read from the peaks below 8 Å, lies beyond it.'
+        });
+        expect(checks[1].text).toMatch(/^First peak at 2\.6 Å; first shell to /);
+        // No peak below 8 Å at all: no shell, and nothing to show below r_max either.
+        const x = grid(600, 0.02);
+        const { find_gr_peaks: far } = toolMap({
+            plotFiles: [{ plotKind: 'pdf_partials', plotData: { series: [{ label: 'Ga-Ga', x, y: x.map((r) => gaussian(r, 9.5, 0.1, 5)) }] } }]
+        });
+        expect((await far.run({ pair: 'Ga-Ga' })).checks).toEqual([{ level: 'fail', text: 'No peak above 15 % of the maximum below 6 Å.' }]);
+        const beyond = await far.run({ pair: 'Ga-Ga', r_max: 12 });
+        expect(beyond.data.peaks_A.map((peak) => peak.r)).toEqual([9.5]);
+        expect(beyond.data.first_shell).toBeUndefined();
+        expect(beyond.checks[0]).toEqual({ level: 'note', text: 'No first shell is read: no peak below 8 Å, where the shells are read.' });
     });
 });
 
@@ -274,5 +399,73 @@ describe('the cards each run tool reads', () => {
         expect(tools.read_run_data.cards({ section: 'datasets' })).toEqual([]);
         // Without a catalog, no cards; a file without a name matches none.
         expect(toolMap({ plotFiles: [partialsFile()] }).find_gr_peaks.cards({})).toEqual([]);
+    });
+});
+
+// The method advice in the run tools (method.js, plan item 1.8): with method
+// 'off' (the validation's arm C) a description says what the tool does and
+// returns, and a check keeps its reading, without which window to use.
+describe('the run tools\' method advice: arm C reads them without it', () => {
+    const fitFile = () => {
+        const x = grid(400, 0.05).map((q) => q + 0.5);
+        return {
+            name: 'run_SQ1.csv',
+            plotKind: 'neutron_sq',
+            plotData: { series: [{ label: 'S(Q)_RMC', x, y: x.map(Math.sin) }, { label: 'S(Q)_Expt', x, y: x.map(Math.sin) }] }
+        };
+    };
+
+    it('find_gr_peaks and compare_fit: the advice comes back whole with method full, and is gone with off', () => {
+        const tools = toolMap({ plotFiles: [partialsFile(), fitFile()] });
+        const peaks = tools.find_gr_peaks;
+        expect(toolDescription(peaks, 'full')).toContain('the window from onset to the first deep minimum (use first_shell.window_A for '
+            + 'compute_bond_angles: it holds the whole shell, split shells included), mean distance');
+        expect(toolDescription(peaks, 'off')).toBe(peaks.description);
+        expect(peaks.description).toContain('the window from onset to the first deep minimum (it holds the whole shell, '
+            + 'split shells included), mean distance');
+        expect(peaks.description).not.toMatch(/compute_bond_angles|use first_shell/);
+        const fit = tools.compare_fit;
+        expect(toolDescription(fit, 'full')).toBe(`${fit.description} Use it for "where does the fit fail" and "is the misfit at short or long range"; `
+            + 'run it once per dataset (a G(r) and its F(Q) are separate entries).');
+        expect(toolDescription(fit, 'off')).toBe(fit.description);
+        expect(fit.description).toMatch(/^Where the model misses the measured data, for one fitted dataset: .* size relative to the data's rms\)\.$/);
+    });
+
+    it('find_gr_peaks: a split shell\'s note keeps its reading; "use first_shell.window_A" is advice', async () => {
+        const L = 20;
+        const counts = { Ta: 400, Se: 800 };
+        const rhoSe = counts.Se / L ** 3;
+        const x = grid(600, 0.01);
+        const normal = (r, r0, s) => Math.exp(-((r - r0) ** 2) / (2 * s * s)) / (s * Math.sqrt(2 * Math.PI));
+        const y = x.map((r) => (r > 0 ? (3 * normal(r, 2.52, 0.06) + 3 * normal(r, 2.74, 0.1)) / (4 * Math.PI * rhoSe * r * r) : 0));
+        const { find_gr_peaks: tool } = toolMap({
+            structure: { latticeVectors: [[L, 0, 0], [0, L, 0], [0, 0, L]], elementCounts: counts },
+            plotFiles: [{ plotKind: 'pdf_partials', plotData: { series: [{ label: 'Ta-Se', x, y }] } }]
+        });
+        const { checks } = await tool.run({ pair: 'Ta-Se' });
+        expect(checks[0].method).toEqual([' Use first_shell.window_A, not the first peak alone.']);
+        expect(checkText(checks[0], 'full')).toBe(checks[0].text);
+        expect(checkText(checks[0], 'off')).toMatch(new RegExp('^The first shell holds 2 peaks \\([\\d., ]+ Å\\): a split shell, e\\.g\\. two '
+            + 'bond lengths of one distorted polyhedron\\. The first peak alone \\(first_peak_only, to [\\d.]+ Å\\) holds [\\d.]+ Se per Ta '
+            + 'of the shell\'s [\\d.]+\\.$'));
+        expect(checkText(checks[1], 'off')).toBe(checks[1].text);
+    });
+
+    it('find_gr_peaks: a joined Jahn–Teller shell\'s note keeps "cuts the polyhedron"; when to use the first peak is advice', async () => {
+        const L = 20;
+        const counts = { Cu: 200, F: 1200 };
+        const rhoF = counts.F / L ** 3;
+        const x = grid(600, 0.005);
+        const normal = (r, r0) => Math.exp(-((r - r0) ** 2) / (2 * 0.05 ** 2)) / (0.05 * Math.sqrt(2 * Math.PI));
+        const y = x.map((r) => (r > 0 ? (4 * normal(r, 1.93) + 2 * normal(r, 2.25)) / (4 * Math.PI * rhoF * r * r) : 0));
+        const { find_gr_peaks: tool } = toolMap({
+            structure: { latticeVectors: [[L, 0, 0], [0, L, 0], [0, 0, L]], elementCounts: counts },
+            plotFiles: [{ plotKind: 'pdf_partials', plotData: { series: [{ label: 'Cu-F', x, y }] } }]
+        });
+        const { checks } = await tool.run({ pair: 'Cu-F' });
+        expect(checks[0].text).toMatch(/the first peak alone \(first_peak_only, to [\d.]+ Å\) cuts the polyhedron; use it only if the user chooses it\.$/);
+        expect(checks[0].method).toEqual(['; use it only if the user chooses it']);
+        // The split by number is a reading: arm C keeps it.
+        expect(checkText(checks[0], 'off')).toMatch(/^One split shell across a deep trough: .* \(e\.g\. Jahn–Teller\)\. Long − short 0\.32 ± [\d.]+ Å .* the first peak alone \(first_peak_only, to [\d.]+ Å\) cuts the polyhedron\.$/);
     });
 });

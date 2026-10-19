@@ -1,50 +1,99 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-import { toolBudgetNote } from '../prompts/copilot';
-import { auditAnswer } from './answerAudit';
-import { ASK_USER, MAX_QUESTIONS, answerResult } from './askUser';
+import { asModelPort, ToolsUnsupportedError } from '../provider/model';
+import { ASK_USER, MAX_QUESTIONS } from './askUser';
 import { resolveClarification } from './clarify';
-import { parseOutcome } from './outcome';
-import { createReferenceStore, fillReferences } from './references';
-import { computeOutcome } from './verdict';
-import { keyNumbers, repeatsItself, textToolCalls, withDeadlines } from './robustness';
+import { beforeStall, repeatsItself, textToolCalls, withDeadlines } from './robustness';
 import {
     accumulateToolCall, canonicalJson, finalizeToolCalls, parseToolArguments, validateToolArguments
 } from './toolCalls';
 import {
-    executeToolCall, fitToBudget, stepStatus, toolCards, toolLabel, toRequestTools, usableTools
+    compactToolMessage, executeToolCall, questionResult, repeatedCall, severityOf, skippedCall, toolCards, toolLabel,
+    toolMessage, toRequestTools, unknownToolCall, usableTools, withNote
 } from './tools';
+import { createTurnPolicy } from './turnPolicy';
+import { createVerification } from './verification';
 
 // One Copilot turn: plan → act → observe → assess. The model is called with
 // the tools; when it asks for some, each call is validated, run and answered
 // with a `tool` message (result + deterministic checks), and the model is
 // called again — until it answers without tools, or the round budget is used
 // and a last request (tool_choice 'none') asks for the answer. An async
-// generator of UI events; no React. `callModel` is injected (the page wraps
-// provider/client.js streamChat), so tests script the model's replies.
+// generator of UI events; no React. The turn module (turn.js) is its one
+// production caller: it assembles the messages, the tools and the checks this
+// loop runs with. `model` is a model port (provider/model.js: prepare(intent)
+// → sent, stream(sent)), so tests script the model's replies.
+//
+// What ends the turn, and why each request is made, is the turn policy's
+// (turnPolicy.js, its seam): the loop tells it what happened — the turn began,
+// a reply came back, a round of calls ran, the model refused its tools — and
+// does what its step says: ask (with the notes, the tool choice and the retry
+// the step names), run the reply's calls, or end on the step's `done`. The loop
+// keeps the stream, the calls and the messages.
 //
 // Events:
 //   { type: 'round', round }                       a model request starts
+//   { type: 'request', round, why, sent }          the request as sent (after the port's
+//                                                  prepare), before its reply; why: 'first',
+//                                                  'tools' (results of the round before),
+//                                                  'reminder' (after an empty or looping
+//                                                  reply), 'gate' (an answer sent back),
+//                                                  'final' (the budget is used: tool_choice
+//                                                  'none'), 'no_tools' (the retry without tools).
+//                                                  A request the port refuses in prepare (the
+//                                                  context guard, a spend cap) has none
 //   { type: 'text', delta } / { type: 'reasoning', delta }
 //   { type: 'tool_start', id, name, label, args, page, cards, interactive }
-//   { type: 'tool_end', id, name, status, args, data, checks, error, ms, cached, pageParams }
-//   { type: 'tools_unsupported', error }           retried without tools
+//   { type: 'tool_end', id, name, status, resultStatus, args, data, checks, error, note, choice,
+//     ms, cached, ref, analysis, pageParams }       the step's end: the transcript
+//                                                  of the call, its ToolResult as the
+//                                                  tool contract decided it (tools.js),
+//                                                  never re-derived here:
+//                                                  status: its severity (severityOf:
+//                                                  'ok' | 'warn' | 'failed');
+//                                                  resultStatus: how it ended ('ok',
+//                                                  'refused', 'error', 'unknown_tool',
+//                                                  'skipped');
+//                                                  data: what the model read (the
+//                                                  result fitted to its budget; a
+//                                                  Workbench question's own data,
+//                                                  which is not sent);
+//                                                  note: what the app told the model
+//                                                  beside the result (a Workbench
+//                                                  question: the text it read in its
+//                                                  place), or null;
+//                                                  choice: the user's reply to a
+//                                                  question, or null;
+//                                                  ref: the result's reference (null on
+//                                                  an error and for a Workbench question);
+//                                                  analysis: the step is an analysis
+//                                                  (verification isAnalysis; the footer counts these)
+//   { type: 'tools_unsupported', error }           the port's ToolsUnsupportedError on the
+//                                                  first request: retried without tools
 //   { type: 'gate', id, what, missing, notice }    the evidence gate sent the answer back
 //                                                  (a 'retract' withdraws its text)
-//   { type: 'done', text, rawText, outcome, rounds, stoppedBy: 'answer' | 'max_rounds' | 'empty', cut, audit,
-//     references, gates }
+//   { type: 'done', text, rawText, outcome, rounds, stoppedBy, cut, reason, audit, references, gates }
+//                                                  the turn policy's, one shape on every path;
+//                                                  stoppedBy: 'answer' | 'max_rounds' |
+//                                                  'no_progress' | 'empty' (turnPolicy.js
+//                                                  STOPPED_BY); an answer's fields are the
+//                                                  verification's (verification/ judge):
 //                                                  text: the answer with its {{references}} filled in
 //                                                  (rawText: as the model wrote it)
 //                                                  cut: the last reply stopped at the length limit
+//                                                  reason: why an empty reply was empty, else null
 //                                                  audit: findings on the answer (answer checks,
 //                                                  unfilled references, missing evidence)
-//                                                  outcome: computed from the checks (verdict.js)
+//                                                  outcome: computed from the checks (verification/verdict.js)
 // Errors (HTTP, network) and aborts are thrown to the caller.
 //
 // Budgets: at most `maxRounds` model requests with tool calls and
 // `maxCallsPerRound` calls in each; one call may take `toolTimeoutMs`; after
-// `maxTurnMs` no new round of tools starts. Each result is fitted to
+// `maxTurnMs` no new round of tools starts. The rounds, the turn's time and
+// the rounds without progress end a turn: the policy holds them. The calls
+// per round and the questions only refuse a call: the loop holds them, with
+// the per-call time and the character budgets. Each result is fitted to
 // `resultCharBudget` characters, and the turn's tool messages together to
 // `turnCharBudget` — older results are compacted to their checks first — so a
 // small local model's context window keeps the run context and the rules.
@@ -53,7 +102,9 @@ import {
 // toward the turn budget: the agent follows a skill for the whole question).
 // An interactive tool (ask_user) waits for the user: it has no time limit, the
 // wait does not count toward `maxTurnMs`, and a turn asks at most
-// `maxQuestions` questions, one per step.
+// `maxQuestions` questions, one per step. Turn time is read from `clock.now()`
+// (the turn's clock; Date.now by default) by the policy, which starts the turn
+// when it is created; the loop reports each wait for the user to it.
 //
 // `clarifier` (clarify.js) lets the Workbench ask itself where the run data
 // show that a choice changes the result: before the first request
@@ -62,27 +113,31 @@ import {
 // in the window the user picks). These questions are ask_user steps
 // (`app: true`) and count toward `maxQuestions`.
 //
-// Evidence, numbers and the verdict (THY-18). Every tool message carries a
-// `ref` (r1, r2, …) the model quotes values by ({{r2.peak.significance_sigma}},
-// references.js); the answer is shown, recorded and checked with them filled
-// in from what the tools returned. `evidence` (evidence.js buildEvidenceGate)
-// sends an answer that concludes something without its analysis back to the
-// model, once per rule and at most `maxEvidenceGates` times a turn, when tools
-// can still run; evidence still missing at the end is a finding. The Outcome
-// is computed from the steps' checks and the findings (verdict.js); the
-// model's Outcome line only explains it.
+// Evidence, numbers and the verdict (THY-18) are the verification's
+// (verification/: one per turn, the turn's `verification`; without one, a
+// verification with no claims). The loop records each tool step with it,
+// which names the step's `ref` (r1, r2, …: the model quotes values by it,
+// {{r2.peak.significance_sigma}}) and keeps the data the message carries.
+// The policy asks it to judge each answer (its `judge`): whether a send-back
+// is allowed is the policy's (only while tools can still run), the send-back
+// the verification's (the gate: once per claim, at most its maxSendBacks times
+// a turn); otherwise the `done` — the answer with its references filled, its
+// findings and the Outcome computed from the checks; the model's Outcome line
+// only explains it.
 //
 // On a local model (robustness.js): a model request that sends nothing for
 // `stallMs`, or runs past `requestMaxMs`, is cancelled and explained; a reply
 // with neither an answer nor a call (a reasoning-only reply), or one stopped
 // because it kept writing the same passage (`repeatsItself`), gets one
-// reminder, asked a little warmer (`antiRepeat` on the request: the host
-// raises the temperature, as greedy decoding is what loops), before the turn
-// ends on an explained empty reply; a call written
+// reminder, asked a little warmer after a loop (the intent's `retry: 'warmer'`:
+// the model port raises the temperature, as greedy decoding is what loops),
+// before the turn ends on an explained empty reply; a call written
 // as JSON text is run; and two rounds in a row that add nothing new (every
 // call repeated or failed) end the analyses: the next request asks for the
 // answer (`stoppedBy: 'no_progress'`), so repetition never spends the round
-// budget.
+// budget. The loop finds the loop, the calls and whether a round added
+// anything; the reminder, the warmer retry and the no-progress rule are the
+// policy's.
 
 export const DEFAULT_LIMITS = {
     maxRounds: 6,
@@ -94,41 +149,33 @@ export const DEFAULT_LIMITS = {
     maxQuestions: MAX_QUESTIONS,
     stallMs: 180000,
     requestMaxMs: 600000,
-    maxNoProgressRounds: 2,
-    maxEvidenceGates: 2
+    maxNoProgressRounds: 2
 };
-
-// A 4xx saying the model or server cannot take a `tools` field (Ollama:
-// "<model> does not support tools"). Deliberately narrow: a 400 about a
-// tool's schema is a real error and must be shown, not hidden by a fallback.
-const TOOLS_UNSUPPORTED = /(does not|doesn't|do not) support (tools|tool calling|tool use|function calling)|(tools|tool calling|tool use|function calling) (is |are )?not supported/i;
-export const isToolsUnsupportedError = (error) => (
-    Number.isInteger(error?.status) && error.status >= 400 && error.status < 500
-    && TOOLS_UNSUPPORTED.test(error.message || '')
-);
 
 // Assistant content that is only whitespace (models often stream a newline
 // before a tool call) is sent as null: Anthropic rejects empty text blocks.
 export const assistantContent = (text) => (typeof text === 'string' && text.trim() ? text : null);
 
-const compactToolMessage = (content) => {
-    try {
-        const { ref, checks, error, data, compacted } = JSON.parse(content);
-        // Already compacted: compacting again would lose its numbers.
-        if (compacted) return content;
-        const key = error ? null : keyNumbers(data);
-        return JSON.stringify({
-            // The ref still resolves: the app keeps the result it sent.
-            ...(ref ? { ref } : {}),
-            compacted: `this earlier result was shortened to fit the context; its checks${key ? ' and headline numbers' : ''} are kept`,
-            ...(error ? { error } : {}),
-            ...(checks ? { checks } : {}),
-            ...(key ? { key } : {})
-        });
-    } catch {
-        return JSON.stringify({ compacted: 'this earlier result was shortened to fit the context' });
-    }
-};
+// The step's end (see the header): the result as the tool contract decided
+// it, with what the model read of it.
+const toolEnd = ({ id, name, result, data, ref, analysis, pageParams }) => ({
+    type: 'tool_end',
+    id,
+    name,
+    status: severityOf(result),
+    resultStatus: result.resultStatus,
+    args: result.args,
+    data,
+    checks: result.checks,
+    error: result.error,
+    note: result.note,
+    choice: result.choice ?? null,
+    ms: result.ms,
+    cached: result.cached,
+    ref,
+    analysis,
+    pageParams
+});
 
 // What "Open <page>" should load on that page to show this step's analysis:
 // the tool's own mapping of its validated arguments, or null.
@@ -139,27 +186,6 @@ const pageParamsFor = (tool, args) => {
     } catch {
         return null;
     }
-};
-
-const EMPTY_FINAL = 'The analysis budget for this question was used before the model wrote an answer. '
-    + 'The analyses it ran are listed above.';
-const EMPTY_STALLED = 'The model kept repeating analyses that added nothing new, and wrote no answer. '
-    + 'The analyses it ran are listed above.';
-
-// When a reply holds neither an answer nor an analysis call.
-const emptyNudge = (why) => ({
-    role: 'user',
-    content: `Your last reply ${why === 'loop'
-        ? 'kept repeating the same passage, so it was stopped'
-        : `had no answer and no analysis call${why === 'cut' ? ' (it reached the length limit while reasoning)' : ''}`}. `
-        + 'Answer the question now from the context and the results above, briefly, or call one analysis if '
-        + 'one is still missing. End with the Outcome line.'
-});
-
-const EMPTY_REASONS = {
-    loop: 'the model kept repeating the same passage, even after a reminder',
-    cut: 'the model spent its reply on reasoning and reached the length limit',
-    empty: 'the model wrote no answer, even after a reminder'
 };
 
 // A note for the model goes into the last user message when that is the last
@@ -176,31 +202,12 @@ const addNote = (messages, note) => {
 // How often (in new characters) a streaming reply is checked for a loop.
 const LOOP_CHECK_CHARS = 400;
 
-// When the last rounds added nothing new.
-const noProgressNote = (rounds) => ({
-    role: 'user',
-    content: `Your last ${rounds} steps repeated earlier analyses or failed, so they added nothing new. `
-        + 'Do not call them again. Answer now from the results above, say what is still missing, or ask the user '
-        + 'with ask_user if a choice blocks you. End with the Outcome line.'
-});
-
-// The tool message the model reads: the result (fitted to the budget) and
-// the checks, or the error. Checks are never trimmed: they are the verdict.
-// Returns the message text and the fitted data, which the step shows as the
-// result sent to the model.
-const toolMessageContent = ({ data, checks, error, note }, budget, ref = null) => {
-    const message = {};
-    if (ref && !error) message.ref = ref;
-    if (error) message.error = error;
-    if (note) message.note = note;
-    if (checks?.length) message.checks = checks;
-    const head = JSON.stringify(message).length;
-    if (!error) message.data = fitToBudget(data, Math.max(400, budget - head));
-    return { content: JSON.stringify(message), data: error ? null : message.data };
-};
+// The turn's clock when none is given (ms).
+const DEFAULT_CLOCK = Object.freeze({ now: () => Date.now() });
 
 export async function* runCopilotTurn({
-    callModel,
+    // The model port (provider/model.js), or a bare stream function.
+    model,
     messages: initialMessages,
     tools = [],
     limits = {},
@@ -210,85 +217,34 @@ export async function* runCopilotTurn({
     // Passed to every tool's run() beside its signal (the card-focus
     // controller for view tools).
     toolContext = null,
-    // The run context's facts the answer must not contradict
-    // (answerAudit.js contextAuditFacts).
-    auditContext = null,
     // The Workbench's own questions (clarify.js buildClarifier).
     clarifier = null,
-    // The evidence gate (evidence.js buildEvidenceGate), or null for none.
-    evidence = null,
-    // The run context, for {{ctx.…}} references.
-    referenceContext = null
+    // The turn's verification (verification/ createVerification): the
+    // references, the evidence gate, the checks on the answer and the
+    // Outcome. Null: one with no claims (no gate; references, checks and the
+    // Outcome as ever).
+    verification = null,
+    // The turn's clock: its time limit and the user's waits.
+    clock = DEFAULT_CLOCK
 }) {
+    const port = asModelPort(model);
+    const now = () => clock.now();
+    const verify = verification || createVerification({ offered: [] });
     const {
         maxRounds, maxCallsPerRound, toolTimeoutMs, maxTurnMs, resultCharBudget, turnCharBudget, maxQuestions,
-        stallMs, requestMaxMs, maxNoProgressRounds, maxEvidenceGates
+        stallMs, requestMaxMs, maxNoProgressRounds
     } = { ...DEFAULT_LIMITS, ...limits };
-    // The turn's referable results, its steps, and the evidence gate's state.
-    const references = createReferenceStore({ context: referenceContext });
-    const stepLog = [];
-    const gatesFired = new Set();
-    const gates = [];
-    const ranCalls = () => stepLog.filter((step) => step.executed && !step.error && !step.interactive && !step.reading && !step.view)
-        .map((step) => ({ name: step.name, args: step.args }));
-    // The last answer the gate sent back: it stands if no other comes.
-    let withdrawn = null;
-    // The turn's end: references filled, then the checks on the filled
-    // answer (and its missing evidence), then the verdict from the checks —
-    // the model's own grade never decides.
-    const finish = (text, stoppedBy, cut) => {
-        const filled = fillReferences(text, references);
-        const answer = filled.text;
-        const findings = [
-            ...audit(answer),
-            ...(filled.unknown.length ? [{
-                rule: 'reference',
-                text: `The answer cites ${filled.unknown.map((name) => `{{${name}}}`).join(', ')}, which `
-                    + `${filled.unknown.length === 1 ? 'names' : 'name'} no value this question's analyses returned: those numbers are missing.`
-            }] : []),
-            // With tools off (or unsupported) too: a conclusion no analysis
-            // backs is not verified, whether or not one could have run.
-            ...(evidence ? evidence.unmet(answer, ranCalls()).map((rule) => ({
-                rule: 'evidence',
-                id: rule.id,
-                missing: rule.missing,
-                text: `The answer concludes ${rule.what}, but ${rule.missing.join(', ')} did not run in this question.`
-            })) : [])
-        ];
-        const outcome = computeOutcome({ text: answer, steps: stepLog, findings, stoppedBy, cut, modelOutcome: parseOutcome(answer) });
-        return {
-            type: 'done',
-            text: answer,
-            ...(answer !== text ? { rawText: text } : {}),
-            outcome,
-            rounds,
-            stoppedBy,
-            cut,
-            audit: findings,
-            references: { written: filled.written, filled: filled.filled, unknown: filled.unknown },
-            gates
-        };
-    };
-    let noProgressRounds = 0;
-    let stalled = false;
-    let emptyNudges = 0;
-    let warmer = false;
-    let finalNoted = false;
-    const startedAt = Date.now();
-    // Time spent waiting for the user's answers, which the turn limit skips.
-    let waitedMs = 0;
     let questions = 0;
-    // The tools' facts this question, for the answer check.
-    const facts = [];
-    const audit = (answer) => auditAnswer(answer, { facts, context: auditContext });
     const available = toolsEnabled ? usableTools(tools) : [];
     const byName = new Map(available.map((tool) => [tool.name, tool]));
     const requestTools = available.length ? toRequestTools(available) : null;
     const messages = [...initialMessages];
     const cache = new Map();
-    let useTools = Boolean(requestTools);
-    let rounds = 0;
     let callCounter = 0;
+    // What ends the turn (turnPolicy.js); the turn's time starts here.
+    const policy = createTurnPolicy({
+        limits: { maxRounds, maxTurnMs, maxNoProgressRounds }, clock, tools: Boolean(requestTools), judge: verify.judge
+    });
     // Indices (into `messages`) of this turn's tool messages, oldest first.
     const toolMessages = [];
 
@@ -297,12 +253,19 @@ export async function* runCopilotTurn({
     // With the user's answers to the Workbench's questions appended: a window
     // the user chose there is the user's, as if written in the question.
     let questionText = questionIndex >= 0 && typeof messages[questionIndex].content === 'string' ? messages[questionIndex].content : '';
-    const canAsk = () => Boolean(clarifier && useTools && typeof toolContext?.askUser === 'function' && questions < maxQuestions);
+    // Asked before the first request, or before a call (calls run only while
+    // tools are on).
+    const canAsk = () => Boolean(clarifier && requestTools && typeof toolContext?.askUser === 'function' && questions < maxQuestions);
     let appQuestions = 0;
     // The window choices made in this turn (clarify.js), by (centre, partner, window).
     const clarifySession = { windows: new Map() };
-    // One question the Workbench asks itself, shown as an ask_user step.
-    async function* askFromApp(item) {
+    // One question the Workbench asks itself, shown as an ask_user step: the
+    // user's reply, what it means (`resolve(reply)`: clarify.js
+    // resolveClarification, with `told`, the text the model reads of it, and
+    // `confirmed`), and the time the user took (off the turn's time). The
+    // question sends no tool message and takes no ref; its step carries what
+    // the model was told as its note, and the user's reply as its choice.
+    async function* askFromApp(item, resolve) {
         appQuestions += 1;
         const id = `app_ask_${appQuestions}`;
         const args = {
@@ -311,22 +274,27 @@ export async function* runCopilotTurn({
             default: item.request.options[item.request.defaultIndex]?.label
         };
         yield { type: 'tool_start', id, name: ASK_USER, label: 'Question for you', args, page: null, cards: [], interactive: true, app: true };
-        const started = Date.now();
+        const started = now();
         const reply = await toolContext.askUser(item.request, { signal });
-        const ms = Date.now() - started;
-        waitedMs += ms;
+        const ms = now() - started;
         questions += 1;
-        const { data, checks } = answerResult(item.request, reply);
-        yield { type: 'tool_end', id, name: ASK_USER, status: 'ok', args, data, checks, error: null, ms, cached: false, pageParams: null };
-        return reply;
+        const resolved = resolve(reply);
+        const result = withNote(questionResult(item.request, reply, { args, ms, confirmed: resolved.confirmed ?? null }), resolved.told);
+        yield toolEnd({ id, name: ASK_USER, result, data: result.data, ref: null, analysis: false, pageParams: null });
+        return { ms, resolved };
     }
 
+    // The time the Workbench's question before the first request waited.
+    let startWaitedMs = 0;
     if (canAsk() && questionText) {
         const item = clarifier.beforeTurn(questionText);
         if (item) {
-            const reply = yield* askFromApp(item);
-            const { note } = resolveClarification(item, reply);
-            questionText = `${questionText}\n\n(The Workbench asked: "${item.request.question}" — ${note})`;
+            const { ms, resolved } = yield* askFromApp(item, (reply) => {
+                const { note } = resolveClarification(item, reply);
+                return { told: `(The Workbench asked: "${item.request.question}" — ${note})` };
+            });
+            startWaitedMs = ms;
+            questionText = `${questionText}\n\n${resolved.told}`;
             messages[questionIndex] = { ...messages[questionIndex], content: questionText };
         }
     }
@@ -345,15 +313,17 @@ export async function* runCopilotTurn({
         }
     };
 
+    // The policy's step: the next request, the calls to run, or the end.
+    let step = policy.next({ kind: 'start', waitedMs: startWaitedMs });
     for (;;) {
-        const outOfTime = rounds > 0 && Date.now() - startedAt - waitedMs > maxTurnMs;
-        const finalRound = useTools && (rounds >= maxRounds || outOfTime || stalled);
-        // The last-round note is added once (a reminder can repeat that round).
-        if (finalRound && !finalNoted) {
-            finalNoted = true;
-            addNote(messages, stalled ? noProgressNote(noProgressRounds) : toolBudgetNote(rounds));
+        if (step.next === 'end') {
+            if (step.say) yield { type: 'text', delta: step.say };
+            yield step.done;
+            return;
         }
-        yield { type: 'round', round: rounds };
+        // The notes for this request (a reminder, the last-request note).
+        step.notes.forEach((note) => addNote(messages, note));
+        yield { type: 'round', round: step.round };
 
         let text = '';
         let reasoning = '';
@@ -366,13 +336,22 @@ export async function* runCopilotTurn({
         const onTurnAbort = () => request.abort();
         signal?.addEventListener('abort', onTurnAbort, { once: true });
         try {
-            const stream = callModel({
-                messages,
-                tools: useTools ? requestTools : undefined,
-                toolChoice: useTools ? (finalRound ? 'none' : 'auto') : undefined,
-                signal: request.signal,
-                ...(warmer ? { antiRepeat: true } : {})
-            });
+            // The intent (a snapshot of the messages: the loop keeps
+            // appending to its own list), prepared by the port into the
+            // request as sent, which the caller sees before the reply. A
+            // request the port refuses to send (the context guard, a spend
+            // cap) throws here, so it has no `request` event. Preparing may
+            // probe the server: it runs under the stall clock too.
+            const intent = {
+                messages: [...messages],
+                // Tools are off exactly when the step names no tool choice.
+                tools: step.toolChoice ? requestTools : undefined,
+                toolChoice: step.toolChoice,
+                retry: step.retry
+            };
+            const sent = await beforeStall(port.prepare(intent, { signal: request.signal }), { stallMs, cancel: () => request.abort() });
+            yield { type: 'request', round: step.round, why: step.why, sent };
+            const stream = port.stream(sent, { signal: request.signal });
             for await (const chunk of withDeadlines(stream, { stallMs, maxMs: requestMaxMs, cancel: () => request.abort() })) {
                 if (chunk.content) {
                     text += chunk.content;
@@ -394,15 +373,17 @@ export async function* runCopilotTurn({
                 }
             }
         } catch (error) {
-            // Only the turn's first request falls back: later ones already
-            // carried tools successfully, so their failure is a real one.
-            if (useTools && rounds === 0 && !text && isToolsUnsupportedError(error)) {
-                useTools = false;
+            // The port says, by type, that the model cannot take tools (it
+            // reads each provider's failure; provider/model.js). Only the
+            // turn's first request falls back: later ones already carried
+            // tools successfully, so their failure is a real one.
+            if (step.toolChoice && step.round === 0 && !text && error instanceof ToolsUnsupportedError) {
                 // The tool rules would only confuse a model that has none.
                 if (noToolsSystemPrompt && messages[0]?.role === 'system') {
                     messages[0] = { ...messages[0], content: noToolsSystemPrompt };
                 }
                 yield { type: 'tools_unsupported', error: error.message };
+                step = policy.next({ kind: 'no_tools' });
                 continue;
             }
             throw error;
@@ -416,83 +397,40 @@ export async function* runCopilotTurn({
             text = '';
             fragments.length = 0;
         }
-        let calls = useTools && !finalRound ? finalizeToolCalls(fragments, `${rounds}_`) : [];
+        // The last request's calls are never run. The port enforces tool_choice
+        // 'none' where the provider has no such field (Ollama: no tools are
+        // sent); this guards the providers that take the field but are not
+        // verified to honour it (LM Studio, Gemini, Anthropic).
+        const callsAllowed = step.toolChoice === 'auto';
+        let calls = callsAllowed ? finalizeToolCalls(fragments, `${step.round}_`) : [];
         // A call written as JSON text (small local models do that) is run.
-        if (!calls.length && useTools && !finalRound && text.trim()) {
+        if (!calls.length && callsAllowed && text.trim()) {
             const written = textToolCalls(text, [...byName.keys()]);
             if (written.length) {
-                calls = written.map((call, index) => ({ id: `call_text_${rounds}_${index}`, name: call.name, arguments: call.arguments, extraContent: null }));
+                calls = written.map((call, index) => ({ id: `call_text_${step.round}_${index}`, name: call.name, arguments: call.arguments, extraContent: null }));
                 text = '';
                 yield { type: 'retract' };
             }
         }
-        const cut = finishReason === 'length';
-        const why = looped ? 'loop' : (cut ? 'cut' : 'empty');
-        if (!calls.length) {
-            if (!text.trim() && emptyNudges < 1) {
-                // A reasoning-only, empty or looping reply: one reminder, then
-                // ask again (warmer after a loop).
-                emptyNudges += 1;
-                warmer = warmer || looped;
-                addNote(messages, emptyNudge(why));
-                continue;
-            }
-            const stoppedBy = finalRound ? (stalled ? 'no_progress' : 'max_rounds') : 'answer';
-            if (!text.trim()) {
-                // An answer the evidence gate sent back is not lost when the
-                // model then writes nothing: it stands, with its finding.
-                if (withdrawn) {
-                    yield finish(withdrawn, stoppedBy, cut);
-                    return;
-                }
-                // Ollama ignores tool_choice 'none': a last round can come back
-                // as tool calls only. Say so instead of ending on nothing.
-                if (finalRound) {
-                    const final = stalled ? EMPTY_STALLED : EMPTY_FINAL;
-                    yield { type: 'text', delta: final };
-                    yield {
-                        type: 'done',
-                        text: final,
-                        outcome: {
-                            status: 'not achieved',
-                            note: stalled ? 'the analyses stopped adding anything new and no answer was written' : 'no answer was written within the analysis budget',
-                            body: final
-                        },
-                        rounds,
-                        stoppedBy,
-                        cut,
-                        audit: []
-                    };
-                } else {
-                    yield {
-                        type: 'done', text: '', outcome: null, rounds, stoppedBy: 'empty', cut, audit: [],
-                        reason: EMPTY_REASONS[why]
-                    };
-                }
-                return;
-            }
-            // The evidence gate, on the answer as it will read (references
-            // filled): a conclusion whose analysis did not run goes back to the
-            // model, once per rule, while tools can still run in the next round.
-            const turnTimeLeft = !(rounds > 0 && Date.now() - startedAt - waitedMs > maxTurnMs);
-            const gate = evidence && useTools && !finalRound && turnTimeLeft && gates.length < maxEvidenceGates
-                ? evidence.check(fillReferences(text, references).text, { ran: ranCalls(), fired: gatesFired })
-                : null;
-            if (gate) {
-                gatesFired.add(gate.id);
-                gates.push({ round: rounds, id: gate.id, missing: gate.missing });
-                withdrawn = text;
-                yield { type: 'gate', id: gate.id, what: gate.what, missing: gate.missing, notice: gate.notice, text };
+        // The policy reads the reply: a reminder, a send-back, the end, or the
+        // calls to run. A last request that came back as tool calls only (a
+        // provider that does not honour tool_choice 'none'), or with nothing
+        // after its reminder, ends on an answer that says so.
+        const after = policy.next({ kind: 'reply', text, calls, looped, cut: finishReason === 'length' });
+        if (after.next !== 'run') {
+            if (after.sendBack) {
+                // The evidence gate sent the answer back: it is withdrawn, and
+                // the model reads it with the app's note.
+                const { id, what, missing, notice, nudge } = after.sendBack;
+                yield { type: 'gate', id, what, missing, notice, text };
                 yield { type: 'retract' };
                 messages.push({ role: 'assistant', content: assistantContent(text) });
-                messages.push({ role: 'user', content: gate.nudge });
-                continue;
+                messages.push({ role: 'user', content: nudge });
             }
-            yield finish(text, stoppedBy, cut);
-            return;
+            step = after;
+            continue;
         }
 
-        rounds += 1;
         // The assistant message must list every call that the tool messages
         // below answer, and every listed call gets exactly one answer. Its
         // arguments are echoed as valid JSON (unparseable text as '{}': some
@@ -519,6 +457,8 @@ export async function* runCopilotTurn({
         // Whether this round brought anything new: a result that was not an
         // error and not repeated, or an answer from the user.
         let progressed = false;
+        // The time this round waited for the user's answers.
+        let waitedMs = 0;
 
         for (const [position, call] of calls.entries()) {
             callCounter += 1;
@@ -545,11 +485,14 @@ export async function* runCopilotTurn({
                     appNote = `the Workbench applied the user's choice: ${item.note}`;
                 } else if (item && !askedThisRound && canAsk()) {
                     askedThisRound = true;
-                    const reply = yield* askFromApp(item);
-                    const resolved = resolveClarification(item, reply, { args: validated.value, tool, session: clarifySession });
+                    const { ms, resolved } = yield* askFromApp(item, (reply) => {
+                        const read = resolveClarification(item, reply, { args: validated.value, tool, session: clarifySession });
+                        return { ...read, told: `the Workbench asked the user about the window: ${read.note}` };
+                    });
+                    waitedMs += ms;
                     runArguments = JSON.stringify(resolved.args);
                     parsed = { ok: true, value: resolved.args };
-                    appNote = `the Workbench asked the user about the window: ${resolved.note}`;
+                    appNote = resolved.told;
                     answered = true;
                 }
             }
@@ -566,32 +509,24 @@ export async function* runCopilotTurn({
                 reading: Boolean(tool?.keep)
             };
 
+            // The call's result, as the tool contract decides it (tools.js):
+            // the loop chooses which constructor answers the call, never the
+            // status.
             let result;
-            let note = null;
-            let cached = false;
-            // Whether the tool really ran (or its identical earlier run is
-            // repeated): not a skipped call, an unknown name or a refused question.
-            let executed = false;
             if (position >= maxCallsPerRound) {
-                result = { args: shownArgs, data: null, checks: [], ms: 0,
-                    error: `skipped: at most ${maxCallsPerRound} tool calls per step — call it again in the next step if it is still needed` };
+                result = skippedCall(shownArgs, 'call_limit', maxCallsPerRound);
             } else if (!tool) {
-                result = { args: shownArgs, data: null, checks: [], ms: 0,
-                    error: `unknown tool "${call.name}"; available: ${[...byName.keys()].join(', ') || 'none'}` };
+                result = unknownToolCall(shownArgs, call.name, [...byName.keys()]);
             } else if (tool.interactive && askedThisRound) {
-                result = { args: shownArgs, data: null, checks: [], ms: 0,
-                    error: 'one question at a time: ask the next one after this answer, if it is still needed' };
+                result = skippedCall(shownArgs, 'one_question');
             } else if (tool.interactive && questions >= maxQuestions) {
-                result = { args: shownArgs, data: null, checks: [], ms: 0,
-                    error: `already asked ${questions} question${questions === 1 ? '' : 's'} for this request: `
-                        + 'proceed with your default and say in the answer what you assumed' };
+                result = skippedCall(shownArgs, 'question_limit', questions);
             } else if (tool.interactive) {
                 // A question is a real exchange every time: never cached, and
                 // no time limit while the user thinks. Only a question the
                 // user saw counts toward the limit (not malformed arguments).
                 askedThisRound = true;
                 result = await executeToolCall(tool, call.arguments, { signal, timeoutMs: null, context: toolContext });
-                executed = true;
                 waitedMs += result.ms;
                 if (!result.error) questions += 1;
             } else {
@@ -601,50 +536,38 @@ export async function* runCopilotTurn({
                 // real request (point at the card again), never a cached result.
                 const key = validated?.ok && !tool.view ? `${call.name}:${canonicalJson(validated.value)}` : null;
                 if (key && cache.has(key)) {
-                    result = { ...cache.get(key), ms: 0 };
-                    cached = true;
-                    executed = true;
-                    note = 'identical call earlier in this question — the same result is repeated; change the arguments or answer';
+                    result = repeatedCall(cache.get(key));
                 } else {
                     result = await executeToolCall(tool, runArguments, { signal, timeoutMs: toolTimeoutMs, context: toolContext });
-                    executed = true;
                     if (key && !result.error) cache.set(key, result);
                 }
             }
-            if (appNote) note = note ? `${appNote}; ${note}` : appNote;
-            if (answered || (!result.error && !cached)) progressed = true;
+            // The Workbench's note goes before the repeat's.
+            result = withNote(result, appNote);
+            if (answered || (!result.error && !result.cached)) progressed = true;
 
-            if (result.facts && !result.error) facts.push(result.facts);
             if (!tool?.keep) toolMessages.push(messages.length);
             const budget = Number.isFinite(tool?.resultBudget) && tool.resultBudget > 0 ? tool.resultBudget : resultCharBudget;
-            // A result the model can quote by reference: its ref, kept with
-            // the data it was sent.
-            const ref = result.error ? null : `r${references.size() + 1}`;
-            const sent = toolMessageContent({ ...result, note }, budget, ref);
-            if (ref) references.put(ref, sent.data);
-            stepLog.push({
-                name: call.name, args: result.args, status: stepStatus(result), error: result.error || null,
-                interactive: Boolean(tool?.interactive), reading: Boolean(tool?.keep), view: Boolean(tool?.view), executed, ref
-            });
+            // The step, recorded with the verification: a result the model
+            // can quote by reference gets its ref, kept with the data it was
+            // sent; its facts are for the checks on the answer.
+            const sent = verify.record({
+                name: call.name, interactive: Boolean(tool?.interactive), reading: Boolean(tool?.keep), view: Boolean(tool?.view), ...result
+            }, (ref) => toolMessage(result, { budget, ref }));
             messages.push({ role: 'tool', tool_call_id: call.id, content: sent.content });
             keepWithinTurnBudget(roundStart);
-            yield {
-                type: 'tool_end',
+            yield toolEnd({
                 id: stepId,
                 name: call.name,
-                status: stepStatus(result),
-                args: result.args,
+                result,
                 // What the model read: the result fitted to its budget.
                 data: sent.data,
-                checks: result.checks,
-                error: result.error,
-                ms: result.ms,
-                cached,
-                ref,
+                ref: sent.ref,
+                analysis: sent.analysis,
                 pageParams: result.error ? null : pageParamsFor(tool, result.args)
-            };
+            });
         }
-        noProgressRounds = progressed ? 0 : noProgressRounds + 1;
-        if (noProgressRounds >= maxNoProgressRounds) stalled = true;
+        // The next request carries this round's results.
+        step = policy.next({ kind: 'round', progressed, waitedMs });
     }
 }

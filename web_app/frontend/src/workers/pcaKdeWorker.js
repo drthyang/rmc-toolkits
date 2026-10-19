@@ -15,7 +15,10 @@
 //     (the AI Copilot's analyze_modulations)
 // mirroring the Flask /api/pca/sites, /api/pca/kde, /api/pca/orientation,
 // /api/triplets, /api/clusters and /api/modulations endpoints so both runtime modes present the
-// identical shape to the UI.
+// identical shape to the UI. The kinds are requestGuards' ANALYSIS_ROUTES; what
+// each accepts and refuses on both runtimes is the request contract,
+// src/__tests__/fixtures/analysis_requests.json. inProcessEngine (below) is the
+// same handler behind requestAnalysis's interface, in-thread, for Node and tests.
 
 import {
     DEFAULT_CLUSTER_THRESHOLD,
@@ -28,7 +31,7 @@ import { siteOrientationHistogram } from './orientation.js';
 import { APP_MAX_ANGLES, bondAngleSummary, isBlankValue } from './triplets.js';
 import { clusterDistortion } from './clusters.js';
 import { displacementModulations } from './modulations.js';
-import { assertFiniteResult, requestNumber, requestObject } from './requestGuards.js';
+import { analysisRoute, ANALYSIS_ROUTES, assertFiniteResult, requestNumber, requestObject } from './requestGuards.js';
 
 // Parsing the whole configuration into clouds is the expensive part, so cache it
 // and re-parse only when the .rmc6f text itself changes. The key MUST come from
@@ -58,7 +61,8 @@ const parseCached = (text, clusterThreshold, name) => {
     return cache.parsed;
 };
 
-// As app.MAX_ORIENTATION_SMOOTHING (the UI offers 0-12).
+// As app.MAX_ORIENTATION_SMOOTHING (the UI offers 0-12); both copies are
+// pinned by the request contract (fixtures/analysis_requests.json).
 const MAX_ORIENTATION_SMOOTHING = 64;
 const DECIMAL = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 
@@ -95,9 +99,10 @@ const summarizeSites = (parsed, probability) => {
     };
 };
 
-const KINDS = ['sites', 'kde', 'orientation', 'triplets', 'clusters', 'modulations'];
+const KINDS = Object.keys(ANALYSIS_ROUTES);
 // As app.MAX_CLUSTER_WINDOW: a cluster's bonds are first-shell distances, and
-// a wider window only links everything into one network.
+// a wider window only links everything into one network. Both copies are
+// pinned by the request contract (fixtures/analysis_requests.json).
 export const MAX_CLUSTER_WINDOW = 8;
 
 export const handlePcaMessage = async (data, getText) => {
@@ -116,7 +121,9 @@ export const handlePcaMessage = async (data, getText) => {
     if (kind === 'triplets') {
         // Flat scalar params (end1/apex/end2, r12Min...) so the identical
         // request shape works as an HTTP query string against /api/triplets.
-        // Same request caps as the Flask route (the engine is unrestricted):
+        // Same request caps as the Flask route (the engine is unrestricted;
+        // both copies are pinned by the request contract,
+        // fixtures/analysis_requests.json):
         // rmax <= 15 A bounds the neighbour search, binWidth >= 0.05 deg the
         // response, and the shared APP_MAX_ANGLES budget the pairing work —
         // the angle count grows ~rmax^6, so without it a window well inside
@@ -167,8 +174,11 @@ export const handlePcaMessage = async (data, getText) => {
     }
 
     if (kind === 'modulations') {
-        // ''/'all'/absent = every element, as the /api/modulations query.
-        const element = isBlankValue(data.element) || data.element === 'all' ? null : String(data.element);
+        // ''/absent and 'all' in any case, with any surrounding space, mean
+        // every element, as the /api/modulations query reads them.
+        const element = isBlankValue(data.element) || String(data.element).trim().toLowerCase() === 'all'
+            ? null
+            : String(data.element);
         return assertFiniteResult(displacementModulations(parsed, element));
     }
 
@@ -224,6 +234,40 @@ export const handlePcaMessage = async (data, getText) => {
         probability,
         projections: data.projections ?? true
     }));
+};
+
+const abortError = () => new DOMException('Aborted', 'AbortError');
+
+/**
+ * The in-process adapter of the analysis request seam: this worker's handler,
+ * run in-thread, behind requestAnalysis's interface (useSiteCloud.js):
+ * `engine(kind, params, { signal })` resolves with the engine payload.
+ * `source` is the .rmc6f text, or a function returning it (or a promise of
+ * it), read once, on the first request. As on the other adapters, an unknown
+ * or missing kind is refused before any work, `params` cannot override
+ * `kind`, and an already aborted signal rejects with AbortError before the
+ * text is read. A request aborted while it runs runs to its end (there is no
+ * thread to stop) and then rejects with AbortError.
+ */
+export const inProcessEngine = (source) => {
+    let text = null;
+    const readText = () => {
+        text = text || Promise.resolve(typeof source === 'function' ? source() : source);
+        return text;
+    };
+    return async (kind, params = {}, { signal } = {}) => {
+        analysisRoute(kind);
+        if (signal?.aborted) throw abortError();
+        let result;
+        try {
+            result = await handlePcaMessage({ ...params, kind }, readText);
+        } catch (error) {
+            if (signal?.aborted) throw abortError();
+            throw error;
+        }
+        if (signal?.aborted) throw abortError();
+        return result;
+    };
 };
 
 // Guarded so the module can be imported by tests outside a worker context.

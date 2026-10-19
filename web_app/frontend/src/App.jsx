@@ -11,20 +11,22 @@ import BondGeometryPage from './components/BondGeometryPage';
 import AutoStogPage from './components/AutoStogPage';
 import { CopilotChat } from './llm';
 import { copilotSkills } from './copilotSkills';
-import useCopilotTools from './copilotTools';
-import { buildCopilotCards } from './copilotCards';
+import { DEFAULT_VIEW } from './copilotRun';
+import useCopilotRun from './useCopilotRun';
+import { buildCopilotCards, COPILOT_PAGES } from './copilotCards';
 import { buildViewTools } from './copilotViewTools';
 import API_BASE_URL from './api';
 import {
   buildLocalRun,
   buildLocalRunFromHandle,
+  configurationSignature,
   fileSignature,
   isStaticMode,
   loadDemoRun,
   supportsFileSystemAccess,
   WATCH_INTERVAL_MS,
 } from './browserData';
-import { SymTolContext } from './symTolContext';
+import { SymTolContext, useRunTolerance } from './symTolContext';
 import {
   IconButton, IssueScope, IssueStoreProvider, IssueWatcher, PageIssues, Segmented, SegmentedButton
 } from './ui';
@@ -40,22 +42,15 @@ const SHOW_AUTO_STOG = false;
 // on its own uploads): opening another run keeps them listed.
 const RUN_INDEPENDENT_PAGES = ['autostog'];
 
-// The pages an AI Copilot step can open ("Show in Bond Geometry"), by page key.
-const COPILOT_PAGES = {
-  dashboard: 'Dashboard',
-  structure: 'Atomic Density',
-  geometry: 'Bond Geometry',
-  ellipsoids: 'PCA Ellipsoid',
-  orientation: 'Displacement Directions',
-};
-
 function App() {
   const [activePage, setActivePage] = useState('dashboard');
   const [visitedPages, setVisitedPages] = useState({ autostog: false, dashboard: true, structure: false, ellipsoids: false, orientation: false, geometry: false });
-  // Parsed run context published by the Dashboard, consumed by the AI Copilot chatbox.
-  const [assistantRun, setAssistantRun] = useState(null);
+  // The run as the Dashboard holds it ({ files, structure, structurePath,
+  // hiddenPlots }), published for the AI Copilot's run module once it is open.
+  const [dashboardRun, setDashboardRun] = useState(null);
   // Whether the AI Copilot chatbox has been opened yet: until then the
-  // Dashboard skips the work that only feeds it (symmetry ladder, .dat parse).
+  // Dashboard does not publish its run and the run module does none of the
+  // work that only feeds the Copilot (symmetry ladder, .dat parse).
   const [copilotOpened, setCopilotOpened] = useState(false);
   // "Show in <page>" from a Copilot step: the page to load and what to load
   // there (Bond Geometry's triplet + windows, Displacement Directions' site).
@@ -81,15 +76,13 @@ function App() {
   const [watchFiles, setWatchFiles] = useState(false);
   // Flask-mode configuration epoch: bumped when the run's .rmc6f changes on disk
   // (see the effect below); the analysis pages take it as `dataEpoch` and
-  // re-read their data in place when it changes.
+  // re-read their data in place when it changes, and the Dashboard its structure.
   const [configEpoch, setConfigEpoch] = useState(0);
   // Bumped by every Load / Select Folder, even of the folder already shown:
   // React skips an unchanged currentDirectory, so this is what makes loading
   // the same folder again re-check its .rmc6f (with Live Data off, the only
   // way short of a browser reload).
   const [loadRequest, setLoadRequest] = useState(0);
-  // Shared "Detected SG" tolerance, so the ladder selection persists across pages.
-  const symTolState = useState(0.2);
   const directoryInputRef = useRef(null);
   const dirHandleRef = useRef(null);
   const lastSignatureRef = useRef('');
@@ -99,30 +92,53 @@ function App() {
   const headerRef = useRef(null);
   const staticMode = isStaticMode();
   const fsAccess = staticMode && supportsFileSystemAccess();
-  // The open run's identity: another run clears its one-off problems and
-  // starts the AI Copilot on a new conversation.
+  // The open run's identity: another run clears its one-off problems, starts
+  // the AI Copilot on a new conversation and resets the Detected SG pick.
   const runKey = `${currentDirectory}|${localRun?.runId ?? ''}`;
-  // The analyses the AI Copilot may run on the open run (copilotTools.js):
-  // they compute through the same engines as the pages and change nothing.
-  const analysisTools = useCopilotTools({
+  // The configuration the open run shows, for the AI Copilot: a Live Data
+  // save (or a Load of the same folder) that brings a new .rmc6f changes it,
+  // not the run. In Flask mode it is configEpoch, bumped on exactly that; for
+  // a browser-loaded run, its .rmc6f files' signature (static-mode Live Data
+  // replaces localRun, keeping its runId, when the picked folder changes).
+  // The Copilot keeps the conversation on screen but marks its earlier
+  // answers as about the previous configuration, and stops sending them to
+  // the model as memory.
+  const localConfiguration = useMemo(
+    () => (localRun ? configurationSignature(localRun.files) : null),
+    [localRun]
+  );
+  const configKey = localRun ? `local|${localConfiguration}` : `epoch|${configEpoch}`;
+  // Shared "Detected SG" tolerance, so the ladder selection persists across
+  // pages and Live Data saves; it starts at the card's default (copilotRun.js
+  // DEFAULT_VIEW) and returns to it when another run opens (runKey).
+  const symTolState = useRunTolerance(runKey, DEFAULT_VIEW.toleranceA);
+  // The run as the AI Copilot sees it (copilotRun.js, through its browser
+  // adapter useCopilotRun.js): CopilotChat's eight run props, and the
+  // analyses it may run, which compute through the same engines as the pages
+  // and change nothing. The view is what is on screen: the shared Detected SG
+  // tolerance, the PCA table once that page has computed it, Live Data.
+  const copilotRun = useCopilotRun({
     directory: currentDirectory,
     localRun,
-    structure: assistantRun?.structure ?? null,
+    dashboard: dashboardRun,
+    view: { toleranceA: symTolState[0], pcaSites, liveData: watchFiles },
+    enabled: copilotOpened,
   });
+  const { plotFiles: copilotPlotFiles, rValueFile: copilotRValueFile, symmetry: copilotSymmetry } = copilotRun.props;
   // The cards it may point at, and the view tools that turn the 3D views
   // (copilotCards.js, copilotViewTools.js). current_view reads the page on
   // screen through a ref, so the tools are not rebuilt on every page switch.
   const activePageRef = useRef(activePage);
   activePageRef.current = activePage;
   const copilotCards = useMemo(() => buildCopilotCards({
-    plotFiles: assistantRun?.plotFiles ?? [],
-    rValueFile: assistantRun?.rValueFile ?? null,
-    symmetry: assistantRun?.symmetry ?? null,
-  }), [assistantRun?.plotFiles, assistantRun?.rValueFile, assistantRun?.symmetry]);
+    plotFiles: copilotPlotFiles,
+    rValueFile: copilotRValueFile,
+    symmetry: copilotSymmetry,
+  }), [copilotPlotFiles, copilotRValueFile, copilotSymmetry]);
   const copilotTools = useMemo(() => [
-    ...analysisTools,
+    ...copilotRun.tools,
     ...buildViewTools({ cards: copilotCards, pages: COPILOT_PAGES, activePage: () => activePageRef.current }),
-  ], [analysisTools, copilotCards]);
+  ], [copilotRun.tools, copilotCards]);
   // Only where the dock sits matters here (not its width), so dragging the
   // dock's edge does not re-render the pages.
   const handleCopilotLayout = useCallback((layout) => setCopilotLayout((current) => (
@@ -205,23 +221,27 @@ function App() {
 
   // Static-mode Live Data: re-read the picked folder handle on an interval and rebuild
   // localRun only when files change, mirroring the Flask /api/files poll. Chromium only.
+  // Each tick reads the folder open now (dirHandleRef): none while no folder is open (before
+  // the first pick, or the Demo replaced it), and a read whose folder was replaced
+  // meanwhile is dropped, so a save into a folder no longer open never replaces the run.
   useEffect(() => {
-    if (!fsAccess || !watchFiles || !dirHandleRef.current) return undefined;
+    if (!fsAccess || !watchFiles) return undefined;
     let cancelled = false;
     let inFlight = false;
     const poll = async () => {
-      if (inFlight || cancelled) return;
+      const handle = dirHandleRef.current;
+      if (inFlight || cancelled || !handle) return;
       inFlight = true;
       try {
-        const nextRun = await buildLocalRunFromHandle(dirHandleRef.current);
+        const nextRun = await buildLocalRunFromHandle(handle);
         const signature = fileSignature(nextRun.files);
-        if (!cancelled && signature !== lastSignatureRef.current) {
+        if (!cancelled && dirHandleRef.current === handle && signature !== lastSignatureRef.current) {
           lastSignatureRef.current = signature;
           // Same folder, updated files: keep runId so the dashboard refreshes in place.
           setLocalRun({ ...nextRun, runId: runIdRef.current });
         }
       } catch (error) {
-        if (!cancelled) {
+        if (!cancelled && dirHandleRef.current === handle) {
           setWatchFiles(false);
           setBrowseStatus({
             kind: 'error',
@@ -252,7 +272,9 @@ function App() {
   // backend fetches, so they re-read everything from the one new file in
   // place — keeping the picks and view settings that still apply, as static
   // mode does when a picked folder's files change (docs/algorithms/notation.md
-  // §3c). A browser-loaded run (Demo, picked folder) is a snapshot and is not
+  // §3c). The Dashboard re-reads its structure on it too (the model card, the
+  // Detected SG card, and the basis the Copilot's symmetry tools read), not its
+  // plots. A browser-loaded run (Demo, picked folder) is a snapshot and is not
   // watched here.
   useEffect(() => {
     if (staticMode || localRun) return undefined;
@@ -266,10 +288,7 @@ function App() {
           params: { dir: currentDirectory || '.' }
         });
         if (cancelled) return;
-        const structureFiles = (response.data.files || []).filter(
-          (file) => file.type === 'file' && /\.rmc6f$/i.test(file.name)
-        );
-        const signature = fileSignature(structureFiles);
+        const signature = configurationSignature(response.data.files);
         const known = configSignatureRef.current;
         if (known.directory === currentDirectory && known.signature !== null && known.signature !== signature) {
           setConfigEpoch((epoch) => epoch + 1);
@@ -398,6 +417,9 @@ function App() {
     setBrowseStatus({ kind: 'loading', text: 'Loading demo dataset…' });
     try {
       const nextRun = await loadDemoRun();
+      // The Demo replaces a picked folder: Live Data stops watching that folder.
+      dirHandleRef.current = null;
+      lastSignatureRef.current = '';
       runIdRef.current += 1;
       setLocalRun({ ...nextRun, runId: runIdRef.current });
       setDemoActive(true);
@@ -658,12 +680,13 @@ function App() {
             >
               <IssueScope page="dashboard">
                 <Dashboard
+                  dataEpoch={configEpoch}
                   directory={currentDirectory}
                   localRun={localRun}
                   watchFiles={watchFiles}
                   cardMarks={copilotMarks}
                   wantAssistantData={copilotOpened}
-                  onRunContextChange={setAssistantRun}
+                  onRunChange={setDashboardRun}
                 />
               </IssueScope>
             </div>
@@ -730,18 +753,12 @@ function App() {
           mounts on first open and keeps its conversation while collapsed. */}
       <CopilotChat
         className="app-copilot"
-        runName={assistantRun?.runName ?? (localRun ? localRun.name : currentDirectory)}
-        plotFiles={assistantRun?.plotFiles ?? []}
-        rValueFile={assistantRun?.rValueFile ?? null}
-        structure={assistantRun?.structure ?? null}
-        symmetry={assistantRun?.symmetry ?? null}
-        runSettings={assistantRun?.runSettings ?? null}
-        pcaSites={pcaSites}
-        liveData={watchFiles}
+        {...copilotRun.props}
         tools={copilotTools}
         pages={COPILOT_PAGES}
         onOpenPage={handleCopilotOpenPage}
         runKey={runKey}
+        configKey={configKey}
         onOpenChange={(open) => { if (open) setCopilotOpened(true); }}
         cards={copilotCards}
         onMarks={setCopilotMarks}

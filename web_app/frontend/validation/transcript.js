@@ -6,7 +6,10 @@
 // decided it, why, the arguments, the checks and the result it read), the
 // answer, its verdict and score, the answer checks, where every number came
 // from, safety, and last, the planted truth the model never saw. Steps are
-// numbered: a finding's `step` is that number (0 = the question).
+// numbered: a finding's `step` is that number (0 = the question). The header
+// also states the run policy the run ran under (runPolicy.js).
+
+import { policyLines } from './runPolicy';
 
 const fence = (value) => `\`\`\`json\n${JSON.stringify(value, null, 1)}\n\`\`\``;
 const quote = (text) => String(text || '').trim().split('\n').map((line) => `> ${line}`).join('\n');
@@ -36,8 +39,19 @@ export const renderTranscript = (record) => {
     lines.push(`- Case: \`${record.case}\` (${record.split} set) · Arm ${record.arm}: ${record.arm_label}`);
     lines.push(`- Model: ${record.model.label} (\`${record.model.id}\`, temperature ${record.model.temperature}) · run ${record.run_index}`);
     lines.push(`- Protocol ${record.protocol} · commit ${record.commit || 'unknown'} · ${record.started_at} → ${record.finished_at} (${Math.round((record.wall_ms || 0) / 1000)} s)`);
+    // The rules the run ran under (runPolicy.js).
+    policyLines(record.policy).forEach((line) => lines.push(line));
     lines.push(`- Tools offered: ${record.tools_offered.join(', ')}`);
     lines.push(`- Skills offered: ${record.skills_offered.length ? record.skills_offered.join(', ') : 'none (ablation)'}`);
+    if (record.view && record.context) {
+        const view = record.view;
+        lines.push(`- View: Detected SG at ${view.toleranceA} Å${view.ladder ? ' with its ladder' : ''}, `
+            + `${view.hiddenPlots.length ? `${view.hiddenPlots.length} plot(s) hidden` : 'nothing hidden'}, `
+            + `${view.pcaSites ? 'the PCA table' : 'no PCA table'}, Live Data ${view.liveData ? 'on' : 'off'}`);
+        lines.push(`- Context sections: ${record.context.sections.join(', ') || 'none'}`
+            + `${record.context.absent.length ? ` (absent: ${record.context.absent.join(', ')})` : ''}`
+            + ` · ${record.context.earlier_turns ? `${record.context.earlier_turns} earlier turns` : 'one fresh question, no earlier turns'}`);
+    }
     if (record.error) lines.push(`- **Run error:** ${record.error.name}: ${record.error.message}`);
     lines.push('');
     lines.push('## Step 0 · the question');
@@ -54,13 +68,21 @@ export const renderTranscript = (record) => {
         } else if (typeof step.why === 'string') {
             lines.push(`*${step.why}*\n`);
         }
-        lines.push(`**Arguments:** \`${JSON.stringify(step.args)}\` · status ${step.status}${step.cached ? ' (cached repeat)' : ''} · ${step.ms ?? 0} ms`);
+        // How the call ended, beside its severity, when it did not simply answer.
+        const ended = step.result_status && step.result_status !== 'ok' ? ` (${step.result_status.replace('_', ' ')})` : '';
+        lines.push(`**Arguments:** \`${JSON.stringify(step.args)}\` · status ${step.status}${ended}${step.cached ? ' (cached repeat)' : ''} · ${step.ms ?? 0} ms`);
         if (step.error) lines.push(`\n**Error:** ${step.error}`);
+        // A Workbench question sends the model no message: it reads the note
+        // in its place, never the card's reply.
+        const card = step.by === 'workbench';
+        if (step.note) lines.push(`\n**${card ? 'What the model read of it' : 'Note the app added for the model'}:** ${step.note}`);
         if (step.checks?.length) {
-            lines.push('\n**Checks the model read:**\n');
+            lines.push(`\n**${card ? 'The card\'s checks (not sent to the model)' : 'Checks the model read'}:**\n`);
             step.checks.forEach((check) => lines.push(`- ${check.level}: ${check.text}`));
         }
-        if (step.data != null) lines.push(`\n<details><summary>Result the model read</summary>\n\n${fence(step.data)}\n\n</details>`);
+        if (step.data != null) {
+            lines.push(`\n<details><summary>${card ? 'The card\'s reply (not sent to the model)' : 'Result the model read'}</summary>\n\n${fence(step.data)}\n\n</details>`);
+        }
     });
     lines.push('');
     lines.push('## The answer');
@@ -132,6 +154,11 @@ export const renderTranscript = (record) => {
     lines.push(record.truth.summary);
     lines.push('');
     lines.push(fence({ features: record.truth.features, tolerated: record.truth.tolerated, symmetry: record.truth.symmetry }));
+    // The judgment subset (plan item 1.6 ii): which situation the case tests.
+    if (record.truth.judgment) {
+        lines.push('');
+        lines.push(`A judgment case (plan item 1.6 ii, dev only): situation \`${record.truth.judgment.situation}\`.`);
+    }
     if (record.truth.traps?.length) {
         lines.push('');
         lines.push('Traps in this case:');

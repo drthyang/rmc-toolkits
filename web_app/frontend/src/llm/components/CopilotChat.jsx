@@ -2,9 +2,6 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { buildAskUserTool } from '../copilot/askUser';
-import { buildClarifier } from '../copilot/clarify';
-import { buildReadSkillTool, parseSkillFiles } from '../copilot/skills';
 import { buildRunTools } from '../copilot/runTools';
 import { buildFocusTools } from '../copilot/viewTools';
 import { createFocusController } from '../focus/focus';
@@ -37,7 +34,12 @@ import './CopilotChat.css';
 // (id, page, title, about, kind/file, marks), `onOpenPage(key, params)`
 // switches the page, `onMarks(marksByCard)` hands marks inside a plot card to
 // the host. Run data and the host's tools arrive as props; the tools over the
-// run data itself are built here.
+// run data itself are built here. Each question is one turn of the turn
+// module (copilot/turn.js, through useCopilot.js), which adds ask_user and
+// read_skill (from the host's `skills`) and builds the prompt and the checks.
+// `runKey` names the open run (another one restarts the conversation) and
+// `configKey` its configuration (a new one, from a Live Data save, ends the
+// earlier answers with a divider and keeps them out of the model's memory).
 
 const hasMatchMedia = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function';
 const viewportWidth = () => (typeof window !== 'undefined' ? window.innerWidth : 1440);
@@ -151,39 +153,26 @@ const ResizeHandle = ({ mode, width, sheet, dockRef, onResize, onCommit, onReset
 };
 
 const CopilotPanel = ({
-    id, hidden, mode, onCollapse, run, hostTools, pages, onOpenPage, runKey, cards, focus, onTurnEnd, onBusyChange,
-    onQuestion, skills
+    id, hidden, mode, onCollapse, run, hostTools, pages, onOpenPage, runKey, configKey, cards, focus, onTurnEnd,
+    onBusyChange, onQuestion, skills
 }) => {
     const assistant = useAssistant({ ...run, enabled: true });
     const hasRun = Boolean((run.plotFiles && run.plotFiles.length) || run.structure);
     const { runName, plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites, liveData } = run;
-
-    // The Workbench's own questions (clarify.js), from the run's partial g(r),
-    // structure and symmetry, and the context's sampling noise floor.
-    const noiseFloor = assistant.context?.symmetry?.noise_floor_A ?? null;
-    const clarifier = useMemo(
-        () => buildClarifier({ plotFiles, structure, symmetry }, { noiseFloor }),
-        [plotFiles, structure, symmetry, noiseFloor]
+    // The run props as one object for the turn, kept while none changes.
+    const runProps = useMemo(
+        () => ({ runName, plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites, liveData }),
+        [runName, plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites, liveData]
     );
 
-    // The host's skills ({ files, references, load }, copilotSkills.js): parsed
-    // once; a malformed skill is reported, never silently dropped.
-    const parsedSkills = useMemo(() => {
-        if (!skills?.files) return { list: [], error: null };
-        try {
-            return { list: parseSkillFiles(skills.files, { available: skills.references || null }), error: null };
-        } catch (failure) {
-            return { list: [], error: failure?.message || String(failure) };
-        }
-    }, [skills]);
-
+    // The tools the dock offers: the tools over the run props, the view tool
+    // over the host's cards, then the host's tools. The turn adds ask_user and
+    // read_skill (from the host's skills) itself (copilot/turn.js).
     const tools = useMemo(() => [
-        ...buildRunTools({ runName, plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites, liveData }, { cards }),
+        ...buildRunTools(runProps, { cards }),
         ...buildFocusTools({ cards, pages }),
-        ...(hostTools || []),
-        buildAskUserTool(),
-        buildReadSkillTool(parsedSkills.list, { load: skills?.load })
-    ].filter(Boolean), [runName, plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites, liveData, hostTools, cards, pages, parsedSkills, skills]);
+        ...(hostTools || [])
+    ].filter(Boolean), [runProps, hostTools, cards, pages]);
 
     return (
         <section
@@ -238,6 +227,7 @@ const CopilotPanel = ({
                     {hasRun ? (
                         <CopilotView
                             context={assistant.context}
+                            run={runProps}
                             settings={assistant.settings}
                             connected={assistant.connected}
                             tools={tools}
@@ -245,14 +235,13 @@ const CopilotPanel = ({
                             pages={pages}
                             onOpenPage={onOpenPage}
                             runKey={runKey}
+                            configKey={configKey}
                             cards={cards}
                             focus={focus}
                             onTurnEnd={onTurnEnd}
                             onBusyChange={onBusyChange}
                             onQuestion={onQuestion}
-                            clarifier={clarifier}
-                            skills={parsedSkills.list}
-                            skillsError={parsedSkills.error}
+                            skills={skills}
                         />
                     ) : (
                         <p className="llm-chat-norun">Open a run folder, or load the Demo, to start.</p>
@@ -265,7 +254,7 @@ const CopilotPanel = ({
 
 const CopilotChat = ({
     runName, plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites, liveData,
-    tools = [], pages = {}, onOpenPage, runKey = null, onOpenChange, defaultOpen = false,
+    tools = [], pages = {}, onOpenPage, runKey = null, configKey = null, onOpenChange, defaultOpen = false,
     cards = null, onMarks = null, onLayoutChange = null, className = '', storageKey = DOCK_STORAGE_KEY,
     skills = null
 }) => {
@@ -469,6 +458,7 @@ const CopilotChat = ({
                     pages={pages}
                     onOpenPage={onOpenPage}
                     runKey={runKey}
+                    configKey={configKey}
                     cards={cards}
                     focus={focus}
                     onTurnEnd={onTurnEnd}

@@ -1,0 +1,26 @@
+{
+  "id": "2026-10-11-gemma4-convergence",
+  "fidelity": "verbatim",
+  "model": "gemma4:26b (Ollama)",
+  "date": "2026-10-11",
+  "run": "Demo (GaTa4Se8, 250 K)",
+  "question": "Has the run converged?",
+  "source": {
+    "file": "web_app/frontend/src/__tests__/copilotChecksReplays.test.js",
+    "lines": "131-136",
+    "commit": "0326b5e",
+    "note": "committed as one of gemma4:26b's correct answers of 2026-10-11; the raw transcript is not in the repo"
+  },
+  "text": "The run has not converged; the dashboard's watchdog status is improving. The $\\ln(\\chi^2)$ of the last fit term (X_ray_(R)1) has decreased from 0.0953 to −8.87 over the course of the run, and the change over the last 10% of the run is −0.11, indicating that the fit is still actively descending.\nOutcome: achieved — The convergence status was determined from the watchdog_status and ln(χ²) history.",
+  "steps": [],
+  "stepsSource": "the replay of the same commit scripts no tool call: the answer reads the context's watchdog status",
+  "reproduces": [],
+  "expected": {
+    "claims": [],
+    "gateSendBack": null,
+    "auditFindings": []
+  },
+  "judgements": [
+    { "on": "silence", "right": true, "reason": "Says not converged and still descending, as the watchdog does; the negated \"converged\" is read as negated." }
+  ]
+}

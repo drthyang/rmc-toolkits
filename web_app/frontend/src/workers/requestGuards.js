@@ -11,12 +11,45 @@
 //                         NaN or Infinity is an error, never posted as success
 //   requestObject      <- every worker: a null / non-object message is an error
 //                         the caller receives, so its promise always settles.
+//   ANALYSIS_ROUTES /
+//   analysisRoute      <- the Flask analysis routes: the one kind table of the
+//                         analysis request seam (useSiteCloud's requestAnalysis
+//                         and the PCA worker).
 
 const DECIMAL = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 const NON_FINITE_TOKEN = /^[+-]?(nan|inf|infinity)$/i;
 
 // The value as the error names it: strings quoted, like Python's repr().
 const shown = (raw) => (typeof raw === 'string' ? `'${raw}'` : String(raw));
+
+/**
+ * The analysis request kinds and the Flask route that serves each: the kind
+ * table of the analysis request seam. requestAnalysis (useSiteCloud.js) routes
+ * by it on every adapter, and the PCA worker (pcaKdeWorker.js) accepts exactly
+ * its keys. What each kind accepts and refuses is one contract,
+ * src/__tests__/fixtures/analysis_requests.json, replayed against the worker,
+ * in-process and Flask adapters (analysisRequests.test.js,
+ * tests/test_analysis_requests.py).
+ */
+export const ANALYSIS_ROUTES = Object.freeze({
+    sites: '/api/pca/sites',
+    kde: '/api/pca/kde',
+    orientation: '/api/pca/orientation',
+    triplets: '/api/triplets',
+    clusters: '/api/clusters',
+    modulations: '/api/modulations'
+});
+
+/**
+ * The Flask route of an analysis `kind`. Anything that is not a key of
+ * ANALYSIS_ROUTES (a missing kind included) is an error naming the kind.
+ */
+export const analysisRoute = (kind) => {
+    if (typeof kind === 'string' && Object.prototype.hasOwnProperty.call(ANALYSIS_ROUTES, kind)) {
+        return ANALYSIS_ROUTES[kind];
+    }
+    throw new Error(`unknown request kind ${shown(kind)} (expected ${Object.keys(ANALYSIS_ROUTES).join(', ')})`);
+};
 
 export const isBlankRequestValue = (raw) => raw == null || (typeof raw === 'string' && !raw.trim());
 

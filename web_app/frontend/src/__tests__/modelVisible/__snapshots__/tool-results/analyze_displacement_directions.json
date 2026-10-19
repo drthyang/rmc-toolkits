@@ -1,0 +1,50 @@
+{
+  "tool": "analyze_displacement_directions",
+  "arguments": {
+    "site_ref": 1
+  },
+  "content_chars": 1026,
+  "content": {
+    "ref": "r1",
+    "checks": [
+      {
+        "level": "note",
+        "text": "No significant peak direction (2.51σ < 3σ)."
+      },
+      {
+        "level": "note",
+        "text": "+u/−u imbalance at z = 3.71: a skewness the ellipsoid cannot show."
+      }
+    ],
+    "data": {
+      "note": "enhancement = density / isotropic (1 = isotropic); significances are calibrated one-sided sigma; the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal",
+      "site": 1,
+      "element": "Ta",
+      "frequency": 2,
+      "cells": 42,
+      "used_points": 1000,
+      "rejected_points": 0,
+      "enhancement_range": [0.528, 1.83],
+      "peak": {
+        "enhancement": 1.83,
+        "count": 45,
+        "expected": 24.6,
+        "significance_sigma": 2.51,
+        "direction_cartesian": [0.5, -0.309, -0.809],
+        "direction_uvw": [0.62, -0.38, -1],
+        "angles_to_abc_deg": [60, 108, 144]
+      },
+      "map_significance_sigma": 2.59,
+      "antipodal_asymmetry": 0.186,
+      "antipodal_asymmetry_z": 3.71,
+      "antipodal_asymmetry_significant": true,
+      "orientation_tensor": {
+        "eigenvalues": [0.358, 0.33, 0.311],
+        "anisotropy": 0.0745,
+        "anisotropy_significance_sigma": 1.08,
+        "principal_axis_uvw": [1, -0.55, -0.93]
+      },
+      "recommended_frequency": 2
+    }
+  }
+}

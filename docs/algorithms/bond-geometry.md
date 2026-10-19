@@ -388,6 +388,7 @@ change here. On top of the three angle curves it adds:
 | `angleCount`, `meanAngle`, `stdAngle`, `apexCount` | angle statistics and the central-atom count; means are `None` when empty |
 | `lengths12`, `lengths23` | bond-length histograms **inside each window**: fixed `LENGTH_BINS = 40` bins over the window (fixed count, not width, so any window renders at the same detail), plus `count`, `uniqueBonds` and `meanLength`. `count` is the number of **B-centred bond vectors** (the histogram total); `uniqueBonds` the number of **physical bonds**, each once. They differ when the end element is the central element (A = B for `lengths12`, C = B for `lengths23`): every such bond is found from both of its ends, so `uniqueBonds = count / 2` exactly (Step 3's antisymmetry makes the halving exact; a self-image bond to $\pm\mathbf m$ is one periodic bond). Otherwise `uniqueBonds = count`. On the 5 K sample, Nb–Nb–Nb 2.6–3.4 Å has `count` 46 704 and `uniqueBonds` 23 352 — the number of distinct Nb–Nb pairs an independent `cKDTree` search finds. `lengths23` is `null` under shared ends — it would duplicate `lengths12` |
 | `coordination` | `coordination[n]` = how many central atoms have exactly $n$ window-1 bonds — a double `bincount` of the per-center bond counts |
+| `coordinationSummary` | `{mean, modal, modalShare, unbondedShare}` of that histogram (`coordination_summary`; JS `coordinationSummaryOf`): the mean bonds per central atom $\sum_n n\,c_n / \sum_n c_n$, the modal $n$ (the **lowest** $n$ on a tie), its share of the central atoms and the share with no bond; every value `None` without central atoms. The Bond Geometry page's coordination tile and `compute_bond_angles`' window refusal (the shell module's `countsCut`) read it; neither recomputes it (since 2026-10-19). The triplets fixture pins the two engines equal |
 
 ### Step 8 — The two app boundaries and their caps
 
@@ -643,7 +644,7 @@ stated reduction of it:
 | Tile | Value | Sub line | Hover |
 |---|---|---|---|
 | **Angles** | `angleCount / apexCount`, 1 dp, "per B" | `angleCount` · mean ± std of all angles (`meanAngle`, `stdAngle`, 1 dp: "236,431 · mean 103.1 ± 29.6°"); "0 angles" when there are none | the same in words, plus the realized `binWidth` and where it ran (`browser` for the worker, `server` for `/api/triplets`) |
-| **Coordination** | $\sum_n n\,c_n / \sum_n c_n$ from `coordination`, 2 dp, "per B" — counts a B–B bond at both of its ends, as a coordination number should | modal $n$ and its share of the central atoms · `apexCount` | — |
+| **Coordination** | `coordinationSummary.mean` ($\sum_n n\,c_n / \sum_n c_n$ from `coordination`), 2 dp, "per B" — counts a B–B bond at both of its ends, as a coordination number should | `coordinationSummary.modal` and `modalShare` (the lowest $n$ on a tie) · `apexCount` | — |
 | **B–A bond** | `lengths12.meanLength`, 3 dp, Å | `uniqueBonds` (each physical bond once) · the resolved window `bond12` | the B-centred `count` when the end element is the central one |
 | **B–C bond** | the same from `lengths23` — only when `sharedEnds` is false; two tiles on the same pair (A = C, distinct windows) are told apart as (A–B) / (B–C) | | |
 

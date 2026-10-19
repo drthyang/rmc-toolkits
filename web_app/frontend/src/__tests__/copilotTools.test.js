@@ -9,15 +9,22 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { structureFromRmc6f } from '../browserData';
-import { handlePcaMessage } from '../workers/pcaKdeWorker';
+import { handlePcaMessage, inProcessEngine } from '../workers/pcaKdeWorker';
 import { displacementModulations } from '../workers/modulations';
 import { siteDisplacementsFromRmc6f } from '../workers/pcaKde';
 import modulationsFixture from './fixtures/modulations_fixture.json';
 import clustersFixture from './fixtures/clusters_fixture.json';
-import { clusterDistortion } from '../workers/clusters';
-import { auditAnswer } from '../llm/copilot/answerAudit';
-import { ALL_CASES, buildCase, buildConfiguration } from '../../validation/cases';
+import { CLUSTER_BECAUSE, clusterDistortion } from '../workers/clusters';
+import { MODULATION_BECAUSE, SIGMA_MAX } from '../workers/modulations';
+import { coordinationSummaryOf } from '../workers/triplets';
+import { checkText, toolDescription } from '../llm/copilot/method';
+import { toolResult } from '../llm/copilot/tools';
+import { createVerification } from '../llm/copilot/verification';
+import { buildCase, buildConfiguration, DEV_CASES } from '../../validation/cases';
 import {
+    CLUSTER_SENTENCES,
+    MODULATION_RESULT_BUDGET,
+    MODULATION_SENTENCES,
     buildCopilotTools,
     cartesianToUvw,
     summarizeBondAngles,
@@ -25,8 +32,6 @@ import {
     summarizeClusters,
     summarizeModulations,
     summarizeSymmetryLowering,
-    generalModeSigma,
-    zoneBoundarySigma,
     summarizeOrientation,
     summarizeSites,
     summarizeSymmetry
@@ -34,7 +39,7 @@ import {
 
 const RMC6F = readFileSync(new URL('../../public/demo/GTS_250K.rmc6f', import.meta.url), 'utf8');
 const structure = structureFromRmc6f({ path: 'Demo/GTS_250K.rmc6f', text: RMC6F });
-const request = (kind, params) => handlePcaMessage({ kind, ...params }, async () => RMC6F);
+const request = inProcessEngine(RMC6F);
 const elements = Object.keys(structure.elementCounts).sort();
 const tools = Object.fromEntries(
     buildCopilotTools({ request, structure, elements }).map((tool) => [tool.name, tool])
@@ -65,7 +70,9 @@ describe('Copilot tools on the demo run', () => {
             site: first.element,
             count: first.count
         }));
-        // Most remarkable first, so trimming to the budget drops the dullest sites.
+        // Most remarkable first, so trimming to the budget drops the dullest
+        // sites: split sites first (the demo has none), then by |kurtosis|.
+        expect(data.sites.filter((row) => row.delta_A != null)).toEqual([]);
         const magnitudes = data.sites.map((row) => Math.abs(row.kurtosis));
         expect(magnitudes).toEqual([...magnitudes].sort((a, b) => b - a));
         expect(data.largest_abs_kurtosis_refs[0]).toBe(data.sites[0].ref);
@@ -233,7 +240,9 @@ describe('Copilot tools on the demo run', () => {
             {
                 level: 'note',
                 text: 'Point group -43m: cubic; no inversion centre; achiral (not a Sohncke group); non-polar. '
-                    + 'Take inversion, chirality and polarity from this, not from memory.'
+                    + 'Take inversion, chirality and polarity from this, not from memory.',
+                // The advice arm C's method 'off' leaves out (llm copilot/method.js).
+                method: [' Take inversion, chirality and polarity from this, not from memory.']
             }
         ]);
         expect(data.point_group_facts).toBe('-43m: cubic; no inversion centre; achiral (not a Sohncke group); non-polar');
@@ -270,7 +279,7 @@ describe('Copilot summarizers', () => {
 
     it('bond-angle checks: a window that misses most central atoms is refused', () => {
         const { checks } = summarizeBondAngles({
-            triplet: ['Se', 'Ta', 'Se'], angleCount: 2, apexCount: 10, coordination: [8, 0, 2],
+            triplet: ['Se', 'Ta', 'Se'], angleCount: 2, apexCount: 10, coordination: [8, 0, 2], coordinationSummary: coordinationSummaryOf([8, 0, 2]),
             binCenters: [89.5, 90.5], counts: [1, 1], meanAngle: 90, stdAngle: 0.5,
             lengths12: { meanLength: 2.6, uniqueBonds: 4 }, sharedEnds: true
         });
@@ -278,15 +287,31 @@ describe('Copilot summarizers', () => {
             level: 'fail',
             text: 'Refused: 80 % of the Ta atoms have no Se–Ta bond in the window: it misses most of the shell. '
                 + 'Use the whole shell (find_gr_peaks\' first_shell.window_A). If the user wants this window, ask them (ask_user) '
-                + 'and call again with window_confirmed: true.'
+                + 'and call again with window_confirmed: true.',
+            // The advice arm C's method 'off' leaves out (llm copilot/method.js).
+            method: [' Use the whole shell (find_gr_peaks\' first_shell.window_A).']
         }]);
+    });
+
+    it('bond-angle checks read the engine\'s coordinationSummary through the shell module\'s counts rule, and fail loudly without it', () => {
+        const payload = {
+            triplet: ['Se', 'Ta', 'Se'], angleCount: 20, apexCount: 10, coordination: [0, 0, 4, 3, 3],
+            binCenters: [89.5, 90.5], counts: [10, 10], meanAngle: 90, stdAngle: 0.5,
+            lengths12: { meanLength: 2.6, uniqueBonds: 14 }, sharedEnds: true
+        };
+        // 4 of 10 share the modal count (2): below 60 %, refused; the tie-free summary is the engine's.
+        const refusedResult = summarizeBondAngles({ ...payload, coordinationSummary: coordinationSummaryOf(payload.coordination) });
+        expect(refusedResult.data.refused).toMatch(/cuts the coordination shell/);
+        expect(refusedResult.checks[0].text).toMatch(/^Refused: Only 40 % of the Ta atoms have the most common count \(2 Se–Ta bonds\); the counts spread from 2 to 4\./);
+        expect(refusedResult.data.coordination.mean).toBe(2.9);
+        expect(() => summarizeBondAngles(payload)).toThrow(/coordinationSummary/);
     });
 
     it('bond-angle reference: only an A–B–A triplet in one window is read against a polyhedron (review 2026-10-12 #5)', () => {
         // Six Se per Ta, every angle near 90°: a whole octahedral shell's
         // numbers, but for a mixed or a split triplet the angles are a subset.
         const base = {
-            angleCount: 15, apexCount: 1, coordination: [0, 0, 0, 0, 0, 0, 1],
+            angleCount: 15, apexCount: 1, coordination: [0, 0, 0, 0, 0, 0, 1], coordinationSummary: coordinationSummaryOf([0, 0, 0, 0, 0, 0, 1]),
             binCenters: [89.5, 90.5], counts: [8, 7], meanAngle: 90, stdAngle: 0.5,
             lengths12: { meanLength: 2.6, uniqueBonds: 6 }
         };
@@ -316,33 +341,82 @@ describe('Copilot summarizers', () => {
         );
         const summary = summarizeBondAngles({
             triplet: ['Se', 'Ta', 'Se'], sharedEnds: true, angleCount: 1800, apexCount: 100, coordination: [0, 0, 0, 0, 0, 0, 100],
+            coordinationSummary: coordinationSummaryOf([0, 0, 0, 0, 0, 0, 100]),
             binCenters: centers, counts: centers.map(() => 150), meanAngle: 90, stdAngle: 50, lengths12: { meanLength: 2.6, uniqueBonds: 600 }
         });
         expect(summary.data.histogram_10deg.every((value) => value > 0.05)).toBe(true);
     });
 
-    it('cluster checks: an extended network and an empty window fail with advice', () => {
-        const extended = summarizeClusters({ element: 'Se', window: [7.5, 8], sites: [7], extended: true, templates: [], kinds: [] });
+    it('cluster checks: an extended network and an empty window fail with advice, and give no facts', () => {
+        const parsed = siteDisplacementsFromRmc6f(clustersFixture.cases.find((entry) => entry.name === 'trigonal').text);
+        const extended = summarizeClusters(clusterDistortion(parsed, 'Se', [7.5, 8]));
         expect(extended.checks).toHaveLength(1);
         expect(extended.checks[0].level).toBe('fail');
         expect(extended.checks[0].text).toMatch(/extended network/);
-        const empty = summarizeClusters({ element: 'Nb', window: [0.5, 1], sites: [1, 2], isolatedSites: 2, extended: false, templates: [], kinds: [] });
-        expect(empty.data.sites_without_bond).toBe(2);
+        expect(extended.facts).toBeUndefined();
+        const empty = summarizeClusters(clusterDistortion(parsed, 'Nb', [0.5, 1]));
+        expect(empty.data.sites_without_bond).toBe(4);
         expect(empty.checks[0].text).toMatch(/^No two Nb sites/);
+        expect(empty.facts).toBeUndefined();
     });
 
-    it('modulation checks: a zone-boundary point standing out of the background is order', () => {
-        const point = (q, ratio, percentile) => ({ q, ratio, percentile });
-        const { checks } = summarizeModulations({
+    it('the sentence tables: every because the engines can give has an entry (a check, or null when another finding says it)', () => {
+        Object.entries(CLUSTER_BECAUSE).forEach(([name, codes]) => {
+            expect(Object.keys(CLUSTER_SENTENCES[name] || {}).sort(), name).toEqual([...codes].sort());
+        });
+        expect(Object.keys(CLUSTER_SENTENCES).sort()).toEqual(Object.keys(CLUSTER_BECAUSE).sort());
+        // A point is said as a row, not a sentence.
+        Object.entries(MODULATION_BECAUSE).filter(([name]) => name !== 'point').forEach(([name, codes]) => {
+            expect(Object.keys(MODULATION_SENTENCES[name] || {}).sort(), name).toEqual([...codes].sort());
+        });
+        expect(Object.keys(MODULATION_SENTENCES).sort()).toEqual(['cellDoubling', 'generalOrder', 'longWave']);
+        // A because the table does not know is a broken contract with the engine: it throws, never goes unsaid.
+        const payload = clusterDistortion(siteDisplacementsFromRmc6f(clustersFixture.cases.find((entry) => entry.name === 'trigonal').text), 'Nb', [2.5, 3.5]);
+        const broken = { ...payload, verdict: { ...payload.verdict, breathing: { ...payload.verdict.breathing, because: 'invented_code' } } };
+        expect(() => summarizeClusters(broken)).toThrow(/breathing finding gave 'invented_code', which has no sentence/);
+    });
+
+    it('cluster facts are the engine\'s answers', () => {
+        const payload = clusterDistortion(siteDisplacementsFromRmc6f(RMC6F), 'Ta', [2.65, 3.33]);
+        const { facts } = summarizeClusters(payload);
+        const { verdict } = payload;
+        expect(facts.cluster).toEqual({
+            element: 'Ta',
+            members: 4,
+            window: [2.65, 3.33],
+            distorted: verdict.distorted.answer,
+            static: verdict.staticDistortion.answer,
+            breathing: verdict.breathing.answer,
+            rigid: verdict.rigid.answer,
+            split: verdict.splitMemberSites.answer,
+            families: ['elongated <111>', 'compressed <111>']
+        });
+        expect(facts.cluster).toMatchObject({ distorted: true, static: true, breathing: true, rigid: false, split: false });
+    });
+
+    it('modulation sentences: a zone-boundary point the engine calls ordered (σ = +∞ reads > 8σ)', () => {
+        const bar = { ratio: 3, sigma: 3 };
+        const point = (q, ratio, percentile, sigma, ordered, because, kind = 'zone_boundary') => ({ q, ratio, percentile, rank: 1, kind, sigma, ordered, because, bar });
+        const ordered = point([0, 0, 0.5], 204, 99.53, SIGMA_MAX, true, 'ordered');
+        const finding = (answer, because, decidedBy = [], nearest = null) => ({ answer, because, decidedBy, nearest });
+        const { data, checks, facts } = summarizeModulations({
             supercell: [6, 6, 6],
             wavevectors: 215,
             untestable: [],
+            family: { zoneBoundaryPoints: 2, comparedModes: 98 },
+            rules: { ratio: 3, sigma: 3, longWaveRatio: 5, longWaveQ: 0.25, sigmaMax: SIGMA_MAX },
             elements: [{
                 element: 'Nb',
                 sites: 4,
                 medianPower: 0.85,
-                zoneBoundary: [point([0, 0, 0.5], 204, 99.53), point([0.5, 0, 0], 0.9, 40)],
-                strongest: [point([0, 0, 0.5], 204, 99.53), point([0.1, 0, 0], 2, 90)]
+                comparedModes: 98,
+                zoneBoundary: [ordered, point([0.5, 0, 0], 0.9, 40, -2.4, false, 'below_ratio')],
+                strongest: [{ ...ordered, sigma: null, ordered: null, because: 'zone_boundary', bar: null }, point([0.1, 0, 0], 2, 90, null, null, 'long_wave', 'long_wave')],
+                verdict: {
+                    cellDoubling: finding(true, 'ordered_point', [[0, 0, 0.5]]),
+                    generalOrder: finding(null, 'no_general_mode'),
+                    longWave: finding(false, 'strongest_not_long_wave')
+                }
             }]
         });
         expect(checks).toHaveLength(1);
@@ -351,7 +425,15 @@ describe('Copilot summarizers', () => {
             text: 'Ordered Nb displacements at q = (0, 0, ½): 204× the median power, > 8σ against independent displacements '
                 + '(corrected over 2 zone-boundary points) — a superstructure doubling the cell along c.'
         });
-        const odd = summarizeModulations({ supercell: [3, 4, 4], wavevectors: 47, untestable: [[1, 0, 0]], elements: [{ element: 'Nb', sites: 0 }] });
+        // Ratios to two significant digits (204 reads 200), σ past SIGMA_MAX as '>8'.
+        expect(data.elements[0].zone_boundary).toEqual([['(0, 0, ½)', 200, 99.5, '>8'], ['(½, 0, 0)', 0.9, 40, -2.4]]);
+        expect(data.elements[0].strongest.map((row) => row[3])).toEqual([null, null]);
+        expect(facts.modulation).toEqual({ elements: ['Nb'], ordered: [{ element: 'Nb', q: [0, 0, 0.5] }], general: [] });
+        const odd = summarizeModulations({
+            supercell: [3, 4, 4], wavevectors: 47, untestable: [[1, 0, 0]], family: { zoneBoundaryPoints: 0, comparedModes: 0 },
+            rules: { ratio: 3, sigma: 3, longWaveRatio: 5, longWaveQ: 0.25, sigmaMax: SIGMA_MAX },
+            elements: [{ element: 'Nb', sites: 0, verdict: { cellDoubling: finding(null, 'no_displacements'), generalOrder: finding(null, 'no_displacements'), longWave: finding(null, 'no_displacements') } }]
+        });
         expect(odd.checks[0].level).toBe('fail');
     });
 
@@ -366,43 +448,24 @@ describe('Copilot summarizers', () => {
         expect(checks.some((check) => /long-wavelength wave/.test(check.text))).toBe(true);
     });
 
-    it('zone-boundary significance: calibrated against independent displacements, corrected over the points tested', () => {
-        // Power 1 is the independent-displacement mean: nothing.
-        expect(zoneBoundarySigma(1, 1, 7)).toBeLessThan(0);
-        // One site, one point: P(χ²₁ ≥ 9) = 0.0027, 2.78σ; over seven points 1 − (1 − p)⁷ = 0.019, 2.08σ.
-        expect(zoneBoundarySigma(9, 1, 1)).toBeCloseTo(2.78, 2);
-        expect(zoneBoundarySigma(9, 1, 7)).toBeCloseTo(2.08, 2);
-        // More sites average the noise down: the same power is stronger evidence.
-        expect(zoneBoundarySigma(3, 16, 7)).toBeGreaterThan(zoneBoundarySigma(3, 1, 7));
-        expect(zoneBoundarySigma(250, 1, 21)).toBeGreaterThan(8);
-        expect(zoneBoundarySigma(null, 1, 7)).toBeNull();
-    });
-
-    it('modulation checks: independent or randomly split displacements are not order (validation cases)', () => {
-        // The earlier rule (top 1 % of the modes) called these ordered: Ba at
-        // (½, 0, 0) in pure thermal motion, Nb in random two-site disorder, Cu
-        // in randomly oriented JT octahedra, Mo in breathing triangles.
-        for (const id of ['dev-thermal-null', 'dev-offcentre', 'dev-jahn-teller', 'dev-breathing']) {
-            const built = buildCase(ALL_CASES.find((item) => item.id === id), { partials: false });
-            const { checks, facts } = summarizeModulations(displacementModulations(siteDisplacementsFromRmc6f(built.rmc6f)));
-            expect(checks.filter((check) => /^Ordered/.test(check.text))).toEqual([]);
-            expect(checks.at(-1).text.startsWith('No order that doubles the cell') || checks.some((c) => /^No order/.test(c.text))).toBe(true);
-            expect(facts.modulation.ordered).toEqual([]);
-            expect(facts.modulation.general).toEqual([]);
-        }
-        // The planted order is still found, and only it (not the decoy long wave).
-        const planted = buildCase(ALL_CASES.find((item) => item.id === 'dev-zone-boundary'), { partials: false });
+    it('modulation sentences: the planted order said, and only it; the decoy said as a long wave (dev-zone-boundary); none where there is none', () => {
+        const planted = buildCase(DEV_CASES.find((item) => item.id === 'dev-zone-boundary'), { partials: false });
         const { checks, facts } = summarizeModulations(displacementModulations(siteDisplacementsFromRmc6f(planted.rmc6f)));
         expect(facts.modulation.ordered).toEqual([{ element: 'Ti', q: [0, 0, 0.5] }]);
         expect(checks[0].text).toMatch(/^Ordered Ti displacements at q = \(0, 0, ½\)/);
+        expect(checks.filter((check) => /^Ordered/.test(check.text))).toHaveLength(1);
         expect(checks.some((check) => /Sr's strongest mode is a long-wavelength wave/.test(check.text))).toBe(true);
+        const thermal = buildCase(DEV_CASES.find((item) => item.id === 'dev-thermal-null'), { partials: false });
+        const none = summarizeModulations(displacementModulations(siteDisplacementsFromRmc6f(thermal.rmc6f)));
+        expect(none.checks.find((check) => check.level === 'ok').text).toMatch(/^No order that doubles the cell: no zone-boundary point stands out of the diffuse background \(the strongest, /);
+        expect(none.facts.modulation).toMatchObject({ ordered: [], general: [] });
     });
 
     it('displacement directions: a thermal ellipsoid is anisotropic, not a preferred direction (review L3)', async () => {
         // An O flattened across its bond, thermal motion only: the map test
         // passes (7.2σ), the peak test does not (2.3σ). The direction fact
         // used to count the map test, so "preferred direction" went unflagged.
-        const built = buildCase(ALL_CASES.find((item) => item.id === 'dev-thermal-null'), { partials: false });
+        const built = buildCase(DEV_CASES.find((item) => item.id === 'dev-thermal-null'), { partials: false });
         const payload = await handlePcaMessage({ kind: 'orientation', referenceNumber: 3, geometry: false }, async () => built.rmc6f);
         const { checks, facts } = summarizeOrientation(payload, null);
         expect(payload.peakSignificance).toBeLessThan(3);
@@ -410,7 +473,10 @@ describe('Copilot summarizers', () => {
         expect(facts.direction).toMatchObject({ subject: 'site 3', significant: false, anisotropic: true });
         expect(checks.find((check) => /anisotropic/.test(check.text)).text)
             .toMatch(/^The displacements are anisotropic: the map departs from isotropy at 7\.\d+σ\. Thermal ellipsoids pass this test too: it is not a preferred direction/);
-        const [finding] = auditAnswer('Site 3 has a preferred displacement direction along [1 0 0].', { facts: [facts] });
+        // The answer check on it (the verification: the step recorded with its facts, then the answer judged).
+        const verification = createVerification({ offered: [] });
+        verification.record({ name: 'analyze_displacement_directions', ...toolResult({ args: { site_ref: 3 }, facts }) }, () => ({ data: null }));
+        const [finding] = verification.judge('Site 3 has a preferred displacement direction along [1 0 0].').done.audit;
         expect(finding.rule).toBe('direction');
         expect(finding.text).toMatch(/found a peak at ≥ 3σ \(site 3: peak 2\.\d+σ, map 7\.\d+σ\)\. A significant map test is anisotropy/);
         // A significant peak still counts, with or without the map.
@@ -418,7 +484,7 @@ describe('Copilot summarizers', () => {
     });
 
     it('cluster summary: "LESS distorted" does not deny a distortion the axis families show (Jahn–Teller octahedra)', () => {
-        const built = buildCase(ALL_CASES.find((item) => item.id === 'dev-jahn-teller'), { partials: false });
+        const built = buildCase(DEV_CASES.find((item) => item.id === 'dev-jahn-teller'), { partials: false });
         const { checks } = summarizeClusters(clusterDistortion(siteDisplacementsFromRmc6f(built.rmc6f), 'F', [2.5, 3.25]));
         const less = checks.find((check) => /LESS distorted/.test(check.text));
         expect(less.text).toMatch(/yet more clusters than by chance are (elongated|compressed) along <100>/);
@@ -428,39 +494,41 @@ describe('Copilot summarizers', () => {
 
     it('cluster summary: breathing is size, not shape; split sites are named (review L2)', async () => {
         // Mo3 triangles whose size fluctuates collectively (sd 4 %), shape
-        // regular: against independent atoms alone they read "LESS distorted".
-        const breathing = buildCase(ALL_CASES.find((item) => item.id === 'dev-breathing'), { partials: false });
-        const ask = (built) => (kind, params) => handlePcaMessage({ kind, ...params }, async () => built.rmc6f);
+        // regular: the engine reads the shape at each cluster's own size
+        // (its tests pin the decision), and the tool says so.
+        const breathing = buildCase(DEV_CASES.find((item) => item.id === 'dev-breathing'), { partials: false });
+        const ask = (built) => inProcessEngine(built.rmc6f);
         const triangles = buildCopilotTools({ request: ask(breathing), structure: null, elements: ['Mo', 'O'] })
             .find((tool) => tool.name === 'analyze_clusters');
         const { data, checks, facts } = await triangles.run({ element: 'Mo', r_min: 2.4, r_max: 3.21 });
-        const payload = clusterDistortion(siteDisplacementsFromRmc6f(breathing.rmc6f), 'Mo', [2.4, 3.21]);
-        expect(payload.z.ladderWidth).toBeLessThan(-3);
         expect(Math.abs(data.local.ladder_width_A.z)).toBeLessThan(3);
-        expect(data.local.breathing_sd_A.change).toBeGreaterThan(0.3);
         expect(checks.find((check) => check.level === 'ok').text).toMatch(/^No cluster shape distortion beyond independent atoms \(at each cluster's own size\)/);
         expect(checks.some((check) => /^The clusters breathe: their size \(mean edge\) fluctuates \d+ % more/.test(check.text))).toBe(true);
         expect(checks.some((check) => /LESS distorted|More clusters are/.test(check.text))).toBe(false);
         expect(facts.cluster).toMatchObject({ element: 'Mo', distorted: false, breathing: true, rigid: false, split: false });
 
-        // Jahn–Teller F6 octahedra: the F sites have two positions each, so
+        // Jahn–Teller F6 octahedra: the F sites have two positions each (the
+        // engine finds them from its own clouds, with no second request), so
         // the null holds the distortion's amplitude; the pattern shows it.
-        const jt = buildCase(ALL_CASES.find((item) => item.id === 'dev-jahn-teller'), { partials: false });
-        const octahedra = buildCopilotTools({ request: ask(jt), structure: null, elements: ['Cu', 'F', 'K'] })
+        const jt = buildCase(DEV_CASES.find((item) => item.id === 'dev-jahn-teller'), { partials: false });
+        const requests = [];
+        const counting = (kind, params) => {
+            requests.push(kind);
+            return ask(jt)(kind, params);
+        };
+        const octahedra = buildCopilotTools({ request: counting, structure: null, elements: ['Cu', 'F', 'K'] })
             .find((tool) => tool.name === 'analyze_clusters');
         const split = await octahedra.run({ element: 'F', r_min: 2.5, r_max: 3.25 });
+        expect(requests).toEqual(['clusters']);
         expect(split.data.split_member_sites.length).toBeGreaterThanOrEqual(3);
         expect(split.checks.find((check) => /^Split sites:/.test(check.text)).text).toMatch(/already holds the distortion's amplitude/);
+        expect(split.checks.some((check) => /the split sites' positions combine in a pattern that keeps the size/.test(check.text))).toBe(true);
         expect(split.facts.cluster).toMatchObject({ distorted: true, split: true, rigid: false });
-        // Without the site rows, no split-site note, the rest unchanged.
-        const bare = summarizeClusters(clusterDistortion(siteDisplacementsFromRmc6f(jt.rmc6f), 'F', [2.5, 3.25]));
-        expect(bare.checks.some((check) => /^Split sites:/.test(check.text))).toBe(false);
-        expect(bare.facts.cluster.split).toBe(false);
     });
 
     it('measure_symmetry_lowering: the coherent shift the 0.2 Å card hides, and none where there is none (review L4)', async () => {
         const tool = (id) => {
-            const built = buildCase(ALL_CASES.find((item) => item.id === id), { partials: false });
+            const built = buildCase(DEV_CASES.find((item) => item.id === id), { partials: false });
             const parsed = structureFromRmc6f({ path: `${id}.rmc6f`, text: built.rmc6f });
             return buildCopilotTools({ request: null, structure: parsed, elements: [] }).find((entry) => entry.name === 'measure_symmetry_lowering');
         };
@@ -481,7 +549,7 @@ describe('Copilot summarizers', () => {
         expect(summarizeSymmetryLowering(null, null).checks[0].level).toBe('fail');
     });
 
-    it('modulation checks: correlation between cells at a general wavevector, calibrated (review L4)', () => {
+    it('modulation sentences: correlation between cells at a general wavevector (review L4)', () => {
         // q = (3/8, 0, 0) on an 8-cell axis: neither a zone-boundary point nor a long wave.
         const config = buildConfiguration({
             cell: [4, 4, 4], supercell: [8, 8, 8], seed: 11,
@@ -491,17 +559,112 @@ describe('Copilot summarizers', () => {
                 return index === 0 ? [thermal[0], thermal[1], thermal[2] + 0.08 * Math.cos(2 * Math.PI * 0.375 * n[0])] : thermal;
             }
         });
-        const { checks, facts, data } = summarizeModulations(displacementModulations(siteDisplacementsFromRmc6f(config.text)));
+        const parsed = siteDisplacementsFromRmc6f(config.text);
+        const unitCell = parsed.latticeVectors.map((row, axis) => row.map((value) => value / parsed.supercell[axis]));
+        const { checks, facts, data } = summarizeModulations(displacementModulations(parsed), { unitCell });
         expect(facts.modulation.ordered).toEqual([]);
         expect(facts.modulation.general).toEqual([{ element: 'Ti', q: [expect.closeTo(0.375, 6), 0, 0] }]);
+        // The mode's polarisation (plan item 4.3): the planted z, named as its low-index direction.
         expect(checks.find((check) => /^Correlated Ti displacements between cells at q = \(0\.375, 0, 0\)/.test(check.text)).text)
-            .toMatch(/not a cell doubling\.$/);
-        expect(data.elements.find((entry) => entry.element === 'Ti').strongest[0][3]).not.toBeNull();
-        // The null: P ≥ χ²_2m / 2m. Power 1 (independent) is nothing; one site, one mode:
-        // P(χ²₂ ≥ 18) = e⁻⁹ = 1.23e-4, 3.67σ; corrected over 255 modes: 0.031, 1.87σ.
-        expect(generalModeSigma(1, 1, 255)).toBeLessThan(0);
-        expect(generalModeSigma(9, 1, 1)).toBeCloseTo(3.666, 2);
-        expect(generalModeSigma(9, 1, 255)).toBeCloseTo(1.867, 2);
+            .toMatch(/against independent displacements \(corrected over \d+ compared modes\) — order at a general wavevector .* not a cell doubling, polarised along \[0 0 1\] \([\d.]+° off; \d+ % of the power at q\)\.$/);
+        const ti = data.elements.find((entry) => entry.element === 'Ti');
+        expect(ti.strongest[0][3]).not.toBeNull();
+        expect(ti.polarisation).toEqual([{ q: '(0.375, 0, 0)', uvw: [expect.any(Number), expect.any(Number), 1], share: expect.any(Number), nearest_low_index: { uvw: [0, 0, 1], off_deg: expect.any(Number) } }]);
+        expect(ti.polarisation[0].nearest_low_index.off_deg).toBeLessThan(10);
+        expect(data.note).toMatch(/ polarisation: each ordered point's displacement direction/);
+        // No ordered point, no polarisation rows and no word of them.
+        expect(data.elements.find((entry) => entry.element === 'O').polarisation).toBeUndefined();
+    });
+
+    // A dev case's engine tools (the run's own engine, in-thread).
+    const devTools = (id) => {
+        const built = buildCase(DEV_CASES.find((item) => item.id === id), { partials: false });
+        const parsed = structureFromRmc6f({ path: `${id}.rmc6f`, text: built.rmc6f });
+        const runElements = Object.keys(parsed.elementCounts).sort();
+        return Object.fromEntries(buildCopilotTools({ request: inProcessEngine(built.rmc6f), structure: parsed, elements: runElements })
+            .map((tool) => [tool.name, tool]));
+    };
+
+    it('analyze_modulations: an ordered point\'s polarisation, as a [u v w] and its nearest low-index direction (plan item 4.3)', async () => {
+        // dev-zone-boundary: Ti ±0.1 Å along [0 0 1] at (0, 0, ½); one site
+        // over 512 cells, so 1.5° of sampling error per component (this seed:
+        // 5.5° off, the PC1 A+ read before: 6.0°).
+        const { data, checks, facts } = await devTools('dev-zone-boundary').analyze_modulations.run({});
+        const ti = data.elements.find((entry) => entry.element === 'Ti');
+        expect(ti.polarisation).toEqual([{
+            q: '(0, 0, ½)', uvw: [-0.05, 0.09, 1], share: 1, nearest_low_index: { uvw: [0, 0, 1], off_deg: 5.5 }
+        }]);
+        expect(checks[0].text).toBe('Ordered Ti displacements at q = (0, 0, ½): 498× the median power, > 8σ against independent '
+            + 'displacements (corrected over 21 zone-boundary points) — a superstructure doubling the cell along c, polarised along '
+            + '[0 0 1] (5.5° off; 100 % of the power at q).');
+        // The decoy long wave and the other elements carry no polarisation row: none is ordered.
+        expect(data.elements.filter((entry) => entry.polarisation).map((entry) => entry.element)).toEqual(['Ti']);
+        // facts.modulation keeps its shape.
+        expect(facts.modulation).toEqual({ elements: ['O', 'Sr', 'Ti'], ordered: [{ element: 'Ti', q: [0, 0, 0.5] }], general: [] });
+        // Its own result budget holds it whole, with room for a fourth element.
+        expect(devTools('dev-zone-boundary').analyze_modulations.resultBudget).toBe(MODULATION_RESULT_BUDGET);
+        expect(JSON.stringify({ ref: 'r1', checks, data }).length).toBeLessThan(MODULATION_RESULT_BUDGET - 1000);
+    });
+
+    it('F2: a σ just below the 3σ bar is never printed as 3σ beside a "no order" verdict (dev-weak-order-b)', async () => {
+        // Nb at (½, ½, 0): 2.959σ over the 21 zone-boundary points. Until
+        // 2026-10-19 the row read 3 and the sentence "3σ after the correction".
+        const { data, checks } = await devTools('dev-weak-order-b').analyze_modulations.run({});
+        expect(checks[0].text).toBe('No order that doubles the cell: no zone-boundary point stands out of the diffuse background '
+            + '(the strongest, Nb at (½, ½, 0), is 19× the median, 2.96σ after the correction: below the 3σ bar).');
+        const row = data.elements.find((entry) => entry.element === 'Nb').zone_boundary.find((cells) => cells[0] === '(½, ½, 0)');
+        expect(row).toEqual(['(½, ½, 0)', 19, 99.5, 2.96]);
+        expect(data.elements.every((entry) => !entry.polarisation)).toBe(true);
+        // The synthetic known answer (the modulations fixture's weak doubling, 2.98σ) read "3σ" too.
+        const weak = modulationsFixture.cases.find((entry) => entry.name.startsWith('weak doubling'));
+        const synthetic = summarizeModulations(displacementModulations(siteDisplacementsFromRmc6f(weak.text)));
+        expect(synthetic.checks[0].text).toBe('No order that doubles the cell: no zone-boundary point stands out of the diffuse background '
+            + '(the strongest, Nb at (0, 0, ½), is 6.4× the median, 2.98σ after the correction: below the 3σ bar).');
+        expect(synthetic.data.elements.find((entry) => entry.element === 'Nb').zone_boundary[0]).toEqual(['(0, 0, ½)', 6.4, 95.5, 2.98]);
+        // A ratio just below its bar reads below it too: dev-thermal-null's Ti
+        // at (½, 0, 0) is 2.9976× the median (it read 3).
+        const thermal = await devTools('dev-thermal-null').analyze_modulations.run({});
+        const ti = thermal.data.elements.find((entry) => entry.element === 'Ti').zone_boundary.find((cells) => cells[0] === '(½, 0, 0)');
+        expect(ti[1]).toBe(2.998);
+    });
+
+    it('F2: nearer the bar than six significant digits reads "<3"; at or above the bar, the usual rounding', () => {
+        const bar = { ratio: 3, sigma: 3 };
+        const rules = { ratio: 3, sigma: 3, longWaveRatio: 5, longWaveQ: 0.25, sigmaMax: SIGMA_MAX };
+        const point = (q, ratio, sigma, ordered, because) => ({ q, ratio, percentile: 99, rank: 1, kind: 'zone_boundary', sigma, ordered, because, bar, polarisation: null });
+        const finding = (answer, because, decidedBy = [], nearest = null) => ({ answer, because, decidedBy, nearest });
+        const near = point([0.5, 0, 0], 2.9999999, 2.99999999, false, 'below_ratio');
+        const payload = {
+            supercell: [4, 4, 4], wavevectors: 63, untestable: [], rules,
+            family: { zoneBoundaryPoints: 7, comparedModes: 22, elements: ['Nb'] },
+            elements: [{
+                element: 'Nb', sites: 1, medianPower: 1, comparedModes: 22,
+                zoneBoundary: [near, point([0, 0, 0.5], 3.04, 3.04, true, 'ordered'), point([0, 0.5, 0], 2.95, -1, false, 'below_ratio')],
+                strongest: [],
+                verdict: {
+                    cellDoubling: finding(false, 'no_ordered_point', [], { q: near.q, ratio: near.ratio, sigma: near.sigma, because: near.because }),
+                    generalOrder: finding(null, 'no_general_mode'),
+                    longWave: finding(null, 'undefined_statistic')
+                }
+            }]
+        };
+        const { data, checks } = summarizeModulations(payload);
+        expect(data.elements[0].zone_boundary).toEqual([['(½, 0, 0)', '<3', 99, '<3'], ['(0, 0, ½)', 3, 99, 3], ['(0, ½, 0)', 2.95, 99, -1]]);
+        expect(checks[0].text).toBe('No order that doubles the cell: no zone-boundary point stands out of the diffuse background '
+            + '(the strongest, Nb at (½, 0, 0), is < 3× the median, < 3σ after the correction: below the 3× and 3σ bars).');
+    });
+
+    it('F3: naming one element corrects over every element\'s points, so 2.96σ stays "no order" (dev-weak-order-b)', async () => {
+        // Until 2026-10-19 analyze_modulations({ element: 'Nb' }) corrected over
+        // Nb's own 7 points: 3.28σ, "ordered".
+        const tools = devTools('dev-weak-order-b');
+        const every = await tools.analyze_modulations.run({});
+        const named = await tools.analyze_modulations.run({ element: 'Nb' });
+        expect(named.checks[0].text).toBe(every.checks[0].text);
+        expect(named.data.elements.map((entry) => entry.element)).toEqual(['Nb']);
+        expect(named.data.elements[0]).toEqual(every.data.elements.find((entry) => entry.element === 'Nb'));
+        expect(named.data.note).toContain('corrected over all 21 zone-boundary points of the configuration\'s 3 elements, whichever the call names');
+        expect(named.facts.modulation).toEqual({ elements: ['Nb'], ordered: [], general: [] });
     });
 
     it('cluster summary: other_sizes never lists the analysed kind, on a tie too (review 2026-10-12 #17)', () => {
@@ -519,5 +682,83 @@ describe('Copilot summarizers', () => {
         expect(summarizeSymmetry({ spaceGroup: 'undetermined', orbits: [] }, 0.2).checks[0].level).toBe('note');
         expect(summarizeSymmetry({ spaceGroup: '≥ -43m', orbits: [] }, 0.2).checks[0].text).toMatch(/lower bound/);
         expect(summarizeSymmetry(null, 0.2).checks[0].level).toBe('fail');
+    });
+});
+
+// The method advice in the engine tools (llm copilot/method.js, plan item
+// 1.8): the validation's arm C (method 'off') reads each description without
+// it and each check without it — a refusal still refuses, a fact stays. With
+// method 'full' (the dock, arm B) every text is as before; the model-visible
+// snapshots pin that, and arm C's tools (harness/tools.arm-C.json).
+describe('the engine tools\' method advice: what arm C reads without it', () => {
+    // Every tool the Copilot offers a model, by name.
+    const TOOL_NAME = /\b(?:read_run_data|assess_convergence|find_gr_peaks|compare_fit|list_sites|analyze_[a-z_]+|compute_bond_angles|detect_symmetry|measure_symmetry_lowering|ask_user|read_skill)\b/g;
+    const toolNames = (text) => text.match(TOOL_NAME) || [];
+
+    it('each description keeps what the tool does and returns: no other tool named but site_ref\'s source', () => {
+        const advised = Object.values(tools).filter((tool) => tool.method != null).map((tool) => tool.name);
+        expect(advised).toEqual(['list_sites', 'compute_bond_angles', 'analyze_clusters', 'analyze_modulations', 'detect_symmetry', 'measure_symmetry_lowering']);
+        for (const tool of Object.values(tools)) {
+            const off = toolDescription(tool, 'off');
+            expect(off).toBe(tool.description);
+            // site_ref's values are list_sites' refs: the parameter's meaning, not advice.
+            expect(toolNames(off)).toEqual(tool.name === 'analyze_displacement_directions' ? ['list_sites'] : []);
+        }
+        expect(toolDescription(tools.compute_bond_angles, 'full')).toMatch(/tetrahedron\. Use the whole first coordination shell \(find_gr_peaks' first_shell\.window_A\): /);
+        expect(toolDescription(tools.analyze_clusters, 'full'))
+            .toContain('in the average structure (take the window from find_gr_peaks: first_shell.window_A of that element pair). Every cluster');
+        expect(toolDescription(tools.detect_symmetry, 'full')).toMatch(/Wyckoff orbits\. Compare tolerances to see which symmetry the local distortion breaks\. Does not change the card\.$/);
+        // The refusal stays stated in arm C: on window_confirmed.
+        expect(tools.compute_bond_angles.parameters.properties.window_confirmed.description).toMatch(/A window that cuts the coordination shell is refused unless it is set\./);
+    });
+
+    it('compute_bond_angles: the cut-window refusal still refuses; only which window to use goes', async () => {
+        const cut = await tools.compute_bond_angles.run({ end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.3, r12_max: 2.7 });
+        const [check] = cut.checks;
+        expect(checkText(check, 'full')).toBe(check.text);
+        expect(checkText(check, 'off')).toBe('Refused: Only 47 % of the Ta atoms have the most common count (3 Se–Ta bonds); the counts spread from 1 to 6. '
+            + 'The window cuts through a coordination shell. If the user wants this window, ask them (ask_user) and call again with window_confirmed: true.');
+        expect(cut.data.refused).toMatch(/cuts the coordination shell/);
+    });
+
+    it('compute_bond_angles: no angles — the failure and the plain remedy, not where the window comes from', async () => {
+        const { checks } = await tools.compute_bond_angles.run({ end1: 'Ta', apex: 'Ta', end2: 'Ta', r12_min: 0.1, r12_max: 0.5 });
+        expect(checks[0].text).toBe('No angles: no central atom has two neighbours in the window(s). Widen the window '
+            + '(find_gr_peaks gives the whole first shell, first_shell.window_A) or check the elements.');
+        expect(checkText(checks[0], 'off')).toBe('No angles: no central atom has two neighbours in the window(s). Widen the window or check the elements.');
+    });
+
+    it('analyze_displacement_directions: a pooled map keeps its caveat; which analysis to run instead goes', async () => {
+        const pooled = await tools.analyze_displacement_directions.run({ element: 'Ta', frequency: 4 });
+        const note = pooled.checks.find((check) => /^Pooled over/.test(check.text));
+        expect(note.text).toMatch(/cluster distortion\. Test single sites \(site_ref\), or analyze_clusters for a cluster's shape\.$/);
+        expect(checkText(note, 'off')).toBe('Pooled over 16 sites. Where their local axes differ (the four vertices of a tetrahedral cluster), a direction '
+            + 'each site prefers in its own frame cancels here, so an isotropic pooled map is not evidence against a per-site or cluster distortion.');
+    });
+
+    it('the reading hints that name no tool are method too: arm C reads the point group\'s facts and the octahedron counts alone', async () => {
+        const symmetry = await tools.detect_symmetry.run({ tolerance_A: 0.2 });
+        const pointGroup = symmetry.checks.find((check) => /^Point group/.test(check.text));
+        expect(checkText(pointGroup, 'full')).toBe('Point group -43m: cubic; no inversion centre; achiral (not a Sohncke group); non-polar. '
+            + 'Take inversion, chirality and polarity from this, not from memory.');
+        expect(checkText(pointGroup, 'off')).toBe('Point group -43m: cubic; no inversion centre; achiral (not a Sohncke group); non-polar.');
+        const whole = await tools.compute_bond_angles.run({ end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.33, r12_max: 2.97 });
+        const octahedron = whole.checks.find((check) => /^Raw counts deplete/.test(check.text));
+        expect(octahedron.text).toMatch(/at 90°\. Read the shape from histogram_10deg_sin_corrected \(1 = random directions\), not from the raw modes\.$/);
+        expect(checkText(octahedron, 'off')).toMatch(/^Raw counts deplete angles near 180° \(as sin θ\): .* against an ideal octahedron's 20 % trans at 180° and 80 % cis at 90°\.$/);
+    });
+
+    it('analyze_clusters: the window\'s failures and the split sites\' caveat, without which window or analysis', () => {
+        const extended = CLUSTER_SENTENCES['window.extendedNetwork'].extended_network({ element: 'O', lo: 2.4, hi: 3.13 });
+        expect(extended.text).toBe('The 2.4–3.13 Å window links the O atoms into an extended network (chains or a 3-D net), not finite clusters: '
+            + 'narrow it to the intra-cluster bond (find_gr_peaks: first_shell.window_A of O-O).');
+        expect(checkText(extended, 'off')).toBe('The 2.4–3.13 Å window links the O atoms into an extended network (chains or a 3-D net), not finite clusters: narrow it.');
+        const none = CLUSTER_SENTENCES['window.extendedNetwork'].no_clusters({ element: 'Ta', lo: 0.1, hi: 0.5 });
+        expect(none.text).toBe('No two Ta sites of the average structure lie 0.1–0.5 Å apart: no clusters. Widen the window (find_gr_peaks gives the Ta-Ta first shell).');
+        expect(checkText(none, 'off')).toBe('No two Ta sites of the average structure lie 0.1–0.5 Å apart: no clusters. Widen the window.');
+        const split = CLUSTER_SENTENCES.splitMemberSites.half_or_more_split({ verdict: { splitMemberSites: { sites: [3, 5], memberSites: [3, 5, 7] } } });
+        expect(split.text).toMatch(/does not make the clusters regular\. Read the pattern \(axis families, trigonality\), the partial g\(r\) shell \(find_gr_peaks\) and the bond angles\.$/);
+        expect(checkText(split, 'off')).toMatch(/^Split sites: 2 of the 3 member sites \(3, 5\) have two positions .* does not make the clusters regular\.$/);
+        for (const check of [extended, none, split]) expect(toolNames(checkText(check, 'off'))).toEqual([]);
     });
 });

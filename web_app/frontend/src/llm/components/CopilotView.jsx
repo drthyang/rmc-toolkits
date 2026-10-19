@@ -3,7 +3,8 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { contextToJson } from '../context/runContext';
-import { stepSummary } from '../copilot/turnState';
+import { STOPPED_BY } from '../copilot/turnPolicy';
+import { questionReply, stepSummary } from '../copilot/turnState';
 import { useCopilot } from '../useCopilot';
 import MarkdownMessage from './MarkdownMessage';
 import QuestionCard from './QuestionCard';
@@ -25,17 +26,10 @@ const SUGGESTIONS = [
 
 const OUTCOME_TEXT = { achieved: 'Achieved', partial: 'Partial', 'not verified': 'Not verified', 'not achieved': 'Not achieved' };
 
-const STOP_NOTES = {
-    stopped: 'Stopped.',
-    error: 'Stopped by an error.',
-    max_rounds: 'Answered after using the analysis budget for one question.',
-    no_progress: 'Answered when repeated analyses stopped adding anything new.',
-    empty: 'The model returned an empty reply.'
-};
-
-// The stop note, with the reason when the loop gave one (an empty reply).
+// The turn's ending as its note (turnPolicy.js STOPPED_BY: none for an
+// answer), with the reason when the turn gave one (an empty reply).
 const stopNoteFor = (turn) => {
-    const note = STOP_NOTES[turn.stoppedBy];
+    const note = STOPPED_BY[turn.stoppedBy]?.note;
     return note && turn.reason ? `${note.replace(/\.$/, '')}: ${turn.reason}.` : note;
 };
 
@@ -146,7 +140,7 @@ const AssistantTurn = ({ turn, pages, onOpenPage, cardLinks, question = null, on
                     <TextSegment key={index} item={group} last={turn.streaming && index === groups.length - 1} cardLinks={cardLinks} />
                 )))}
                 {turn.audit?.length > 0 && (
-                    // Checks on the answer itself (answerAudit.js): where it
+                    // Checks on the answer itself (the verification, facts.js): where it
                     // contradicts what the tools or the run context established.
                     <ul className="llm-audit" aria-label="Checks on this answer">
                         {turn.audit.map((finding) => (
@@ -175,13 +169,22 @@ const AssistantTurn = ({ turn, pages, onOpenPage, cardLinks, question = null, on
                             ...(turn.gates || []).map((gate) => gate.notice),
                             turn.toolsUnsupported ? 'this model cannot run analyses — answered from the run summary' : '',
                             cutNote ? 'the reply reached the model\'s length limit and is cut short' : '',
-                            turn.stoppedBy !== 'answer' ? stopNote : ''
+                            stopNote
                         ].filter(Boolean).join(' · ')}
                     </p>
                 )}
             </div>
         </div>
     );
+};
+
+// A question step's line, in the card's words (questionReply): asked, then
+// answered, skipped (the default stands), not asked, or not answered.
+const QUESTION_LINE = {
+    answered: (text) => `Answered: ${text}`,
+    skipped: (text) => text,
+    not_asked: (text) => `Not asked: ${text}`,
+    stopped: () => 'Not answered.'
 };
 
 // One short line for screen readers when a step starts or ends, or a turn
@@ -197,11 +200,26 @@ const announcementFor = (turn) => {
     const step = [...turn.items].reverse().find((item) => item.kind === 'tool');
     if (!step) return turn.streaming ? '' : 'Answer ready.';
     if (step.interactive) {
-        const asked = step.args?.question || '';
-        return step.status === 'running' ? `The Copilot asks: ${asked}` : `Answered: ${step.data?.answer ?? 'skipped'}`;
+        if (step.status === 'running') return `The Copilot asks: ${step.args?.question || ''}`;
+        const { state, text } = questionReply(step);
+        return QUESTION_LINE[state](text);
     }
     return step.status === 'running' ? `Running: ${step.label}` : `${step.label}: ${step.status}`;
 };
+
+// The divider the dock draws where a new configuration of the run was saved
+// (configKey, useCopilot.js configurationBreaks): the answers above it are
+// not sent to the model with the next question.
+const CONFIGURATION_DIVIDER_TEXT = 'New configuration saved — earlier answers were about the previous one';
+
+const ConfigurationDivider = () => (
+    <p
+        className="llm-config-divider"
+        title="The run's .rmc6f changed. The answers above are kept on screen but are not sent to the model with the next question."
+    >
+        <span>{CONFIGURATION_DIVIDER_TEXT}</span>
+    </p>
+);
 
 const UserMessage = ({ content }) => (
     <div className="llm-message is-user">
@@ -214,11 +232,12 @@ const UserMessage = ({ content }) => (
 );
 
 const CopilotView = ({
-    context, settings, connected, tools, toolsEnabled, pages, onOpenPage, runKey,
-    cards = null, focus = null, onTurnEnd = null, onBusyChange = null, onQuestion = null, clarifier = null,
-    skills = null, skillsError = null
+    context, run, settings, connected, tools, toolsEnabled, pages, onOpenPage, runKey, configKey = null,
+    cards = null, focus = null, onTurnEnd = null, onBusyChange = null, onQuestion = null, skills = null
 }) => {
-    const copilot = useCopilot({ settings, context, tools, toolsEnabled, runKey, focus, onTurnEnd, onQuestion, clarifier, skills });
+    const copilot = useCopilot({
+        settings, run, tools, toolsEnabled, runKey, configKey, focus, onTurnEnd, onQuestion, skills
+    });
     useEffect(() => { onBusyChange?.(copilot.busy); }, [copilot.busy, onBusyChange]);
     const showCard = useCallback((id) => { focus?.show([id], { source: 'user' }); }, [focus]);
     const previewCard = useCallback((id) => { focus?.preview(id); }, [focus]);
@@ -229,10 +248,13 @@ const CopilotView = ({
     const logRef = useRef(null);
     const textareaRef = useRef(null);
     const hasConversation = copilot.turns.length > 0 || copilot.busy;
-    const announcement = useMemo(
-        () => announcementFor(copilot.live || copilot.turns.at(-1)),
-        [copilot.live, copilot.turns]
-    );
+    // The newest turn's line, then the divider's once a new configuration
+    // ends the conversation (after the running answer, if any).
+    const configurationChanged = copilot.breaks.after;
+    const announcement = useMemo(() => {
+        const line = announcementFor(copilot.live || copilot.turns.at(-1));
+        return configurationChanged && !copilot.live ? `${line} ${CONFIGURATION_DIVIDER_TEXT}.`.trim() : line;
+    }, [copilot.live, copilot.turns, configurationChanged]);
 
     // Keep the newest message in view as turns, steps and tokens arrive — but
     // never scroll a waiting question's top out of view (a short sheet on a
@@ -299,13 +321,17 @@ const CopilotView = ({
         }
     };
 
+    // What the Copilot can run on this run with its analyses on (the turn's
+    // own ask_user and read_skill included): the status line and the list.
+    const offered = copilot.offered;
     const toolStatus = (() => {
         if (copilot.toolsUnsupported) return 'This model cannot run analyses — answers come from the run summary.';
         if (!toolsEnabled) return 'Analyses are off — answers come from the run summary.';
-        const analyses = tools.filter((tool) => !tool.view && !tool.interactive && !tool.keep).length;
+        const analyses = offered.tools.filter((tool) => !tool.view && !tool.interactive && !tool.keep).length;
         if (!analyses) return 'No analyses are available for this run.';
-        const pointing = tools.some((tool) => tool.view) ? ' and point at its cards' : '';
-        const methods = skills?.length ? `, following ${skills.length} skill${skills.length === 1 ? '' : 's'}` : '';
+        const pointing = offered.view ? ' and point at its cards' : '';
+        const count = offered.skills.length;
+        const methods = count ? `, following ${count} skill${count === 1 ? '' : 's'}` : '';
         return `Can run ${analyses} ${analyses === 1 ? 'analysis' : 'analyses'} on this run${pointing}${methods}.`;
     })();
 
@@ -313,9 +339,12 @@ const CopilotView = ({
         <div className="llm-chat">
             {hasConversation ? (
                 <div className="llm-chat-log" ref={logRef}>
-                    {copilot.turns.map((turn, index) => (turn.role === 'user'
-                        ? <UserMessage key={index} content={turn.content} />
-                        : <AssistantTurn key={index} turn={turn} pages={pages} onOpenPage={onOpenPage} cardLinks={cardLinks} />))}
+                    {copilot.turns.flatMap((turn, index) => [
+                        ...(copilot.breaks.before.includes(index) ? [<ConfigurationDivider key={`configuration-${index}`} />] : []),
+                        turn.role === 'user'
+                            ? <UserMessage key={index} content={turn.content} />
+                            : <AssistantTurn key={index} turn={turn} pages={pages} onOpenPage={onOpenPage} cardLinks={cardLinks} />
+                    ])}
                     {copilot.live && (
                         <AssistantTurn
                             turn={copilot.live}
@@ -326,6 +355,7 @@ const CopilotView = ({
                             onAnswer={copilot.answerQuestion}
                         />
                     )}
+                    {configurationChanged && <ConfigurationDivider />}
                 </div>
             ) : (
                 <div className="llm-chat-empty">
@@ -344,13 +374,13 @@ const CopilotView = ({
                             ))}
                         </div>
                     )}
-                    {tools.length > 0 && (
+                    {offered.tools.length > 0 && (
                         <details className="llm-context-inspector">
                             <summary title="The analyses the Copilot may run on this run, and its view tools. Analyses only compute; view tools only point at cards and turn 3D views — none changes data or a file.">
                                 What the Copilot can run
                             </summary>
                             <ul className="llm-tool-list">
-                                {tools.map((tool) => (
+                                {offered.tools.map((tool) => (
                                     <li key={tool.name}><code>{tool.name}</code> — {tool.description}</li>
                                 ))}
                             </ul>
@@ -369,7 +399,7 @@ const CopilotView = ({
 
             <div className="llm-sr-only" aria-live="polite">{announcement}</div>
             {copilot.error && <div className="llm-connection-status is-error" role="alert">{copilot.error}</div>}
-            {skillsError && <div className="llm-connection-status is-error" role="alert">The Copilot's skills could not be read: {skillsError}</div>}
+            {copilot.skillsError && <div className="llm-connection-status is-error" role="alert">The Copilot's skills could not be read: {copilot.skillsError}</div>}
 
             <form
                 className="llm-composer"

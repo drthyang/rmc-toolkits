@@ -1,0 +1,32 @@
+{
+  "case": "dev-jahn-teller",
+  "run": "architecture candidate 6: the shell catalogue (src/llm/context/shells.js) on synthetic known answers, the Demo and the dev cases; the model-visible snapshots; arms A and A+ on the dev set, before and after; both cut readings on every dev window (validation/run.js shell-cuts), 2026-10-19",
+  "step": null,
+  "kind": "bug",
+  "evidence": "Five readers each read the first coordination shell their own way: the context and find_gr_peaks integrated the CN from r = 0 on the grid, the Workbench over its rounded window; the context searched peaks to 8 A, find_gr_peaks to max(r_max, r1 + 3), the Workbench to max(6, r1 + 3); and the first peak alone was r +- FWHM in find_gr_peaks and the Workbench, but the deep-trough cut in the context (joined shells only). On the Demo the Ta-Se first peak read 2.33-2.71 A holding 3.86 (Workbench) or 3.9 (rounded, the skill's number) Se per Ta: the half-height walk on the overlapping second peak reaches into it, so r +- FWHM overcounts. Known answer after the change (src/llm/__tests__/shells.test.js): 3 + 3 partners at 2.5 and 2.75 A, sigma 0.07 A each (the trough between them at ~40 % of the first peak): the first peak, to the minimum of the smoothed g between the two, holds 3.03, 3.03 and 2.96 on 0.005, 0.01 and 0.02 A grids (3 +- 0.1), r +- FWHM 3.40, 3.45 and 4.00; at sigma 0.08 A r +- FWHM holds the whole shell (5.97), the minimum 3.04. The Demo's Ta-Se first peak is now 2.21-2.65 A holding 3.25 (the three short bonds and the near tail of the broad long-bond peak). Every reader equals the catalogue on the Demo and all ten dev cases (src/__tests__/shellReading.test.js). Arms A and A+ on the dev set: every score and claim unchanged; three A+ records move only in their cluster window's low end (onset minus one grid step, 0.01 A lower: dev-breathing Mo, dev-jahn-teller F, dev-symmetry-lowering O), the engines' verdicts unchanged (re-recorded in validation/baseline/arm-a-dev.json at f763969). The window-cut rule is unchanged (compute_bond_angles' 60 % / 50 % counts rule, the Workbench's CN margin); the recommendation to decide cuts by the CN margin is its own record, not approved (2026-10-19-shell-cut-rule.json). The skill text is not edited: the four places the coordination-shells skill quotes the old first peak (2.33-2.71 A, 3.9) are skill-lint allow-list entries with the tool's values (2.21-2.65 A, 3.25) until the user's skill review, a precondition for the freeze. Approved by the manager on the user's delegation, 2026-10-19.",
+  "proposed_fix": "One module reads every pair's first shell once (shellCatalogue(run), memoised per partials data, structure and run settings; frozen Shells) and every reader takes it from there: the context, find_gr_peaks, the clarifier, the evidence gate, the answer checks (cnMatches), compute_bond_angles' refusal (countsCut on the bond-angle engines' new coordinationSummary) and arm A+. One rule per quantity: peaks below 8 A and the closing minimum to max(8, r1 + 3) A; windows rounded to 0.01 A and every CN integrated (trapezoid of the linear interpolant) over exactly the window quoted with it; the first peak alone only with two or more resolved peaks, from the shell's start to the minimum of the smoothed g between the first two, never r +- FWHM; separation and the constraint pile-up on one 2 % fraction (find_gr_peaks' FWHM edge clause dropped; nothing moved on the Demo or the dev cases); half an atom for every CN match. What the model sees changes (find_gr_peaks' first_shell.first_peak_only replaces first_peak_window_A; the context's pair_correlations; protocol 2026-10-19.8). Approved by the manager on the user's delegation, 2026-10-19; the user may reverse it.",
+  "needs_user_approval": true,
+  "status": "implemented",
+  "approval": {
+    "by": "user",
+    "date": "2026-10-19",
+    "batch": 2
+  },
+  "commit": "f763969125f44cb496fc79b142ff1a4276e8e612",
+  "tests": [
+    "web_app/frontend/src/llm/__tests__/shells.test.js › a 3 + 3 split with overlapping widths (grid %s Å): the first peak holds 3 ± 0.1, r ± FWHM overcounts",
+    "web_app/frontend/src/llm/__tests__/shells.test.js › where the trough stays above half the first peak, r ± FWHM holds the whole shell; the minimum still finds the first",
+    "web_app/frontend/src/llm/__tests__/shells.test.js › a shell of one resolved peak has no first peak (no r ± FWHM fallback)",
+    "web_app/frontend/src/llm/__tests__/shells.test.js › rounds every window to 0.01 Å, then integrates exactly over it: each CN is window().cn of its window",
+    "web_app/frontend/src/llm/__tests__/shells.test.js › closes a shell beyond 8 Å when its first peak lies above 5 Å, whatever range a caller would pick",
+    "web_app/frontend/src/llm/__tests__/shells.test.js › a constraint limits a pair when raw g just above it is above 2 % of the peak — the FWHM edge clause is gone",
+    "web_app/frontend/src/llm/__tests__/shells.test.js › countsCut: compute_bond_angles' rule, pinned (60 % modal share, more than half unbonded)",
+    "web_app/frontend/src/__tests__/shellReading.test.js › %s: the context, find_gr_peaks, the clarifier and the evidence gate read the catalogue",
+    "web_app/frontend/src/__tests__/shellReading.test.js › %s: arm A+ runs the cluster engine in the catalogue's windows",
+    "web_app/frontend/src/__tests__/shellReading.test.js › the Demo's Ta–Se first peak: 3.25 Se per Ta to the inter-peak minimum (was 3.86–3.9 by r ± FWHM)",
+    "web_app/frontend/src/__tests__/copilotChecksReplays.test.js › (a) a split shell: which Ta–Se window, and the chosen one is not asked about again",
+    "web_app/frontend/src/__tests__/skillLint.test.js › names each value mismatch it holds: the line, the skill's value and the tool's",
+    "web_app/frontend/src/__tests__/modelVisible/toolResults.test.js › %s",
+    "web_app/frontend/validation/__tests__/arms.test.js › %s: arm A %s, A+ %s"
+  ]
+}

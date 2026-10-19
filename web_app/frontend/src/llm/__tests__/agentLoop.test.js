@@ -2,20 +2,21 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_LIMITS, assistantContent, isToolsUnsupportedError, runCopilotTurn } from '../copilot/agentLoop';
+import { DEFAULT_LIMITS, assistantContent, runCopilotTurn } from '../copilot/agentLoop';
+import { ToolsUnsupportedError } from '../provider/model';
 import { ASK_USER, buildAskUserTool } from '../copilot/askUser';
-import { budgetJson, fitToBudget, stepStatus, usableTools } from '../copilot/tools';
-import { ASK_RULES, buildCopilotMessages } from '../prompts/copilot';
-import { buildEvidenceGate } from '../copilot/evidence';
+import { compactToolMessage, REPEAT_NOTE } from '../copilot/tools';
+import { createVerification } from '../copilot/verification';
 
 // A scripted model: each request consumes the next reply. A reply is either
 // { text } or { calls: [{ name, args }] } (optionally with text), or an
 // Error to throw, or a function of the request returning one of those (a
-// model that reads what it was sent). Every request's arguments are recorded.
+// model that reads what it was sent). A bare stream function is a model port
+// (provider/model.js): it gets the loop's intent and its signal, both recorded.
 const scriptedModel = (replies) => {
     const requests = [];
-    const callModel = (request) => {
-        requests.push({ ...request, messages: request.messages.map((message) => ({ ...message })) });
+    const callModel = (request, { signal } = {}) => {
+        requests.push({ ...request, signal, messages: request.messages.map((message) => ({ ...message })) });
         const next = replies.shift();
         const reply = typeof next === 'function' ? next(request) : next;
         return (async function* stream() {
@@ -68,7 +69,7 @@ describe('runCopilotTurn', () => {
             { text: 'Checking.', calls: [{ name: 'echo', args: { value: 4 } }] },
             { text: 'The value is 4.\nOutcome: achieved — echoed 4.' }
         ]);
-        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [tool] }));
+        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [tool] }));
 
         expect(tool.run).toHaveBeenCalledWith({ value: 4 }, { signal: expect.any(AbortSignal) });
         const start = events.find((event) => event.type === 'tool_start');
@@ -109,7 +110,7 @@ describe('runCopilotTurn', () => {
             { calls: [{ name: 'echo', args: { value: 9 } }] },
             { text: 'Done.' }
         ]);
-        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [tool] }));
+        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [tool] }));
         const ends = events.filter((event) => event.type === 'tool_end');
         expect(ends.map((event) => event.status)).toEqual(['failed', 'ok']);
         expect(ends[0].error).toBe('value must be ≤ 10, got 99');
@@ -119,6 +120,9 @@ describe('runCopilotTurn', () => {
         expect(requests[1].messages.at(-2).content).toBeNull();
     });
 
+    // The texts of these errors are the tool contract's (tools.test.js) and
+    // pinned as sent (modelVisible/toolMessages.test.js); the loop forwards
+    // the status each ended with.
     it('answers unknown tools, invalid JSON and thrown errors as tool errors', async () => {
         const failing = echoTool({ name: 'boom', run: async () => { throw new Error('engine said no'); } });
         const { callModel, requests } = scriptedModel([
@@ -129,11 +133,11 @@ describe('runCopilotTurn', () => {
             ] },
             { text: 'ok' }
         ]);
-        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool(), failing] }));
-        const errors = events.filter((event) => event.type === 'tool_end').map((event) => event.error);
-        expect(errors[0]).toBe('unknown tool "nope"; available: echo, boom');
-        expect(errors[1]).toMatch(/not valid JSON/);
-        expect(errors[2]).toBe('engine said no');
+        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool(), failing] }));
+        const ends = events.filter((event) => event.type === 'tool_end');
+        expect(ends.map((event) => [event.resultStatus, event.status, Boolean(event.error)])).toEqual([
+            ['unknown_tool', 'failed', true], ['error', 'failed', true], ['error', 'failed', true]
+        ]);
         // Every listed call is answered, and unparseable arguments are echoed as '{}'.
         const assistant = requests[1].messages.find((message) => message.tool_calls);
         expect(assistant.tool_calls.map((call) => call.function.arguments)).toEqual(['{}', '{}', '{"value":1}']);
@@ -148,10 +152,11 @@ describe('runCopilotTurn', () => {
             { calls: [{ name: 'echo', args: { value: '2' } }] },
             { text: 'ok' }
         ]);
-        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [tool] }));
+        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [tool] }));
         expect(tool.run).toHaveBeenCalledTimes(1);
-        expect(events.filter((event) => event.type === 'tool_end').map((event) => event.cached)).toEqual([false, true]);
-        expect(JSON.parse(requests[2].messages.at(-1).content).note).toMatch(/identical call/);
+        expect(events.filter((event) => event.type === 'tool_end').map((event) => [event.resultStatus, event.cached, event.note]))
+            .toEqual([['ok', false, null], ['ok', true, REPEAT_NOTE]]);
+        expect(JSON.parse(requests[2].messages.at(-1).content).note).toBe(REPEAT_NOTE);
     });
 
     it('answers calls beyond the per-step limit as skipped', async () => {
@@ -161,10 +166,10 @@ describe('runCopilotTurn', () => {
             { text: 'ok' }
         ]);
         const events = await collect(runCopilotTurn({
-            callModel, messages: baseMessages, tools: [tool], limits: { maxCallsPerRound: 2 }
+            model: callModel, messages: baseMessages, tools: [tool], limits: { maxCallsPerRound: 2 }
         }));
         expect(tool.run).toHaveBeenCalledTimes(2);
-        expect(events.filter((event) => event.type === 'tool_end').at(-1).error).toMatch(/^skipped/);
+        expect(events.filter((event) => event.type === 'tool_end').map((event) => event.resultStatus)).toEqual(['ok', 'ok', 'skipped']);
         expect(requests[1].messages.filter((message) => message.role === 'tool')).toHaveLength(3);
     });
 
@@ -177,7 +182,7 @@ describe('runCopilotTurn', () => {
             { text: 'Best effort.\nOutcome: partial — budget used.', calls: [{ name: 'echo', args: { value: 3 } }] }
         ]);
         const events = await collect(runCopilotTurn({
-            callModel, messages: baseMessages, tools: [tool], limits: { maxRounds: 2 }
+            model: callModel, messages: baseMessages, tools: [tool], limits: { maxRounds: 2 }
         }));
         expect(requests).toHaveLength(3);
         expect(requests[2].toolChoice).toBe('none');
@@ -187,44 +192,76 @@ describe('runCopilotTurn', () => {
         expect(events.at(-1).outcome.status).toBe('partial');
     });
 
-    it('retries once without tools when the model cannot call them', async () => {
-        const unsupported = Object.assign(new Error('HTTP 400: registry.ollama.ai/library/gemma3 does not support tools'), { status: 400 });
+    it('retries once without tools when the port says the model cannot call them (ToolsUnsupportedError)', async () => {
+        const unsupported = new ToolsUnsupportedError('HTTP 400: registry.ollama.ai/library/gemma3 does not support tools', { status: 400, server: 'ollama' });
         const { callModel, requests } = scriptedModel([unsupported, { text: 'Plain answer.' }]);
         const events = await collect(runCopilotTurn({
-            callModel, messages: baseMessages, tools: [echoTool()], noToolsSystemPrompt: 'PLAIN'
+            model: callModel, messages: baseMessages, tools: [echoTool()], noToolsSystemPrompt: 'PLAIN'
         }));
-        expect(events.some((event) => event.type === 'tools_unsupported')).toBe(true);
+        expect(events.find((event) => event.type === 'tools_unsupported'))
+            .toEqual({ type: 'tools_unsupported', error: 'HTTP 400: registry.ollama.ai/library/gemma3 does not support tools' });
         expect(requests[1].tools).toBeUndefined();
         expect(requests[1].toolChoice).toBeUndefined();
         expect(requests[1].messages[0].content).toBe('PLAIN');
         expect(events.at(-1)).toMatchObject({ type: 'done', text: 'Plain answer.' });
     });
 
-    it('does not mistake other HTTP failures for missing tool support', async () => {
+    it('reacts to the failure\'s type, not its text: other failures are thrown, whatever they say', async () => {
         const quota = Object.assign(new Error('HTTP 429: quota'), { status: 429 });
-        const { callModel } = scriptedModel([quota]);
-        await expect(collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()] })))
+        await expect(collect(runCopilotTurn({ model: scriptedModel([quota]).callModel, messages: baseMessages, tools: [echoTool()] })))
             .rejects.toThrow('HTTP 429: quota');
-        const err = (message, status = 400) => Object.assign(new Error(message), { status });
-        expect(isToolsUnsupportedError(err('HTTP 500: model does not support tools', 500))).toBe(false);
-        expect(isToolsUnsupportedError(err('HTTP 400: tools are not supported by this model'))).toBe(true);
-        expect(isToolsUnsupportedError(err('HTTP 400: function calling is not supported'))).toBe(true);
-        // A schema problem is a real error, never "this model has no tools".
-        expect(isToolsUnsupportedError(err("HTTP 400: Invalid schema for function 'list_sites'"))).toBe(false);
-        expect(isToolsUnsupportedError(err('HTTP 400: tools.0.function.parameters is invalid'))).toBe(false);
+        // The text alone is the port's to read (provider/model.js), never the loop's.
+        const untyped = Object.assign(new Error('HTTP 400: gemma3 does not support tools'), { status: 400 });
+        const { callModel, requests } = scriptedModel([untyped, { text: 'never asked' }]);
+        await expect(collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool()] })))
+            .rejects.toBe(untyped);
+        expect(requests).toHaveLength(1);
+        // A later request's failure is a real one, typed or not: tools already went through.
+        const late = new ToolsUnsupportedError('HTTP 400: does not support tools', { status: 400 });
+        const later = scriptedModel([{ calls: [{ name: 'echo', args: { value: 1 } }] }, late]);
+        await expect(collect(runCopilotTurn({ model: later.callModel, messages: baseMessages, tools: [echoTool()] })))
+            .rejects.toBe(late);
+    });
+
+    it('a request the port refuses in prepare (the context guard) has no request event, and is thrown', async () => {
+        const refusal = Object.assign(new Error('This request needs about 30,000 tokens of context. Nothing was sent.'), { name: 'ContextLimitError' });
+        const stream = vi.fn();
+        const seen = [];
+        await expect((async () => {
+            for await (const event of runCopilotTurn({ model: { prepare: async () => { throw refusal; }, stream }, messages: baseMessages, tools: [echoTool()] })) {
+                seen.push(event.type);
+            }
+        })()).rejects.toBe(refusal);
+        expect(seen).toEqual(['round']);
+        expect(stream).not.toHaveBeenCalled();
+    });
+
+    it('stops a request whose preparation hangs (a server probe), as a stalled reply', async () => {
+        let aborted = false;
+        const model = {
+            prepare: (intent, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => {
+                aborted = true;
+                reject(new DOMException('Aborted', 'AbortError'));
+            })),
+            stream: vi.fn()
+        };
+        const failure = await collect(runCopilotTurn({ model, messages: baseMessages, tools: [echoTool()], limits: { stallMs: 20 } })).catch((error) => error);
+        expect(failure).toMatchObject({ name: 'ModelTimeoutError', kind: 'stall' });
+        expect(aborted).toBe(true);
+        expect(model.stream).not.toHaveBeenCalled();
     });
 
     it('surfaces a tool-schema 400 instead of falling back', async () => {
         const schema = Object.assign(new Error("HTTP 400: Invalid schema for function 'echo'"), { status: 400 });
         const { callModel, requests } = scriptedModel([schema]);
-        await expect(collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()] })))
+        await expect(collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool()] })))
             .rejects.toThrow('Invalid schema');
         expect(requests).toHaveLength(1);
     });
 
     it('sends no tools when they are switched off', async () => {
         const { callModel, requests } = scriptedModel([{ text: 'hi' }]);
-        await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()], toolsEnabled: false }));
+        await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool()], toolsEnabled: false }));
         expect(requests[0].tools).toBeUndefined();
     });
 
@@ -232,7 +269,7 @@ describe('runCopilotTurn', () => {
         const controller = new AbortController();
         const slow = echoTool({ run: () => new Promise(() => {}) });
         const { callModel } = scriptedModel([{ calls: [{ name: 'echo', args: { value: 1 } }] }]);
-        const generator = runCopilotTurn({ callModel, messages: baseMessages, tools: [slow], signal: controller.signal });
+        const generator = runCopilotTurn({ model: callModel, messages: baseMessages, tools: [slow], signal: controller.signal });
         const seen = [];
         const run = (async () => {
             for await (const event of generator) {
@@ -249,26 +286,9 @@ describe('runCopilotTurn', () => {
         const slow = echoTool({ run: () => new Promise(() => {}) });
         const { callModel } = scriptedModel([{ calls: [{ name: 'echo', args: { value: 1 } }] }, { text: 'ok' }]);
         const events = await collect(runCopilotTurn({
-            callModel, messages: baseMessages, tools: [slow], limits: { toolTimeoutMs: 20 }
+            model: callModel, messages: baseMessages, tools: [slow], limits: { toolTimeoutMs: 20 }
         }));
         expect(events.find((event) => event.type === 'tool_end').error).toMatch(/did not finish within/);
-    });
-
-    it('fits large results to the budget without dropping the checks', async () => {
-        const big = echoTool({
-            run: async () => ({
-                data: { rows: Array.from({ length: 500 }, (_, index) => ({ index, value: index * 1.5 })) },
-                checks: [{ level: 'warn', text: 'big' }]
-            })
-        });
-        const { callModel, requests } = scriptedModel([{ calls: [{ name: 'echo', args: { value: 1 } }] }, { text: 'ok' }]);
-        await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [big], limits: { resultCharBudget: 1200 } }));
-        const content = requests[1].messages.at(-1).content;
-        expect(content.length).toBeLessThanOrEqual(1300);
-        const parsed = JSON.parse(content);
-        expect(parsed.checks).toEqual([{ level: 'warn', text: 'big' }]);
-        expect(parsed.data.rows_omitted).toBeGreaterThan(400);
-        expect(parsed.data.rows.length + parsed.data.rows_omitted).toBe(500);
     });
 
     it('echoes a call\'s extra_content (Gemini thought_signature) and sends no index', async () => {
@@ -277,7 +297,7 @@ describe('runCopilotTurn', () => {
             { calls: [{ name: 'echo', args: { value: 1 }, extraContent: signature }] },
             { text: 'ok' }
         ]);
-        await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()] }));
+        await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool()] }));
         const [call] = requests[1].messages.at(-2).tool_calls;
         expect(call.extra_content).toEqual(signature);
         expect('index' in call).toBe(false);
@@ -288,21 +308,23 @@ describe('runCopilotTurn', () => {
             { text: '\n\n ', calls: [{ name: 'echo', args: { value: 1 } }] },
             { text: 'ok' }
         ]);
-        await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()] }));
+        await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool()] }));
         expect(requests[1].messages.at(-2).content).toBeNull();
         expect(assistantContent(' x ')).toBe(' x ');
         expect(assistantContent('')).toBeNull();
     });
 
-    it('says so when the last round comes back with tool calls only (Ollama ignores tool_choice)', async () => {
+    it('says so when the last round comes back with tool calls only (a provider that ignores tool_choice \'none\')', async () => {
         // The last round's calls are not run; it is reminded once, then said so.
+        // Ollama can no longer do this (the port sends it no tools); a server
+        // that takes the field but does not honour it still could.
         const { callModel, requests } = scriptedModel([
             { calls: [{ name: 'echo', args: { value: 1 } }] },
             { calls: [{ name: 'echo', args: { value: 2 } }] },
             { calls: [{ name: 'echo', args: { value: 3 } }] }
         ]);
         const events = await collect(runCopilotTurn({
-            callModel, messages: baseMessages, tools: [echoTool()], limits: { maxRounds: 1 }
+            model: callModel, messages: baseMessages, tools: [echoTool()], limits: { maxRounds: 1 }
         }));
         expect(requests).toHaveLength(3);
         expect(requests[2].toolChoice).toBe('none');
@@ -318,13 +340,13 @@ describe('runCopilotTurn', () => {
             yield { content: 'The angles are' };
             yield { finishReason: 'length' };
         }());
-        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()] }));
+        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool()] }));
         expect(events.at(-1)).toMatchObject({ type: 'done', text: 'The angles are', stoppedBy: 'answer', cut: true });
     });
 
     it('reminds the model once after an empty reply, then marks the turn empty with a reason', async () => {
         const { callModel, requests } = scriptedModel([{ text: '  ' }, { text: '' }]);
-        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()] }));
+        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool()] }));
         expect(requests).toHaveLength(2);
         expect(requests[1].messages.at(-1)).toMatchObject({ role: 'user', content: expect.stringMatching(/no answer and no analysis call/) });
         expect(events.at(-1)).toMatchObject({
@@ -346,17 +368,15 @@ describe('runCopilotTurn', () => {
             { text: 'ok' }
         ]);
         await collect(runCopilotTurn({
-            callModel, messages: baseMessages, tools: [big], limits: { resultCharBudget: 900, turnCharBudget: 1500 }
+            model: callModel, messages: baseMessages, tools: [big], limits: { resultCharBudget: 900, turnCharBudget: 1500 }
         }));
-        const toolContents = requests[3].messages.filter((message) => message.role === 'tool').map((message) => JSON.parse(message.content));
-        expect(toolContents[0]).toEqual({
-            ref: 'r1',
-            compacted: 'this earlier result was shortened to fit the context; its checks and headline numbers are kept',
-            checks: [{ level: 'ok', text: 'round 1' }],
-            key: { value: 1 }
-        });
-        // The newest result is never compacted.
-        expect(toolContents[2].data.value).toBe(3);
+        const toolContents = requests[3].messages.filter((message) => message.role === 'tool').map((message) => message.content);
+        // The earliest is compacted (its form: tools.test.js compactToolMessage),
+        // from the message the model first read; the newest never is.
+        const firstRead = requests[1].messages.filter((message) => message.role === 'tool')[0].content;
+        expect(toolContents[0]).toBe(compactToolMessage(firstRead));
+        expect(JSON.parse(toolContents[0]).compacted).toBeDefined();
+        expect(JSON.parse(toolContents[2]).data.value).toBe(3);
         const total = requests[3].messages.filter((message) => message.role === 'tool').reduce((sum, message) => sum + message.content.length, 0);
         expect(total).toBeLessThanOrEqual(1500);
     });
@@ -366,7 +386,7 @@ describe('runCopilotTurn', () => {
             run: async ({ value }) => ({ data: { value, rows: Array.from({ length: 2000 }, (_, index) => index) }, checks: [] })
         });
         const { callModel, requests } = scriptedModel([{ calls: [{ name: 'echo', args: { value: 1 } }] }, { text: 'ok' }]);
-        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [big], limits: { resultCharBudget: 900 } }));
+        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [big], limits: { resultCharBudget: 900 } }));
         const end = events.find((event) => event.type === 'tool_end');
         const read = JSON.parse(requests[1].messages.find((message) => message.role === 'tool').content).data;
         expect(end.data).toEqual(read);
@@ -378,7 +398,7 @@ describe('runCopilotTurn', () => {
         let seen = null;
         const slow = echoTool({ run: (args, { signal }) => { seen = signal; return new Promise(() => {}); } });
         const { callModel } = scriptedModel([{ calls: [{ name: 'echo', args: { value: 1 } }] }, { text: 'ok' }]);
-        await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [slow], limits: { toolTimeoutMs: 10 } }));
+        await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [slow], limits: { toolTimeoutMs: 10 } }));
         expect(seen.aborted).toBe(true);
     });
 
@@ -388,7 +408,7 @@ describe('runCopilotTurn', () => {
             { text: 'Late.\nOutcome: partial — out of time.' }
         ]);
         const events = await collect(runCopilotTurn({
-            callModel, messages: baseMessages, tools: [echoTool()], limits: { maxTurnMs: -1 }
+            model: callModel, messages: baseMessages, tools: [echoTool()], limits: { maxTurnMs: -1 }
         }));
         expect(requests[0].toolChoice).toBe('auto');
         expect(requests[1].toolChoice).toBe('none');
@@ -403,39 +423,15 @@ describe('runCopilotTurn', () => {
             { calls: [{ name: 'echo', args: { value: '3' } }, { name: 'boom', args: { value: 1 } }, { name: 'odd', args: { value: 1 } }] },
             { text: 'ok' }
         ]);
-        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [tool, failing, throwing] }));
+        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [tool, failing, throwing] }));
         expect(events.filter((event) => event.type === 'tool_end').map((event) => event.pageParams)).toEqual([{ shown: 3 }, null, null]);
     });
 
-    it('uses sensible default limits', () => {
+    it('uses sensible default limits (the send-backs per turn are the verification\'s: verification.test.js)', () => {
         expect(DEFAULT_LIMITS).toEqual({
             maxRounds: 6, maxCallsPerRound: 4, toolTimeoutMs: 120000, maxTurnMs: 600000, resultCharBudget: 3000, turnCharBudget: 12000,
-            maxQuestions: 2, stallMs: 180000, requestMaxMs: 600000, maxNoProgressRounds: 2, maxEvidenceGates: 2
+            maxQuestions: 2, stallMs: 180000, requestMaxMs: 600000, maxNoProgressRounds: 2
         });
-    });
-});
-
-describe('tool helpers', () => {
-    it('keeps only well-formed, uniquely named tools', () => {
-        const ok = echoTool();
-        expect(usableTools([ok, { ...ok }, { ...ok, name: 'Bad Name' }, { name: 'x', description: 'd' }, null])).toEqual([ok]);
-    });
-
-    it('derives a step status from the error and checks', () => {
-        expect(stepStatus({ error: 'x', checks: [] })).toBe('failed');
-        expect(stepStatus({ error: null, checks: [{ level: 'fail', text: 'a' }] })).toBe('failed');
-        expect(stepStatus({ error: null, checks: [{ level: 'warn', text: 'a' }, { level: 'ok', text: 'b' }] })).toBe('warn');
-        expect(stepStatus({ error: null, checks: [{ level: 'note', text: 'a' }] })).toBe('ok');
-    });
-
-    it('trims nested arrays and hard-cuts as a last resort, never silently', () => {
-        const value = { a: { b: Array.from({ length: 100 }, (_, i) => i) }, c: 'x' };
-        const fitted = fitToBudget(value, 120);
-        expect(JSON.stringify(fitted).length).toBeLessThanOrEqual(120);
-        expect(fitted.a.b_omitted + fitted.a.b.length).toBe(100);
-        const cut = JSON.parse(budgetJson({ s: 'y'.repeat(500) }, 100));
-        expect(cut.truncated).toBe(true);
-        expect(fitToBudget(null, 10)).toBeNull();
     });
 });
 
@@ -458,7 +454,7 @@ describe('view tools', () => {
             { calls: [{ name: 'point', args: { card: 'a' } }] },
             { text: 'Done.\nOutcome: achieved — pointed.' }
         ]);
-        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [view], toolContext: { focus } }));
+        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [view], toolContext: { focus } }));
         expect(view.run).toHaveBeenCalledTimes(2);
         expect(view.run).toHaveBeenLastCalledWith({ card: 'a' }, { focus, signal: expect.any(AbortSignal) });
         expect(focus.show).toHaveBeenCalledTimes(2);
@@ -472,7 +468,7 @@ describe('view tools', () => {
             { calls: [{ name: 'echo', args: { value: 1 } }, { name: 'broken', args: { value: 2 } }] },
             { text: 'ok\nOutcome: achieved — x' }
         ]);
-        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool(), broken] }));
+        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool(), broken] }));
         expect(events.filter((event) => event.type === 'tool_start').map((event) => event.cards)).toEqual([[], []]);
     });
 });
@@ -551,7 +547,7 @@ describe('ask_user: the agent asks instead of guessing a parameter', () => {
         const tools = [grPeaks(), bondAngles(), buildAskUserTool()];
         const { callModel, requests } = scriptedModel(replies);
         const events = await collect(runCopilotTurn({
-            callModel, messages: baseMessages, tools, toolContext: askUser ? { askUser } : null, ...extra
+            model: callModel, messages: baseMessages, tools, toolContext: askUser ? { askUser } : null, ...extra
         }));
         return { events, requests, tools };
     };
@@ -603,15 +599,8 @@ describe('ask_user: the agent asks instead of guessing a parameter', () => {
         expect(events.at(-1).stoppedBy).toBe('answer');
     });
 
-    it('tells the model when and when not to ask, in the system prompt', () => {
-        const [system] = buildCopilotMessages({ context: {}, userText: 'q', askUser: true });
-        expect(system.content).toContain(ASK_RULES);
-        expect(ASK_RULES).toMatch(/which coordination shell or r-window, which site or element\s+pair, which symmetry tolerance, which run or dataset/);
-        expect(ASK_RULES).toMatch(/Never ask when the question is clear, when the\s+context or an analysis answers it/);
-        expect(ASK_RULES).toMatch(/One question at a time, at most two per request/);
-        expect(ASK_RULES).toMatch(/default/);
-        expect(buildCopilotMessages({ context: {}, userText: 'q' })[0].content).not.toContain('ask_user');
-    });
+    // When and when not to ask, in the system prompt: turn.test.js (the turn
+    // adds the ask rules with its ask-user port).
 
     it('stops cleanly when the turn is cancelled while the question waits', async () => {
         const controller = new AbortController();
@@ -624,7 +613,7 @@ describe('ask_user: the agent asks instead of guessing a parameter', () => {
         const { callModel, requests } = scriptedModel(ambiguousScript());
         const seen = [];
         const turn = (async () => {
-            for await (const event of runCopilotTurn({ callModel, messages: baseMessages, tools, signal: controller.signal, toolContext: { askUser } })) {
+            for await (const event of runCopilotTurn({ model: callModel, messages: baseMessages, tools, signal: controller.signal, toolContext: { askUser } })) {
                 seen.push(event);
                 if (event.type === 'tool_start' && event.interactive) setTimeout(() => controller.abort(), 5);
             }
@@ -655,13 +644,14 @@ describe('ask_user: the agent asks instead of guessing a parameter', () => {
             { text: 'Done.\nOutcome: partial — assumed the default.' }
         ], askUser);
         // Asked in steps 1 and 2 (the same question twice: a real exchange
-        // each time); the second call of step 1 and the third question refused.
+        // each time); the second call of step 1 and the third question refused
+        // (skipped by the loop: their texts are the contract's, tools.test.js).
         expect(askUser).toHaveBeenCalledTimes(2);
         const ends = events.filter((event) => event.type === 'tool_end');
         expect(ends.map((event) => event.cached)).toEqual([false, false, false, false]);
-        expect(ends[1].error).toMatch(/one question at a time/);
-        expect(ends[3].error).toMatch(/already asked 2 questions .* proceed with your default/);
-        expect(JSON.parse(requests[3].messages.at(-1).content).error).toMatch(/already asked 2 questions/);
+        expect(ends.map((event) => event.resultStatus)).toEqual(['ok', 'skipped', 'ok', 'skipped']);
+        expect(ends.map((event) => event.choice?.source ?? null)).toEqual(['option', null, 'option', null]);
+        expect(JSON.parse(requests[3].messages.at(-1).content).error).toBe(ends[3].error);
     });
 
     it('reads plain strings as options, and says so when nobody can be asked', async () => {
@@ -692,7 +682,7 @@ describe('evidence, numbers by reference and the computed verdict (THY-18)', () 
             { calls: [{ name: 'analyze_modulations', args: {} }] },
             { text: 'Ti orders at (0, 0, ½), {{r1.elements.0.zone_boundary.0.1}}× the median.\nOutcome: the zone-boundary point is ordered.' }
         ]);
-        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [tool], evidence: buildEvidenceGate() }));
+        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [tool], verification: createVerification() }));
         const gate = events.find((event) => event.type === 'gate');
         expect(gate).toMatchObject({ id: 'order-between-cells', missing: ['analyze_modulations'] });
         // Its text is withdrawn; the model reads its answer and the app's note.
@@ -712,7 +702,7 @@ describe('evidence, numbers by reference and the computed verdict (THY-18)', () 
     it('an answer that still lacks its evidence stands, not verified, with the missing analysis named', async () => {
         const answer = { text: 'Ti forms a superstructure.\nOutcome: achieved — sure.' };
         const { callModel } = scriptedModel([answer, answer]);
-        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [modulations()], evidence: buildEvidenceGate() }));
+        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [modulations()], verification: createVerification() }));
         const done = events.at(-1);
         expect(events.filter((event) => event.type === 'gate')).toHaveLength(1);
         expect(done.audit).toEqual([expect.objectContaining({
@@ -727,7 +717,7 @@ describe('evidence, numbers by reference and the computed verdict (THY-18)', () 
             { text: 'Ti forms a superstructure.' }
         ]);
         const events = await collect(runCopilotTurn({
-            callModel, messages: baseMessages, tools: [echoTool(), modulations()], evidence: buildEvidenceGate(), limits: { maxRounds: 1 }
+            model: callModel, messages: baseMessages, tools: [echoTool(), modulations()], verification: createVerification(), limits: { maxRounds: 1 }
         }));
         expect(requests).toHaveLength(2);
         expect(events.some((event) => event.type === 'gate')).toBe(false);
@@ -736,7 +726,7 @@ describe('evidence, numbers by reference and the computed verdict (THY-18)', () 
 
     it('an answer the gate withdrew stands when the model then writes nothing (review)', async () => {
         const { callModel } = scriptedModel([{ text: 'Ti forms a superstructure.\nOutcome: sure.' }, { text: '' }, { text: '' }]);
-        const done = (await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [modulations()], evidence: buildEvidenceGate() }))).at(-1);
+        const done = (await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [modulations()], verification: createVerification() }))).at(-1);
         expect(done).toMatchObject({ type: 'done', text: 'Ti forms a superstructure.\nOutcome: sure.', stoppedBy: 'answer' });
         expect(done.audit.map((finding) => finding.rule)).toEqual(['evidence']);
         expect(done.outcome.status).toBe('not verified');
@@ -750,13 +740,14 @@ describe('evidence, numbers by reference and the computed verdict (THY-18)', () 
             { text: 'Ti has CN = {{r1.cn}}.' }
         ]);
         const events = await collect(runCopilotTurn({
-            callModel, messages: baseMessages, tools: [cnTool, { ...echoTool(), name: 'find_gr_peaks' }], evidence: buildEvidenceGate({ elements: ['Ti', 'O'] })
+            model: callModel, messages: baseMessages, tools: [cnTool, { ...echoTool(), name: 'find_gr_peaks' }],
+            verification: createVerification({ context: { structure: { elements: { Ti: 1, O: 3 } } } })
         }));
         expect(events.find((event) => event.type === 'gate')).toMatchObject({ id: 'coordination' });
         expect(requests).toHaveLength(3);
         const late = scriptedModel([{ calls: [{ name: 'echo', args: { value: 1 } }] }, { text: 'Ti forms a superstructure.' }]);
         const lateEvents = await collect(runCopilotTurn({
-            callModel: late.callModel, messages: baseMessages, tools: [echoTool(), modulations()], evidence: buildEvidenceGate(), limits: { maxTurnMs: -1 }
+            model: late.callModel, messages: baseMessages, tools: [echoTool(), modulations()], verification: createVerification(), limits: { maxTurnMs: -1 }
         }));
         expect(lateEvents.some((event) => event.type === 'gate')).toBe(false);
         expect(lateEvents.at(-1).audit.map((finding) => finding.rule)).toEqual(['evidence']);
@@ -765,7 +756,7 @@ describe('evidence, numbers by reference and the computed verdict (THY-18)', () 
     it('with tools off, a conclusion no analysis backs is not verified (review)', async () => {
         const { callModel } = scriptedModel([{ text: 'Ti forms a superstructure.' }]);
         const done = (await collect(runCopilotTurn({
-            callModel, messages: baseMessages, tools: [modulations()], toolsEnabled: false, evidence: buildEvidenceGate()
+            model: callModel, messages: baseMessages, tools: [modulations()], toolsEnabled: false, verification: createVerification()
         }))).at(-1);
         expect(done.audit.map((finding) => finding.rule)).toEqual(['evidence']);
         expect(done.outcome.status).toBe('not verified');
@@ -776,7 +767,7 @@ describe('evidence, numbers by reference and the computed verdict (THY-18)', () 
             { calls: [{ name: 'echo', args: { value: 4 } }] },
             { text: 'The value is {{r1.value}}, the list ends at {{r1.list.2}}, and the shift is {{r2.shift}} Å.' }
         ]);
-        const done = (await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()] }))).at(-1);
+        const done = (await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool()] }))).at(-1);
         expect(done.text).toBe('The value is 4, the list ends at 3, and the shift is {{r2.shift}} Å.');
         expect(done.references).toEqual({ written: 3, filled: 2, unknown: ['r2.shift'] });
         expect(done.audit).toEqual([{ rule: 'reference', text: 'The answer cites {{r2.shift}}, which names no value this question\'s analyses returned: those numbers are missing.' }]);

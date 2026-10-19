@@ -5,6 +5,117 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+### Copilot: one module for the run as the Copilot sees it; the harness records its view
+
+- `src/copilotRun.js` turns an open run and the view on screen into everything the AI Copilot is
+  handed: CopilotChat's eight run props, the engine tools, the elements, the engine and the
+  normalised view (`DEFAULT_VIEW`: the Detected SG card's 0.2 Å, nothing hidden, no PCA table,
+  Live Data off). Its browser adapter `useCopilotRun.js` takes over the Dashboard's symmetry and
+  `.dat` work and copilotTools.js's `useCopilotTools`; its in-process adapter `openRunFolder.js`
+  (Node and tests only; an eslint rule keeps it out of `src/`) is how the validation harness now
+  opens each case. The Dashboard's plot list, χ² history and plot parse are shared from
+  browserData. App behaviour and what the model sees are unchanged (the model-visible snapshots
+  pass as they were; arms A and A+ are unchanged).
+- Plan item 1.3: each live record keeps the view it ran with (`record.view`) and the context
+  sections the model had and lacked, with `earlier_turns: 0`; `run.js live --pca-table` (dev
+  only, off by default) adds the PCA table for a check of its effect
+  ([copilot-validation.md](algorithms/copilot-validation.md#records-transcripts-findings)).
+
+### Copilot validation: the held-out breathing case recomposed
+
+- The test breathing case's cluster and anion were the skills' reference compound, whose
+  published shells `coordination-shells/lacunar-spinel-shells.md` gives and `read_skill` serves to
+  arm B: a leak of the case's kind to arm B only. The case is recomposed, not the skill (the
+  user's text): a composition a fresh author chose without dev results, which no skill (main or
+  PR #71's drafts) or model-visible snapshot names. Its seed follows a rule fixed before looking:
+  the first seed of a fixed sequence whose drawn breathing sd over the case's clusters lies in a
+  fixed window about the planted sd. Shape, breathing, thermal width and supercell are unchanged.
+  (Values, seed and rule sealed with the test cases since the holdout gate; see `TEST_SET_SHA256`.)
+  Approved by the manager on the user's delegation, 2026-10-19; the user may reverse it.
+- `TEST_SET_SHA256` and `PROTOCOL_VERSION` 2026-10-19.2. No arm B or C run had touched the test
+  set. Arms A and A+ re-recorded on it with `--final` (4ab9eab): only the breathing case's records
+  change, and no score moves (A 0.81, A+ 0.99); the dev records are unchanged.
+- The holdout scan's open-leak list is empty (kept for future skill-text hits), and its four
+  allow-list entries for the old cluster are gone. `validation/findings/decisions.jsonl` records
+  the decision in the findings' form, validated by `split.test.js`. Details:
+  [copilot-validation.md](algorithms/copilot-validation.md), Protocol 2026-10-19.2.
+
+### Copilot: the shape of every tool's data, declared and checked (plan 3.3)
+
+- With numbers by reference the model quotes `{{r3.sites.0.shift_A}}`, so the paths of a tool's
+  `data` are an interface. Each live tool's spec now declares them: `dataShape`, in a small
+  notation that reads like the JSON (`'number|null'`, `'key?'` optional, `'cn_*_per_*'` pattern
+  keys, `[shape]` lists, `[a, b]` tuples, `oneOf(…)`), with one pure checker
+  (`src/llm/copilot/dataShape.js`) that names every mismatch by its reference path. The four run
+  tools (with every `read_run_data` section), the seven engine tools, `ask_user` and `read_skill`
+  declare theirs; the engine tools' shapes sit beside the summarizers that build the data.
+- `dataShape` is internal: `toRequestTools` sends name, description and parameters only, and the
+  model-visible snapshots are unchanged.
+- `src/__tests__/toolDataShapes.test.js` runs every tool through `executeToolCall` on the Demo run
+  and on every dev case (≈ 3 s), with arguments read from each run's own data (every section and
+  pair, whole, cut, confirmed, two-window and empty bond windows, each same-element shell's
+  clusters, three tolerances, each `ask_user` reply form, every skill and reference), and checks
+  each result both ways: no undeclared key, no required key missing, every value of its type, and
+  every declared key returned by some call except the forms the runs cannot reach (listed with
+  their reason). A PR that changes a tool's output changes its `dataShape` in the same diff. No
+  tool's behaviour or output changed.
+
+### Copilot validation: the holdout scan widened
+
+- `validation/__tests__/split.test.js` (with `holdoutScan.js`) now looks for each held-out test
+  case's composition, cluster, structure type, planted lengths, directions and wavevector, read
+  from `cases.js` at run time, not only its id. It scans `src` (js, jsx, md and the model-visible
+  snapshots), every skill file, `rmc_toolkits`, `docs/` and the top-level docs; the validation and
+  copilot-validation.md are not scanned. A bare element symbol is never a hit, and a failure prints
+  the matched text masked. Only text no model can read may be allow-listed, and the test checks
+  that rule; five test- or doc-only hits found on 2026-10-19 are. The skills' reference compound
+  reaches arm B through `read_skill`, so it is an open leak pending the user: printed on every run
+  and pinned line by line. Both lists are in
+  [copilot-validation.md](algorithms/copilot-validation.md#the-holdout-scan) (plan item 1.5).
+
+### Copilot validation: the harness no longer tells the model the case kind
+
+- The harness named each run, and its `.rmc6f` and partials files, after the case id, and the
+  run name reaches the model in its context (`"run": "dev-offcentre"`): every arm B and C run was
+  told its case kind. Every case is now the run `rmc_run` (`validation/runFolder.js` `RUN_NAME`,
+  `RUN_FILES`); the record keeps the case id. `run.js write` saves each case's run folder as
+  `<out>/<case>/rmc_run/`, with `truth.json` beside it rather than in it.
+- `PROTOCOL_VERSION` 2026-10-19.1: live runs under an earlier protocol, if any, are not comparable.
+  Arms A and A+ are unchanged. The model-visible snapshot changes in one line, the context's `run`.
+- `src/__tests__/modelVisible/caseBlind.test.js`: no case id or kind in the harness's first
+  request on any case (dev and test, arms B and C), and no case id in any tool result on the dev
+  cases ([copilot-validation.md](algorithms/copilot-validation.md#what-the-model-sees-snapshot-tests)).
+
+### Tests: generated goldens at the orientation and site seams
+
+- The displacement-direction engine and its JS port are held to one generated golden instead of
+  values copied by hand into both suites: `tests/generate_orientation_fixture.py` writes
+  `orientation_fixture.json` (21 full payloads with their key sets — the golden cloud, the 8-well
+  model, isotropic, one-sided, prolate in the PCA frame, sparse, singly occupied pairs and demo-run
+  sites, at ν 2–10 — plus the tie-family cells, neighbour checksums, polygon starts, the
+  `recommendedFrequency` table and Pearson's null moments), checked by `orientationParity.test.js`.
+  The hand-copied tables (`GOLDEN_PEAK`/`_MAP`/`_ASYMMETRY`/`_ANISOTROPY`, `WELL_MODEL_PEAKS`,
+  `SPECIAL_DIRECTION_CELLS`, `AXIS_CELLS_NU3`, `NEIGHBOR_CHECKSUMS`, `POLYGON_STARTS_NU38`,
+  `PEARSON_MOMENTS`, the `recommendedFrequency` pins) are gone; the generated values equal them bit
+  for bit.
+- The PCA site table (`site_ellipsoids` ↔ `siteEllipsoids`) gets its first cross-engine golden:
+  `tests/generate_pca_sites_fixture.py` → `pca_sites_fixture.json` (all 52 demo-run sites and
+  synthetic isotropic, split, zero-spread and mixed sites), checked by `pcaSitesParity.test.js`.
+- `tests/test_orientation_fixture.py` and `tests/test_pca_sites_fixture.py` re-run the generators
+  on the committed inputs, so a fixture cannot go stale. Both sides compare by one rule
+  (`goldenCompare.js` ↔ `tests/golden_compare.py`): integers, booleans and nulls exactly, other
+  numbers to 1e-9 relative + 1e-12, p-values to 1e-9 relative, eigenvector sets eigenspace by
+  eigenspace (a degenerate one, where LAPACK and the JS Jacobi solver pick different bases, by its
+  projector). No engine changed.
+
+### Copilot: snapshots of what the model sees
+
+- `web_app/frontend/src/__tests__/modelVisible/` pins, as readable files, every system-prompt
+  variant, the first request and tool list of the dock (Demo run) and of the validation harness
+  (`dev-offcentre`, arms B and C), and one tool message per tool on the Demo. Tests only; a diff in
+  them is a change to what the model sees, to be called out in the PR
+  ([copilot-validation.md](algorithms/copilot-validation.md#what-the-model-sees-snapshot-tests)).
+
 ### Copilot: no conclusion without its evidence; numbers by reference; the verdict computed (THY-18)
 
 - **Evidence gate:** an answer that concludes order between cells, a split site as disorder, a
@@ -121,7 +232,7 @@ A review of the Copilot's tools against synthetic configurations with planted lo
   and without skills) and D (truth) scored by one fixed function; transcripts, number provenance,
   a spend cap, and the supervisor findings schema. Arm A: 0.81 on both sets; it reads ordered
   antiphase displacements as random off-centring, misses cluster breathing and rigid dimers, and
-  the 0.2 Å card misses a 0.06–0.07 Å polar shift. The review's larger findings (split shells cut
+  the 0.2 Å card misses a polar shift below its tolerance. The review's larger findings (split shells cut
   at a deep trough, the cluster null under collective motion) are listed in
   [copilot-review.md](algorithms/copilot-review.md).
 

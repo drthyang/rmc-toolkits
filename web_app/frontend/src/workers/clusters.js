@@ -14,8 +14,11 @@
 // the atoms of one cluster. Each statistic comes back as observed, null mean,
 // null sd over `shuffles` shuffles and z = (observed − mean) / sd. The
 // shuffles are counter-based hash permutations, identical in both engines.
+// The engine also decides what its statistics show: `verdict`, always present
+// (the verdict section below, clusters.py's), which the Copilot's
+// analyze_clusters only renders.
 
-import { eigenDecomposition, siteSpecies } from './pcaKde.js';
+import { eigenDecomposition, siteEllipsoids, siteSpecies } from './pcaKde.js';
 import { WINDOW_TOL, countPatterns, perpendicularWidths } from './triplets.js';
 
 export const DEFAULT_SHUFFLES = 24;
@@ -319,7 +322,10 @@ export const clusterDistortion = (parsed, element, [rmin, rmax], { shuffles = DE
         kinds: [],
         parseWarning: parsed.parseWarning ?? null
     };
-    if (extended || !templates.length) return result;
+    if (extended || !templates.length) {
+        result.verdict = noClusterVerdict(extended ? 'extended_network' : 'no_clusters');
+        return result;
+    }
 
     const cellOf = (c) => [Math.floor(c / (supercell[1] * supercell[2])), Math.floor(c / supercell[2]) % supercell[1], c % supercell[2]];
     const perTemplate = templates.map((template, tIndex) => {
@@ -506,5 +512,303 @@ export const clusterDistortion = (parsed, element, [rmin, rmax], { shuffles = DE
         extraContacts: extra,
         extraContactsPerAtom: fractional.length ? 2 * extra / fractional.length : 0
     };
+
+    // The analysed kind's member sites, from the clouds this engine holds:
+    // their site rows decide which are split (one rule, isSplitSite).
+    const memberReferences = [...new Set(chosen.flatMap(({ template }) => template.sites.map((s) => sites[s].referenceNumber)))]
+        .sort((a, b) => a - b);
+    const memberRows = siteEllipsoids(memberReferences.map((reference) => sites.find((site) => site.referenceNumber === reference)));
+    result.verdict = clusterVerdict(result, memberRows);
     return result;
+};
+
+// --- the verdict (clusters.py's verdict section; keep the two in sync) -----------
+//
+// Each question is a Finding, { answer, because, evidence }: answer true/false,
+// or null where the question does not apply or its statistic is undefined
+// (never "not significant"); because, a code from CLUSTER_BECAUSE; evidence,
+// every statistic the answer consulted, those that clear their bar first, then
+// the rest in a fixed order. An Evidence record is
+//
+//   { statistic, against, observed, null, z, change, changeKind, bar, clears, side?, strict?, site? }
+//
+// against: 'shapeNull' | 'independentNull' | 'samplingError' | 'siteKurtosis' |
+// 'window'; change = observed / null − 1 ('ratio') or observed − null
+// ('difference'); bar maps a field of the record to its threshold, side the
+// way it is cleared ('above' ≥ bar, 'below' ≤ −bar, absent |value| ≥ bar;
+// strict: > instead of ≥), and clears = evidenceClears(record). Decisions use
+// the unrounded statistics; every number is finite or null. The rules were the
+// Copilot's summarizeClusters' until 2026-10-19, ported rule for rule.
+
+/** A cluster statistic departs from its null only when both its z and its effect size clear these. */
+export const CLUSTER_Z = 3;
+/** Relative change (observed / null − 1) of a width or an rms. */
+export const CLUSTER_EFFECT = 0.05;
+/** Change (observed − null) of the tetrahedral T2 trigonality (range 1/3 to 1). */
+export const TRIGONALITY_EFFECT = 0.02;
+/** Observed / null fraction of clusters with a gyration axis near one lattice family (one-sided). */
+export const AXIS_ENHANCEMENT = 1.1;
+/** The average cluster is statically distorted when its edges spread over at least this many sampling errors. */
+export const STATIC_SPREAD_SE = 5;
+/** Template bonds outside the window, or contacts linking clusters per atom, above this: the window. */
+export const CLUSTER_OUTLIER_FRACTION = 0.05;
+/** Clusters of other kinds (sizes) above this share of all: the window may cut through or merge clusters. */
+export const MIXED_SIZE_SHARE = 0.1;
+/**
+ * A site is split (two positions) when its PC1 is resolved and its PC1 excess
+ * kurtosis is at most −0.5 — two equal wells ±δ of thermal width σ separate at
+ * δ = σ (κ = −2δ⁴/(δ² + σ²)² = −0.5) — and at least SPLIT_SITE_SE sampling
+ * errors (√(24/n)) below zero. The one rule for the app: list_sites and the
+ * split member sites (clusters.py's SPLIT_SITE_KURTOSIS, SPLIT_SITE_SE).
+ */
+export const SPLIT_SITE_KURTOSIS = -0.5;
+export const SPLIT_SITE_SE = 3;
+
+export const CLUSTER_RULES = Object.freeze({
+    z: CLUSTER_Z,
+    effect: CLUSTER_EFFECT,
+    trigonalityEffect: TRIGONALITY_EFFECT,
+    axisEnhancement: AXIS_ENHANCEMENT,
+    staticSpreadSe: STATIC_SPREAD_SE,
+    outlierFraction: CLUSTER_OUTLIER_FRACTION,
+    mixedSizeShare: MIXED_SIZE_SHARE,
+    splitKurtosis: SPLIT_SITE_KURTOSIS,
+    splitSe: SPLIT_SITE_SE
+});
+
+const NO_CLUSTERS = ['extended_network', 'no_clusters'];
+/** Every `because` each finding can give (closed sets, pinned by the parity fixture). */
+export const CLUSTER_BECAUSE = Object.freeze({
+    distorted: ['edge_spread', 'axis_family', 'trigonality', 'less_distorted', 'within_null', 'undefined_statistic', ...NO_CLUSTERS],
+    lessDistorted: ['below_null', 'above_null', 'within_null', 'single_edge', 'undefined_statistic', ...NO_CLUSTERS],
+    breathing: ['above_null', 'below_null', 'within_null', 'undefined_statistic', ...NO_CLUSTERS],
+    rigid: ['less_distorted', 'stiffer_bonds', 'split_sites', 'pattern', 'within_null', 'undefined_statistic', ...NO_CLUSTERS],
+    staticDistortion: ['above_sampling_error', 'within_sampling_error', ...NO_CLUSTERS],
+    splitMemberSites: ['half_or_more_split', 'fewer_than_half_split', 'none_split', ...NO_CLUSTERS],
+    trigonalLean: ['leans_trigonal', 'leans_one_edge', 'within_null', 'not_tetrahedra', 'undefined_statistic', ...NO_CLUSTERS],
+    favouredAxes: ['enhanced', 'within_null', 'undefined_statistic', ...NO_CLUSTERS],
+    'favouredAxes.families': ['enhanced', 'within_null', 'undefined_statistic'],
+    'window.extendedNetwork': ['extended_network', 'finite_clusters', 'no_clusters'],
+    'window.mixedSizes': ['above_bar', 'within_bar', ...NO_CLUSTERS],
+    'window.bondsOutsideWindow': ['above_bar', 'within_bar', ...NO_CLUSTERS],
+    'window.contactsBetweenClusters': ['above_bar', 'within_bar', ...NO_CLUSTERS]
+});
+export const EVIDENCE_AGAINST = Object.freeze(['shapeNull', 'independentNull', 'samplingError', 'siteKurtosis', 'window']);
+export const CHANGE_KINDS = Object.freeze(['ratio', 'difference']);
+
+/**
+ * Whether an Evidence record clears its bar, from the record alone: every
+ * field the bar names defined and past its threshold the record's way.
+ */
+export const evidenceClears = (record) => {
+    const entries = Object.entries(record?.bar || {});
+    if (!entries.length) return false;
+    const strict = Boolean(record.strict);
+    return entries.every(([field, threshold]) => {
+        const value = record[field];
+        if (value == null) return false;
+        if (record.side === 'above') return strict ? value > threshold : value >= threshold;
+        if (record.side === 'below') return strict ? value < -threshold : value <= -threshold;
+        return strict ? Math.abs(value) > threshold : Math.abs(value) >= threshold;
+    });
+};
+
+const finiteOrNull = (value) => (Number.isFinite(value) ? value : null);
+
+// One Evidence record; its change from observed and null by its kind.
+const evidence = (statistic, against, observedValue, nullValue, zValue, changeKind, bar, side = null, extra = {}) => {
+    const observedNumber = finiteOrNull(observedValue);
+    const nullNumber = finiteOrNull(nullValue);
+    let change = null;
+    if (changeKind != null && observedNumber != null && nullNumber != null) {
+        if (changeKind === 'ratio') change = nullNumber !== 0 ? finiteOrNull(observedNumber / nullNumber - 1) : null;
+        else change = finiteOrNull(observedNumber - nullNumber);
+    }
+    const record = {
+        statistic, against, ...extra,
+        observed: observedNumber, null: nullNumber, z: finiteOrNull(zValue), change, changeKind, bar: { ...bar }
+    };
+    if (side != null) record.side = side;
+    record.clears = evidenceClears(record);
+    return record;
+};
+
+/**
+ * The split rule on one site row (siteEllipsoids, the 'sites' request):
+ * observed = the PC1 excess kurtosis, z = it in sampling errors of a
+ * Gaussian's, κ/√(24/n) — null unless PC1 is resolved (an unresolved axis's
+ * direction, and so its kurtosis, is noise). Clears at z ≤ −SPLIT_SITE_SE and
+ * κ ≤ SPLIT_SITE_KURTOSIS. Mirrors split_site_evidence.
+ */
+export const splitSiteEvidence = (row) => {
+    const kappa = finiteOrNull(row?.excessKurtosis?.[0]);
+    const count = Number(row?.count) || 0;
+    const resolved = Boolean(row?.axisResolved?.[0]);
+    const z = kappa != null && resolved && count > 0 ? kappa / Math.sqrt(24 / count) : null;
+    return evidence('pc1ExcessKurtosis', 'siteKurtosis', kappa, 0, z, 'difference',
+        { z: SPLIT_SITE_SE, change: -SPLIT_SITE_KURTOSIS }, 'below', { site: row.referenceNumber });
+};
+
+/** Whether one site row is split (two positions): its splitSiteEvidence clears. The app's one rule (list_sites, the clusters). */
+export const isSplitSite = (row) => splitSiteEvidence(row).clears;
+
+const defined = (record) => record != null && record.z != null && record.change != null;
+
+// A Finding; its evidence with the records that clear first, the rest after, each in the given order.
+const finding = (answer, because, records = [], extra = {}) => ({
+    answer, because, ...extra,
+    evidence: [...records.filter((record) => record.clears), ...records.filter((record) => !record.clears)]
+});
+
+/** An extended network or no clusters: every shape finding null, `because` says which. */
+const noClusterVerdict = (because) => {
+    const empty = (extra = {}) => finding(null, because, [], extra);
+    return {
+        rules: { ...CLUSTER_RULES },
+        distorted: empty(),
+        lessDistorted: empty(),
+        breathing: empty(),
+        rigid: empty(),
+        staticDistortion: empty(),
+        splitMemberSites: empty({ sites: [], memberSites: [] }),
+        trigonalLean: empty(),
+        favouredAxes: empty({ families: [] }),
+        window: {
+            extendedNetwork: finding(because === 'extended_network', because),
+            mixedSizes: empty(),
+            bondsOutsideWindow: empty(),
+            contactsBetweenClusters: empty()
+        }
+    };
+};
+
+/**
+ * The findings of a clusterDistortion result that has clusters (mirrors
+ * cluster_verdict). `memberRows` are the analysed kind's member sites' rows
+ * of siteEllipsoids, in reference order. Shape statistics against the shape
+ * null, the size statistic (breathing sd) against independent atoms.
+ */
+export const clusterVerdict = (result, memberRows) => {
+    const { observed, kind } = result;
+    const nulls = { shapeNull: result.shapeNull, independentNull: { mean: result.nullMean, z: result.z } };
+    const nullTest = (path, against, effect, side, changeKind = 'ratio') => {
+        let values = [observed, nulls[against].mean, nulls[against].z];
+        path.forEach((part) => {
+            values = values.map((value) => (value && typeof value === 'object' ? value[part] : null));
+        });
+        return evidence(path.join('.'), against, ...values, changeKind, { z: CLUSTER_Z, change: effect }, side);
+    };
+    const widthUp = nullTest(['ladderWidth'], 'shapeNull', CLUSTER_EFFECT, 'above');
+    const widthDown = nullTest(['ladderWidth'], 'shapeNull', CLUSTER_EFFECT, 'below');
+    const breathUp = nullTest(['breathingSd'], 'independentNull', CLUSTER_EFFECT, 'above');
+    const breathDown = nullTest(['breathingSd'], 'independentNull', CLUSTER_EFFECT, 'below');
+    const tetrahedra = finiteOrNull(observed.eRms) != null;
+    const trig = tetrahedra ? nullTest(['t2Trigonality'], 'shapeNull', TRIGONALITY_EFFECT, null, 'difference') : null;
+    // obs / null ≥ AXIS_ENHANCEMENT exactly when obs / null − 1 ≥ AXIS_ENHANCEMENT − 1
+    // (the subtraction is exact for ratios in [0.5, 2]).
+    const familyTests = [];
+    [['longAxis', 'long'], ['shortAxis', 'short']].forEach(([axisKey, axis]) => {
+        if (!observed[axisKey] || typeof observed[axisKey] !== 'object') return;
+        Object.keys(observed[axisKey]).forEach((family) => {
+            familyTests.push({ axis, family, record: nullTest([axisKey, family], 'shapeNull', AXIS_ENHANCEMENT - 1, 'above') });
+        });
+    });
+    const familyRecords = familyTests.map(({ record }) => record);
+    const favoured = familyRecords.filter((record) => record.clears);
+    const trigonal = trig != null && trig.clears;
+    const pattern = favoured.length > 0 || trigonal;
+
+    // Distorted: the edge spread above the shape null, or a pattern whatever the spread.
+    const consulted = [widthUp, ...(trig != null ? [trig] : []), ...familyRecords];
+    let distorted;
+    if (widthUp.clears) distorted = [true, 'edge_spread'];
+    else if (favoured.length) distorted = [true, 'axis_family'];
+    else if (trigonal) distorted = [true, 'trigonality'];
+    else if (!consulted.some(defined)) distorted = [null, 'undefined_statistic'];
+    else if (widthDown.clears) distorted = [false, 'less_distorted'];
+    else distorted = [false, 'within_null'];
+
+    let less;
+    if (kind.edges === 1) less = [null, 'single_edge']; // a dimer: its one edge has no spread
+    else if (!defined(widthDown)) less = [null, 'undefined_statistic'];
+    else if (widthDown.clears) less = [true, 'below_null'];
+    else if (widthUp.clears) less = [false, 'above_null'];
+    else less = [false, 'within_null'];
+
+    let breathing;
+    if (!defined(breathUp)) breathing = [null, 'undefined_statistic'];
+    else if (breathUp.clears) breathing = [true, 'above_null'];
+    else if (breathDown.clears) breathing = [false, 'below_null'];
+    else breathing = [false, 'within_null'];
+
+    // Split member sites: at least half of the analysed kind's member sites.
+    const splitRecords = memberRows.map(splitSiteEvidence);
+    const splitSites = splitRecords.filter((record) => record.clears).map((record) => record.site);
+    const memberSites = memberRows.map((row) => row.referenceNumber);
+    let split;
+    if (splitSites.length && 2 * splitSites.length >= memberSites.length) split = [true, 'half_or_more_split'];
+    else if (splitSites.length) split = [false, 'fewer_than_half_split'];
+    else split = [false, 'none_split'];
+
+    // Rigid: less distorted (and no pattern) or a size stiffer than independent
+    // atoms — never with split sites (the null already holds the amplitude).
+    const isSplit = split[0] === true;
+    let rigid;
+    if (!defined(widthDown) && !defined(breathDown)) rigid = [null, 'undefined_statistic'];
+    else if (isSplit && (widthDown.clears || breathDown.clears)) rigid = [false, 'split_sites'];
+    else if (!isSplit && widthDown.clears && !pattern) rigid = [true, 'less_distorted'];
+    else if (!isSplit && breathDown.clears) rigid = [true, 'stiffer_bonds'];
+    else if (widthDown.clears && pattern) rigid = [false, 'pattern'];
+    else rigid = [false, 'within_null'];
+
+    // The average cluster: its edge spread (null 0) in sampling errors, the
+    // largest spread / error over the templates.
+    const { ideal } = result;
+    const staticRecord = evidence('idealSpread', 'samplingError', ideal.spread, 0, ideal.spreadOverSe, null,
+        { z: STATIC_SPREAD_SE }, 'above');
+    const staticAnswer = staticRecord.clears ? [true, 'above_sampling_error'] : [false, 'within_sampling_error'];
+
+    let trigonalLean;
+    if (trig == null) trigonalLean = [null, 'not_tetrahedra'];
+    else if (!defined(trig)) trigonalLean = [null, 'undefined_statistic'];
+    else if (trig.clears) trigonalLean = [true, trig.change < 0 ? 'leans_trigonal' : 'leans_one_edge'];
+    else trigonalLean = [false, 'within_null'];
+
+    const families = familyTests.map(({ axis, family, record }) => {
+        let answer;
+        if (record.clears) answer = [true, 'enhanced'];
+        else if (defined(record)) answer = [false, 'within_null'];
+        else answer = [null, 'undefined_statistic'];
+        return { axis, family, answer: answer[0], because: answer[1] };
+    });
+    let axes;
+    if (favoured.length) axes = [true, 'enhanced'];
+    else if (familyRecords.some(defined)) axes = [false, 'within_null'];
+    else axes = [null, 'undefined_statistic'];
+
+    // The window: other cluster sizes, bonds outside it, contacts between clusters.
+    const total = result.kinds.reduce((sum, entry) => sum + entry.clusters, 0);
+    const share = total ? result.kinds.slice(1).reduce((sum, entry) => sum + entry.clusters, 0) / total : null;
+    const windowFinding = (statistic, value, bar) => {
+        const record = evidence(statistic, 'window', value, null, null, null, { observed: bar }, 'above', { strict: true });
+        return finding(record.clears, record.clears ? 'above_bar' : 'within_bar', [record]);
+    };
+    const { outliers } = result;
+    return {
+        rules: { ...CLUSTER_RULES },
+        distorted: finding(...distorted, consulted),
+        lessDistorted: finding(...less, [widthDown]),
+        breathing: finding(...breathing, [breathUp]),
+        rigid: finding(...rigid, [widthDown, breathDown]),
+        staticDistortion: finding(...staticAnswer, [staticRecord]),
+        splitMemberSites: finding(...split, splitRecords, { sites: splitSites, memberSites }),
+        trigonalLean: finding(...trigonalLean, trig != null ? [trig] : []),
+        favouredAxes: finding(...axes, familyRecords, { families }),
+        window: {
+            extendedNetwork: finding(false, 'finite_clusters'),
+            mixedSizes: windowFinding('otherKindsShare', share, MIXED_SIZE_SHARE),
+            bondsOutsideWindow: windowFinding('brokenEdgeFraction', outliers.brokenEdgeFraction, CLUSTER_OUTLIER_FRACTION),
+            contactsBetweenClusters: windowFinding('extraContactsPerAtom', outliers.extraContactsPerAtom, CLUSTER_OUTLIER_FRACTION)
+        }
+    };
 };

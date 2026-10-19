@@ -10,6 +10,7 @@
 // characters per token of text, 1.4 of JSON), an over-estimate for Claude.
 
 import { CHARS_PER_TOKEN, estimatePromptTokens } from '../src/llm/provider/contextGuard';
+import { asModelPort } from '../src/llm/provider/model';
 
 export class SpendCapError extends Error {
     constructor(message) {
@@ -59,19 +60,34 @@ export const createSpendTracker = ({ capUSD, prices, ledger }) => {
 export const memoryLedger = (entries = []) => ({ load: () => entries, append: (entry) => { entries.push(entry); } });
 
 /**
- * A model call (contextGuard's streamCopilotChat signature) that reserves
- * before each request and charges after it, counting what streamed back.
+ * A model port (src/llm/provider/model.js) metered over another: `prepare`
+ * reserves the request as the inner port prepared it (one that could cross
+ * the cap is refused with a SpendCapError, so it is never sent and never
+ * recorded as sent), and `stream` charges what it used, counting what
+ * streamed back. `model` is a port or a bare stream function.
  */
-export const meteredCall = (callModel, tracker, note) => async function* metered(request) {
-    const { inputTokens } = tracker.reserve(request);
-    let outputChars = 0;
-    try {
-        for await (const chunk of callModel(request)) {
-            outputChars += (chunk.content?.length || 0) + (chunk.reasoning?.length || 0)
-                + (chunk.toolCall?.arguments?.length || 0) + (chunk.toolCall?.name?.length || 0);
-            yield chunk;
+export const meteredModel = (model, tracker, note) => {
+    const port = asModelPort(model);
+    // The reservation of each prepared request, charged when it streams.
+    const reserved = new WeakMap();
+    return {
+        prepare: async (intent, options) => {
+            const sent = await port.prepare(intent, options);
+            reserved.set(sent, tracker.reserve(sent).inputTokens);
+            return sent;
+        },
+        stream: async function* metered(sent, options) {
+            const inputTokens = reserved.has(sent) ? reserved.get(sent) : tracker.reserve(sent).inputTokens;
+            let outputChars = 0;
+            try {
+                for await (const chunk of port.stream(sent, options)) {
+                    outputChars += (chunk.content?.length || 0) + (chunk.reasoning?.length || 0)
+                        + (chunk.toolCall?.arguments?.length || 0) + (chunk.toolCall?.name?.length || 0);
+                    yield chunk;
+                }
+            } finally {
+                tracker.charge({ inputTokens, outputChars, note });
+            }
         }
-    } finally {
-        tracker.charge({ inputTokens, outputChars, note });
-    }
+    };
 };

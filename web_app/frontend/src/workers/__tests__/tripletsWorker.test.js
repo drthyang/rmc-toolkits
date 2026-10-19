@@ -2,7 +2,8 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 // The browser worker's 'triplets' boundary (pcaKdeWorker.handlePcaMessage):
-// the same caps and validation as the Flask /api/triplets route.
+// the same work budget as the Flask /api/triplets route. Its caps and request
+// rules are the request contract (fixtures/analysis_requests.json).
 
 import { describe, expect, it } from 'vitest';
 
@@ -62,45 +63,17 @@ describe('triplets worker boundary: work budget', () => {
     });
 });
 
-describe('triplets worker boundary: missing window bounds', () => {
+// The worker's blank, missing and numeric-string bounds (a cleared box is
+// never rmin = 0) are the request contract, fixtures/analysis_requests.json,
+// replayed on both runtimes by src/__tests__/analysisRequests.test.js.
+describe('triplets engine: a blank bound', () => {
     // triplets.physics.4/22, numerics.14, parity.27: Number('') and
     // Number(null) are 0, so a cleared minimum silently became rmin = 0.
-    const text = cubicRmc6f('Se', 6, 2.5);
-    const base = { end1: 'Se', apex: 'Se', end2: 'Se', r12Min: 2, r12Max: 2.6 };
-
-    for (const blank of ['', '   ', null]) {
-        it(`rejects r12Min = ${JSON.stringify(blank)} instead of using 0`, async () => {
-            await expect(request(text, { ...base, r12Min: blank }))
-                .rejects.toThrow(/r12Min\/r12Max are required together; missing r12Min/);
-        });
-    }
-
-    it('rejects a blank r12Max', async () => {
-        await expect(request(text, { ...base, r12Max: '' })).rejects.toThrow(/missing r12Max/);
-    });
-
-    it('treats a blank B–C bound like the Flask route: required together', async () => {
-        await expect(request(text, { ...base, r23Min: '', r23Max: 2.6 }))
-            .rejects.toThrow(/r23Min\/r23Max are required together/);
-        await expect(request(text, { ...base, r23Min: '  ', r23Max: 2.6 }))
-            .rejects.toThrow(/r23Min\/r23Max are required together/);
-    });
-
-    it('rejects an empty binWidth rather than binning at 0', async () => {
-        await expect(request(text, { ...base, binWidth: '' })).rejects.toThrow(/binWidth/);
-    });
-
     it('the engine itself still rejects a blank bound if handed one', async () => {
         const { bondAngleSummary } = await import('../triplets.js');
         expect(() => bondAngleSummary([[0.5, 0.5, 0.5]], ['Se'], [[5, 0, 0], [0, 5, 0], [0, 0, 5]], {
             triplet: ['Se', 'Se', 'Se'], bond12: ['  ', 2]
         })).toThrow(/bond12 bounds must be finite/);
-    });
-
-    it('still accepts numeric strings (an HTTP-style request)', async () => {
-        const result = await request(text, { ...base, r12Min: '2', r12Max: '2.6', binWidth: '1' });
-        expect(result.bond12).toEqual([2, 2.6]);
-        expect(result.angleCount).toBe(216 * 15);
     });
 });
 

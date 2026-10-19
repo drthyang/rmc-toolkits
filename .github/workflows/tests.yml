@@ -77,6 +77,10 @@ jobs:
       - name: Test
         run: npm test
         working-directory: web_app/frontend
+        # Opens the sealed held-out test set (validation/holdoutLoader.js) for
+        # the tests that need it; they are skipped without it (locally).
+        env:
+          RMC_VALIDATION_HOLDOUT: '1'
 
       - name: Build
         run: npm run build

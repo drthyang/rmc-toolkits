@@ -20,7 +20,14 @@ noise; ``mode`` plants a distortion on the tetrahedra:
   cell along c and averages away in the folded structure;
 * ``breathing`` -- every tetrahedron is scaled about its centre by 1 + eps,
   eps ~ N(0, ``breathe``) per cluster: its size fluctuates collectively while
-  its shape stays regular (the 2026-10-14 review's L2).
+  its shape stays regular (the 2026-10-14 review's L2);
+* ``pinched`` -- in every tetrahedron vertices 0 and 1 move along their common
+  edge by +t and -t, t ~ N(0, ``pinch``) per cluster: each site's cloud stays
+  Gaussian, but the edge 0-1 varies twice as much as when the two moves come
+  from different clusters -- a shape distortion the data put in;
+* ``rigid`` -- every tetrahedron moves as one body: a common N(0, ``sigma``)
+  shift per cluster plus a fifth of each atom's own noise -- its shape more
+  regular than independent atoms make it.
 """
 
 from __future__ import annotations
@@ -46,13 +53,15 @@ def cluster_sites() -> list[tuple[str, np.ndarray]]:
 
 
 def cluster_config_text(
-    mode: str = "independent", *, supercell=(4, 4, 4), sigma=0.06, delta=0.3, breathe=0.04, seed=7
+    mode: str = "independent", *, supercell=(4, 4, 4), sigma=0.06, delta=0.3, breathe=0.04, pinch=0.15, seed=7
 ) -> str:
     """The ``.rmc6f`` text of one synthetic configuration (see the module doc)."""
     rng = np.random.default_rng(seed)
     supercell = np.asarray(supercell, dtype=int)
     lattice = np.diag(CELL_A * supercell.astype(float))
     sites = cluster_sites()
+    # Vertex 0 to vertex 1 of the tetrahedron, as a unit vector (the pinched edge).
+    edge01 = (_VERTICES[1] - _VERTICES[0]) / np.linalg.norm(_VERTICES[1] - _VERTICES[0])
     lines = []
     atom = 0
     for ix in range(supercell[0]):
@@ -66,6 +75,9 @@ def cluster_config_text(
                 else:
                     pushed = None
                 scale = rng.normal(0.0, breathe) if mode == "breathing" else 0.0
+                # The other modes draw nothing extra, so their streams are unchanged.
+                pinched = rng.normal(0.0, pinch) if mode == "pinched" else 0.0
+                common = rng.normal(0.0, sigma, size=3) if mode == "rigid" else None
                 for ref, (element, frac) in enumerate(sites, start=1):
                     shift = rng.normal(0.0, sigma, size=3)
                     if element == "Nb" and pushed is not None and ref - 1 == pushed:
@@ -75,6 +87,10 @@ def cluster_config_text(
                         shift = shift + scale * TETRA_EDGE_A / (2.0 * np.sqrt(2.0)) * _VERTICES[ref - 1]
                     if element == "Nb" and mode == "doubled":
                         shift = shift + np.array([0.0, 0.0, delta / 3.0 * (1 if iz % 2 == 0 else -1)])
+                    if element == "Nb" and mode == "pinched" and ref in (1, 2):
+                        shift = shift + (pinched if ref == 1 else -pinched) * edge01
+                    if element == "Nb" and mode == "rigid":
+                        shift = common + 0.2 * shift
                     coord = (frac + cell + shift / CELL_A) / supercell
                     atom += 1
                     lines.append(
@@ -255,3 +271,164 @@ def tie_config_text(*, supercell=(4, 4, 4), sigma=0.03, seed=3) -> str:
         "Atoms:",
     ]
     return "\n".join(header + lines) + "\n"
+
+
+def _rmc6f(lines: list[str], supercell, cell_a: float) -> str:
+    """An ``.rmc6f`` text: the header for a cubic ``cell_a`` cell, then the atom lines."""
+    supercell = np.asarray(supercell, dtype=int)
+    header = [
+        "(Version 6f format configuration file)",
+        f"Number of atoms: {len(lines)}",
+        f"Supercell dimensions: {supercell[0]} {supercell[1]} {supercell[2]}",
+        "Lattice vectors (Ang):",
+        *(" ".join(f"{value:.6f}" for value in row) for row in np.diag(cell_a * supercell.astype(float))),
+        "Atoms:",
+    ]
+    return "\n".join(header + lines) + "\n"
+
+
+def _atom_line(atom: int, element: str, coord, ref: int, cell) -> str:
+    return (f"{atom:6d} {element:>2} [1] {coord[0]:.12f} {coord[1]:.12f} {coord[2]:.12f}"
+            f" {ref:4d} {cell[0]} {cell[1]} {cell[2]}")
+
+
+OCTAHEDRON_CELL_A = 8.0
+OCTAHEDRON_SHORT_A = 1.93
+OCTAHEDRON_LONG_A = 2.29
+# The F6 octahedron around a Cu at the cell centre, F along +x, -x, +y, -y, +z, -z.
+_OCTAHEDRON_AXES = [(0, 1.0), (0, -1.0), (1, 1.0), (1, -1.0), (2, 1.0), (2, -1.0)]
+
+
+def octahedra_config_text(*, supercell=(6, 6, 6), sigma=0.05, seed=17) -> str:
+    """Isolated CuF6 octahedra, each elongated (Jahn-Teller) along an axis
+    picked at random per octahedron: its two F on that axis at
+    ``OCTAHEDRON_LONG_A``, the four others at ``OCTAHEDRON_SHORT_A`` from the
+    Cu, plus independent Gaussian noise of ``sigma`` on every atom. Each F
+    site's cloud is split along its bond (+2/3 or -1/3 of the difference, a
+    third of the copies out): PC1 excess kurtosis near -1.3, so every F site is
+    split; the average octahedron is regular (F at the mean distance)."""
+    rng = np.random.default_rng(seed)
+    supercell = np.asarray(supercell, dtype=int)
+    mean = (4 * OCTAHEDRON_SHORT_A + 2 * OCTAHEDRON_LONG_A) / 6.0
+    lines = []
+    for ix in range(supercell[0]):
+        for iy in range(supercell[1]):
+            for iz in range(supercell[2]):
+                cell = np.array([ix, iy, iz])
+                long_axis = int(rng.integers(3))
+                atoms = [("Cu", np.zeros(3), 1)]
+                for ref, (axis, sign) in enumerate(_OCTAHEDRON_AXES, start=2):
+                    distance = OCTAHEDRON_LONG_A if axis == long_axis else OCTAHEDRON_SHORT_A
+                    position = np.zeros(3)
+                    position[axis] = sign * distance
+                    atoms.append(("F", position, ref))
+                for element, position, ref in atoms:
+                    shift = rng.normal(0.0, sigma, size=3)
+                    frac = 0.5 + (position + shift) / OCTAHEDRON_CELL_A
+                    coord = np.mod((frac + cell) / supercell, 1.0)
+                    lines.append(_atom_line(len(lines) + 1, element, coord, ref, cell))
+    assert abs(mean - 2.05) < 0.01  # the average F distance the window is set around
+    return _rmc6f(lines, supercell, OCTAHEDRON_CELL_A)
+
+
+DIMER_CELL_A = 6.0
+DIMER_SITES = [("V", np.array([0.3, 0.5, 0.5])), ("V", np.array([0.3 + 2.25 / 6.0, 0.5, 0.5])), ("O", np.array([0.8, 0.0, 0.0]))]
+
+
+def rigid_dimer_config_text(*, supercell=(4, 4, 4), sigma=0.08, own=0.01, seed=23) -> str:
+    """V2 dimers (bond 2.25 A along x, away from the cell edge) that move as
+    one body: both atoms share a random shift (sd ``sigma``) plus ``own`` A of
+    their own; an O with independent noise. The dimers' size fluctuates far
+    less than independent atoms make it."""
+    rng = np.random.default_rng(seed)
+    supercell = np.asarray(supercell, dtype=int)
+    lines = []
+    for ix in range(supercell[0]):
+        for iy in range(supercell[1]):
+            for iz in range(supercell[2]):
+                cell = np.array([ix, iy, iz])
+                common = rng.normal(0.0, sigma, size=3)
+                for ref, (element, frac) in enumerate(DIMER_SITES, start=1):
+                    shift = common + rng.normal(0.0, own, size=3) if element == "V" else rng.normal(0.0, sigma, size=3)
+                    coord = np.mod((frac + cell + shift / DIMER_CELL_A) / supercell, 1.0)
+                    lines.append(_atom_line(len(lines) + 1, element, coord, ref, cell))
+    return _rmc6f(lines, supercell, DIMER_CELL_A)
+
+
+#: A monoclinic cell (beta = 105 degrees between a and c, Angstrom rows a, b, c):
+#: a direct-lattice direction [u v w] here is not the Cartesian vector with
+#: those components ([1 0 1] is 14 degrees from (1, 0, 1)), so a polarisation's
+#: [u v w] is tested as a crystal direction.
+POLARISED_CELL = np.array([
+    [4.0, 0.0, 0.0],
+    [0.0, 4.4, 0.0],
+    [4.8 * np.cos(np.radians(105.0)), 0.0, 4.8 * np.sin(np.radians(105.0))],
+])
+POLARISED_SITES = [("Zr", np.array([0.25, 0.5, 0.5])), ("Zr", np.array([0.75, 0.5, 0.5])), ("S", np.array([0.0, 0.0, 0.0]))]
+
+
+def polarised_direction(uvw) -> np.ndarray:
+    """The Cartesian unit vector of the direct-lattice direction ``uvw`` in POLARISED_CELL."""
+    vector = POLARISED_CELL.T @ np.asarray(uvw, dtype=float)
+    return vector / np.linalg.norm(vector)
+
+
+def polarised_config_text(*, supercell=(8, 4, 4), uvw=(1, 0, 1), flags=(1, 0, 0), amp=0.1, sigma=0.06, seed=29) -> str:
+    """Both Zr sites displaced by ``amp`` A along the direct-lattice direction
+    ``uvw`` (the Cartesian u a + v b + w c, normalised), with the sign
+    alternating along every axis ``flags`` marks -- order at q = flags / 2 --
+    and the second site in antiphase with the first; independent Gaussian
+    noise of ``sigma`` A on every atom, in the monoclinic POLARISED_CELL. The
+    mode's polarisation is ``uvw`` (plan item 4.3's known answer)."""
+    rng = np.random.default_rng(seed)
+    supercell = np.asarray(supercell, dtype=int)
+    planted = amp * polarised_direction(uvw)
+    lines = []
+    for ix in range(supercell[0]):
+        for iy in range(supercell[1]):
+            for iz in range(supercell[2]):
+                cell = np.array([ix, iy, iz])
+                sign = (-1) ** int(sum(int(flag) * int(index) for flag, index in zip(flags, cell)))
+                for ref, (element, frac) in enumerate(POLARISED_SITES, start=1):
+                    shift = rng.normal(0.0, sigma, size=3)
+                    if element == "Zr":
+                        shift = shift + (sign if ref == 1 else -sign) * planted
+                    # Cartesian r = M^T f: the fractional shift solves M^T f = shift.
+                    coord = np.mod((frac + cell + np.linalg.solve(POLARISED_CELL.T, shift)) / supercell, 1.0)
+                    lines.append(_atom_line(len(lines) + 1, element, coord, ref, cell))
+    header = [
+        "(Version 6f format configuration file)",
+        f"Number of atoms: {len(lines)}",
+        f"Supercell dimensions: {supercell[0]} {supercell[1]} {supercell[2]}",
+        "Lattice vectors (Ang):",
+        *(" ".join(f"{value:.6f}" for value in row) for row in POLARISED_CELL * supercell[:, None]),
+        "Atoms:",
+    ]
+    return "\n".join(header + lines) + "\n"
+
+
+WAVE_CELL_A = 4.0
+WAVE_SITES = [("Ti", np.array([0.5, 0.5, 0.5])), ("O", np.array([0.5, 0.5, 0.0]))]
+
+
+def wave_config_text(*, supercell=(8, 4, 4), order_amp=0.1, order_q=0.375, long_amp=0.0, long_q=0.125,
+                     sigma=0.06, seed=11) -> str:
+    """Ti displaced along z by ``order_amp`` cos(2 pi ``order_q`` n_a) -- order at
+    a general wavevector (``order_q``, 0, 0), neither a zone-boundary point nor a
+    long wave -- and, with ``long_amp``, along y by a long wave at
+    (``long_q``, 0, 0); independent noise of ``sigma`` on every atom."""
+    rng = np.random.default_rng(seed)
+    supercell = np.asarray(supercell, dtype=int)
+    lines = []
+    for ix in range(supercell[0]):
+        for iy in range(supercell[1]):
+            for iz in range(supercell[2]):
+                cell = np.array([ix, iy, iz])
+                for ref, (element, frac) in enumerate(WAVE_SITES, start=1):
+                    shift = rng.normal(0.0, sigma, size=3)
+                    if element == "Ti":
+                        shift[2] += order_amp * np.cos(2 * np.pi * order_q * ix)
+                        shift[1] += long_amp * np.cos(2 * np.pi * long_q * ix)
+                    coord = np.mod((frac + cell + shift / WAVE_CELL_A) / supercell, 1.0)
+                    lines.append(_atom_line(len(lines) + 1, element, coord, ref, cell))
+    return _rmc6f(lines, supercell, WAVE_CELL_A)

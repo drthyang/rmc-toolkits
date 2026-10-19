@@ -40,6 +40,7 @@ describes the Copilot's messages and Step 17 its tool loop. Section anchors keep
   - [Step 17 — The Copilot tool loop (analyses, checks, budgets, verdict)](#step-17--the-copilot-tool-loop-analyses-checks-budgets-verdict)
   - [Step 18 — Cluster distortion against a shuffle null (`analyze_clusters`)](#step-18--cluster-distortion-against-a-shuffle-null-analyze_clusters)
   - [Step 19 — Displacement modulations: order that enlarges the cell (`analyze_modulations`)](#step-19--displacement-modulations-order-that-enlarges-the-cell-analyze_modulations)
+  - [Step 20 — A split site's static displacement and its sampling error (`list_sites`)](#step-20--a-split-sites-static-displacement-and-its-sampling-error-list_sites)
   - [Runtime-mode differences (static vs Flask) — read this before quoting the assistant](#runtime-mode-differences-static-vs-flask--read-this-before-quoting-the-assistant)
   - [Parameters and defaults](#parameters-and-defaults)
   - [Caveats / what this is not](#caveats--what-this-is-not)
@@ -194,33 +195,36 @@ is active, the row-1 probe above authenticates with that key on every fresh page
 ### Step 1 — Inputs, and when the context is built
 
 **Inputs.** `buildRunContext()` takes eight optional fields
-([`llm/context/runContext.js`](../../web_app/frontend/src/llm/context/runContext.js)):
+([`llm/context/runContext.js`](../../web_app/frontend/src/llm/context/runContext.js)). One host
+module builds all eight from the open run and the view on screen:
+[`copilotRun.js`](../../web_app/frontend/src/copilotRun.js) (`props` of `copilotRun(loaded, view)`),
+through `useCopilotRun.js` in the app and `openRunFolder.js` in the validation harness.
 
 | Prop | Origin | Used for |
 |------|--------|----------|
 | `runName` | folder name / directory string | `context.run` (falls back to `'unnamed run'`) |
-| `plotFiles` | `Dashboard.jsx` → `allPlotFiles`, the **unfiltered** dashboard plot list | `datasets`, `pair_correlations` |
-| `rValueFile` | combined R-value log, built from the **visibility-filtered** list | `convergence` |
+| `plotFiles` | `dashboardPlotFiles(files)` (browserData), the **unfiltered** dashboard plot list | `datasets`, `pair_correlations` |
+| `rValueFile` | `chartedRValueFile()` (browserData): the combined R-value log of the **visible** logs | `convergence` |
 | `structure` | parsed `.rmc6f` summary | `structure`, `configuration_optimization`, per-site displacements, average-structure distances |
-| `symmetry` | `describeSymmetry()` + `toleranceLadder()` | `symmetry` |
+| `symmetry` | `describeSymmetry()` at the view's tolerance + `toleranceLadder()` | `symmetry` |
 | `runSettings` | `parseRunSettings()` of `<stem>.dat` | `run_settings` |
-| `pcaSites` | PCA Ellipsoid page's site table | `pca_displacements` |
-| `liveData` | Live Data toggle | `live_mode` (boolean) |
+| `pcaSites` | PCA Ellipsoid page's site table (`view.pcaSites`) | `pca_displacements` |
+| `liveData` | Live Data toggle (`view.liveData`) | `live_mode` (boolean) |
 
-**The visibility toggle is asymmetric.** `Dashboard.jsx` builds `allPlotFiles` (every file passing
-`isDashboardPlotFile`, sorted by `comparePlotFiles`), then `plotFiles = allPlotFiles` minus
-`hiddenPlotPaths`, then `rValueFiles` from `plotFiles`. The Copilot is handed
-`assistantRun.plotFiles = allPlotFiles` — the *unfiltered* list — but `rValueFile` from the filtered
-one. Consequence: **hiding a plot on the Dashboard does not remove it from `datasets` or
+**The visibility toggle is asymmetric.** The Dashboard and the run module share the plot list
+(`dashboardPlotFiles`: every file passing `isDashboardPlotFile`, in `compareDashboardPlotFiles`
+order) and the χ² history (`chartedRValueFile`: the r_value logs not in `hiddenPlotPaths`). The
+Copilot is handed the *unfiltered* list as `plotFiles` but the history of the visible logs as
+`rValueFile`. Consequence: **hiding a plot on the Dashboard does not remove it from `datasets` or
 `pair_correlations`, but hiding an R-value log silently removes it from `convergence`, from
 `recent_slope_per_step`, and from the watchdog.**
 
 **Gating.** `useAssistant({…, enabled})` builds the context in a `useMemo` only when `enabled` is true
 ([`llm/useAssistant.js`](../../web_app/frontend/src/llm/useAssistant.js)). The chatbox panel is mounted
 only when the user first opens it (`copilotOpened` in
-[`App.jsx`](../../web_app/frontend/src/App.jsx)), and `Dashboard.jsx` computes the symmetry finder, the
-tolerance ladder, and the `.dat` parse *only* when `wantAssistantData` is set — so a Dashboard/KDE-only
-session performs none of this work.
+[`App.jsx`](../../web_app/frontend/src/App.jsx)); until then `Dashboard.jsx` does not publish its run
+and `useCopilotRun` computes neither the symmetry finder, the tolerance ladder nor the `.dat` parse —
+so a Dashboard/KDE-only session performs none of this work.
 
 **Rounding convention.** A single helper is used throughout:
 
@@ -343,15 +347,19 @@ stem matches the `.rmc6f` — `KEY :: value` lines with `>`-prefixed sub-lines. 
 ### Step 5 — Symmetry and per-orbit displacement (`context.symmetry`)
 
 **Input:** the `symmetry` prop = `describeSymmetry(structure, tol)` merged with
-`toleranceLadder(structure, 1.0)` (`Dashboard.jsx`). Requires `structure.basis`, so this block exists in
-**static mode only**.
+`toleranceLadder(structure, 1.0)` (the run module, `copilotRun.js` `runSymmetry`). Requires
+`structure.basis`: a browser-loaded run's (`structureFromRmc6f`) or, since plan item 4.5, a server
+folder's (`/api/structure`, `structure_basis.py`). A coords-only file has none, and then the block is
+absent.
 
 **`tol` is a live, user-set control — not a fixed default.** It comes from `SymTolContext`
-([`symTolContext.js`](../../web_app/frontend/src/symTolContext.js)), a `useState(0.2)` pair created in
-`App.jsx` and shared with the "Detected SG" panel of
+([`symTolContext.js`](../../web_app/frontend/src/symTolContext.js)), a `[value, setValue]` pair created in
+`App.jsx` (`useRunTolerance(runKey, DEFAULT_VIEW.toleranceA)`, 0.2 Å) and shared with the "Detected SG" panel of
 [`ModelSummary.jsx`](../../web_app/frontend/src/components/ModelSummary.jsx), where clicking a rung of the
 *Space group vs. tolerance* ladder sets `symTol` to that rung's midpoint. **0.2 Å is only the initial
-value.** Every field of this block — `space_group`, `point_group`, `n_ops`, `max_residual_A`, and the
+value** of each run: the pick is kept across page switches, Live Data saves and Loads of the same
+run, and returns to 0.2 Å when another run opens (`runKey`), so one run's pick never sets the next
+run's context. Every field of this block — `space_group`, `point_group`, `n_ops`, `max_residual_A`, and the
 entire Wyckoff-orbit partition that decides which sites exist and how `mean_disp_A` is averaged — is
 recomputed at whatever tolerance is currently set. Only `tolerance_A` records which one was used. Two
 chat sessions on the same run can therefore legitimately receive different space groups and different
@@ -547,14 +555,16 @@ This is the app's own peak finder — it is not RMCProfile output, and it is int
 
 **Input:** one series `(x, y)` from the partials file: $x$ = $r$ in Å (assumed ascending), $y$ = the
 partial pair-correlation value as parsed from the CSV (no normalization, no baseline model). Options:
-`rMax = 6` Å, `maxPeaks = 2` — the defaults the context's `pair_correlations` uses (Step 9);
-`firstShell()` (up to 8 peaks), `find_gr_peaks` (the call's `r_max` and `max_peaks`) and the
-Workbench's question shell catalog (`clarify.js`: 8 Å, 3 peaks) pass their own.
+`rMax = 6` Å, `maxPeaks = 2` by default. Since 2026-10-19 (`shells.js`, Step 9) the run's shell
+reading asks for the peaks below 8 Å (`PEAK_SEARCH_MAX_A`, up to 8), whose first two are the
+context's `gr_peaks_A`; `find_gr_peaks` shows the call's own (`r_max`, `max_peaks`) as `peaks_A`,
+a display that does not move the shell; arm A's eye reading of the plot (validation/armA.js,
+below 3.2 Å) is the third caller.
 
 **Procedure (`extractPeaks()`).**
 
 1. **Window.** $\mathrm{end} = \min\{i : x_i > r_\mathrm{max}\}$, or the full length if no such $i$ exists.
-   If $\mathrm{end} < 5$ the function returns `[]`. Only $r \le 6$ Å is ever examined.
+   If $\mathrm{end} < 5$ the function returns `[]`. Only $r \le r_\mathrm{max}$ is examined.
 2. **Smoothing.** A 5-point moving average with truncated (not padded) edges — the window is clipped at
    **both** ends of the analysis window (`j >= 0 && j < end`):
 
@@ -565,7 +575,7 @@ Workbench's question shell catalog (`clarify.js`: 8 Å, 3 peaks) pass their own.
    5 samples spanning $4\,\Delta r$ end to end, whatever the file's $r$ step is (0.08 Å on the test's
    0.02 Å grid). The right-edge samples are not inert — they are the
    $s_{i+1}, s_{i+2}$ comparands for the last candidate peak ($i = \mathrm{end}-3$), and the half-height
-   walk runs out to $\mathrm{end}-1$. **A peak sitting just under the 6 Å cut is therefore accepted,
+   walk runs out to $\mathrm{end}-1$. **A peak sitting just under the $r_\mathrm{max}$ cut is therefore accepted,
    rejected, and widened against edge-biased averages, and is the least reliable peak reported.**
 3. **Floor.** $f = 0.15\,\max_i s_i$ over the window. If the window maximum is not $>0$ the function
    returns `[]` (so an all-zero or all-negative curve yields no peaks).
@@ -595,7 +605,7 @@ Workbench's question shell catalog (`clarify.js`: 8 Å, 3 peaks) pass their own.
    **first two by distance**, not the two tallest.
 
 **Validation — what the tests actually assert.**
-`__tests__/pairCorrelations.test.js` feeds three Gaussians at 2, 3.5, and 7 Å on a 0.02 Å grid and
+`__tests__/shells.test.js` feeds three Gaussians at 2, 3.5, and 7 Å on a 0.02 Å grid and
 asserts that exactly two peaks are found below 6 Å, at $r \approx 2$ and $r \approx 3.5$ Å (to one
 decimal place). The width assertion is only a loose bracket, $0.15 < \mathrm{fwhm} < 0.4$ Å, around the
 analytic $2.355\sigma = 0.2355$ Å — a $-36\,\%/+70\,\%$ window, so the test does **not** establish
@@ -623,52 +633,165 @@ sort order (Step 11) is used.
    silently, with no counter.
 2. `avg_structure_d_A` = the Step-7 distance for that pair, looked up under the **sorted** key
    `pairKey(el1, el2)`, 3 s.f., when a basis exists.
-3. `gr_peaks_A` = the Step-8 peaks as `[{r (3 s.f.), fwhm (2 s.f.)}]`, both in Å.
+3. `gr_peaks_A` = the first two peaks of the shell reading (Step 8, below 8 Å) as
+   `[{r (3 s.f.), fwhm (2 s.f.)}]`, both in Å (below 6 Å until 2026-10-19: the Demo's Ga–Ga first peak,
+   at 7.33 Å, had a first shell but no peak; a FWHM the walk had cut at 6 Å now reaches its crossing).
 4. The `pair` field is the **verbatim CSV column label**, in whatever order the file writes it. Because
    the distance is keyed on the sorted pair, the model can legitimately receive
    `{pair: "Se-Ga", avg_structure_d_A: …}` where the distance was stored under `"Ga-Se"`. The two orders
    describe the same unordered pair; only the string differs.
-5. `first_shell` = `{mean_d_A, to_A, cn_<B>_per_<A>?}` from `firstShell()` (below), when a shell
+5. `first_shell` = `{mean_d_A, to_A, cn_<B>_per_<A>?}` from the shell reading (below), when a shell
    boundary is found: the shell's mean distance from $r^2 g(r)$, its outer edge, and — with the cell —
-   the coordination number of B around A. A split shell joined across a deep trough (below) adds
-   `first_peak_to_A` and `first_peak_cn`: where its first peak alone ends, and what it holds.
+   the coordination number of B around A. A shell of two or more resolved peaks adds
+   `first_peak_to_A` and `first_peak_cn`: where its first peak alone ends (the minimum between the
+   first two) and what it holds (until 2026-10-19 only a split shell joined across a deep trough had
+   them). `gap_g_fraction` when the shell is not separated from the next, and
+   `cut_at_min_distance: {at_A, g_fraction}` when the pair's closest-approach constraint limits it.
+   A joined shell's split by number is not in the context: `find_gr_peaks` gives it (below).
 6. The entry is kept only if at least one of `avg_structure_d_A` / `gr_peaks_A` is present.
 
-**The first coordination shell (`firstShell()`).** On the 5-point moving average $\tilde g$ of the
-partial (normalised to 1 at large $r$, as RMCProfile writes it), with the first peak of Step 8 at
-height $h$:
+**The first coordination shell: one reading per pair, per run (`shells.js`, architecture candidate
+#6, 2026-10-19).** `shellCatalogue(run)` reads every element-pair series of the partials file once
+(both orientations: the reverse of a pair reads the same $g$ with the other density), memoised per
+partials data, structure and run settings, and every reader takes the reading from it: this
+context, `find_gr_peaks`, the Workbench's questions, the evidence gate, the answer checks
+(`cnMatches`), `compute_bond_angles`' refusal (`countsCut`) and arm A+'s cluster windows. A Shell is
+frozen: `{centre, partner, label, peaks, window, peaksInShell, meanR, sdR, peakG, cn, reverseCn,
+ideal, joined, troughRatio, separated, firstPeak, split, cut, constraint}`. On the 5-point moving average
+$\tilde g$ of the partial (normalised to 1 at large $r$, as RMCProfile writes it), one rule per
+quantity:
 
-- the **onset** is the last point before the peak where $\tilde g$ rises above $0.01\,h$;
+- **search range:** the peaks of Step 8 below 8 Å (`PEAK_SEARCH_MAX_A`, up to 8), the first at
+  height $h$; the minimum that closes the shell is sought to $\max(8, r_1 + 3)$ Å
+  (`BOUNDARY_REACH_A`). No caller picks the range (before, the context searched 8 Å,
+  `find_gr_peaks` $\max(r_\mathrm{max}, r_1 + 3)$, the Workbench $\max(6, r_1 + 3)$);
+- the **onset** is the last point before the peak where $\tilde g$ rises above $0.01\,h$; the
+  window starts one grid step before it;
 - the **boundary** is the first point after the peak that is either a local minimum below
-  `SHELL_TROUGH_FRACTION` $= 0.2\,h$ — a shallower dip lies *inside* a split shell, as the demo's
+  `SHELL_TROUGH_FRACTION` $= 0.2\,h$ — a shallower dip lies *inside* a split shell, as the Demo's
   two Ta–Se distances (2.52 and 2.74 Å) of one TaSe₆ octahedron — or where $\tilde g < 0.001\,h$
   (a tail decaying into an empty gap: 3.7σ out on a Gaussian shell);
-- the shell's distance statistics come from the radial distribution $r^2 g(r)$ (raw $g$, negatives
-  clamped) between onset and boundary, by the trapezoid rule:
+- **rounding:** every window the module returns is rounded to 0.01 Å, then integrated: every CN it
+  returns equals `window()`.cn of the window returned with it;
+- **the CN integral** is the trapezoid of the linear interpolant of $r^2\max(g, 0)$ (raw $g$) over
+  exactly the quoted window, $\mathrm{CN}_{B|A} = 4\pi\rho_B\int_{lo}^{hi} r^2 g_{AB}(r)\,dr$ with
+  $\rho_B = N_B/V$ (`elementDensity()`: the element count over the supercell volume), and
+  $\mathrm{CN}_{A|B} = \mathrm{CN}_{B|A}\,\rho_A/\rho_B$ (`reverseCn`). Before, the context and
+  `find_gr_peaks` integrated from $r = 0$ on the grid and the Workbench over the rounded window; the
+  window excludes the $g$ below the onset (~0.1–0.3 % of a shell), so a count can move in the third
+  digit (the Demo's Ta–Ta 2.76 → 2.75, Ga–Ta 12.0 → 11.9). The mean distance and spread come from
+  $r^2 g$ over the same window:
   $$\bar d = \frac{\int r^3 g\,dr}{\int r^2 g\,dr},\qquad
   \sigma_d^2 = \frac{\int (r-\bar d)^2 r^2 g\,dr}{\int r^2 g\,dr};$$
   the $g(r)$ peak itself sits *below* $\bar d$ for a broad or skewed shell, because $g$ divides by
-  $r^2$ (demo Ta–Ta: peak 2.93 Å, mean 3.00 Å, average-structure distance 3.02 Å — the model had read
+  $r^2$ (Demo Ta–Ta: peak 2.93 Å, mean 3.00 Å, average-structure distance 3.02 Å — the model had read
   the peak as a 0.09 Å contraction);
-- with the partner's number density $\rho_B = N_B/V$ (`elementDensity()`: the element count over
-  the supercell volume), the coordination number
-  $\mathrm{CN}_{B|A} = 4\pi\rho_B\int_0^{r_b} r^2 g_{AB}(r)\,dr$, and the same integral to
-  $r_b \mp 0.2$ Å (`cnRange`): how much the count depends on the cut. The reverse count is
-  $\mathrm{CN}_{A|B} = \mathrm{CN}_{B|A}\,\rho_A/\rho_B$. Demo checks: Ga 3.99 Se, Ta 6.00 Se,
-  Se 12.0 Se, and Ta 2.76 Ta (the intracluster 3 with the Ta–Ta gap at 3.3–4.0 Å not empty).
+- **the first peak alone** (`firstPeak: {window, cn, troughRatio, changesCn}`), only with two or
+  more resolved peaks in the shell: from the shell's start to the minimum of $\tilde g$ between the
+  first two (the first lowest point on a flat bottom; approved 2026-10-19). There is no fallback: a
+  shell of one peak has none. It replaces $[r_1 - w, r_1 + w]$ (w the FWHM of Step 8), whose
+  half-height walk reaches into the second peak when the two overlap. *Known answer*
+  (`shells.test.js`): 3 + 3 partners at 2.5 and 2.75 Å, σ 0.07 Å each, so the trough between them
+  stays at ~40 % of the first peak: the first peak holds 3.03, 3.03 and 2.96 on 0.005, 0.01 and
+  0.02 Å grids (3 ± 0.1), $r \pm w$ 3.40, 3.45 and 4.00; at σ 0.08 Å (the trough above half the
+  first peak) $r \pm w$ holds the whole shell (5.97) and the minimum still 3.04. On the Demo the
+  Ta–Se first peak ends at 2.65 Å and holds 3.25 Se per Ta, against 3.86 in $r \pm w$ = 2.33–2.71 Å:
+  the three short bonds of TaSe₆, with the near tail of the broad long-bond peak;
+- **the cut sensitivity** (`cut: {earlier, later}`): the window's top 0.2 Å earlier and later
+  (`CUT_SHIFT_A`; the earlier never below the shell's start, and an empty window holds 0), each with
+  its CN and whether it changes the shell's by the Workbench's margin (`changesCn`: by ≥
+  max(0.5, 15 % of the shell's CN), `cnChanges`);
+- **separation:** `separated` when $\tilde g/h$ at the boundary (`troughRatio`) is ≤
+  `SEPARATION_G_FRACTION` $= 0.02$; **the constraint** (`constraint: {limitA, gFraction, limited}`):
+  the pair's closest-approach distance from the run settings (`labelledMinimumDistances`:
+  MINIMUM_DISTANCES labelled in RMCProfile's upper-triangle pair order, matched in either order),
+  the largest raw $g$ in $(d_{\min}, d_{\min} + 2.5\,\Delta r]$ over $h$, `limited` above the same
+  0.02 — one fraction for both. `find_gr_peaks`' old clause $r - \mathrm{FWHM}/2 \le d_{\min} + 0.05$
+  Å is dropped: a sharp peak on a fine grid whose half maximum lies just above the constraint, with
+  $g$ at ~1 % of the peak there, is not cut (`shells.test.js`). Dropping it changed nothing the model
+  sees on the Demo or the dev cases (the dev cases have no run settings);
 - **a split shell cut at a deep trough** (the 2026-10-14 review's L1, approved for batch 1): when the
   two bond lengths of a distorted polyhedron are well resolved, the trough between them is deep
   (a Jahn–Teller CuF₆, 4 × 1.93 + 2 × 2.25 Å at σ 0.05 Å: $\tilde g$ falls to 12 % of the first
   peak), and the first boundary cuts the polyhedron (CN 4, the long bonds read as "the next
   shell"). With the densities, each later peak within `SPLIT_SHELL_REACH_A` $= 0.5$ Å of the first
   is closed at its own boundary (the same rule, against its own height); the furthest whose summed
-  CN is within `IDEAL_CN_TOLERANCE` $= 0.5$ of an ideal polyhedral count (`IDEAL_COORDINATION` =
-  4, 6, 8, 12), in either direction ($\mathrm{CN}_{B|A}$, or $\mathrm{CN}_{A|B}$ when the centre's
-  density is given), joins the shell. `split = {firstBoundaryR, firstTroughRatio, firstCn}` keeps
-  the first peak's own window: the Workbench offers it as *First peak only* (clarify.js, its window
-  ends at the trough) and asks before an analysis runs in it. Bond-length splits of distorted
-  polyhedra are 0.1–0.4 Å; the next coordination shell lies a sizeable fraction of the bond further
-  out, and a summed count that is no polyhedron (4 + 3) is never joined.
+  CN over the rounded window matches an ideal polyhedral count (`IDEAL_COORDINATION` = 4, 6, 8, 12)
+  within half an atom (`cnMatches`, `CN_MATCH_TOLERANCE`), in either direction
+  ($\mathrm{CN}_{B|A}$, or $\mathrm{CN}_{A|B}$ with the centre's density), joins the shell
+  (`joined`); its first peak alone ends in the trough, and the Workbench offers it as *First peak
+  only* and asks before an analysis runs in it. Bond-length splits of distorted polyhedra are
+  0.1–0.4 Å; the next coordination shell lies a sizeable fraction of the bond further out, and a
+  summed count that is no polyhedron (4 + 3) is never joined;
+- **Known limit (F5, decided 2026-10-19): a split M₃/M₄ cluster shell does not join.** A metal
+  triangle or tetrahedron whose edges a distortion splits (1 + 1, 2 + 1) sums to CN 2 or 3, and a
+  join needs an ideal polyhedral count, so the shell stays cut at its first trough and reads the
+  short edges only. Accepting 2 and 3 as ideal counts was tried on the Demo and every dev case and
+  left out. It helps no case and breaks one: on dev-cell-wrap it joins the V–V dimer bond
+  (2.245 Å) to the inter-dimer distance (2.775 Å), so the clusters read "no clusters: extended
+  network" instead of rigid V dimers, and arm A+ falls from 1.00 to 0.83 there
+  ([the evidence](#f5-evidence-accepting-cn-2-and-3-as-ideal-cluster-counts));
+- **a joined shell's split by number** (`split: {parts, longMinusShort, longMinusShortSe,
+  direction}`, plan item 4.2, approved by the manager on the user's delegation, 2026-10-19), only
+  for a joined shell (null otherwise). Its parts are cut at the minimum of $\tilde g$ between each
+  two successive resolved peaks in the shell (the first cut is the first peak alone's, so the first
+  part is `firstPeak`'s window), the last part ending at the shell's boundary; every edge is
+  rounded to 0.01 Å, as every window. Each part `{window, cn, reverseCn, share, meanR, sdR}` has its
+  CN integrated over exactly its window, so the parts sum to the shell's CN and their shares to 1,
+  and its mean distance and spread from $r^2 g$ over it, as the shell's (whose mean is the parts',
+  weighted by their shares). `longMinusShort` is the last part's mean minus the first's;
+  `longMinusShortSe` $= \sqrt{s_1^2/n_1 + s_k^2/n_k}$, $s$ a part's spread and $n$ its bonds in the
+  box (the centres' count × its CN, halved for a same-element pair): the configuration's sampling
+  error with the bonds taken as independent — an over-estimate where one atom's displacement
+  lengthens one bond as it shortens another, as a moving octahedron centre does — and not the fit's
+  uncertainty. `direction` is the count the join decided by, which `find_gr_peaks` says the parts
+  in: 'forward' ($\mathrm{CN}_{B|A}$ is ideal, or there is no other) or 'reverse'
+  ($\mathrm{CN}_{A|B}$). **Three or more parts (2 + 2 + 2):** every part is reported, and long −
+  short is the longest minus the shortest. In the E⊗e Jahn–Teller problem an octahedron's
+  distortion is a point $(\rho, \varphi)$ of the $(Q_3, Q_2)$ plane: $\varphi = 0$ is a 4 + 2
+  elongation, $60°$ a 2 + 4 compression, and between them the bonds come in short, medium and long
+  pairs (2 + 2 + 2, as in LaMnO₃). Long − short lies between $\rho\sqrt3/2$ (either end) and $\rho$
+  (the middle), so it measures the amplitude whatever the mix, and the shares show the mix;
+  "short against the rest" would read a 2 + 2 + 2 octahedron as a 2 + 4 compression with long −
+  short $(m + l)/2 - s$. **Why only a joined shell:** there a deep minimum (below 20 % of the first
+  peak) separates the parts, so each holds one bond group up to its tails. Peaks that overlap
+  without one are cut through both groups (the Demo's Ta–Se, its trough at 48 % of the first peak:
+  3.25 + 2.75 for 3 + 3), and a resolved peak can hide a group in its flank (dev-offcentre's Nb–O
+  reads 0.89 + 5.11 for an off-centred centre's 1 + 4 + 1): such a shell keeps its first peak alone
+  and its note, and no split. *Known answers* (`shells.test.js`): 4 × 1.93 + 2 × 2.25 Å at σ 0.05 Å
+  on 0.005, 0.01 and 0.02 Å grids gives 4 + 2 (shares 2/3 and 1/3 within 0.005), each mean and long
+  − short (0.32 Å) within 0.002 Å — the means are moments of $r^2 g$, not grid positions, and the
+  tails cut at the minimum and below the onset lie 3σ out (~0.1 % of a part, < 0.0005 Å on a mean);
+  2 + 2 + 2 at 1.95, 2.12 and 2.32 Å (σ 0.03 Å) gives three thirds and 0.37 Å; 1 + 0.5 F per Cu
+  with Cu four times as dense is joined by the reverse count and said as 4 + 2 Cu per F. **The
+  cut's bias:** as the parts overlap, each part's tail beyond the minimum pulls its mean toward the
+  other's, the long part's more, so long − short reads high: +0.001–0.0017 Å at σ 0.07 Å (0.5 % of
+  0.32 Å) and +0.006 Å (2 %) at σ 0.085 Å, where the trough reaches 20 % of the first peak, the
+  most the join takes. **The sampling error:** over 300 synthetic configurations of 216 octahedra
+  (independent bond lengths at σ 0.05 Å, histogrammed as the dev cases' partials are), (long −
+  short − 0.32)/error has mean 0.06, sd 0.96 and 95 % coverage 0.953. At σ 0.07 Å the cut's bias
+  is about half an error at 216 octahedra (coverage 0.93) and three quarters at 1,000 (0.87): there
+  the error understates the total. **Noise:** a noise maximum on a peak's flank is a resolved peak
+  to the peak finder (its 15 % floor has no prominence test), so it adds a part, as it moves the
+  first peak alone: at σ 0.07 Å in 9 of 400 configurations of 216 octahedra, in none of 400 of
+  1,000 or at σ 0.05 Å. The Demo joins no shell. dev-jahn-teller's Cu–F reads 3.98 F per Cu at
+  1.929 Å + 2.01 at 2.251 Å, long − short 0.321 ± 0.0043 Å (planted 0.32; the maxima of g are
+  0.31 apart);
+- **`ideal`:** the ideal count $\mathrm{CN}_{B|A}$ matches (`cnMatches`), or null.
+
+`window(centre, partner, [lo, hi], { counts })` reads a caller's window (as given, not rounded)
+against the shell: its CN over exactly that window, what it `holds` ('whole', 'part', 'more' — the
+whole shell and beyond its boundary — or 'apart') and **both readings of a cut**, today's rules
+unchanged: `cnMargin.cut`, the Workbench's (the window overlaps the shell and holds fewer partner
+atoms by the margin), and, given the window's coordination counts (the bond-angle engine's
+`coordinationSummary`), `counts: {cut, by}`, `compute_bond_angles`' (`countsCut`: more than half the
+central atoms unbonded, or fewer than 60 % with the most common count). Which should decide is the
+user's decision; `validation/run.js shell-cuts` tabulates both on the dev windows
+([copilot-validation.md](copilot-validation.md)).
+
+Demo checks: Ga 3.99 Se, Ta 6.00 Se, Se 12.0 Se, and Ta 2.75 Ta (the intracluster 3 with the Ta–Ta
+gap at 3.3–4.0 Å not empty). `shellReading.test.js` checks every reader against the catalogue on the
+Demo and the dev cases.
 
 **Cap:** at most `maxPairs = 10` accepted entries (the loop breaks once 10 have been pushed); the function
 returns `null` if none. Nothing records how many pairs were dropped at this stage.
@@ -680,7 +803,29 @@ average structure cannot express, and pairing them is the whole point of this bl
 single-basis-site self-pairs of Step 7, where $d^{\,\mathrm{avg}}$ is a lattice repeat and the comparison
 is meaningless.)
 
-**Code:** `pairCorrelations.js` → `pairCorrelationsContext()`.
+**Code:** `pairCorrelations.js` → `pairCorrelationsContext()`, over `shells.js` → `shellCatalogue()`.
+
+#### F5 evidence: accepting CN 2 and 3 as ideal cluster counts
+
+This was an experiment on main at a24dfdd and was not committed. `shells.js` was given the ideal set
+{2, 3, 4, 6, 8, 12}. The shell of every cluster element was read on the Demo and the dev cases, and
+arms A, A+ and D were run on dev. The test split was not run. The manager decided on the user's
+delegation (2026-10-19) to leave the join as it is; the user may reopen it
+(`validation/findings/decisions/2026-10-19-f5-shell-join.json`).
+
+| Shell | Today (ideal 4, 6, 8, 12) | With 2 and 3 accepted | Is the join the cluster's edge? |
+| --- | --- | --- | --- |
+| dev-cell-wrap V–V | peaks 2.245 and 2.775 Å; window 2.17–2.35 Å, CN 1; clusters: V dimers, rigid (stiffer bonds) | **joins** both peaks: window 2.17–3.12 Å, CN 2, ideal 2; clusters: "no clusters: extended network" | **No.** The dimer bond is the 2.245 Å peak; 2.775 Å is the next V–V distance, between dimers. |
+| dev-breathing Mo–Mo | window 2.39–3.21 Å, CN 2.00, ideal none | ideal 2; no join; window unchanged | — (it reports the same) |
+| Demo Ta–Ta (Ta₄ tetrahedra) | window 2.65–3.33 Å, CN 2.75, ideal none | ideal 3; no join; window unchanged | — (it reports the same) |
+| dev-jahn-teller F–F, dev-symmetry-lowering Ta–Ta | CN 4.00 and 6.00, already ideal | unchanged | — |
+
+- **Arms on dev:** arm A and arm D are unchanged. Arm A+ changes once: dev-cell-wrap falls from 1.00
+  to 0.83, losing the rigid V cluster to the extended-network join. Every other cluster window is
+  identical.
+- **Disclosure:** the experiment's builder saw a structure helper in the generator library that only
+  a held-out case uses. That helper is sealed since #104. The table is evidence for a decision, not
+  a tuned rule.
 
 ---
 
@@ -897,35 +1042,56 @@ characters triggers every trim step in order, but no test asserts the budget is 
 
 1. `system`: `copilotSystemPrompt()` — the fixed `SYSTEM_PROMPT` from
    [`llm/prompts/system.js`](../../web_app/frontend/src/llm/prompts/system.js), then `TOOL_RULES`,
+   `REFERENCE_RULES`, `EVIDENCE_RULES`,
    `ASK_RULES` (when `ask_user` is offered), the skills index (when `read_skill` is: each skill's name
    and description), `VIEW_RULES` (with the view tools; else the compute-only sentence) and the
    `OUTCOME_RULE` (Step 17). Without tools it is `COPILOT_PROMPT_NO_TOOLS` (`SYSTEM_PROMPT` and the
    Outcome rule). There is no run data in it, but it carries hard numeric interpretation rules (below).
+   With the turn's method `'off'` (the validation's arm C, plan item 1.8;
+   [`llm/copilot/method.js`](../../web_app/frontend/src/llm/copilot/method.js)) it holds no
+   `EVIDENCE_RULES` and no skills index, `TOOL_RULES` and `ASK_RULES` lose their method sentences
+   (`METHOD_SENTENCES`), and `SYSTEM_PROMPT`'s ground rules their inference parts (`GROUND_RULES`
+   in `system.js`, each part a definition, an inference or conduct; the tool-free prompt too); the
+   tools' descriptions and checks lose their method advice
+   ([copilot-validation.md](copilot-validation.md#arm-c-the-copilot-without-the-method)).
 2. `user` — `"Context for this RMC modeling run:"` followed by ```` ```json … ``` ```` containing
    `contextToJson(context)`. The fence exists so the model can distinguish data from instructions.
 3. `assistant` — a fixed one-line acknowledgement.
-4. the last `CHAT_HISTORY_TURNS = 8` memory messages (`slice(-8)`: 8 *messages*, i.e. 4 exchanges).
+4. the last `HISTORY_MESSAGES = 8` memory messages (`slice(-8)`: 8 *messages*, i.e. 4 exchanges).
 5. `user`: the question you typed.
 
 Then, within the question, the tool exchange (Step 17): one `assistant` message with `tool_calls` per
 round, and one `tool` message per call.
 
 **What "memory" contains.** The turns live in `useCopilot`'s state: never persisted, and cleared on
-reload, on *New conversation*, and when another run opens (`runKey`).
-`conversationMemory()` ([`llm/useCopilot.js`](../../web_app/frontend/src/llm/useCopilot.js)) sends
-each earlier question with its **final answer text** only.
+reload, on *New conversation*, and when another run opens (`runKey`). `useCopilot` hands each
+turn the conversation so far as `[{ question, answer }]` (`turnHistory`), and the turn module
+([`llm/copilot/turn.js`](../../web_app/frontend/src/llm/copilot/turn.js)) sends each earlier
+question with its **final answer text** only, an answer over `MEMORY_ANSWER_CHARS` (2,000)
+compacted to its sentences with numbers and its Outcome line.
 
 - Tool calls, tool results and chain-of-thought (`reasoning` / `reasoningMs`) are **never re-sent**.
   The model re-runs an analysis it needs again.
 - A question whose turn produced no answer (an empty or failed reply) is dropped together with it, so
   memory never holds two user messages in a row.
 - A stopped turn keeps its partial text, marked "(Interrupted before the answer was finished.)".
+- **A new configuration of the same run** (`configKey`: a Live Data save, or a Load of the same
+  folder, that brings a new `.rmc6f`; notation.md §3c) is not a new run, so the conversation stays
+  on screen. Each question remembers the configuration it was asked under; the dock draws a divider
+  where that changes (*New configuration saved — earlier answers were about the previous one*,
+  `configurationBreaks`), and `turnHistory` sends only the questions asked under the current
+  configuration since the last change. The first question after a save is therefore sent with no
+  memory, exactly as a fresh conversation's first request, and the model never reads an answer about
+  the previous configuration as current. An answer still running at the save was asked about the
+  previous configuration (its run was captured then): the divider follows it.
 
 The full context is **re-sent with every request**, which is why old turns can be dropped cheaply.
 The request body is `{model, messages, temperature, stream: true}`, plus `tools` and `tool_choice`
 when analyses are on. `temperature` comes from settings (default **0.2**). For an Ollama server the
 same messages and tools go to its native `/api/chat` instead, with `options: {temperature, num_ctx,
-num_predict}` and no `tool_choice` (Step 16, Step 17 *The context window*).
+num_predict}` and no `tool_choice` (the native API has none). The final request of a turn that
+used its analysis budget (`tool_choice: 'none'`) goes to Ollama with no tools at all (the model
+port, `provider/model.js`; Step 16, Step 17 *The context window*).
 
 #### Numeric rules the system prompt asserts (no code backs them)
 
@@ -1122,14 +1288,17 @@ OpenAI-compatible client (no SDK, no SSE library).
     `thought_signature` there and requires it back.
   - `{finishReason}`.
 
-  `tools` / `tool_choice` join the body only when given. An HTTP failure carries its `status` (the
-  Copilot's tools-unsupported test reads it).
+  `tools` / `tool_choice` join the body only when given. An HTTP failure carries its `status` and
+  its parsed error `body` (`httpError`); the model port reads both to tell "tools unsupported".
 - `completeChat()` is the non-streaming variant used by the watchdog.
-- The Copilot's requests go through `streamCopilotChat()`
-  ([`llm/provider/contextGuard.js`](../../web_app/frontend/src/llm/provider/contextGuard.js)): for a
-  server on this machine or on port 11434 it first reads the server's kind (`GET /api/version`, else
-  `GET /api/v0/models`) and, for Ollama, the model's loaded and maximum context (`GET /api/ps`,
-  `POST /api/show`), then sends Ollama requests through `streamOllamaChat()`
+- The Copilot's requests go through the model port, `providerModel`
+  ([`llm/provider/model.js`](../../web_app/frontend/src/llm/provider/model.js)), and
+  `streamCopilotChat()`
+  ([`llm/provider/contextGuard.js`](../../web_app/frontend/src/llm/provider/contextGuard.js)). For a
+  server on this machine or on port 11434, the port's `prepare` first reads the server's kind (`GET
+  /api/version`, else `GET /api/v0/models`) and, for Ollama, the model's loaded and maximum context
+  (`GET /api/ps`, `POST /api/show`) (`planCopilotChat`). `streamCopilotChat()` then sends Ollama
+  requests through `streamOllamaChat()`
   ([`llm/provider/ollama.js`](../../web_app/frontend/src/llm/provider/ollama.js): `POST /api/chat`,
   newline-delimited JSON) and everything else through `streamChat()`. The watchdog stays on
   `completeChat()`.
@@ -1186,13 +1355,20 @@ What the loop guarantees:
   - Over 12,000 chars per question, the oldest results are replaced by
     `{compacted: …, checks}`. The newest round is never compacted, and checks are never trimmed.
 - **When the budget is used**, a user-role note says so and the last request is sent with
-  `tool_choice: 'none'`. Tool calls in that reply are ignored. If it brings no text (Ollama ignores
-  `tool_choice`), a fixed "analysis budget used" answer closes the turn with
-  `Outcome: not achieved`.
-- **Models without tool support.** A 4xx whose message says the model or server "does not support"
-  (or "is not supported" for) tools, tool calling, tool use or function calling retries the
-  question once without tools, under `COPILOT_PROMPT_NO_TOOLS`. The model is then remembered for the
-  session. Any other HTTP error is shown, including a schema 400 that merely mentions a function.
+  `tool_choice: 'none'`. The model port puts that in each server's form: `"tool_choice": "none"`
+  beside the tools on OpenAI-compatible servers, and no tools at all on Ollama, whose native API
+  has no `tool_choice`. Tool calls in that reply are ignored. If it brings no text (a server that
+  takes the field but does not honour it; LM Studio, Gemini and Anthropic are not verified), a
+  fixed "analysis budget used" answer closes the turn with `Outcome: not achieved`.
+- **Models without tool support.** The model port (`provider/model.js`) raises a
+  `ToolsUnsupportedError` when the provider's response says the model cannot take tools. It reads
+  Ollama's 400 `{error: "<model> does not support tools"}` and OpenAI's 400
+  `{error: {param: "tools", code: "unsupported_parameter"}}` first. The fallback is a 4xx whose
+  message says the model or server "does not support" (or "is not supported" for) tools, tool
+  calling, tool use or function calling. On the question's first request the loop then retries
+  once without tools, under `COPILOT_PROMPT_NO_TOOLS`, and the model is remembered for the session.
+  The loop reacts to the type only. Any other error is shown, including a schema 400 that merely
+  mentions a function.
 - **Stop / timeout.** Each tool run gets its own `AbortSignal`, aborted on Stop or timeout. The
   Copilot's worker (one of its own, not the pages' shared worker) is then terminated, and a Flask
   request is cancelled. `describeSymmetry` runs synchronously and cannot be interrupted (≈ 0.1 s on
@@ -1200,7 +1376,10 @@ What the loop guarantees:
 - **One run per conversation.** The tools and the context are captured when the question is asked.
   Opening another run (`runKey` = directory + run id) stops the turn and starts a new
   conversation. In Flask mode a Live Data save mid-question is *not* a new run: a later analysis in
-  that question reads the newer `.rmc6f`.
+  that question reads the newer `.rmc6f` (the two symmetry tools keep the basis the question was
+  asked with). A save between questions is a new configuration
+  (`configKey`): the conversation stays, a divider ends it, and the earlier answers are no longer
+  sent as memory (*What "memory" contains*, Step 13).
 
 **The analyses.** Each tool returns `{data, checks}`: a summary built for the model, and verdicts
 computed from the full engine result. A check is `ok`, `note`, `warn` or `fail`; `fail` means "does
@@ -1210,15 +1389,15 @@ not answer as asked". A tool is offered only when its inputs exist.
 |---|---|---|---|---|
 | `read_run_data(section)` | the context has the section | `buildRunContext` | one context section as built (the builder's caps apply: ≤ 12 sites, 48 history points), before `contextToJson`'s trims | — |
 | `assess_convergence()` | an R-value series exists | `classifyConvergence` (Step 14), `seriesStats` | column, status, n, first/last/min, total drop, least-squares slope per row over the last 10 / 25 / 50 % (≥ 3 points each) | note: judged on one `.log` column, not the total; ok: converged; note: improving; warn: stalled/diverging; warn: non-finite rows; warn: < 5 rows; fail: < 2 finite rows |
-| `find_gr_peaks(pair, r_max = 6, max_peaks = 3)` | a parsed partials file | `extractPeaks` (Step 8), `firstShell` (Step 9) | peaks (r, FWHM); first-peak window `[r − FWHM, r + FWHM]`; `first_shell`: its window (onset − one grid step to the boundary), the peaks inside it, mean distance and sd from $r^2g$, the CN in both directions and the CN with the cut 0.2 Å earlier / later, the trough $\tilde g/h$ at the boundary; the pair's `MINIMUM_DISTANCES` value, matched order-free, and `g_at_constraint_fraction` | warn: the first shell is not separated from the next ($\tilde g/h > 0.02$ at its boundary: distances fill the gap, the CN depends on the cut); note: the shell holds several peaks (a split shell: use its window); note: a split shell joined across a deep trough, with the first peak's CN and window (`first_shell.first_peak_only`) and the summed count, said in the direction that is ideal (review L1); note: no boundary below max(r_max, r₁ + 3 Å); warn: the closest-approach constraint cuts the distribution — raw $g$ in $(d_{\min}, d_{\min} + 2.5\,\Delta r]$ above 2 % of the peak (`CONSTRAINT_PILEUP_FRACTION`; demo Ga–Se 9 % at 2.2 Å), or the old $r - \mathrm{FWHM}/2 \le d_{\min} + 0.05$ Å; ok: peak, shell edge, mean, CNs; fail: no peak |
-| `list_sites(element?)` | a browser-loaded run or Flask mode | worker `sites` / `/api/pca/sites` | per site: ref, label (composition if mixed), count, U_iso, rms axes, anisotropy, Mardia kurtosis; sorted by \|kurtosis\| then U_iso; top-3 refs by \|kurtosis\|, U_iso and anisotropy | warn: parse warning; note: reconstructed sites; warn: zero-spread sites; fail: no site (holding that element) |
+| `find_gr_peaks(pair, r_max = 6, max_peaks = 3)` | a parsed partials file | `extractPeaks` (Step 8) for `peaks_A`; the run's shell reading (`shells.js`, Step 9) for the rest | peaks (r, FWHM) below `r_max` — a display: the shell does not depend on it; `first_shell`, the run's reading: its window (onset − one grid step to the boundary, to 0.01 Å), the peaks inside it, mean distance and sd from $r^2g$ over the window, the CN in both directions and with the top 0.2 Å earlier / later, the trough $\tilde g/h$ at the boundary, and for two or more resolved peaks `first_peak_only` (to the minimum between the first two: window, CN, trough; `first_peak_window_A`, $[r - \mathrm{FWHM}, r + \mathrm{FWHM}]$, left on 2026-10-19); for a shell joined across a deep trough, `split` (plan item 4.2, the catalogue's split, Step 9): `parts` short to long, each `{window_A, mean_d_A, sd_d_A, cn: {<counted>_per_<around>}, share}` with its CN in the direction the join decided (one key), and `long_minus_short_A` ± `long_minus_short_se_A`, the configuration's sampling error; the pair's `MINIMUM_DISTANCES` value, matched order-free, and `g_at_constraint_fraction` | warn: the first shell is not separated from the next (`separated`: $\tilde g/h > 0.02$ at its boundary: distances fill the gap, the CN depends on the cut); note: the shell holds several peaks (a split shell: use its window; the first peak alone's CN of the shell's); note: a split shell joined across a deep trough (review L1), by number since plan item 4.2: each part's CN at its mean distance (`first_shell.split.parts`), the summed count, both said in the direction that is ideal, long − short ± its sampling error and the shares by path (dev-jahn-teller: "3.98 F per Cu at 1.929 Å + 2.01 at 2.251 Å (first_shell.split.parts), 6 together … Long − short 0.321 ± 0.0043 Å (first_shell.split: long_minus_short_A ± long_minus_short_se_A, the configuration's sampling error); 66 % / 34 % of the shell's count"), and where the first peak alone ends (it no longer quotes the peaks' separation, which the review saw subtracted by hand); note: no peak below `r_max`, the first shell beyond it; note: no boundary below max(8, r₁ + 3 Å); note: no shell (no peak below 8 Å); warn: the closest-approach constraint cuts the distribution — raw $g$ in $(d_{\min}, d_{\min} + 2.5\,\Delta r]$ above 2 % of the peak (`SEPARATION_G_FRACTION`; demo Ga–Se 9 % at 2.2 Å; the old $r - \mathrm{FWHM}/2 \le d_{\min} + 0.05$ Å clause dropped 2026-10-19); ok: peak, shell edge, mean, CNs; fail: no peak below `r_max` and no shell |
+| `list_sites(element?)` | a browser-loaded run or Flask mode | worker `sites` / `/api/pca/sites` | per site: ref, label (composition if mixed), count, U_iso, rms axes, anisotropy, Mardia kurtosis; `kurtosis_axes`, the excess kurtosis along each principal axis on resolved axes only (null elsewhere; absent when none has one); `pc1_uvw`, PC1 as a direct-lattice `[u v w]` (`crystalOrientationRows`) when PC1 is resolved; on a split site, `delta_A` ± `delta_se_A`, its static displacement and sampling error (Step 20); split sites first (largest `delta_A` first), then by \|kurtosis\| and U_iso; top-3 refs by \|kurtosis\|, U_iso and anisotropy; the note defines only the fields the result holds | warn: parse warning; note: reconstructed sites; warn: zero-spread sites; note: the split sites by ref and label (PC1 resolved, κ₁ ≤ −0.5 and ≤ −3√(24/n): `isSplitSite`, the rule `analyze_clusters` uses); fail: no site (holding that element) |
 | `analyze_displacement_directions(site_ref \| element, frequency?)` | same | worker `orientation` / `/api/pca/orientation`, `geometry: false` | used / rejected points; peak enhancement, count, expected and calibrated `peakSignificance`; peak direction as a Cartesian unit vector, as `[u v w]` (direct lattice, $M^{-T}d$ scaled to max \|component\| = 1, sign kept, since the map is not antipodally folded) and as angles to a, b, c; `mapSignificance`; antipodal asymmetry, its z and flag; orientation-tensor eigenvalues, anisotropy and its Bingham significance; the principal axis `[u v w]` (`crystalOrientationRows`) | warn: < 100 vectors; ok: peak ≥ 3σ; note: peak < 3σ; note: map test undefined; ok: map ≥ 3σ, said as *anisotropic* and, without a significant peak, "not a preferred direction" (any anisotropic Gaussian ellipsoid passes the map test: the validation's thermal-only O, peak 2.3σ, map 7.2σ; review L3); note: tied peak cells; note: significant ± asymmetry; warn: parse warning; note: an element pooled over > 1 site (the site count from the basis) — where their local axes differ, as for the four vertices of a tetrahedral cluster, a per-site preference cancels, so an isotropic pooled map is not evidence against a per-site or cluster distortion |
-| `compute_bond_angles(end1, apex, end2, r12_min, r12_max, r23_min?, r23_max?, bin_width = 1)` | same | worker `triplets` / `/api/triplets` (`APP_MAX_ANGLES` applies) | angle count, central atoms, mean ± sd; ≤ 3 modes (local maxima of a 5-bin running mean of the counts, each with the share of angles within ± 7.5°); the distribution in 18 bins of 10° (the engine's bins shared by overlap), raw and sin θ-corrected ($S_j = (N_j/N)\,/\,[(\cos\theta_j - \cos\theta_{j+1})/2]$, 1 for random directions); for an A–B–A triplet in one window that does not cut the shell and a mean coordination within 0.5 of 6, the share and mean angle below and above 135° against an ideal octahedron (80 % cis at 90°, 20 % trans at 180°), within 0.5 of 4, the share within 15° of 109.47°; mean bond length, its sd from the engine's 40-bin length histogram, and unique bonds per window; coordination histogram and mean | fail: 0 angles ("widen the window"); warn: > 50 % of central atoms have no A–B bond in the window; otherwise warn: < 60 % of central atoms have the most common A–B bond count (the window cuts a coordination shell) — **refused** (fail) unless `window_confirmed`, the modes, mean, sd and histograms withheld (the coordination-shells skill's firm rule), else a warn "kept: the user chose this window"; note: raw counts deplete 180° (with the octahedron split); warn: parse warning; ok otherwise. Refused before running: min ≥ max, an r23 bound without its pair |
-| `detect_symmetry(tolerance_A ∈ [0.001, 1])` | the structure has a `basis` (browser-loaded runs) | `describeSymmetry` (the Detected SG card's finder), *not* changing the card | group, number (only when certain), point group and its facts (`point_group_facts`, as in the context), n ops, max residual, every orbit with `orbitLabel` Wyckoff label, site symmetry and representative fractional coordinates (4 decimals) | ok: group holds; note: the point group's facts ("take inversion, chirality and polarity from this"); note: undetermined; note: "≥" lower bound; warn: not analysed (caps); fail: no basis |
+| `compute_bond_angles(end1, apex, end2, r12_min, r12_max, r23_min?, r23_max?, bin_width = 1)` | same | worker `triplets` / `/api/triplets` (`APP_MAX_ANGLES` applies) | angle count, central atoms, mean ± sd; ≤ 3 modes (local maxima of a 5-bin running mean of the counts, each with the share of angles within ± 7.5°); the distribution in 18 bins of 10° (the engine's bins shared by overlap), raw and sin θ-corrected ($S_j = (N_j/N)\,/\,[(\cos\theta_j - \cos\theta_{j+1})/2]$, 1 for random directions); for an A–B–A triplet in one window that does not cut the shell and a mean coordination within half an atom of 6 (`cnMatches`), the share and mean angle below and above 135° against an ideal octahedron (80 % cis at 90°, 20 % trans at 180°), of 4, the share within 15° of 109.47°; mean bond length, its sd from the engine's 40-bin length histogram, and unique bonds per window; coordination histogram and mean (the engine's `coordinationSummary`) | fail: 0 angles ("widen the window": find_gr_peaks' first_shell.window_A); warn: > 50 % of central atoms have no A–B bond in the window; otherwise warn: < 60 % of central atoms have the most common A–B bond count (the window cuts a coordination shell; both the shell module's `countsCut`, unchanged on 2026-10-19) — **refused** (fail) unless `window_confirmed`, the modes, mean, sd and histograms withheld (the coordination-shells skill's firm rule), else a warn "kept: the user chose this window"; note: raw counts deplete 180° (with the octahedron split); warn: parse warning; ok otherwise. Refused before running: min ≥ max, an r23 bound without its pair |
+| `detect_symmetry(tolerance_A ∈ [0.001, 1])` | the structure has a `basis` (a browser-loaded run's `structureFromRmc6f`, or a server folder's `/api/structure`, `structure_basis.py`; not a coords-only file) | `describeSymmetry` (the Detected SG card's finder), *not* changing the card | group, number (only when certain), point group and its facts (`point_group_facts`, as in the context), n ops, max residual, every orbit with `orbitLabel` Wyckoff label, site symmetry and representative fractional coordinates (4 decimals) | ok: group holds; note: the point group's facts ("take inversion, chirality and polarity from this"); note: undetermined; note: "≥" lower bound; warn: not analysed (caps); fail: no basis |
 | `measure_symmetry_lowering(parent_tolerance_A = 0.2, tolerance_A = 1.25 × noise floor)` | the structure has a `basis` | `symmetryShifts` (`symmetryShift.js`): the parent group at `parent_tolerance_A` (`analyseSymmetry`), each orbit averaged over its operations (`averageOrbit`), each member's ideal position the nearest image of that average; a member's shift = its mean − its ideal position, the common part the least-squares origin leaves removed by the geometric median of all members' shifts (Weiszfeld: the parent on the majority of the atoms, the description that moves the fewest); the lower group by `describeSymmetry` at `tolerance_A` | the parent and lower groups (the lower with its point-group facts), the noise floor, up to 12 sites (largest first) with `shift_A`, `direction_uvw`, `nearest_low_index` (within 15°, `LOW_INDEX_CONE_DEG`), `se_A` (the mean's sampling error along the shift) and `above_noise_floor`; `facts.lowering` = `{parent, lower, shifted: [{element, shift_A, direction_uvw}]}` | ok: each element whose largest shift exceeds the noise floor ("Ta shifted 0.065 Å along [0 0 1] (3.7° off) from the Pm-3m positions … a coherent shift every copy shares"); note: the parent → lower change in inversion and polarity; ok: no site above the noise floor; note: the lower tolerance still gives the parent group; warn: not analysed; fail: no basis, or no parent operation (review L4: the shift had to be worked out by hand from the orbit positions) |
 | `compare_fit(dataset, n_ranges = 6)` | a fit file with a model and a measured column (`xpdf`, `npdf`, `xray_sq`, `neutron_sq`, `bragg`; repeated kinds keyed `npdf_2`, …) | `fitTool` in `runTools.js` (roles by label `/exp\|obs/` vs `/calc\|rmc\|fit/`, else column order — `rwpColumns`, duplicated) | the dataset's $R$ (Step 10) over its range; per equal-width range of r or Q: $R$ there and its share of $\sum (y^\mathrm{calc}-y^\mathrm{expt})^2$; the 5 largest local extrema of the 5-point mean residual (position, model − data, relative to the data's rms) | ok (the card's headline): the overall $R$ and where the misfit lives — one range holding ≥ 40 % of the squared residual (`MISFIT_CONCENTRATION`), else spread; note: another range's own $R$ ≥ 3× the dataset's (`RELATIVE_MISFIT_FACTOR`) — weak signal poorly fitted, e.g. high-Q F(Q); fail: < 10 points |
-| `analyze_clusters(element, r_min, r_max)` | a browser-loaded run with site/cell columns, or Flask mode | worker `clusters` / `/api/clusters` (Step 18) | the cluster kind (members, edges, count, templates; other sizes); the average cluster's sorted edges, spread, median edge sampling error and spread/SE; per statistic obs / null mean / z / change = obs/null − 1 — the shape rows (edge ladder, ladder width, shape rms; tetrahedra: E and T2 rms and T2 trigonality; the fractions of long / short gyration axes within 15° of <100>, <110>, <111>) against `shapeNull`, the size rows (breathing sd, mean edge) against independent atoms (Step 18; review L2); `split_member_sites`: the analysed kind's member sites whose PC1 is resolved and whose PC1 excess kurtosis is ≤ −0.5 (`SPLIT_SITE_KURTOSIS`: two equal wells δ = σ, the onset of bimodality) and ≤ −3√(24/n) (`SPLIT_SITE_SE`), from the engine's `sites` rows the tool also requests; bonds outside the window, contacts between clusters per atom. `facts.cluster` = `{element, members, window, distorted, static, breathing, rigid, split, families}` for the cluster answer check | fail: extended network; fail: no clusters; warn: other sizes hold > 10 % of clusters; note: the average cluster is distorted (spread ≥ 5 SE, `STATIC_SPREAD_SE`) or regular; ok: dimers (one edge) — the shape is the bond length, read from the size row; ok: ladder width departs from the shape null (\|z\| ≥ 3 **and** \|change\| ≥ 5 %: more distorted — a correlated distortion — or less — rigid units, unless an axis family or the trigonality shows a pattern: then a distortion whose amplitude the null already holds), or matches it while the pattern does not (a correlated distortion held by the sites' own displacements), or matches it; note: breathing departs (same rule): more — collective breathing, a size fluctuation, not a shape distortion; less — stiffer bonds, the atoms move together; note: trigonality departs (\|z\| ≥ 3, \|Δ\| ≥ 0.02); note: an axis family enhanced (z ≥ 3, obs/null ≥ 1.1); note: split sites — at least half the member sites split: the null holds the amplitude, "no distortion" does not make the clusters regular; warn: > 5 % of bonds outside the window; warn: > 0.05 inter-cluster contacts per atom |
-| `analyze_modulations(element?)` | same | worker `modulations` / `/api/modulations` (Step 19) | per element: the zone-boundary points as `[q, ratio to the median, percentile, σ]` rows, the three strongest modes as `[q, ratio, percentile, σ]` (σ only at a general q); the supercell, wavevector count and untestable points; `facts.modulation` = `{elements, ordered: [{element, q}], general: [{element, q}]}` | ok: ordered displacements at a zone-boundary point (ratio ≥ 3 and ≥ 3σ against independent displacements, corrected over the points tested); ok: no cell doubling (the most significant point named); ok: correlated displacements between cells at a general q — one of the strongest modes that is neither a zone-boundary point nor a long wave, with ratio ≥ 3 and ≥ 3σ against independent displacements: a complex Fourier sum, so an element's mean over m sites has ≥ 2m degrees of freedom (P ≥ χ²₂ₘ/2m, `generalModeSigma`), Šidák-corrected over the compared modes of every tested element — incommensurate or short-range order between cells, not a cell doubling (review L4); note: a long-wavelength wave dominates (≥ 5×, every \|q_i\| ≤ 0.25); note: untestable points (odd axes); fail: no displacements |
+| `analyze_clusters(element, r_min, r_max)` | a browser-loaded run with site/cell columns, or Flask mode | worker `clusters` / `/api/clusters` (Step 18) | the cluster kind (members, edges, count, templates; other sizes); the average cluster's sorted edges, spread, median edge sampling error and spread/SE; per statistic obs / null mean / z / change = obs/null − 1 — the shape rows (edge ladder, ladder width, shape rms; tetrahedra: E and T2 rms and T2 trigonality; the fractions of long / short gyration axes within 15° of <100>, <110>, <111>) against `shapeNull`, the size rows (breathing sd, mean edge) against independent atoms (Step 18; review L2); `split_member_sites`: the analysed kind's member sites whose PC1 is resolved and whose PC1 excess kurtosis is ≤ −0.5 (`SPLIT_SITE_KURTOSIS`: two equal wells δ = σ, the onset of bimodality) and ≤ −3√(24/n) (`SPLIT_SITE_SE`) — `isSplitSite`, the rule `list_sites` reports — from the engine's verdict (`splitMemberSites`: the engine reads its own member clouds; until 2026-10-19 the tool made a second `sites` request, and a failed one dropped the note silently); bonds outside the window, contacts between clusters per atom. `facts.cluster` = `{element, members, window, distorted, static, breathing, rigid, split, families}`, the verdict's answers, for the cluster answer check. Every check below is a finding of the engine's verdict said through `CLUSTER_SENTENCES` (Step 18, *The verdict*) | fail: extended network; fail: no clusters; warn: other sizes hold > 10 % of clusters; note: the average cluster is distorted (spread ≥ 5 SE, `STATIC_SPREAD_SE`) or regular; ok: dimers (one edge) — the shape is the bond length, read from the size row; ok: ladder width departs from the shape null (\|z\| ≥ 3 **and** \|change\| ≥ 5 %: more distorted — a correlated distortion — or less — rigid units, unless an axis family or the trigonality shows a pattern: then a distortion whose amplitude the null already holds), or matches it while the pattern does not (a correlated distortion held by the sites' own displacements), or matches it; note: breathing departs (same rule): more — collective breathing, a size fluctuation, not a shape distortion; less — stiffer bonds, the atoms move together; note: trigonality departs (\|z\| ≥ 3, \|Δ\| ≥ 0.02); note: an axis family enhanced (z ≥ 3, obs/null ≥ 1.1); note: split sites — at least half the member sites split: the null holds the amplitude, "no distortion" does not make the clusters regular; warn: > 5 % of bonds outside the window; warn: > 0.05 inter-cluster contacts per atom |
+| `analyze_modulations(element?)` | same | worker `modulations` / `/api/modulations` (Step 19) | per element: the zone-boundary points as `[q, ratio to the median, percentile, σ]` rows, the three strongest modes as `[q, ratio, percentile, σ]` (σ only at a general q); a ratio or σ below its bar never rounded onto it (F2: 2.96, not 3; `'<3'` nearer than six significant digits); each ordered point's `polarisation` row (`q`, `uvw` to two decimals, `share`, `nearest_low_index` within 15°, plan item 4.3); the supercell, wavevector count and untestable points; `facts.modulation` = `{elements, ordered: [{element, q}], general: [{element, q}]}`, the element verdicts' `decidedBy`. σ and every check below come from the engine's verdict, said through `MODULATION_SENTENCES` (Step 19, *The verdict*); its own result budget, 4,000 characters (`MODULATION_RESULT_BUDGET`) | ok: ordered displacements at a zone-boundary point (ratio ≥ 3 and ≥ 3σ against independent displacements, corrected over the points of every element, whichever the call names: F3), with its polarisation ("polarised along [0 0 1] (5.5° off; 100 % of the power at q)"); ok: no cell doubling (the most significant point named; "2.96σ after the correction: below the 3σ bar" where its usual rounding would read the bar); ok: correlated displacements between cells at a general q — one of the strongest modes that is neither a zone-boundary point nor a long wave, with ratio ≥ 3 and ≥ 3σ against independent displacements: a complex Fourier sum, so an element's mean over m sites has ≥ 2m degrees of freedom (P ≥ χ²₂ₘ/2m, `generalModeSigma`), Šidák-corrected over the compared modes of every element — incommensurate or short-range order between cells, not a cell doubling (review L4), with its polarisation; note: a long-wavelength wave dominates (≥ 5×, every \|q_i\| ≤ 0.25); note: untestable points (odd axes); fail: no displacements |
 
 **Show in \<page\>.** A tool may declare `page` and `pageParams(args)`. The loop computes the
 parameters from the validated arguments (null after an error), and the step's button hands them to
@@ -1271,16 +1450,19 @@ names) or one reference file, with a note when the skill is a draft. The tool co
 `resultBudget` (9,000 characters for `read_skill`) replaces the 3,000-character result budget, and
 `keep: true` keeps its message out of the 12,000-character turn budget and its compaction.
 
-**Checks on the answer** (`copilot/answerAudit.js`). A tool may return `facts` beside
+**Checks on the answer** (the verification's facts catalogue, `copilot/verification/facts.js`
+FACTS: one row per facts key, its producing tools, its shape and the check that reads it, in the
+order below). A tool may return `facts` beside
 `data` and `checks` (kept by the loop, not sent to the model): `assess_convergence` its status,
 `detect_symmetry` its group with the point-group facts, `analyze_displacement_directions`
 `{subject, significant (peak ≥ 3σ), anisotropic (map ≥ 3σ), peak_sigma, map_sigma}` (until the 2026-10-14 review's L3, `significant` also counted the map test, which any thermal ellipsoid passes), `analyze_modulations`
 `{elements, ordered: [{element, q}], general: [{element, q}]}`, `analyze_clusters`
 `{element, members, window, distorted, static, breathing, rigid, split, families}`,
 `compute_bond_angles` and `find_gr_peaks` the whole-shell or chosen-window counts
-`{centre, partner, window, cn, whole_shell, confirmed}` (review L5). The run context adds the
-watchdog's status and every ladder group (`contextAuditFacts`). When the model answers,
-`auditAnswer(text)` splits it into sentences and clauses (a new clause at `;`, `:` and before
+`{centre, partner, window, cn, whole_shell, confirmed}` (review L5), `measure_symmetry_lowering`
+`{parent, lower, shifted}` (no check reads it yet). The run context adds the watchdog's status and
+every ladder group (`contextAuditFacts`). When the model answers, the verification's reading
+(`reading.js`) splits it into sentences and clauses (a new clause at `;`, `:` and before
 "but", "while", "whereas", "unlike", "although", "though", "however") and looks for positive
 claims. One does not count in a question; after a negation (not, no, never, neither, nor, none,
 without, lack, absence, cannot, non, yet, stopped, ceased, n't); or after a word that makes it
@@ -1331,31 +1513,37 @@ The findings (`{rule, text}`, one per rule) reach the turn as `audit` and show u
 with the `reference` and `evidence` findings below; any finding makes the computed verdict **not
 verified**.
 
-**The evidence gate** (`copilot/evidence.js`, THY-18). Each rule reads a kind of conclusion with
-`asserts` (the answer checks' claim reading) and names the analysis it needs in this turn:
+**The evidence gate** (the verification's claim catalogue, `copilot/verification/claims.js`
+CLAIMS, THY-18). Each row reads a kind of conclusion with `asserts` (the answer checks' claim
+reading) and names the analysis it needs in this turn (`backedBy`: `anyOf`, `firstOffered` or
+`allOf`), in this order:
 order between cells (superstructure, cell doubling, zone-boundary order, modulation, incommensurate
 order) and a split site called random disorder (split site, two-site disorder, random
 off-centring or off-centring at random, a displacement of ± x Å or ± x Å along a direction — not a
-± sampling error — `off_centre`) — `analyze_modulations`; a preferred direction —
-`analyze_displacement_directions`; distorted, breathing or rigid clusters (and `cluster_*`,
-`rigid_cluster`) — `analyze_clusters`; a coordination number, a polyhedral coordination, a split
-shell or a Jahn–Teller distortion — `find_gr_peaks` or `compute_bond_angles`; a lowering of the
+± sampling error) — `analyze_modulations`; a preferred direction —
+`analyze_displacement_directions`; distorted, breathing or rigid clusters — `analyze_clusters`; a
+coordination number, a polyhedral coordination, a split shell or a Jahn–Teller distortion —
+`find_gr_peaks` or `compute_bond_angles`; a lowering of the
 average structure (symmetry lowering, lowered symmetry, a coherent shift, a polar shift, a shift
 of x Å, "(coherent)"; not "coherent scattering") —
 `measure_symmetry_lowering` (`detect_symmetry` when that is not offered); "no order" (no local
-order, thermal motion only, nothing beyond the average structure; an empty `"features": []`;
-not the modulation tool's own "no order that doubles the cell") — `analyze_modulations`, a
-directions map with `site_ref`, and `analyze_clusters` for every element of the clarifier's shell
-catalog whose own first shell holds 0.5–4.5 neighbours (`CLUSTER_CN_MAX`). Every rule but "no
-order" reads only sentences about this run: naming an element of the run (as a symbol not followed
+order, thermal motion only, nothing beyond the average structure; not the modulation tool's own
+"no order that doubles the cell") — `analyze_modulations`, a directions map with `site_ref`, and
+`analyze_clusters` for every element of the clarifier's shell catalog whose own first shell holds
+0.5–4.5 neighbours (`context/shells.js` `clusterElementsOf`, `CLUSTER_CN_MAX`). The verdict
+schema's words (`off_centre`, `cluster_distortion`, `cluster_breathing`, `rigid_cluster`,
+`jahn_teller`, `symmetry_lowering`, and an empty `"features": []` anywhere in the text for "no
+order") are not the app's: the validation harness adds them to its turns
+(`validation/verdict.js` `VERDICT_PHRASINGS`, the verification's `phrasings`), so they read there
+as before. Every rule but "no order" reads only sentences about this run: naming an element of the run (as a symbol not followed
 by a lower-case letter, so Ti in TiO₆ but not in "Tiny") or the run itself (this / the run,
 configuration, structure, model, box, supercell, sample, compound, crystal, material, system; the
 sites, atoms, clusters, octahedra, tetrahedra, polyhedra, displacements; site n), so a definition
 needs no analysis; with no element list every sentence counts. A step counts when it
 returned without an error (a refused bond-angle window still counted its coordination). Rules for
 tools the turn does not offer are dropped. When the model answers with tools still allowed and
-fewer than `maxEvidenceGates` (2) send-backs this turn, the first unmet rule not sent back yet is
-sent back: a `gate` event (carrying the withdrawn text), a `retract` of the answer's text, the
+fewer than `maxSendBacks` (2, `DEFAULT_MAX_SEND_BACKS`; a run's `limits.maxEvidenceGates` sets it)
+send-backs this turn, the first unmet rule not sent back yet is sent back: a `gate` event (carrying the withdrawn text), a `retract` of the answer's text, the
 answer as an assistant message and the note "(From the app, not the user.) Your answer concludes
 …, but this question has not run …". The gate reads the answer with its references filled (as the
 checks will), and sends nothing back on the final round or once the turn's time is spent. On the
@@ -1366,9 +1554,10 @@ Stop keeps it as the partial answer. A step counts as run only when the tool ran
 earlier run is repeated): not a call to an unknown tool, one skipped by the per-round limit, a
 refused question, or a view tool.
 
-**Numbers by reference** (`copilot/references.js`). The loop names each successful result
-`r<n>` (in the order of the turn), puts it first in the tool message (`ref`, kept through
-compaction) and stores the data it sent (the fitted result, so a reference names what the model
+**Numbers by reference** (the verification, over the store in `copilot/references.js`). The
+verification names each successful result the loop records `r<n>` (in the order of the turn), the
+loop puts it first in the tool message (`ref`, kept through compaction), and the verification keeps
+the data that message sent (the fitted result, so a reference names what the model
 saw). `fillReferences` replaces every `{{r<n>.<path>}}` or `{{ctx.<path>}}` (path steps `.key`,
 `.n` or `[n]`; keys may hold `<>+-`, as in `<100>`) by the value: a finite number as written in the
 data, a string as is, a boolean, or a list of scalars as `[a, b, c]`; anything else in double
@@ -1376,28 +1565,31 @@ braces that does not start with `r<n>` or `ctx` (a LaTeX group) is left alone. A
 reference stays and is a `reference` finding. `{{ctx.…}}` resolves against the context as the
 model read it (`shownContext`: contextToJson's trimmed copy), never a value the trim removed. An
 ended or stopped turn fills the references in every text segment from its own steps (each keeps
-its `ref` and the data it sent). The `done` event carries the filled `text`, the
+its `ref` and the data it sent), and `{{ctx.…}}` from its `start` event's `shown` (`turnState.js`). The `done` event carries the filled `text`, the
 `rawText` and `references: {written, filled, unknown}`. `analyze_clusters` asks for a
 4,500-character result (`CLUSTER_RESULT_BUDGET`): at 3,000 its result with checks (~3.4k on the
 demo) reached the model cut to a text fragment no path could name.
 
-**The computed verdict** (`copilot/verdict.js` `computeOutcome`). In order: **not verified** —
+**The computed verdict** (`copilot/verification/verdict.js` `computeOutcome`; the verification's
+judge computes it last, after the references, the send-back, the checks and the findings). In
+order: **not verified** —
 any finding (answer check, unfilled reference, missing evidence); **not achieved** — analyses ran
 and every one failed; **partial** — `stoppedBy` max_rounds or no_progress, a reply cut at the
 length limit, a failed step with no later success of the same tool, or a step that warned;
 **achieved** — otherwise. Questions to the user, skill reads, view tools and calls that never ran
-are not analyses. The model may lower the status, never raise it: a `partial` or `not achieved` it
+are not analyses (`isAnalysis`, the one definition, which the dock's footer counts too, through
+`tool_end.analysis`). The model may lower the status, never raise it: a `partial` or `not achieved` it
 writes stands over a computed `achieved` or `partial` ("the model says the answer is …"). The note
 lists the reasons, then the model's sentence; a status the model wrote is `claimed`, and named
 ("The model said 'achieved': …") when it differs.
 
-**The Workbench's own questions** (`copilot/clarify.js`). `buildShellCatalog` reads the
-partials file: per ordered pair (centre, partner) the first shell as `firstShell` finds it (Step 9),
-its window rounded to 0.01 Å, the peaks in it, the CN $4\pi\rho_\text{partner}\int r^2 g\,dr$ over
-the window (linear interpolation between grid points), the first-peak window $[r_1 - w, r_1 + w]$
-(w the FWHM) and its CN, and the CN with the window's top 0.2 Å earlier and later. A window
-*changes the answer* when its CN differs from the whole shell's by ≥ max(0.5, 0.15 × CN)
-(`CN_CHANGE_ABS`, `CN_CHANGE_REL`). `readQuestion` reads the user's question for its intent
+**The Workbench's own questions** (`copilot/clarify.js`). The clarifier reads the run's shell
+catalogue (`shells.js`, Step 9; `buildShellCatalog` left on 2026-10-19): per ordered pair (centre,
+partner) the first shell, its window, the peaks in it, its CN, the first peak alone (to the minimum
+between the first two resolved peaks; before, $[r_1 - w, r_1 + w]$ with w the FWHM) and the CN with
+the window's top 0.2 Å earlier and later. A window *changes the answer* when its CN differs from
+the whole shell's by ≥ max(0.5, 0.15 × CN) (`CN_CHANGE_ABS`, `CN_CHANGE_REL`: `cnChanges`, each
+reading's `changesCn`). `readQuestion` reads the user's question for its intent
 (bond angles; coordination, polyhedra, neighbours; directions; space group), the run's elements
 (element symbols that are English words — In, As, S… — only after "around", "of", "for" or
 before "atoms", "sites"), pairs and triplets, a polyhedron (octahedron 6, tetrahedron 4, trigonal
@@ -1408,17 +1600,17 @@ prism 6, square planar 4, cuboctahedron 12), a length or tolerance in Å, and a 
   `BONDED_REACH`; at most 4 options; "Every neighbour type" for coordination); not asked when only
   one partner or when the named polyhedron's CN matches exactly one partner. A named pair or
   triplet (A–B–C: the B–A and B–C shells) → which window, when `ambiguousWindows` finds a split
-  shell whose first peak changes the CN, or a shell whose trough is above 2 % of the peak and
-  whose 0.2 Å cuts change it; not asked when the named polyhedron's CN matches exactly one option,
+  shell whose first peak changes the CN (`firstPeak.changesCn`), or a shell not separated from the
+  next (`separated` false: its trough above 2 % of the peak) whose 0.2 Å cuts change it; not asked when the named polyhedron's CN matches exactly one option,
   or when the question names the shell (`shellChoice`: "first … peak" → the first peak; "whole /
   entire / full / complete (first) shell" or "both peaks" → the whole shell).
   A directions question with one element and no site number → one site per orbit or all pooled,
   when the element has ≥ 2 sites and an orbit whose site symmetry is not cubic (23, m-3, 432,
   -43m, m-3m). A space-group question with no length in Å → which group, when ≥ 2 ladder rungs
-  reach ≥ 1.25× the noise floor (`NOISE_MARGIN`).
+  reach ≥ 1.25× the noise floor (`NOISE_FLOOR_MARGIN`, `context/runContext.js`).
 - `beforeCall(tool, args, { questionText, session })`, for a tool with `shellWindows(args)`: a
-  window overlapping its first shell whose CN is below the whole shell's by the margin is asked
-  about (whole shell, or keep), unless both its bounds appear in the question (or in an answer to an
+  window overlapping its first shell whose CN is below the whole shell's by the margin
+  (`window().cnMargin.cut`) is asked about (whole shell, or keep), unless both its bounds appear in the question (or in an answer to an
   earlier Workbench question). Settled without asking (`{ settled: true, args, note }`): a window
   the user already chose for in this turn (`session.windows`, keyed by centre, partner and window
   to 0.01 Å) runs in the choice; with the question's `shellChoice`, the first peak keeps the window
@@ -1438,18 +1630,21 @@ and its wait is subtracted from the turn's clock. `normalizeAskRequest()` turns 
 `{question, options: 2–4 × {label, description?}, allowOther, defaultIndex}` (plain strings read as
 labels, `"label — description"` split at a spaced dash, labels deduplicated case-insensitively, the
 default matched by label or by number 1–4) and throws on an empty question or fewer than two
-distinct options. The tool calls `askUser(request, { signal })` from the tools' context
-(`useCopilot`), which shows the question card and resolves with
+distinct options. The tool calls `askUser(request, { signal })` from the tools' context (the
+turn's ask-user port, which `useCopilot` supplies), which shows the question card and resolves with
 `{answer, source: 'option' | 'other' | 'skipped', index}`; `answerResult()` turns that into the
 tool's data and one check ("use exactly this choice", the typed answer verbatim, or "use your
 default and say you assumed it"). A second call in the same round, or a third in the question, is
 answered with an error, and its card reads *Not asked*. The turn's abort signal rejects the wait (Stop, a run
 change, an unmount). `ASK_RULES` join the prompt when the tool is offered (`copilotSystemPrompt`).
 
-**The context window** (`provider/contextGuard.js`, `provider/ollama.js`). Every
-Copilot request goes through `streamCopilotChat()`. A server is probed only when it is local or on
-port 11434: `GET /api/version` answering a version is Ollama; `GET /api/v0/models` listing load
-states is LM Studio; anything else is sent unchanged (`client.js`).
+**The context window** (`provider/contextGuard.js`, `provider/ollama.js`). The model port's
+`prepare` asks the guard for its plan before each Copilot request (`planCopilotChat()`): the
+server kind and, below, the context it sizes or the refusal (`ContextLimitError`, before anything
+is sent). The request as sent carries that plan (`sent.plan`), and `streamCopilotChat()` sends
+it under it. A server is probed only when it is local or on port 11434: `GET /api/version`
+answering a version is Ollama; `GET /api/v0/models` listing load states is LM Studio; anything
+else is sent unchanged (`client.js`).
 
 - **The estimate** (`estimatePromptTokens`): the characters of every message's content, tool
   names and the tool schemas' JSON divided by `CHARS_PER_TOKEN` = 2.5, those of tool results and
@@ -1479,7 +1674,7 @@ states is LM Studio; anything else is sent unchanged (`client.js`).
 
 **The verdict.** The prompt asks every answer to end with `Outcome: <one sentence>` — what the
 evidence shows or what is missing — and tells the model not to grade itself (THY-18).
-[`copilot/outcome.js`](../../web_app/frontend/src/llm/copilot/outcome.js) `parseOutcome()` reads
+[`copilot/verification/outcome.js`](../../web_app/frontend/src/llm/copilot/verification/outcome.js) `parseOutcome()` reads
 the line:
 
 - the **last** such line wins;
@@ -1579,8 +1774,8 @@ independent atoms — every shape statistic within 0.3 % of `shapeNull`; breathi
 edge spread −23 % against independent atoms (z = −24) but +0.5 % (z = 0.6) against `shapeNull`, no axis
 family at |z| > 2, breathing +67 %; one vertex pushed out per cluster — the edge-spread excess goes too
 (the vertex sites' own two positions hold it), the pattern stays (trigonality z = −16.5, long axes
-along <111> z = +16.8). The Copilot's summary names split member sites (PC1 excess kurtosis ≤ −0.5 and
-3 sampling errors below 0; Step 17): there the null holds the distortion's amplitude.
+along <111> z = +16.8). The verdict names split member sites (PC1 excess kurtosis ≤ −0.5 and
+3 sampling errors below 0; Step 20): there the null holds the distortion's amplitude.
 
 **The average cluster.** The template's own bonds $|\mathbf b_j - \mathbf b_i|$ (a *static*
 distortion shows here, not in the shuffle test, which keeps the site means) with each bond's sampling
@@ -1611,6 +1806,61 @@ in the shape null (−20 %, z = −49; 0.386 Å, −23 %, against independent at
 along <110> 23 % against 21 % (z = 1.9) — <111> the axis of the distortion small-box PDF fits report for this compound
 ([Yang et al., Phys. Rev. Research 4, 033123 (2022)](https://doi.org/10.1103/PhysRevResearch.4.033123));
 average cluster 3.031–3.054 Å, 5.5 SE.
+
+**The verdict** (`verdict`, always returned; architecture candidate 5, 2026-10-19). The engine
+decides what its statistics show, so the Copilot's `analyze_clusters`, arm A+ and a script read one
+answer; the tool only renders it (`CLUSTER_SENTENCES`). The rules are the ones the tool's summary
+applied until then, ported rule for rule and echoed in the verdict (`CLUSTER_RULES`). Decisions use
+the unrounded statistics. The tool decided on its rounded rows (z and changes to 2 s.f., the axis
+fractions to 3 s.f.), so a statistic within rounding of a bar can now decide differently. None of
+the Demo, the dev cases, the fixtures or 1,010 compared tool results did: the old summary and the
+new renderer gave the same data and checks for every one.
+
+- A **Finding** is `{answer, because, evidence}`. `answer` is true or false, or null where the
+  question does not apply or its statistic is undefined (never "not significant"). `because` is a
+  closed code (`CLUSTER_BECAUSE`). `evidence` holds every statistic the answer consulted, the ones
+  that clear their bar first, then the rest in a fixed order: a negative keeps them all.
+- An **Evidence** record is `{statistic, against, observed, null, z, change, changeKind, bar,
+  clears, side?, strict?, site?}`. `against` is `shapeNull`, `independentNull`, `samplingError`,
+  `siteKurtosis` or `window`; `change` = observed/null − 1 (`ratio`) or observed − null
+  (`difference`). `bar` maps a field of the record (z, change, observed) to its threshold, and
+  `side` says which way it is cleared: `above` ≥ bar, `below` ≤ −bar, absent |value| ≥ bar
+  (`strict` makes each comparison strict). `clears` is `evidence_clears(record)`, so it is
+  recomputable from the record: the tests recompute it for every record of the fixtures, in both
+  engines. Every number is finite or null.
+
+| Finding | Reads | Answer |
+|---|---|---|
+| `distorted` | ladder width against the shape null (above); T2 trigonality (tetrahedra; either way, \|Δ\| ≥ 0.02); every axis family (above: z ≥ 3, obs/null ≥ 1.1) | true when the width clears (`edge_spread`), else an axis family (`axis_family`), else the trigonality (`trigonality`); false `less_distorted` (the width below, no pattern) or `within_null` |
+| `lessDistorted` | ladder width against the shape null (below) | true `below_null`; null for one edge (`single_edge`, a dimer) |
+| `breathing` | breathing sd against independent atoms | true `above_null`; false `below_null` (the size stiffer) or `within_null` |
+| `rigid` | ladder width (below) and breathing sd (below) | true when no split member sites and the width is below without a pattern (`less_distorted`) or the breathing is below (`stiffer_bonds`); false `split_sites`, `pattern` or `within_null` |
+| `staticDistortion` | the average cluster's edge spread (null 0) in sampling errors (`idealSpread`: z = the largest spread/error over the templates) | true at z ≥ 5 |
+| `splitMemberSites` | each member site's PC1 excess kurtosis (`split_site_evidence`, Step 20) | true when at least half of the analysed kind's member sites are split; `sites` lists every split one, `memberSites` the member sites |
+| `trigonalLean` | T2 trigonality against the shape null | true when \|z\| ≥ 3 and \|Δ\| ≥ 0.02: `leans_trigonal` below the null (C₃ᵥ), `leans_one_edge` above; null for other clusters (`not_tetrahedra`) |
+| `favouredAxes` | every long- and short-axis family against the shape null (above) | true when any family clears; `families` gives each its own answer |
+| `window.extendedNetwork`, `.mixedSizes`, `.bondsOutsideWindow`, `.contactsBetweenClusters` | the network; the other kinds' share of clusters; bonds outside the window; contacts between clusters per atom | an extended network; a share > 0.1; > 0.05; > 0.05 (`above_bar`) |
+
+For an extended network or no clusters every shape finding is null, `because` `extended_network`
+or `no_clusters`, and `window.extendedNetwork` says which (true or false). The split member sites
+come from the engine's own member clouds (`site_ellipsoids` / `siteEllipsoids`, pinned by
+`pca_sites_fixture.json`). The Demo's Ta₄: distorted (`axis_family`: <111> long and short axes),
+less distorted, breathing, not rigid (`pattern`), statically distorted (5.5 SE), no split member
+site, 8 % of the bonds outside the window.
+
+**Parity and margins.** `tests/generate_clusters_fixture.py` writes the verdicts and their closed
+vocabularies into `clusters_fixture.json`. It refuses to write a case where a decided statistic
+sits within 1e-6 of its threshold, so the two engines, which agree to ~1e-12, cannot disagree on a
+verdict there; `tests/test_clusters_fixture.py` fails when the file is stale. Known answers
+(`tests/test_clusters.py` and the JS engine tests): independent atoms find nothing; one edge
+pinched (vertices 0 and 1 moved ±t along it, t ~ N(0, 0.15 Å) per cluster) is `edge_spread` and
+`leans_one_edge`; rigid tetrahedra are less distorted and rigid; breathing tetrahedra breathe and
+nothing else (against independent atoms their edge spread is at z < −3, against the shape null it
+is not); one vertex pushed gives `axis_family` and `leans_trigonal`; Jahn–Teller F₆ octahedra (6³
+cells, every F site split, κ₁ ≈ −1.3) give split member sites, distorted (axis family), less
+distorted and not rigid (`split_sites`); rigid dimers give `stiffer_bonds`. On the validation's
+dev cases (dev-breathing, dev-jahn-teller, dev-cell-wrap) the engine gives the decisions the tool
+gave.
 
 **Cost.** Templates: (sites of the element)² × image shifts. Clusters and each shuffle: linear in the
 atoms of the element. The demo: 1.5 s in Python (load included), 0.7 s in the port after a 0.2 s parse.
@@ -1656,18 +1906,100 @@ Counting both members of a pair, and the box-scale waves RMC leaves, pushed real
 2026-10-12 review's Ti order at (0, 0, ½), 55× the median, sat at the 98.6th percentile of all
 $\mathbf q$ under a stronger long wave and its partner; among the compared modes it is rank 1.
 
-**Checks** (`summarizeModulations`): ok — ordered displacements at a zone-boundary point when its
+**The polarisation of a mode** (plan item 4.3, 2026-10-19; `mode_polarisation` / `modePolarisation`).
+Every reported point also carries the direction the element's atoms move in that mode. The
+element's power tensor at $\mathbf q$ is the real part of its cross-spectral tensor, normalised as
+the power,
+
+$$T(\mathbf q) = \frac1m\sum_s \frac{\mathrm{Re}\left[\mathbf U_s(\mathbf q)\,\mathbf U_s(\mathbf q)^\dagger\right]}{n_s\,\mathrm{tr}\,C_s},\qquad \mathrm{tr}\,T(\mathbf q) = P(\mathbf q),$$
+
+summed over the element's $m$ sites that move (`element_spectrum` / `elementSpectrum`). The real
+part is the mode's mean-square displacement tensor: an elliptical mode $\mathbf a + i\mathbf b$
+moves along an ellipse with second moment $\mathbf a\mathbf a^T + \mathbf b\mathbf b^T$. The
+imaginary part is antisymmetric (the ellipse's circulation) and carries no axis, and
+$T(-\mathbf q) = T(\mathbf q)$. Each site's tensor is free of its own phase, so sites moving in
+antiphase add like sites in phase. `polarisation` = {`direction`: the leading eigenvector, a
+Cartesian unit vector; `uvw`: the same as a direct-lattice $[u\,v\,w] = M^{-T}\mathbf d$, largest
+component 1 (the form of `list_sites`' `pc1_uvw`, never a plane normal); `share`: $\lambda_1/\mathrm{tr}\,T$,
+1 for a linearly polarised mode and ⅓ when no direction is preferred}. An axis has no sign: both
+are given in the sense that makes the closest crystal axis acute (`crystalOrientationRows`' rule),
+the first of two axes whose $|\cos|$ lies within $10^{-9}$ (`AXIS_TIE_RTOL`); null without power.
+The share is not a significance: one site at a zone-boundary point has a real amplitude, a rank-1
+tensor, share 1, whatever the data (a standing wave is linear by construction). The tool shows the
+polarisation of ordered points only. Known answers: both sites of an element displaced 0.1 Å along
+the direct-lattice [1 0 1] of a monoclinic cell (β = 105°, where [1 0 1] is 14° from the Cartesian
+(1, 0, 1)), at q = (½, 0, 0), over 0.06 Å of noise in 128 cells, in antiphase with each other: the
+polarisation lies within 5° and the share above 0.95 (`POLARISATION_DEG`, `POLARISATION_SHARE`);
+over 60 seeds its scatter is the sampling error $\sigma/(\delta\sqrt{mn})$ rad per component (the
+mean squared angle within 25 % of twice its square, none beyond 10°). On dev-zone-boundary the Ti
+order is 5.5° from its planted axis (one site, 512 cells: 1.5° of error per component; the PC1 that
+arm A+ read before, an estimator of the same noise, 6.0°) and the decoy long wave 4.7° from its own.
+
+**The verdict** (the engine's since 2026-10-19, architecture candidate 5; `summarizeModulations`
+says it through `MODULATION_SENTENCES`). A zone-boundary point is ordered displacement when its
 ratio ≥ 3 (`MODULATION_RATIO`, the effect size) **and** its calibrated significance is ≥ 3σ
-(`zoneBoundarySigma`): for independent displacements a site's normalised power at a half-integer
+(`MODULATION_SIGMA`, `zoneBoundarySigma`): for independent displacements a site's normalised power at a half-integer
 $\mathbf q$ (a real Fourier sum) is $\sum_c w_c\chi^2_1$ with $\sum_c w_c = 1$, so an element's
 mean over $m$ sites has at least $m$ degrees of freedom and $P \ge \chi^2_m/m$ is the heaviest
-tail any site anisotropy allows; the p-value is Šidák-corrected over every zone-boundary point and
-element tested, and each row carries it as a fourth entry. (Until 2026-10-14 the rule was "top 1 %
+tail any site anisotropy allows; the p-value is Šidák-corrected over every zone-boundary point of
+every element the configuration has (with displacements), whichever elements the call names, and
+each row carries it as a fourth entry. Asking about one element after seeing the data is selective
+inference, so the family never shrinks with the request (finding F3, 2026-10-19: until then it was
+the elements of the call, and naming one element of three took a point just below the bar over it:
+a weak Nb doubling at 2.98σ over the 21 points of Ga, Nb and Se read 3.30σ, "ordered", over Nb's
+own 7). (Until 2026-10-14 the rule was "top 1 %
 of the compared modes, or rank 1", with no correction over the 7 points × elements: the validation
 cases found "order" in 6 of 12 configurations without any, e.g. Ba at (½, 0, 0) under pure thermal
 motion.) Real RMC runs carry *less* zone-boundary power than independent cells (above), so the test
-is conservative there. Otherwise ok — no cell doubling, naming the most significant point; note — an element's strongest mode within 0.25 of the zone centre on every axis at
-≥ 5× the median is a long-wavelength (box-scale) wave, not a superstructure; note — untestable points.
+is conservative there. At a general q (neither a zone-boundary point nor a long wave) the Fourier
+sum is complex: $P \ge \chi^2_{2m}/2m$, Šidák-corrected over the compared modes of every element
+of the configuration (`generalModeSigma`, review L4). An element's strongest mode within 0.25 of the zone centre
+on every axis at ≥ 5× the median (`LONG_WAVE_RATIO`) is a long-wavelength (box-scale) wave, not a
+superstructure.
+
+- **Each point** (zone-boundary and strongest) carries `sigma`, `kind` (`zone_boundary`,
+  `long_wave`, `general`), `ordered`, `because` and `bar` ({ratio 3, sigma 3}). σ is the tool's
+  arithmetic, unchanged: the power is ratio × median, the p-value capped below 1, then
+  1 − (1 − p)^F without cancellation. Far below the background σ is ill-conditioned
+  (1 − (1 − p)^F rounds), and the same arithmetic keeps it bit for bit what the tool reported. σ
+  reads as the tool showed it: null for a strongest mode that is a zone-boundary point (tested in
+  `zoneBoundary`) or a long wave (not tested), for power ≤ 0, and where it is −∞; +∞ (an upper
+  tail that underflows) is `SIGMA_MAX` = 40, which no finite double reaches (≈ 38.5 at
+  p = 5·10⁻³²⁴), shown as '>8'. `because` is `ordered`, `below_ratio`, `below_sigma`,
+  `undefined_statistic` (σ undefined: `ordered` null), or the untested kind.
+- **Each element** has `verdict` = {`cellDoubling`, `generalOrder`, `longWave`}, each
+  `{answer, because, decidedBy, nearest}`: `decidedBy` lists the q of the ordered points (or the
+  long wave), `nearest` is the miss with the largest σ (null as −∞, the first on a tie).
+  `cellDoubling` is null `untestable` when no axis can be halved; `generalOrder` null
+  `no_general_mode` when none of the five strongest modes is general; an element with no
+  displacement gives `no_displacements`.
+- **The payload** carries `family` (the zone-boundary points and compared modes the corrections
+  counted, and `elements`, the elements they belong to: every element with displacements, whatever
+  the call names; for a call without an element the sizes are what the tool counted before) and
+  `rules`.
+- **One long-wave predicate**, `is_long_wave` / `isLongWave`: every |q_i| ≤ 0.25 + 10⁻¹². It
+  replaces the engine's compared-mode test and the tool's |q_i| ≤ 0.25. On a grid they never
+  differ (k/N is ¼ exactly or at least 1/(4N) from it): the tests check every grid point up to
+  N = 256 in both engines.
+
+The tool's checks say it: ok — each ordered zone-boundary point with its polarisation, or no cell
+doubling (the nearest miss of every element tested); ok — each element's first ordered general
+mode with its polarisation; note — a long wave dominates; note — untestable points. A ratio or σ
+below its bar (3, 3σ) is never printed rounded onto it (finding F2, 2026-10-19): where its usual
+rounding (two significant digits in a sentence and for a row's ratio, one decimal for a row's σ)
+reads at or above the bar, it is shown with the fewest significant digits that stay below it
+(2.96, not 3), and nearer than six digits as below the bar (`'<3'` in a row, "< 3σ" in a
+sentence); the no-order sentence then adds "below the 3σ bar" (that 2.98σ point read "3σ after
+the correction" beside "No order", and its row 3). A value at or above its bar rounds to at or
+above it, as before. `tests/generate_modulations_fixture.py` writes the
+verdicts and polarisations into `modulations_fixture.json` and refuses a case where a ratio or σ
+sits within 10⁻⁶ of its bar, where a polarisation's two largest eigenvalues lie within 10⁻⁴ of
+the trace, or where its sense is decided near the tie tolerance. Known answers: a planted doubling,
+order under a stronger long wave, order at q = (3/8, 0, 0) on an 8-cell axis (alone, and under a
+stronger long wave at (1/8, 0, 0): both found), independent displacements (nothing), the polarised
+monoclinic mode above, and (F3) a weak Nb doubling at 2.98σ over the 21 points of Ga, Nb and Se
+that stays below the bar with Nb named (its own 7 points gave 3.30σ); on the dev cases the four
+no-order cases find none and dev-zone-boundary finds only its Ti at (0, 0, ½).
 A planted doubling (Nb ± 0.1 Å along z in alternate cells, 6³ cells) gives 204× at (0,0,½), the
 strongest of 215 wavevectors. Both real runs: no zone-boundary point near the top (below the 85th
 percentile over all $\mathbf q$ when first measured; the Demo's highest is now the 78th percentile of
@@ -1682,11 +2014,132 @@ on a 10³ grid.
 
 ---
 
+### Step 20 — A split site's static displacement and its sampling error (`list_sites`)
+
+**Why.** A site whose copies sit in two positions (two-site disorder, or the folded cloud of an
+antiphase order) has a prolate cloud whose PC1 marginal is bimodal, and its ellipsoid alone reads as
+large thermal motion. `list_sites` names such a site by the rule the cluster summary uses, and gives
+its static displacement with a sampling error, so an answer quotes the engine's number by reference
+(`{{r1.sites.0.delta_A}}`) instead of working it out by hand, which provenance flags as unsourced.
+Code: `splitDisplacement` and `summarizeSites` in
+[`copilotTools.js`](../../web_app/frontend/src/copilotTools.js), from the engine's site rows
+(`site_ellipsoids` / `siteEllipsoids`, [pca-ellipsoid.md](pca-ellipsoid.md) Steps 3 and 12), the
+same in both runtimes (plan 4.1, 2026-10-19); the rule itself, `isSplitSite`, lives in the cluster
+engine since candidate 5 (2026-10-19): `is_split_site` / `split_site_evidence` in
+[`clusters.py`](../../rmc_toolkits/clusters.py), `isSplitSite` / `splitSiteEvidence` in
+[`workers/clusters.js`](../../web_app/frontend/src/workers/clusters.js), and `list_sites` imports it.
+
+**The rule** (`isSplitSite`). PC1 resolved (its eigenvalue gap to PC2 above three sampling errors,
+pca-ellipsoid.md 12b), and its excess kurtosis $\kappa_1 \le -0.5$ (`SPLIT_SITE_KURTOSIS`: two equal
+wells $\pm\delta$ of thermal width $\sigma$ have $\kappa = -2\delta^4/(\delta^2+\sigma^2)^2$, which is
+$-0.5$ at $\delta = \sigma$, where the marginal turns bimodal) and $\kappa_1 \le -3\sqrt{24/n}$
+(`SPLIT_SITE_SE`: three sampling errors of a Gaussian's sample kurtosis below zero). One definition:
+the cluster verdict's split member sites (Step 18) apply it to the engine's own member rows. Since
+it moved into the engine the second bound is written as the evidence record carries it,
+$z = \kappa_1/\sqrt{24/n} \le -3$ ($z$ null unless PC1 is resolved), the same rule; the two
+comparisons could differ only on the last bit of a value exactly at the bound.
+
+**The estimator.** With $\lambda_1 \ge \lambda_2 \ge \lambda_3$ the eigenvalues of the site's
+covariance (unbiased, $1/(n-1)$; $\mathrm{rms}_a = \sqrt{\lambda_a}$),
+
+$$\hat\delta^2 = \lambda_1 - \tfrac12(\lambda_2 + \lambda_3) = \mathrm{rms}_1^2 - \mathrm{rms}_\perp^2,
+\qquad \mathrm{rms}_\perp^2 = \tfrac12\big(\mathrm{rms}_2^2 + \mathrm{rms}_3^2\big).$$
+
+For a cloud $\mathbf u = s\,\delta\,\mathbf e + \boldsymbol\varepsilon$ ($s = \pm1$, thermal motion
+$\boldsymbol\varepsilon$ with $\mathbf e$ one of its principal axes), $\Sigma = \delta^2\mathbf e\mathbf e^{\top} +
+\Sigma_\varepsilon$, so $\delta^2 = \lambda_1 - \sigma_e^2$ exactly, with $\sigma_e^2$ the thermal
+variance along the split, which no second moment separates from $\delta^2$. The estimator takes it
+as the mean thermal variance across the split: exact for isotropic or uniaxial thermal motion
+($\sigma_2 = \sigma_3 = \sigma_e$); otherwise $\hat\delta^2$ is off by
+$\sigma_e^2 - \tfrac12(\sigma_2^2 + \sigma_3^2)$ (a thermal ellipsoid 0.07 Å along a 0.2 Å split and
+0.05 Å across it reads 0.206 Å).
+
+*Why the RMS of both other axes, not $\mathrm{rms}_2$ alone* (arm A's $\sqrt{\mathrm{rms}_1^2 -
+\mathrm{rms}_2^2}$, `validation/armA.js`): the two agree when PC2 and PC3 are equal, as for every
+split the dev cases plant (dev-offcentre Nb 0.2019 against 0.2015 Å, dev-zone-boundary Ti 0.0989
+against 0.0987 Å). Where they are equal, $\hat\lambda_2$ is the larger of two noisy equal variances,
+biased upward (eigenvalue repulsion), so $\mathrm{rms}_2$ alone biases $\delta$ low, while
+$\tfrac12(\hat\lambda_2 + \hat\lambda_3) = \tfrac12(\mathrm{tr}\,S - \hat\lambda_1)$ is unbiased and
+averages two variances. It is also a smooth function of $S$ when $\lambda_2 = \lambda_3$, so the
+delta method below holds there; $\hat\lambda_2$ alone is not differentiable at a degenerate pair.
+The scoring's magnitude tolerance (`validation/scoring.js`, 25 % or 0.03 Å) was set for
+"$\sqrt{\mathrm{rms}_1^2 - \mathrm{rms}_\perp^2}$ and similar estimators (sampling error ~3 % at 500
+atoms per site)"; this one's is 1.4–3.4 % in the tests below.
+
+For two equally occupied positions $\delta$ is their half separation. For occupations $p$ and $1-p$
+at $+a$ and $-b$ ($pa = (1-p)b$) it is their RMS, $\sqrt{ab}$, which the second moments cannot split
+into $a$ and $b$; the +u/−u asymmetry of `analyze_displacement_directions` shows the imbalance.
+
+**The sampling error.** To first order $\hat\lambda_1 - \lambda_1 \approx \mathbf e^{\top}(S -
+\Sigma)\,\mathbf e$ (a simple eigenvalue) and $\mathrm{tr}\,S$ is linear, so
+$\hat\delta^2 - \delta^2 \approx \frac1n\sum_m Z_m - \mathbb E Z$ with $Z = y_1^2 - \tfrac12(y_2^2 +
+y_3^2)$, $y_a$ a copy's displacement along principal axis $a$:
+
+$$n\,\mathrm{Var}(\hat\delta^2) \approx \mathrm{Var}(y_1^2) + \tfrac14\mathrm{Var}(y_2^2) +
+\tfrac14\mathrm{Var}(y_3^2) - \mathrm{Cov}(y_1^2, y_2^2) - \mathrm{Cov}(y_1^2, y_3^2) +
+\tfrac12\mathrm{Cov}(y_2^2, y_3^2).$$
+
+The covariances vanish when the components are independent: thermal motion along PC1 independent of
+the position taken and of the motion across it, as for any Gaussian thermal motion along the
+principal axes with the two positions along one of them. They are dropped. Each
+$\mathrm{Var}(y_a^2)$ is estimated from the engine's own per-axis moments,
+$m_4 - m_2^2 = (\kappa_a + 2)\,m_2^2$ with $m_2 = \lambda_a(n-1)/n$: the standard error its axis
+resolution uses (pca-ellipsoid.md 12b). So
+
+$$\mathrm{SE}(\hat\delta^2)^2 = \frac{(\kappa_1+2)\,m_{2,1}^2 + \tfrac14(\kappa_2+2)\,m_{2,2}^2 +
+\tfrac14(\kappa_3+2)\,m_{2,3}^2}{n},\qquad \mathrm{SE}(\hat\delta) =
+\frac{\mathrm{SE}(\hat\delta^2)}{2\hat\delta}$$
+
+(a collapsed axis, whose $\kappa$ is undefined, counts as Gaussian: its $m_2$ is round-off). For two
+equal Gaussian wells this is $\sqrt{(4\delta^2\sigma^2 + 3\sigma^4)/n}\,/\,(2\delta)$: the split
+adds no variance ($s^2 = 1$), so the error is set by the thermal width — 0.0027 Å (1.4 %) at
+dev-offcentre's $\delta$ = 0.2, $\sigma$ = 0.06 Å, $n$ = 512.
+
+*What it is not.* The scatter of independent copies: copies that move together (domains, an ordered
+pattern) scatter differently from one configuration to the next, and the thermal-width assumption
+above is a systematic error outside it. It is quoted only for a split site, where the kurtosis bound
+keeps $\hat\delta$ many errors from zero; for a site near the rule's threshold, the sites the rule
+calls split carry $\hat\delta$ a few tenths of an error high (selection on $\hat\kappa_1$).
+
+**Known answer** ([`listSitesSplit.test.js`](../../web_app/frontend/src/__tests__/listSitesSplit.test.js)).
+Synthetic clouds through the engine's site rows, 1,000 seeds each, $z = (\hat\delta - \delta)/\mathrm{SE}$:
+
+| Planted | Called split | mean $z$ | sd $z$ | $\lvert z\rvert \le 1.96$ | PC1 off the planted [u v w], median / max |
+|---|---|---|---|---|---|
+| equal wells, $\delta$ = 0.2 Å = 3.3σ, $n$ = 512, cubic [0 0 1] | 1000 | 0.034 | 0.996 | 0.958 | 0.8° / 2.9° |
+| equal wells, $\delta$ = 0.09 Å = 1.5σ, $n$ = 512, cubic [1 1 1] | 998 | 0.072 | 1.036 | 0.939 | 2.4° / 7.6° |
+| equal wells, $\delta$ = 0.15 Å, $n$ = 216, hexagonal [2 1 0] | 1000 | 0.031 | 1.027 | 0.943 | 1.7° / 5.1° |
+| occupations ⅓ / ⅔ at +0.21 / −0.105 Å ($\delta = \sqrt{ab}$ = 0.148 Å), monoclinic [1 0 2] | 999 | 0.017 | 0.985 | 0.958 | 1.1° / 3.4° |
+| equal wells, 0.15 Å, thermal 0.07 / 0.05 Å across, their RMS along, cubic [1 2 3] | 1000 | −0.008 | 1.013 | 0.955 | 1.3° / 4.9° |
+
+The test holds each within about three standard errors of N(0, 1) over 1,000 seeds, every PC1
+within the scoring's 15°, and `[u v w]` read back as a direct-lattice direction in oblique cells
+(hexagonal [2 1 0] → [1 0.5 0], whose plane normal would be [5 4 0]; monoclinic −[1 0 2] → [0.5 0 1],
+the sense whose closest axis is acute). A prolate Gaussian (0.1 Å along, 0.05 Å across) is never
+called split (0 of 1,000 seeds; 0 of 5,000 at $n$ = 512 and at 216 when measured); an isotropic site
+resolves no axis, an oblate one only PC3, and a zero-spread site gives nothing. On the dev cases:
+dev-offcentre Nb $\delta$ = 0.202 ± 0.0028 Å (planted 0.2) along [0 0 1]; dev-zone-boundary Ti
+0.0989 ± 0.0029 Å (planted 0.1: the single-site statistics of an antiphase order, which
+`analyze_modulations` tells from disorder); dev-jahn-teller 4 of its 6 F sites, 0.149–0.160 Å (one
+long bond in three: the RMS of $+\tfrac23\Delta$ and $-\tfrac13\Delta$ is $\Delta\sqrt2/3$ = 0.151 Å for
+Δ = 0.32 Å), the same sites `analyze_clusters` names; no split site on the six others (the breathing
+Mo and the perovskite O are anisotropic Gaussians). Arms A and A+ do not read `list_sites`, and their
+dev records are unchanged.
+
+**In the row** (`summarizeSites`): `kurtosis_axes` (3 s.f.), `pc1_uvw` (`crystalOrientationRows`:
+$M^{-T}$ times the axis, largest component 1, two decimals), `delta_A` (3 s.f.) and `delta_se_A`
+(2 s.f.). Split sites come first (largest `delta_A` first), then by |Mardia kurtosis|, so trimming
+to the 3,000-character budget never drops a split site before another, and a note check names them.
+The Demo's 52 sites have none; three of the 13 rows its budget keeps resolve PC1 (heavy-tailed,
+κ₁ 7.4–8.0).
+
+---
+
 ### Runtime-mode differences (static vs Flask) — read this before quoting the assistant
 
 The context is far richer in **static mode** (the browser parses the run itself) than in **Flask mode**,
-because the Flask endpoints return figures and metadata rather than series and basis data. What survives
-in each mode:
+because the Flask endpoints return figures and metadata rather than parsed series; the average-structure
+basis is the exception since plan item 4.5 (`/api/structure`'s `basis`). What survives in each mode:
 
 | Context block | Static mode (browser parsing) | Flask mode (backend) |
 |---|---|---|
@@ -1694,7 +2147,8 @@ in each mode:
 | `structure` (cell, angles, composition) | yes | yes (`/api/structure`) |
 | `configuration_optimization` | yes | yes — `/api/structure` returns the header's move counters (`moves`) |
 | `run_settings` | yes | **no** — the `.dat` is read only from a locally picked folder |
-| `symmetry` (+ per-site displacements, `frac`) | yes | **no** — `/api/structure` returns no `basis`, so `describeSymmetry()` returns `null` |
+| `symmetry` (+ per-site displacements, `frac`) | yes | yes — `/api/structure` returns the `basis` (`structure_basis.py`, the browser's rows to round-off; through 0.7.0 it had none and the block was absent); none for a coords-only file. Above the finder's 2000-site cap only `basisOmitted: {sites, cap}`: the same "not analysed" block as the browser's, without `noise_floor_A` (the browser's is null too when every site has one copy) |
+| `detect_symmetry`, `measure_symmetry_lowering` | yes (needs reference-site columns) | yes — on `/api/structure`'s `basis`, computed in the browser as for a picked folder; above the cap offered and answering "Not analysed", as the browser's are (the lowering's default tolerance assumes the 0.02 Å floor of one-copy sites) |
 | `pair_correlations` | yes (needs parsed partials) | **no** — plot files carry no `plotData.series` |
 | `datasets` | `kind` + `title` + `rwp` (never `stog`) | `kind` only (never `stog`) |
 | `convergence` + watchdog badge | yes | **no** — no parsed R-value series, so the badge stays hidden |
@@ -1709,7 +2163,11 @@ before the assistant sees anything, in **both** modes; and the Dashboard visibil
 
 A code comment in `symmetryContext()` says the block also works from a minimal `{spaceGroup}` object "in
 Flask mode"; that code path exists and is tested, but no caller currently supplies it — in Flask mode
-`Dashboard.jsx` passes `symmetry = null` and the block is absent entirely.
+the run module (`copilotRun.js` `runSymmetry`) builds the full card from `/api/structure`'s basis, as
+for a browser-loaded run, and passes `symmetry = null` only when the structure has no basis (a
+coords-only file). In Flask mode the Dashboard re-reads that structure when App's configuration epoch
+moves, so the symmetry block and the two symmetry tools describe the configuration the Copilot's
+Flask analyses read ([run-dashboard.md](run-dashboard.md), Step 9).
 
 ---
 
@@ -1738,7 +2196,7 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 | coincidence cutoff | $10^{-3}$ | Å | `pairCorrelations.js` | Distances below this are ignored |
 | image shell | $\pm1$ | cells | `pairCorrelations.js` | Periodic images searched for nearest neighbours |
 | `maxPairs` | 10 | pairs | `pairCorrelations.js` | Cap on `pair_correlations` entries |
-| `CHAT_HISTORY_TURNS` | 8 | messages | `prompts/copilot.js` | Memory messages re-sent (questions + final answers, in-memory only) |
+| `HISTORY_MESSAGES` | 8 | messages | `prompts/copilot.js` | Memory messages re-sent (questions + final answers, in-memory only) |
 | `maxRounds` | 6 | rounds | `copilot/agentLoop.js` | Model requests with tool calls per question |
 | `maxCallsPerRound` | 4 | calls | `copilot/agentLoop.js` | Extra calls are answered "skipped" |
 | `toolTimeoutMs` | 120 000 | ms | `copilot/agentLoop.js` | One analysis; its signal is aborted |
@@ -1746,9 +2204,9 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 | `resultCharBudget` | 3 000 | characters | `copilot/agentLoop.js` | One `tool` message |
 | `turnCharBudget` | 12 000 | characters | `copilot/agentLoop.js` | All `tool` messages of one question; older ones compacted to their checks |
 | `maxQuestions` (`MAX_QUESTIONS`) | 2 | questions | `copilot/askUser.js`, `copilot/agentLoop.js` | `ask_user` calls per question (one per round), the Workbench's included |
-| `CN_CHANGE_ABS`, `CN_CHANGE_REL` | 0.5, 0.15 | atoms, of the shell's CN | `copilot/clarify.js` | A window changes the answer when its CN differs from the whole shell's by at least the larger |
+| `CN_CHANGE_ABS`, `CN_CHANGE_REL` | 0.5, 0.15 | atoms, of the shell's CN | `context/shells.js` (`cnChanges`) | A window changes the answer when its CN differs from the whole shell's by at least the larger: the Workbench's CN-margin reading of a cut (`cnMarginCut`) |
 | `BONDED_REACH` | 1.4 | × the nearest shell's start | `copilot/clarify.js` | Partners offered for "around <element>" |
-| `NOISE_MARGIN` | 1.25 | × the noise floor | `copilot/clarify.js` | A ladder group must hold to this to make the tolerance a question |
+| `NOISE_FLOOR_MARGIN` | 1.25 | × the noise floor | `context/runContext.js` (`lowerGroupTolerance`) | A ladder group must hold to this to make the tolerance a question (`copilot/clarify.js`); the lower group's tolerance, `measure_symmetry_lowering`'s default and arm A+'s group (one constant since candidate 8; `NOISE_MARGIN` and the tool's own copy until 2026-10-19) |
 | `SKILL_RESULT_BUDGET` | 9 000 | characters | `copilot/skills.js` | `read_skill`'s own result budget (kept, never compacted) |
 | `POLYHEDRON_SPLIT_DEG` | 135 | ° | `copilotTools.js` | Splits cis from trans for a whole shell of 6 ± 0.5 neighbours (demo TaSe₆: 80 % at a mean 89°, 20 % at 158.8°) |
 | `MIN_OPTIONS`, `MAX_OPTIONS` | 2, 4 | options | `copilot/askUser.js` | Choices a question offers |
@@ -1760,25 +2218,29 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 | `copilotTools` | `true` | — | `settings.js`, `ConnectionSettings.jsx` | *Let the Copilot run analyses* |
 | `MIN_ORIENTATION_POINTS` | 100 | vectors | `copilotTools.js` | Below: "the map is noisy" |
 | `SIGNIFICANCE_SIGMA` | 3 | σ (calibrated, one-sided) | `copilotTools.js`, `prompts/copilot.js` | Peak / map significance threshold for the checks |
-| `UNBONDED_APEX_FRACTION` | 0.5 | fraction | `copilotTools.js` | Central atoms with no A–B bond in the window above this: the window cuts the shell — refused unless `window_confirmed` (then warn) |
-| `MODAL_COORDINATION_SHARE` | 0.6 | fraction | `copilotTools.js` | Central atoms with the most common A–B bond count below this share: the window cuts the shell — refused unless `window_confirmed` (then warn) (a spread coordination, as when the window cuts through a shell; demo Se–Ta–Se at 2.3–2.7 Å: 0.47, whole shells 0.83–0.96) |
-| `SHELL_TROUGH_FRACTION` | 0.2 | of the first peak | `pairCorrelations.js` | A deeper local minimum closes the first shell; a shallower dip is inside a split shell |
-| `SHELL_ONSET_FRACTION`, `SHELL_EMPTY_FRACTION` | 0.01, 0.001 | of the first peak | `pairCorrelations.js` | Shell onset; a tail below this closes the shell |
-| `maxEvidenceGates` | 2 | send-backs per turn | `agentLoop.js` | The evidence gate sends an answer back at most this often, once per rule (THY-18) |
-| `CLUSTER_CN_MAX` | 4.5 | neighbours | `evidence.js` | An element whose own first shell holds at most this many may form finite clusters: "no order" needs `analyze_clusters` on it |
+| `UNBONDED_APEX_FRACTION` | 0.5 | fraction | `context/shells.js` (`countsCut`) | Central atoms with no A–B bond in the window above this (the engine's `coordinationSummary.unbondedShare`): the window cuts the shell — `compute_bond_angles` refuses unless `window_confirmed` (then warn) |
+| `MODAL_COORDINATION_SHARE` | 0.6 | fraction | `context/shells.js` (`countsCut`) | Central atoms with the most common A–B bond count (`coordinationSummary.modalShare`) below this share: the window cuts the shell — refused unless `window_confirmed` (then warn) (a spread coordination, as when the window cuts through a shell; demo Se–Ta–Se at 2.3–2.7 Å: 0.47, whole shells 0.83–0.96) |
+| `SHELL_TROUGH_FRACTION` | 0.2 | of the first peak | `context/shells.js` | A deeper local minimum closes the first shell; a shallower dip is inside a split shell |
+| `SHELL_ONSET_FRACTION`, `SHELL_EMPTY_FRACTION` | 0.01, 0.001 | of the first peak | `context/shells.js` | Shell onset; a tail below this closes the shell |
+| `PEAK_SEARCH_MAX_A`, `BOUNDARY_REACH_A`, `CUT_SHIFT_A` | 8, 3, 0.2 | Å | `context/shells.js` | Peaks below 8 Å; the minimum closing the shell sought to max(8, r₁ + 3); the shell's top moved this far for the cut sensitivity |
+| `DEFAULT_MAX_SEND_BACKS` | 2 | send-backs per turn | `verification/index.js` (`maxSendBacks`; a run's `limits.maxEvidenceGates` sets it) | The evidence gate sends an answer back at most this often, once per rule (THY-18) |
+| `CLUSTER_CN_MAX` | 4.5 | neighbours | `context/shells.js` (`clusterElementsOf`) | An element whose own first shell holds 0.5 to this many neighbours may form finite clusters: "no order" needs `analyze_clusters` on it, and arm A+ tries its clusters (one rule since candidate 8) |
 | `CLUSTER_RESULT_BUDGET` | 4 500 | characters | `copilotTools.js` | `analyze_clusters`' own result budget |
-| `SPLIT_SHELL_REACH_A`, `IDEAL_COORDINATION`, `IDEAL_CN_TOLERANCE` | 0.5, [4, 6, 8, 12], 0.5 | Å; atoms; atoms | `pairCorrelations.js` | A later peak within the reach joins a shell cut at a deep trough when the summed CN is an ideal count (review L1) |
-| `CONSTRAINT_PILEUP_FRACTION` | 0.02 | of the first peak | `runTools.js` | $g$ just above a closest-approach constraint above this: the constraint cuts the distribution |
-| `SHELL_OVERLAP_FRACTION` | 0.02 | of the first peak | `runTools.js` | $\tilde g$ at the shell boundary above this: shells not separated |
+| `MODULATION_RESULT_BUDGET` | 4 000 | characters | `copilotTools.js` | `analyze_modulations`' own result budget (three elements with an ordered point's polarisation run to ~2.9k with the checks) |
+| `SPLIT_SHELL_REACH_A`, `IDEAL_COORDINATION`, `CN_MATCH_TOLERANCE` | 0.5, [4, 6, 8, 12], 0.5 | Å; atoms; atoms | `context/shells.js` | A later peak within the reach joins a shell cut at a deep trough when the summed CN is an ideal count (review L1); two counts agree within `CN_MATCH_TOLERANCE` (`cnMatches`: the Workbench's named polyhedron, the answer checks, the octahedron/tetrahedron reading; `IDEAL_CN_TOLERANCE` until 2026-10-19) |
+| `SEPARATION_G_FRACTION` | 0.02 | of the first peak | `context/shells.js` | $\tilde g$ at the shell boundary above this: shells not separated; raw $g$ just above a closest-approach constraint above this: the constraint limits the pair (one constant since 2026-10-19, for `CONSTRAINT_PILEUP_FRACTION`, `SHELL_OVERLAP_FRACTION` and `PAIR_FLAG_FRACTION`) |
 | `MISFIT_CONCENTRATION`, `RELATIVE_MISFIT_FACTOR` | 0.4, 3 | share; × the dataset's R | `runTools.js` | `compare_fit`'s concentration and weak-signal notes |
 | `DEFAULT_SHUFFLES`, `SHUFFLE_SEED`, `AXIS_CONE_DEG` | 24, `0x5EED`, 15° | — | `clusters.py`, `clusters.js` | The cluster null and the axis families |
 | `MAX_CLUSTER_WINDOW` | 8 | Å | `app.py`, `pcaKdeWorker.js` | Largest `rMax` of a cluster request |
-| `CLUSTER_Z`, `CLUSTER_EFFECT`, `TRIGONALITY_EFFECT`, `AXIS_ENHANCEMENT` | 3, 5 %, 0.02, 1.1 | — | `copilotTools.js` | A cluster statistic is a finding only when both its z and its size clear these |
-| `STATIC_SPREAD_SE` | 5 | sampling errors | `copilotTools.js` | The average cluster counts as distorted above this spread |
-| `CLUSTER_OUTLIER_FRACTION` | 0.05 | fraction / per atom | `copilotTools.js` | Bonds outside the window, contacts between clusters |
-| `MODULATION_RATIO` (+ `SIGNIFICANCE_SIGMA`) | 3 (+ 3σ) | × median (+ family-wise σ, `zoneBoundarySigma`) | `copilotTools.js` | A zone-boundary point is order above both |
-| `LONG_WAVE_Q` | 0.25 | of the reciprocal axes | `modulations.py`, `workers/modulations.js` | A mode with every component within this is a long wave, left out of the compared modes |
-| `LONG_WAVE_RATIO`, `LONG_WAVE_Q` | 5, 0.25 | × median, r.l.u. | `copilotTools.js` | A strongest mode this strong and this close to the zone centre is a box-scale wave |
+| `CLUSTER_Z`, `CLUSTER_EFFECT`, `TRIGONALITY_EFFECT`, `AXIS_ENHANCEMENT` | 3, 5 %, 0.02, 1.1 | — | `clusters.py`, `workers/clusters.js` (`CLUSTER_RULES`, echoed in the verdict) | A cluster statistic is a finding only when both its z and its size clear these (Step 18, the verdict) |
+| `SPLIT_SITE_KURTOSIS`, `SPLIT_SITE_SE` | −0.5, 3 | PC1 excess kurtosis; its sampling errors $\sqrt{24/n}$ | `clusters.py`, `workers/clusters.js` | A site with a resolved PC1 is split when $\kappa_1$ is at or below both (`is_split_site` / `isSplitSite`: `list_sites`' `delta_A`, the cluster verdict's split member sites; Step 20) |
+| `STATIC_SPREAD_SE` | 5 | sampling errors | `clusters.py`, `workers/clusters.js` | The average cluster counts as distorted at this spread or above |
+| `CLUSTER_OUTLIER_FRACTION`, `MIXED_SIZE_SHARE` | 0.05, 0.1 | fraction / per atom; share of clusters | `clusters.py`, `workers/clusters.js` | Bonds outside the window, contacts between clusters (above); clusters of other sizes (above) |
+| `MODULATION_RATIO`, `MODULATION_SIGMA` | 3, 3σ | × median; family-wise σ (`zoneBoundarySigma`, `generalModeSigma`) | `modulations.py`, `workers/modulations.js` (`MODULATION_RULES`) | A zone-boundary point (or a general mode) is order at both or above |
+| `LONG_WAVE_Q`, `LONG_WAVE_TOL` | 0.25, 1e-12 | of the reciprocal axes | `modulations.py`, `workers/modulations.js` | A mode with every component within this (`is_long_wave` / `isLongWave`, the one predicate) is a long wave: left out of the compared modes, never tested as a general mode |
+| `LONG_WAVE_RATIO`, `SIGMA_MAX` | 5, 40 | × median; σ | `modulations.py`, `workers/modulations.js` | A strongest mode this strong and a long wave is a box-scale wave; σ = +∞ is reported as `SIGMA_MAX` (no finite double reaches it) |
+| `AXIS_TIE_RTOL` | 10⁻⁹ | relative | `modulations.py`, `workers/modulations.js` | A polarisation is given in the sense that makes the closest crystal axis acute; axes whose \|cos\| lies within this of the largest tie, and the first decides |
+| `BAR_DIGITS_MAX` | 6 | significant digits | `copilotTools.js` | A ratio or σ below its bar is shown with up to this many digits to stay below it, else as `'<3'` (F2) |
 | constraint margin | 0.05 | Å | `copilot/runTools.js` | First-peak low side within this of the closest-approach constraint: warn |
 | `temperature` (chat) | 0.2 (editable 0–2, step 0.1) | — | `settings.js`, `ConnectionSettings.jsx` | Sampling temperature |
 | `temperature` (watchdog) | 0 | — | `useWatchdog.js` | Fixed |
@@ -1870,7 +2332,7 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
   much smaller arrays: `Math.max(...disps)` over one Wyckoff orbit's basis members in `symmetryContext()`
   (bounded by the number of reference sites in the conventional cell, **not** by the supercell atom
   count, because `structure.basis` holds one entry per reference number), and `Math.max(...smooth)` over
-  the peak-finding window in `extractPeaks()` (bounded by the number of grid points below 6 Å).
+  the peak-finding window in `extractPeaks()` (bounded by the number of grid points below its rMax: 8 Å for the shell reading).
 - **The watchdog thresholds are heuristics, not statistics.** There is no noise model, no significance
   test, and no dependence on the number of datasets or the acceptance rate. `stalled` vs `converged` is
   decided by a single 0.1-in-$\ln\chi$ total-drop rule that a run resumed from an already-good
@@ -1881,7 +2343,8 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
   characters of whatever it said.
 - **Chat history is ephemeral.** Turns live in component state and are cleared by a reload. A question
   whose turn produced no answer (aborted, failed, or reasoning only) is dropped from the re-sent
-  history together with it (`conversationMemory()`). Reasoning text is never re-sent.
+  history together with it (the turn module's history window, `copilot/turn.js`). Reasoning text is
+  never re-sent.
 - **Three of the system prompt's numeric rules have no code behind them** (Step 13): the 0.01–0.10 Rwp
   band, the accepted-moves-per-atom rubric, and the ladder-onset ≈ mean-static-displacement heuristic.
   They are author assertions in a prompt string, not validated thresholds.

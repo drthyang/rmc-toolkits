@@ -66,7 +66,7 @@ describe('the ladder does not depend on the order of the basis', () => {
     it('keeps the brick boundaries of a noisy P6_3/mmc for every shuffle', () => {
         const st = withNoise(structureFor(byNumber.get(194)), 0.03, 194);
         const reference = bricks(st);
-        for (const seed of [201, 202, 203, 204, 205, 206]) {
+        for (const seed of [301, 302, 303, 304, 305, 306]) {
             expect(bricks({ A: st.A, basis: shuffled(st.basis, seed) }), `seed ${seed}`).toEqual(reference);
         }
     });

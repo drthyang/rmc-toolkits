@@ -1,0 +1,8 @@
+# The tool messages the model reads: an earlier error compacted
+# boom with a settled window (a stub clarifier) fails, then rows twice: turnCharBudget 1000
+## messages[3] · tool · call_1_0
+{"compacted":"this earlier result was shortened to fit the context; its checks are kept","error":"engine said no"}
+## messages[5] · tool · call_2_0
+{"ref":"r1","compacted":"this earlier result was shortened to fit the context; its checks and headline numbers are kept","checks":[{"level":"warn","text":"round 2: many rows"}],"key":{"value":2,"rows_omitted":282}}
+## messages[7] · tool · call_3_0
+{"ref":"r2","checks":[{"level":"warn","text":"round 3: many rows"}],"data":{"value":3,"rows":[{"index":0,"r":1.5},{"index":1,"r":1.51},{"index":2,"r":1.52},{"index":3,"r":1.53},{"index":4,"r":1.54},{"index":5,"r":1.55},{"index":6,"r":1.56},{"index":7,"r":1.57},{"index":8,"r":1.58},{"index":9,"r":1.59},{"index":10,"r":1.6},{"index":11,"r":1.61},{"index":12,"r":1.62},{"index":13,"r":1.63},{"index":14,"r":1.64},{"index":15,"r":1.65},{"index":16,"r":1.66},{"index":17,"r":1.67}],"rows_omitted":282}}

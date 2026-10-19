@@ -35,6 +35,7 @@ from rmc_toolkits.pca_kde import (
 )
 from rmc_toolkits.triplets import APP_MAX_ANGLES, bond_angle_summary_from_file
 from rmc_toolkits.clusters import cluster_distortion
+from rmc_toolkits.structure_basis import MAX_BASIS_SITES, basis_site_count, structure_basis
 from rmc_toolkits.modulations import displacement_modulations
 from rmc_toolkits.parsers import (
     Rmc6fParseReport,
@@ -314,7 +315,11 @@ def _clean_axis_label(label: str) -> str:
 # engine that would answer 200 with bare NaN/Infinity tokens (invalid JSON for
 # a browser) or with a silently empty map. Grid sizes are clamped (not
 # rejected) to the same limits the engines apply. The accepted ranges are
-# listed with the endpoints in docs/REFERENCE.md.
+# listed with the endpoints in docs/REFERENCE.md. The analysis routes' limits
+# (the constants below, MAX_CLUSTER_WINDOW and the triplets caps) and the
+# browser worker's copies of them are one request contract,
+# web_app/frontend/src/__tests__/fixtures/analysis_requests.json, replayed
+# against both (tests/test_analysis_requests.py); change them together.
 
 KDE_GRID_CLAMP = (16, 400)  # kde.kde_slice clamps to the same range
 KDE_MAX_LEVELS = 64
@@ -396,6 +401,24 @@ def _strict_result_response(payload):
             "bandwidth, scale or extent?); use less extreme values"
         ) from None
     return app.response_class(f"{body}\n", mimetype=getattr(provider, "mimetype", "application/json"))
+
+
+def _require_finite_basis(basis: list[dict]) -> None:
+    """Refuse an average-structure basis that holds NaN or Infinity (ValueError -> 400).
+
+    The rest of ``/api/structure`` is data, where a non-finite point reaches the
+    browser as ``null``. The basis is a computed result -- the space-group finder,
+    the CIF export and the Copilot's symmetry tools read it -- so, like every
+    computed result (``_strict_result_response``), it is refused rather than nulled:
+    a coordinate or lattice vector so large that folding it overflows.
+    """
+    try:
+        json.dumps(basis, allow_nan=False)
+    except ValueError:
+        raise ValueError(
+            "the average-structure basis is not finite (a coordinate or lattice vector too "
+            "large to fold into the unit cell); check the .rmc6f"
+        ) from None
 
 
 # --- Parsed-file caches ----------------------------------------------------------
@@ -710,6 +733,20 @@ def structure():
             if atom["reference_number"] is not None:
                 index_sets.setdefault(atom["element"], set()).add(int(atom["reference_number"]))
         atom_indices = {element: sorted(indices) for element, indices in index_sets.items()}
+        # The average-structure basis (one site per reference number, with its
+        # moments) from this same read of the file, as structureFromRmc6f adds
+        # it in the browser: the Detected SG card, its CIF export and the
+        # Copilot's symmetry tools exist for a server folder too. Above the
+        # space-group finder's cap nothing can use it (the card says "not
+        # analysed"), so only its size is sent -- the page shows that state from it.
+        sites = basis_site_count(atoms)
+        if sites > MAX_BASIS_SITES:
+            basis = None
+            basis_omitted = {"sites": sites, "cap": MAX_BASIS_SITES}
+        else:
+            basis = structure_basis(atoms, lattice_vectors, supercell)
+            _require_finite_basis(basis)
+            basis_omitted = None
         sampled, stride = _sample_atoms_by_site(atoms, max_points)
         points = []
         counts: dict[str, int] = {}
@@ -743,6 +780,8 @@ def structure():
                 "atomIndices": atom_indices,
                 "supercell": supercell.tolist(),
                 "latticeVectors": lattice_vectors.tolist(),
+                "basis": basis,
+                "basisOmitted": basis_omitted,
                 "moves": moves,
                 "parseReport": parse_report.to_dict(),
                 "parseWarning": parse_report.warning(),

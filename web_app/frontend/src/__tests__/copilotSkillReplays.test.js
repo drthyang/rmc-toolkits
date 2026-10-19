@@ -5,22 +5,22 @@
 // (GaTa4Se8, 250 K) with the real engines and a scripted model: the skill's
 // right behaviour passes, and the old wrong one the spot check and the review
 // recorded is caught by the firm rule in code — a refused tool call, or a
-// check on the answer itself (llm/copilot/answerAudit.js).
+// check on the answer itself (the verification, llm/copilot/verification/).
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { plotDataFromText, structureFromRmc6f } from '../browserData';
 import { buildCopilotTools } from '../copilotTools';
-import { runCopilotTurn } from '../llm/copilot/agentLoop';
-import { auditAnswer } from '../llm/copilot/answerAudit';
-import { buildEvidenceGate } from '../llm/copilot/evidence';
 import { buildRunTools } from '../llm/copilot/runTools';
-import { handlePcaMessage } from '../workers/pcaKdeWorker';
+import { runTurn } from '../llm/copilot/turn';
+import { toolResult } from '../llm/copilot/tools';
+import { createVerification } from '../llm/copilot/verification';
+import { inProcessEngine } from '../workers/pcaKdeWorker';
 
 const read = (name) => readFileSync(new URL(`../../public/demo/${name}`, import.meta.url), 'utf8');
 const RMC6F = read('GTS_250K.rmc6f');
 const structure = structureFromRmc6f({ path: 'Demo/GTS_250K.rmc6f', text: RMC6F });
-const request = (kind, params) => handlePcaMessage({ kind, ...params }, async () => RMC6F);
+const request = inProcessEngine(RMC6F);
 const hostTools = buildCopilotTools({ request, structure, elements: Object.keys(structure.elementCounts).sort() });
 
 // The demo's own χ² history, its three logs end to end, as the Dashboard reads it.
@@ -49,14 +49,14 @@ const scriptedModel = (replies) => {
     return { callModel, requests };
 };
 
-const replay = async (replies, { auditContext = null } = {}) => {
+// One question through the turn module (llm/copilot/turn.js), as the app runs
+// it, on the run props `run` (by default the χ² history only): the turn builds
+// the context, the evidence gate (on, THY-18) and the answer checks, whose
+// context facts (the watchdog's verdict) come from the run.
+const replay = async (replies, { run = { rValueFile } } = {}) => {
     const { callModel, requests } = scriptedModel([...replies]);
     const events = [];
-    for await (const event of runCopilotTurn({
-        callModel, messages: [{ role: 'system', content: 'S' }, { role: 'user', content: 'Q' }], tools, auditContext,
-        // The evidence gate is on, as in the app (THY-18).
-        evidence: buildEvidenceGate({ offered: tools.map((tool) => tool.name) })
-    })) events.push(event);
+    for await (const event of runTurn({ question: 'Q', run, model: callModel, tools })) events.push(event);
     const steps = events.filter((event) => event.type === 'tool_end');
     const toolMessages = requests.at(-1).filter((message) => message.role === 'tool').map((message) => JSON.parse(message.content));
     return { done: events.at(-1), steps, toolMessages };
@@ -79,7 +79,8 @@ describe('rmc-fit-assessment', () => {
         const wrong = { text: 'The run has converged — the χ² history has reached a plateau.\nOutcome: achieved — flat history.' };
         const { done } = await replay([ask, wrong]);
         expect(done.audit.map((finding) => finding.rule)).toEqual(['convergence']);
-        const fromContext = await replay([wrong], { auditContext: { convergence: 'improving', groups: [] } });
+        // No analysis: the run's context (the watchdog says improving) is the check.
+        const fromContext = await replay([wrong]);
         expect(fromContext.done.audit.map((finding) => finding.rule)).toEqual(['convergence']);
     });
 });
@@ -158,14 +159,23 @@ describe('displacement-anisotropy', () => {
 });
 
 describe('the real model\'s correct answers (gemma4:26b, 2026-10-11)', () => {
+    // The checks on an answer through the verification's interface: the
+    // tools' facts recorded, the run context given, no claim offered.
+    const auditAnswer = (text, { facts = [], context = null } = {}) => {
+        const verification = createVerification({ context, offered: [] });
+        facts.forEach((item) => verification.record({ name: 'analysis', ...toolResult({ facts: item }) }, () => ({ data: null })));
+        return verification.judge(text).done.audit;
+    };
+
     it('raise no check', () => {
-        const groups = [
-            { symbol: 'F-43m', point_group: '-43m', centrosymmetric: false, sohncke: false, polar: false },
-            { symbol: 'P-42_1m', point_group: '-42m', centrosymmetric: false, sohncke: false, polar: false }
-        ];
+        // The run context the answers were given on: still improving; F-43m over P-42₁m.
+        const context = {
+            convergence: { watchdog_status: 'improving' },
+            symmetry: { space_group: 'F-43m', point_group: '-43m', ladder: [{ sg: 'P-42_1m', pg: '-42m', n_ops: 8 }, { sg: 'F-43m', pg: '-43m', n_ops: 96 }] }
+        };
         expect(auditAnswer('The run has not converged; the dashboard\'s watchdog status is improving. The ln(χ²) of the last fit '
             + 'term (X_ray_(R)1) has decreased from 0.0953 to −8.87 over the course of the run, and the change over the last 10% '
-            + 'of the run is −0.11, indicating that the fit is still actively descending.', { context: { convergence: 'improving', groups } })).toEqual([]);
+            + 'of the run is −0.11, indicating that the fit is still actively descending.', { context })).toEqual([]);
         expect(auditAnswer('Based on the displacement analysis, the Ga atoms do not exhibit a significant preferred displacement '
             + 'direction. The pooled analysis for all Ga atoms shows no significant peak direction (significance of −0.887σ).', {
             facts: [{ direction: { subject: 'Ga', significant: false, peak_sigma: -0.887, map_sigma: 0.561 } }]
@@ -173,6 +183,6 @@ describe('the real model\'s correct answers (gemma4:26b, 2026-10-11)', () => {
         expect(auditAnswer('At a 0.2 Å tolerance, the space group is F-43m (No. 216). At a 0.02 Å tolerance, the space group is '
             + 'P-42_1m. The symmetry breaking between these two tolerances is the loss of the F-43m symmetry. Note that the '
             + 'transition from F-43m to P-42_1m occurs at 0.031 Å, which is the noise_floor_A for this run, meaning this change '
-            + 'is within the sampling noise.', { context: { convergence: 'improving', groups } })).toEqual([]);
+            + 'is within the sampling noise.', { context })).toEqual([]);
     });
 });
