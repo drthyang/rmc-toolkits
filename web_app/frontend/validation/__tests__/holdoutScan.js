@@ -26,8 +26,11 @@
 //                of its element.
 // Magnitudes, directions and wavevectors count only where they differ from the
 // dev cases of the same kind (otherwise they are the kind's physics, not the
-// test case). Thermal widths are never tokens. A bare element symbol is never
-// a hit: element symbols are everywhere.
+// test case). The judgment subset's dev cases (`judgment: true`, plan item 1.6
+// ii) never count as that kind's physics: they are options of a kind, written
+// apart from its test case, so they never remove a test case's token. Thermal
+// widths are never tokens. A bare element symbol is never a hit: element
+// symbols are everywhere.
 
 export const NEAR_WORDS = 6;
 
@@ -67,20 +70,28 @@ const PLANTED = {
         magnitudes: [{ name: 'delta', value: p.delta, near: [p.elements[1]] }, { name: 'a', value: p.a, near: p.elements }],
         directions: [{ name: 'axis', uvw: p.axis, near: [p.elements[1]] }]
     }),
+    // A weak order (the judgment subset) has no decoy.
     zone_boundary: (p) => ({
         elements: p.elements,
         magnitudes: [
             { name: 'delta', value: p.delta, near: [p.elements[1]] }, { name: 'a', value: p.a, near: p.elements },
-            { name: 'decoy.amp', value: p.decoy.amp, near: [p.elements[0]] }
+            ...(p.decoy ? [{ name: 'decoy.amp', value: p.decoy.amp, near: [p.elements[0]] }] : [])
         ],
-        directions: [{ name: 'axis', uvw: p.axis, near: [p.elements[1]] }, { name: 'decoy.axis', uvw: p.decoy.axis, near: [p.elements[0]] }],
-        wavevectors: [{ name: 'q', q: p.q, near: [p.elements[1]] }, { name: 'decoy.q', q: p.decoy.q, near: [p.elements[0]] }]
+        directions: [
+            { name: 'axis', uvw: p.axis, near: [p.elements[1]] },
+            ...(p.decoy ? [{ name: 'decoy.axis', uvw: p.decoy.axis, near: [p.elements[0]] }] : [])
+        ],
+        wavevectors: [
+            { name: 'q', q: p.q, near: [p.elements[1]] },
+            ...(p.decoy ? [{ name: 'decoy.q', q: p.decoy.q, near: [p.elements[0]] }] : [])
+        ]
     }),
     breathing: (p) => ({
         elements: [p.element, p.anion],
         cluster: { element: p.element, count: p.shape === 'triangle' ? 3 : 4 },
         magnitudes: [{ name: 'edge', value: p.edge, near: [p.element] }, { name: 'a', value: p.a, near: [p.element, p.anion] }]
     }),
+    // An off-centred centre (the judgment subset) adds its shift and axis.
     jahn_teller: (p) => {
         const bond = p.elements.slice(1);
         const split = p.long - p.short;
@@ -90,7 +101,23 @@ const PLANTED = {
                 { name: 'short', value: p.short, near: bond }, { name: 'long', value: p.long, near: bond },
                 { name: 'long-short', value: round(split, 2), near: bond }, { name: 'long-short (3)', value: round(split, 3), near: bond },
                 { name: 'mean bond', value: round((p.long + 2 * p.short) / 3, 3), near: bond },
-                { name: 'a', value: p.a, near: p.elements }
+                { name: 'a', value: p.a, near: p.elements },
+                ...(p.offCentre ? [{ name: 'offCentre.delta', value: p.offCentre.delta, near: [p.elements[1]] }] : [])
+            ],
+            directions: p.offCentre ? [{ name: 'offCentre.axis', uvw: p.offCentre.axis, near: [p.elements[1]] }] : []
+        };
+    },
+    // The judgment subset's own kind: elongated M6 octahedra around an anion lattice.
+    elongated_clusters: (p) => {
+        const r0 = p.edge / Math.SQRT2;
+        return {
+            elements: [p.element, p.anion],
+            cluster: { element: p.element, count: 6 },
+            magnitudes: [
+                { name: 'edge', value: p.edge, near: [p.element] },
+                { name: 'long edge', value: round(Math.hypot(r0, r0 + p.elongation), 2), near: [p.element] },
+                { name: 'elongation', value: p.elongation, near: [p.element] },
+                { name: 'a', value: p.a, near: [p.element, p.anion] }
             ]
         };
     },
@@ -129,12 +156,14 @@ const structureWords = (name) => name.split(/\s+/).filter((word) => word && !FOR
 /**
  * The tokens that identify one test case, derived from its parameters. A
  * magnitude, direction or wavevector is kept only when no dev case of the
- * same kind plants the same item with the same value.
+ * same kind plants the same item with the same value. A judgment dev case
+ * (`judgment: true`) is never that comparison: it cannot remove a token.
  */
 export const holdoutTokens = (item, devCases) => {
     const mine = planted(item);
-    const devs = devCases.filter((dev) => dev.kind === item.kind).map(planted);
-    const devWords = new Set(devCases.flatMap((dev) => structureWords(dev.params.structure ?? '')).map((word) => word.toLowerCase()));
+    const ordinary = devCases.filter((dev) => !dev.judgment);
+    const devs = ordinary.filter((dev) => dev.kind === item.kind).map(planted);
+    const devWords = new Set(ordinary.flatMap((dev) => structureWords(dev.params.structure ?? '')).map((word) => word.toLowerCase()));
     const sameAsDev = (field, entry, key) => devs.some((dev) => dev[field].some((other) => other.name === entry.name && key(other) === key(entry)));
     const tokens = [{ case: item.id, kind: 'id', name: 'id', text: item.id }];
     if (unique(mine.elements).length >= 2) tokens.push({ case: item.id, kind: 'composition', name: 'elements', elements: new Set(mine.elements) });

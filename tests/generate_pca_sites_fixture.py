@@ -17,8 +17,9 @@ Cases: every site of the committed demo run (``web_app/frontend/public/demo``,
 (every copy exactly on its site), a 60/40 mixed-occupancy prolate site, and a
 50/50 mixed site with heavy tails (positive kurtosis, labelled by the
 alphabetically first species) -- at two ellipsoid probabilities. Every cloud
-stays below ``MAX_PCA_FIT_POINTS`` (20 000), above which the engines subsample
-differently.
+stays below ``MAX_PCA_FIT_POINTS`` (20 000); the site table never subsamples,
+and the KDE's subsample above that cap has its own golden
+(``tests/generate_pca_kde_fixture.py``).
 
 Regenerate from the checkout under test whenever the engine's conventions
 change (without ``PYTHONPATH=.`` another checkout's ``rmc_toolkits`` may be

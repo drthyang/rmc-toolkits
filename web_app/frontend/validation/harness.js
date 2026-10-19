@@ -93,8 +93,12 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // two resolved peaks, no longer r ± FWHM; the context's pair_correlations and
 // find_gr_peaks read peaks below 8 Å and integrate each CN over exactly the
 // window they quote; find_gr_peaks' first_peak_window_A leaves for
-// first_shell.first_peak_only, and its shell no longer depends on r_max).
-export const PROTOCOL_VERSION = '2026-10-19.8';
+// first_shell.first_peak_only, and its shell no longer depends on r_max;
+// 2026-10-19.9: the judgment subset joins the dev set (plan item 1.6 ii:
+// cases where A+'s fixed joining rules are ambiguous or wrong; dev only until
+// a fresh author writes their held-out matches), so a dev batch now holds
+// them, and its means are not an earlier batch's).
+export const PROTOCOL_VERSION = '2026-10-19.9';
 
 export const ARMS = Object.freeze({
     B: { skills: true, label: 'Copilot with skills and guardrails' },

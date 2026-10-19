@@ -16,12 +16,19 @@ import { normalizeVerdict, truthVerdict } from '../verdict';
 import { compareWithReference, disagreementsOf, fmtDifference, renderComparison } from '../comparison';
 import { renderReport } from '../report';
 
-const BASELINE = JSON.parse(readFileSync(fileURLToPath(new URL('../baseline/arm-a-dev.json', import.meta.url)), 'utf8'));
+// Every dev record re-scores as recorded and its components are its own
+// (ALL); the report's pins below are on the ten dev cases outside the
+// judgment subset (BASELINE), the table copilot-validation.md quotes: the
+// subset's results stay out of that document, and are pinned apart
+// (arms.test.js, judgment.test.js; plan item 1.6 ii).
+const ALL = JSON.parse(readFileSync(fileURLToPath(new URL('../baseline/arm-a-dev.json', import.meta.url)), 'utf8'));
+const BASELINE = ALL.filter((record) => !record.truth?.judgment);
+const PAIRED_CASES = DEV_CASES.filter((item) => !item.judgment);
 const A = 'no model · A';
 const APLUS = 'no model · A+';
 const B = 'scripted · B';
 
-const recordOf = (id, arm) => BASELINE.find((record) => record.case === id && record.arm === arm);
+const recordOf = (id, arm) => ALL.find((record) => record.case === id && record.arm === arm);
 const truthOf = (id) => recordOf(id, 'D').truth;
 const verdict = (raw) => normalizeVerdict({ features: [], space_group: null, chiral: null, centrosymmetric: null, polar: null, ...raw });
 
@@ -49,8 +56,10 @@ const disagreementsIn = (result, id) => result.disagreements.filter((item) => it
 
 describe('the case score is unchanged, and its components are its own', () => {
     it('the dev baselines re-score exactly as recorded, against the dev truths as cases.js builds them today', () => {
+        // Ten cases and the judgment subset's five, each with A, A+ and D.
         expect(BASELINE).toHaveLength(30);
-        for (const record of BASELINE) {
+        expect(ALL).toHaveLength(45);
+        for (const record of ALL) {
             expect(record.split, record.id).toBe('dev');
             expect(JSON.parse(JSON.stringify(scoreVerdict(record.truth, record.verdict))), record.id).toEqual(record.score);
         }
@@ -61,7 +70,7 @@ describe('the case score is unchanged, and its components are its own', () => {
 
     it('scoreComponents: their mean is the case score, for every arm, the truth, no verdict and the synthetic verdicts', () => {
         const scores = [
-            ...BASELINE.map((record) => [record.id, record.score, record.truth]),
+            ...ALL.map((record) => [record.id, record.score, record.truth]),
             ...DEV_CASES.map((item) => [`${item.id} truth`, scoreVerdict(truthOf(item.id), truthVerdict(truthOf(item.id))), truthOf(item.id)]),
             ...DEV_CASES.map((item) => [`${item.id} none`, scoreVerdict(truthOf(item.id), null), truthOf(item.id)]),
             ['offcentre magnitude off', live('dev-offcentre', { features: [{ kind: 'off_centre', element: 'Nb', direction_uvw: [0, 0, 1], magnitude_A: 0.3 }] }).score, truthOf('dev-offcentre')],
@@ -142,7 +151,7 @@ describe('the dev baselines through the report (A, A+ and D; no B runs yet)', ()
     });
 
     it('each disagreement costs a component, and each component below 1 has one', () => {
-        for (const record of BASELINE) {
+        for (const record of ALL) {
             const lost = scoreComponents(record.score, record.truth).filter((c) => c.value < 1).length;
             const listed = disagreementsOf(record);
             expect(listed.length >= lost && (lost > 0) === (listed.length > 0), record.id).toBe(true);
@@ -170,13 +179,13 @@ describe('B against A+ on synthetic records', () => {
     const withBaseline = (records) => compareWithReference([...BASELINE, ...records]);
 
     it('B matching A+ (3 runs a case): every difference 0, and B shares A+\'s one disagreement', () => {
-        const result = withBaseline(DEV_CASES.flatMap((item) => asAplus(item.id, 3)));
+        const result = withBaseline(PAIRED_CASES.flatMap((item) => asAplus(item.id, 3)));
         expect(result.live).toEqual([B]);
         expect(result.differences).toEqual([{ column: B, cases: 10, score: expect.any(Number), groups: { feature: 0, spurious: 0, symmetry: 0 } }]);
         expect(result.differences[0].score).toBeCloseTo(0, 10);
         expect(result.components.every((item) => item.differences[B] === 0)).toBe(true);
         expect(disagreementsIn(result, 'dev-jahn-teller')).toEqual([`direction of jahn_teller Cu | not given | ${A} 1/1, ${APLUS} 1/1, ${B} 3/3`]);
-        const lines = renderComparison([...BASELINE, ...DEV_CASES.flatMap((item) => asAplus(item.id, 3))]);
+        const lines = renderComparison([...BASELINE, ...PAIRED_CASES.flatMap((item) => asAplus(item.id, 3))]);
         expect(lines).toContain(`| ${B} − A+ | 10 paired | 0.00 | 0.00 | 0.00 | 0.00 |`);
         expect(lines).toContain(`- ${B} against A+: 0 components higher, 0 lower, 52 the same.`);
         expect(lines).toContain(`| Case | Component | ${A} | ${APLUS} | ${B} | ${B} − A+ |`);

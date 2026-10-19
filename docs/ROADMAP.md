@@ -292,7 +292,7 @@ documented in [ALGORITHMS.md](ALGORITHMS.md) stands.
   - A reference-position option, since coherent off-centring is invisible by construction.
   - A physical sign rule for the PCA frame.
 - **PCA ellipsoid:**
-  - Identical subsamples in both engines above 20 000 copies.
+  - ~~Identical subsamples in both engines above 20 000 copies.~~ Done (0.8.0): one draw.
   - `AXIS_RESOLUTION_SIGMAS` = 2 instead of 3. At 3, PC2 is never resolved on the heavy-tailed
     5 K sites, so the κ column mostly reads "—".
   - U_cif/β_ij beside the Cartesian tensor.

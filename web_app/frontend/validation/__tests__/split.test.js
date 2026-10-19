@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildCase, DEV_CASES, TEST_CASES } from '../cases';
+import { buildCase, DEV_CASES, JUDGMENT_SITUATIONS, TEST_CASES } from '../cases';
 import { parseFindingFiles, parseFindings, validateFinding } from '../findings';
 import { guardSplit } from '../run';
 import { copilotSkills } from '../../src/copilotSkills';
@@ -39,18 +39,45 @@ describe('the dev / test split', () => {
         expect(new Set(ids).size).toBe(ids.length);
         expect(DEV_CASES.every((item) => item.id.startsWith('dev-'))).toBe(true);
         expect(TEST_CASES.every((item) => item.id.startsWith('test-'))).toBe(true);
-        // A dev-only case (`devOnly`: why) has a kind of its own, for
-        // developing tools and skills; it is never a reported number.
+        // A dev-only case (`devOnly`: why) is for developing tools and
+        // skills; it is never a reported number. Outside the judgment subset
+        // it has a kind of its own; a judgment case (below) may use the
+        // options of a paired kind.
         const paired = DEV_CASES.filter((item) => !item.devOnly);
         expect(paired.map((item) => item.kind).sort()).toEqual(TEST_CASES.map((item) => item.kind).sort());
         expect(paired.length).toBeGreaterThanOrEqual(8);
         expect(TEST_CASES.some((item) => item.devOnly)).toBe(false);
         DEV_CASES.filter((item) => item.devOnly).forEach((item) => {
             expect(typeof item.devOnly, item.id).toBe('string');
-            expect(TEST_CASES.some((test) => test.kind === item.kind), item.id).toBe(false);
+            if (!item.judgment) expect(TEST_CASES.some((test) => test.kind === item.kind), item.id).toBe(false);
         });
         // Plan item 4.6: the fit-data case.
-        expect(DEV_CASES.filter((item) => item.devOnly).map((item) => item.id)).toEqual(['dev-fit-unconverged']);
+        expect(DEV_CASES.filter((item) => item.devOnly && !item.judgment).map((item) => item.id)).toEqual(['dev-fit-unconverged']);
+    });
+
+    // Plan item 1.6, part ii: cases where A+'s fixed joining rules are
+    // ambiguous or wrong. Dev only until their held-out matches exist, which a
+    // fresh author writes from validation/judgment-spec.md alone; until then no
+    // test case is a judgment case, and the test set's hash above is unchanged.
+    it('the judgment subset (plan 1.6 ii): dev only, every situation covered, the truth says which', () => {
+        const judged = DEV_CASES.filter((item) => item.judgment);
+        expect(judged.map((item) => item.id)).toEqual([
+            'dev-jt-off-centre', 'dev-eight-site', 'dev-octahedral-clusters', 'dev-weak-order-a', 'dev-weak-order-b'
+        ]);
+        expect(TEST_CASES.some((item) => item.judgment || item.situation)).toBe(false);
+        judged.forEach((item) => {
+            expect(item.judgment, item.id).toBe(true);
+            expect(item.devOnly, item.id).toMatch(/^judgment subset \(plan item 1\.6 ii\)/);
+            expect(Object.keys(JUDGMENT_SITUATIONS), item.id).toContain(item.situation);
+            expect(buildCase(item, { partials: false }).truth.judgment, item.id).toEqual({ situation: item.situation });
+        });
+        expect([...new Set(judged.map((item) => item.situation))].sort()).toEqual(Object.keys(JUDGMENT_SITUATIONS).sort());
+        // Every other case says nothing of the kind, in its item or its truth.
+        DEV_CASES.filter((item) => !item.judgment).forEach((item) => {
+            expect(item.situation, item.id).toBeUndefined();
+            expect(buildCase(item, { partials: false }).truth.judgment, item.id).toBeUndefined();
+        });
+        expect(() => buildCase({ ...judged[0], situation: 'nope' }, { partials: false })).toThrow(/unknown judgment situation 'nope'/);
     });
 
     it('pins the test set: configurations, partials and truths', () => {
@@ -140,6 +167,12 @@ describe('the holdout scan: no tool, skill, app source or doc names a test case'
             expect(kinds.length, item.id).toBeGreaterThanOrEqual(3);
         });
         expect(() => holdoutTokens({ id: 'test-new', kind: 'new_kind', params: {} }, DEV_CASES)).toThrow(/add it to PLANTED/);
+    });
+
+    it('the judgment subset removes no test case\'s token (plan 1.6 ii): it is never a kind\'s physics', () => {
+        const ordinary = DEV_CASES.filter((item) => !item.judgment);
+        expect(ordinary.length).toBeLessThan(DEV_CASES.length);
+        expect(TEST_CASES.flatMap((item) => holdoutTokens(item, ordinary))).toEqual(tokens);
     });
 
     it('finds every test case in its own truth, written as prose', () => {
@@ -300,7 +333,8 @@ describe('where a finding stands, and validation batch 1', () => {
 
     it('decision records: one JSON file per record, read in id order, each validated by the findings schema', () => {
         expect(Object.keys(decisions())).toEqual([
-            '2026-10-19-aplus-app-rules', '2026-10-19-engine-verdicts', '2026-10-19-list-sites-split', '2026-10-19-shell-catalogue',
+            '2026-10-19-aplus-app-rules', '2026-10-19-engine-verdicts', '2026-10-19-judgment-dev-cases', '2026-10-19-list-sites-split',
+            '2026-10-19-shell-catalogue',
             '2026-10-19-shell-cut-rule', '2026-10-19-test-breathing-recomposed'
         ]);
         expect(existsSync(join(FRONTEND, 'validation/findings/decisions.jsonl'))).toBe(false);
@@ -332,6 +366,19 @@ describe('where a finding stands, and validation batch 1', () => {
         // Every test it names exists, by its title as written in the source.
         expect(verdicts.tests.length).toBeGreaterThan(0);
         verdicts.tests.forEach((test) => {
+            const [path, title] = test.split(' › ');
+            expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+        });
+    });
+
+    it('decisions: the judgment dev subset (plan 1.6 ii), approved on the user\'s delegation, implemented with its tests', () => {
+        const judgment = decisions()['2026-10-19-judgment-dev-cases'];
+        expect(judgment).toMatchObject({ case: 'dev-jt-off-centre', kind: 'bug' });
+        expect(DEV_CASES.find((item) => item.id === judgment.case)?.judgment).toBe(true);
+        delegated(judgment);
+        // Every test it names exists, by its title as written in the source.
+        expect(judgment.tests.length).toBeGreaterThan(0);
+        judgment.tests.forEach((test) => {
             const [path, title] = test.split(' › ');
             expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
         });

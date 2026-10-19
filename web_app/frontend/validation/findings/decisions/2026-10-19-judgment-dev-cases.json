@@ -1,0 +1,33 @@
+{
+  "case": "dev-jt-off-centre",
+  "run": "plan item 1.6, part ii: the judgment dev subset; arms A, A+ and D on the dev set, 2026-10-19",
+  "step": null,
+  "kind": "bug",
+  "evidence": "Plan item 1.6 (docs/AGENT_PLAN.md, 'The A+ ceiling: what the validation can still measure'): on the paired cases the engines alone (arm A+) score close to 1, because most of a case score is facts a fixed rule gets right, so the case score could not show a model adding to the engines, and no dev case put A+'s fixed joining rules (validation/armA.js runArmSweep) in question. The plan names four situations where those rules are ambiguous or wrong: two features at once, a signal at 2.5–4σ, evidence that two tools read differently, and a choice only the user can make. After the change, five dev cases cover them, each tried with arms A, A+ and D on the dev set; their scores and where A+ misses are in the PR, validation/baseline/arm-a-dev.json and the validation/__tests__/arms.test.js pins, and kept out of this record, which the author of the held-out matches may read. Every earlier case, dev and test, builds byte for byte as before (TEST_SET_SHA256 unchanged), and a re-run of the earlier dev records equals each of them apart from protocol and commit. Approved by the manager on the user's delegation, 2026-10-19.",
+  "proposed_fix": "Five dev cases, each judgment: true with a situation and devOnly until its held-out match exists, their parameters apart in validation/judgmentCases.js and built by validation/cases.js: two features at once (jahn_teller with offCentre: Jahn–Teller octahedra whose centre is also off-centred); a signal at 2.5–4σ (zone_boundary with weak: true and no decoy: one weak cell-doubling order, one seed on each side of the 3σ bar by an outcome-neutral rule); two tools read differently (offcentre with wells: 8: eight-site <111> off-centring); a choice only the user can make (the new kind elongated_clusters: octahedral clusters elongated along a random axis, whose split shell the Workbench joins and asks about; since protocol 2026-10-19.8 A+ takes its cluster windows from that same shell reading, so on the score this case is the subset's control). Beside them: the report's judgment table (report.js renderJudgment, read from truth.judgment); the split test lets a judgment case use a paired kind's options and keeps the test set unchanged; the holdout scan never lets a judgment case remove a test token; validation/judgment-spec.md, the spec the author of the held-out matches works from, with no dev value, result or arm score (validation/__tests__/judgment.test.js scans it); PROTOCOL_VERSION 2026-10-19.9. The held-out matches come later, from a fresh author who never sees the dev results, in a separate PR, on the user's decision. Approved by the manager on the user's delegation, 2026-10-19; the user may reverse it.",
+  "needs_user_approval": true,
+  "status": "implemented",
+  "approval": {
+    "by": "user",
+    "date": "2026-10-19",
+    "batch": 2
+  },
+  "commit": "fb5d68ee73a280dc85d8957a41c8f29d5e3297f7",
+  "tests": [
+    "web_app/frontend/validation/__tests__/split.test.js › the judgment subset (plan 1.6 ii): dev only, every situation covered, the truth says which",
+    "web_app/frontend/validation/__tests__/split.test.js › the judgment subset removes no test case's token (plan 1.6 ii): it is never a kind's physics",
+    "web_app/frontend/validation/__tests__/split.test.js › pins the test set: configurations, partials and truths",
+    "web_app/frontend/validation/__tests__/holdoutScan.test.js › a judgment dev case (plan 1.6 ii) never removes a token: it is an option of the kind, not its physics",
+    "web_app/frontend/validation/__tests__/holdoutScan.test.js › the judgment subset's options and its own kind have their readers",
+    "web_app/frontend/validation/__tests__/arms.test.js › %s: arm A %s, A+ %s",
+    "web_app/frontend/validation/__tests__/arms.test.js › the judgment subset: where A+'s fixed joining rules fail, the readings show which rule",
+    "web_app/frontend/validation/__tests__/judgment.test.js › one row per column: the mean per situation, over the subset and over the rest, every run counted",
+    "web_app/frontend/validation/__tests__/judgment.test.js › the committed dev baseline: the subset's five cases beside the other ten, in every column",
+    "web_app/frontend/validation/__tests__/judgment.test.js › a choice only the user can make: a window that cuts the split shell is asked about, the skip keeps the whole shell",
+    "web_app/frontend/validation/__tests__/judgment.test.js › a signal at the edge of significance: a superstructure claimed below the bar scores as a claim, and the answer check flags it",
+    "web_app/frontend/validation/__tests__/judgment.test.js › no id (in the spec and the change note), composition, cluster, length near its element, direction or wavevector of a dev judgment case",
+    "web_app/frontend/validation/__tests__/judgment.test.js › no length of a dev judgment case anywhere, even far from an element",
+    "web_app/frontend/validation/__tests__/scoring.test.js › the truth itself (arm D) scores 1 on every case, dev and test",
+    "web_app/frontend/src/__tests__/modelVisible/caseBlind.test.js › arm %s: no case kind in the run-specific parts of the first request"
+  ]
+}
