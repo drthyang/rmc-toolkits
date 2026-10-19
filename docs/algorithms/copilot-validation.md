@@ -357,6 +357,56 @@ the manager on the user's delegation on 2026-10-19: the recomposed test breathin
 ([ai-assistant.md](ai-assistant.md), Step 20). The schema's approver is the user, so the delegation
 is stated in each record's evidence and proposed fix.
 
+### The answer corpus (plan item 3.5)
+
+The evidence gate (`src/llm/copilot/evidence.js`) and the checks on the answer
+(`answerAudit.js`) read claims with regexes. `src/__tests__/answerCorpus.test.js` runs them over
+real answers and records what they read:
+- **The corpus:** one file per answer in `src/__tests__/answerCorpus/entries/`. Each file holds:
+  - the text and its `fidelity`: `verbatim` (committed as the model's words), `transcribed` (read
+    off a committed recording) or `quoted` (a docs or skill quotation, possibly shortened);
+  - its `source` (file, lines, commit), the model, the question and the run (the Demo or a dev
+    case, never a test case);
+  - the steps that ran, by name and arguments, or `null` when the record does not show them.
+- **The steps run** with the real engines. They must reproduce the numbers the transcript shows
+  (`reproduces`).
+- **One adapter** turns an answer into the pinned reading (`readAnswer` in
+  `answerCorpus/readAnswer.js`, public functions only):
+  - the claims the gate reads;
+  - the gate's send-back given the steps, or "steps unknown";
+  - the checks that fire.
+- **Each reading is judged by a person.** Every send-back, every finding, or the silence carries
+  `right` and a one-line `reason`. The test lists the false alarms and the misses.
+- **When one verification module replaces the gate and the checks**, only `readAnswer` changes.
+  The pins stay.
+
+**On 2026-10-19** the corpus holds nine answers on the Demo:
+- **Verbatim:** gemma4:26b's three correct answers of 2026-10-11.
+- **Transcribed:** Muse Glimmer's GaSe₄ answer from the README GIF.
+- **Quoted:** five wrong answers from the 2026-10-10 spot check and review.
+
+Four readings fire, and all four are right:
+- chirality and inversion lost, on qwen3.8's "P-42₁m is chiral and centrosymmetry is lost";
+- convergence, on "Converged — a plateau.";
+- the gate's cluster send-back, on "the cluster is distorted" with no `analyze_clusters`.
+
+There is no false alarm and one miss: "no cluster distortion", concluded from a pooled direction
+map, needs no analysis under any rule.
+
+No real answer yet makes a claim that the gate's split-site, lowering, modulation, direction or
+no-order rules read, or that the superstructure, cluster, polar or coordination checks read. The
+live runs' records are what will exercise them.
+
+**Adding an answer:**
+1. Copy the final answer of a live run's record on a dev case (or of a Demo session) verbatim into
+   `entries/<date>-<model>-<topic>.json`. Never use a test case's record.
+2. Copy the steps from the record, and a few of its numbers into `reproduces`.
+3. Run the test. Its diff gives the reading to put in `expected`.
+4. Judge each send-back and finding, or the silence.
+
+**A change to a claim regex** must keep every pin, or update the entry in the same PR with a
+judgement for each new reading. A new false alarm or miss shows in the test's lists.
+
 ## The run policy (plan item 1.2)
 
 The cases, the question, the prompt, the tools and the scoring are the same for every model. The

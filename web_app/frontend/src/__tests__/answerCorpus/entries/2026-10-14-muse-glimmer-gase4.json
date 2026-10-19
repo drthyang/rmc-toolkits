@@ -1,0 +1,38 @@
+{
+  "id": "2026-10-14-muse-glimmer-gase4",
+  "fidelity": "transcribed",
+  "model": "meta/muse-glimmer (LM Studio)",
+  "date": "2026-10-14",
+  "run": "Demo (GaTa4Se8, 250 K)",
+  "question": "Is the GaSe4 tetrahedron regular? Give the Ga–Se bond length and the Se–Ga–Se angle distribution.",
+  "source": {
+    "file": "assets/rmc-toolkits-copilot.gif",
+    "lines": "frames 190 (the question and the steps), 254 (the answer's start) and 238 (its end and the Outcome chip), counted from 0",
+    "commit": "7f4ae3a",
+    "note": "the README's Copilot GIF (PR #66); transcribed from the rendered answer: list items written as \"- \", the inline code as `…`, digit-group spaces as plain spaces, and the Outcome line rebuilt from its chip (\"Achieved\" and the note as shown) in the prompt's \"Outcome: <status> — <note>\" form"
+  },
+  "text": "The GaSe₄ polyhedron is built from the Ga–Se first coordination shell.\n\n- Window chosen: the whole first shell from `find_gr_peaks` for Ga–Se, 2.18–2.79 Å. This is the first-shell window (onset to first deep minimum) and it contains the single peak at 2.42 Å (FWHM 0.21 Å). The 2.2 Å closest-approach constraint cuts the distribution: g(r) just above it is 9 % of the first peak, so Ga–Se pairs pile up against the constraint — it is constraint-limited; the constraint, not the data, shapes the low-r side of the peak.\n- Coordination: mean 3.99 Se per Ga in 2.18–2.79 Å, with 3 948 of 4 000 Ga atoms having 4 neighbours and 51 having 3. That is the ideal tetrahedral coordination.\n- Bond length: Ga–Se mean 2.434 Å, sd 0.095 Å in the 2.18–2.79 Å window.\n- Se–Ga–Se angles: 23 842 angles around 4 000 Ga atoms, mean 109.4°, sd 4.1°. Mode 109.5° with share 0.94. The sin θ-corrected 10° histogram peaks at 100–110° (6.7) and 110–120° (5.3), with essentially no weight outside ~90–130°. Within 15° of 109.5° the share is 1.\n\nThe angle distribution is centred on the ideal tetrahedral angle 109.5° with a modest spread, and the coordination is essentially four. The polyhedron is effectively regular within the sampling of this run.\n\nOutcome: achieved — the GaSe₄ tetrahedron is essentially regular with Ga–Se 2.434 Å ± 0.095 Å and Se–Ga–Se centred at 109.4° ± 4.1°.",
+  "steps": [
+    { "name": "read_skill", "args": { "name": "coordination-shells" } },
+    { "name": "find_gr_peaks", "args": { "pair": "Ga-Se" } },
+    { "name": "compute_bond_angles", "args": { "end1": "Se", "apex": "Ga", "end2": "Se", "r12_min": 2.18, "r12_max": 2.79 } }
+  ],
+  "stepsSource": "the GIF's step cards: \"Reading the coordination-shells skill\", \"g(r) peaks Ga-Se\" (Warning) and \"Bond angles Se–Ga–Se · 2.18–2.79 Å\" (Done), footer \"2 analyses · 1 warning\"; the arguments are read from the cards' labels (no other argument shows), and the steps reproduce the cards' and the answer's numbers",
+  "reproduces": [
+    { "step": 2, "path": "data.first_shell.window_A", "value": [2.18, 2.79] },
+    { "step": 2, "path": "data.peaks_A.0", "value": { "r": 2.42, "fwhm": 0.21 } },
+    { "step": 2, "path": "data.g_at_constraint_fraction", "value": 0.087 },
+    { "step": 3, "path": "data.angle_count", "value": 23842 },
+    { "step": 3, "path": "data.coordination.mean", "value": 3.99 },
+    { "step": 3, "path": "data.coordination.counts", "value": [0, 0, 1, 51, 3948] },
+    { "step": 3, "path": "data.bond_ab.sd_A", "value": 0.095 }
+  ],
+  "expected": {
+    "claims": [],
+    "gateSendBack": null,
+    "auditFindings": []
+  },
+  "judgements": [
+    { "on": "silence", "right": true, "reason": "A correct whole-shell answer (CN 3.99, 109.4 ± 4.1°). The gate does not read \"That is the ideal tetrahedral coordination.\" as a claim about the run (no element or run noun in that sentence); harmless here, since the shell analysis ran." }
+  ]
+}

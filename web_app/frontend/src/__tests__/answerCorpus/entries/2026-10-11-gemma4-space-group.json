@@ -1,0 +1,26 @@
+{
+  "id": "2026-10-11-gemma4-space-group",
+  "fidelity": "verbatim",
+  "model": "gemma4:26b (Ollama)",
+  "date": "2026-10-11",
+  "run": "Demo (GaTa4Se8, 250 K)",
+  "question": "What is the space group at 0.2 Å and at 0.02 Å tolerance, and what symmetry breaks between them?",
+  "source": {
+    "file": "web_app/frontend/src/__tests__/copilotChecksReplays.test.js",
+    "lines": "148-153",
+    "commit": "0326b5e",
+    "note": "committed as one of gemma4:26b's correct answers of 2026-10-11; the raw transcript is not in the repo"
+  },
+  "text": "At a 0.2 Å tolerance, the space group is F-43m (No. 216). At a 0.02 Å tolerance, the space group is P-42_1m. The symmetry breaking between these two tolerances is the loss of the F-43m symmetry. Note that the transition from F-43m to P-42_1m occurs at 0.031 Å, which is the noise_floor_A for this run, meaning this change is within the sampling noise.\nOutcome: achieved — The space groups and the symmetry breaking were identified from the symmetry ladder.",
+  "steps": [],
+  "stepsSource": "the replay of the same commit scripts no tool call: the answer reads the context's tolerance ladder (the llm README's 2026-10-10 table: \"no tool: the context's tolerance ladder\")",
+  "reproduces": [],
+  "expected": {
+    "claims": [],
+    "gateSendBack": null,
+    "auditFindings": []
+  },
+  "judgements": [
+    { "on": "silence", "right": true, "reason": "Both groups are right and the change is put below the noise floor; \"the loss of the F-43m symmetry\" claims no lost inversion centre and no lowering of the average structure." }
+  ]
+}

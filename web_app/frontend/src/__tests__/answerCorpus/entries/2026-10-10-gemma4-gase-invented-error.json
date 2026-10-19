@@ -1,0 +1,26 @@
+{
+  "id": "2026-10-10-gemma4-gase-invented-error",
+  "fidelity": "quoted",
+  "model": "gemma4:26b (Ollama)",
+  "date": "2026-10-10",
+  "run": "Demo (GaTa4Se8, 250 K)",
+  "question": "Is GaSe₄ regular?",
+  "source": {
+    "file": "docs/CHANGELOG.md",
+    "lines": "618 on 2026-10-19 (0.6.0, \"AI Copilot replaces the AI Assistant\")",
+    "commit": "8aefab6",
+    "note": "the scientific review's first round as the changelog quotes it (the README, line 709: window 2.21–2.63 Å, \"± 0.02 Å\" invented); the whole answer is not in the repo"
+  },
+  "text": "Ga–Se 2.428 ± 0.02 Å.",
+  "steps": null,
+  "stepsSource": "not recorded: the README gives the window and its CN, not the calls",
+  "reproduces": [],
+  "expected": {
+    "claims": [],
+    "gateSendBack": "steps unknown",
+    "auditFindings": []
+  },
+  "judgements": [
+    { "on": "silence", "right": true, "reason": "A ± uncertainty is not a split site, and the gate's split-site reading leaves it alone; the invented ± itself is outside every check (the prompt forbids an uncertainty no tool gave)." }
+  ]
+}
