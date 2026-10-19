@@ -357,7 +357,7 @@ change what A+ sweeps are noted.
 
 | PR | Change | Size |
 | --- | --- | --- |
-| 5.1 | **Skill lint in CI.** Every tool a skill names exists; every gate number is bound to the constant of the module that decides it; every "*Firm rule in the app:*" names a check or refusal that exists. It lands with an allow-list of today's violations, which 5.2 to 5.4 empty. | M |
+| 5.1 | **Skill lint in CI.** Every tool a skill names exists; every gate number is bound to the constant of the module that decides it; every "*Firm rule in the app:*" names a check or refusal that exists. It lands with an allow-list of today's violations, which 5.2 to 5.4 empty. **Built:** `src/__tests__/skillLint.test.js` (tables in `skillLint/tables.js`); the allow-list holds three entries, all in displacement-anisotropy: the 15° cone, the peak test (both fixed in #71's drafts) and the split site (5.3). | M |
 | 5.2 | **(approval)** The user's review of PR #71 (batch 1's skill drafts and the new local-order draft). | — |
 | 5.3 | **(approval; each draft goes to the user before it merges)** The three disagreements left after #71 (split site, cluster elements, what "no order" needs), in the same PR as candidate 8 and the gate change. | S |
 | 5.4 | **(approval; each draft goes to the user before it merges)** Method out of the tool descriptions and the prompt for arm B too: a description says what a tool does; the window advice and the evidence sentence move to the skills. Arm C already drops them structurally (1.8). | M |
