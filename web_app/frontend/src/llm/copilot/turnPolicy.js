@@ -273,8 +273,9 @@ export const createTurnPolicy = ({ limits, clock, tools, judge } = {}) => {
             return ask('gate', outOfTime, { sendBack: verdict.sendBack });
         }
         if (!isObject(verdict.done)) invalid('judge must return { sendBack }, { done } or null');
+        // rawText only when the references changed the text (the verification's).
         const { text: answer = judged, rawText, outcome, audit, references, gates } = verdict.done;
-        return end(doneEvent({ text: answer, rawText: rawText ?? answer, outcome, stoppedBy, cut, audit, references, gates }));
+        return end(doneEvent({ text: answer, rawText, outcome, stoppedBy, cut, audit, references, gates }));
     };
 
     const onRound = ({ progressed, waitedMs }, outOfTime) => {
