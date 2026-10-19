@@ -25,6 +25,19 @@ Chronological record of notable changes, newest first. For current architecture 
   their reason). A PR that changes a tool's output changes its `dataShape` in the same diff. No
   tool's behaviour or output changed.
 
+### Copilot validation: the holdout scan widened
+
+- `validation/__tests__/split.test.js` (with `holdoutScan.js`) now looks for each held-out test
+  case's composition, cluster, structure type, planted lengths, directions and wavevector, read
+  from `cases.js` at run time, not only its id. It scans `src` (js, jsx, md and the model-visible
+  snapshots), every skill file, `rmc_toolkits`, `docs/` and the top-level docs; the validation and
+  copilot-validation.md are not scanned. A bare element symbol is never a hit, and a failure prints
+  the matched text masked. Only text no model can read may be allow-listed, and the test checks
+  that rule; five test- or doc-only hits found on 2026-10-19 are. The skills' reference compound
+  reaches arm B through `read_skill`, so it is an open leak pending the user: printed on every run
+  and pinned line by line. Both lists are in
+  [copilot-validation.md](algorithms/copilot-validation.md#the-holdout-scan) (plan item 1.5).
+
 ### Copilot validation: the harness no longer tells the model the case kind
 
 - The harness named each run, and its `.rmc6f` and partials files, after the case id, and the
