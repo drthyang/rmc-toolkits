@@ -327,8 +327,9 @@ cell (the demo: Ga sites 4, 8, 12, 16 of cell (0, 0, 0), then of cell (0, 0, 1),
 would interleave the sites;
 `displacement_cloud()` takes a stable sort by site (`np.argsort(site_index, kind="stable")`) to give
 the order `displacementCloud()` builds. A single site's cloud is its atoms in file order in both. The
-order changes no statistic below the cap (a permutation; round-off only, ≤ 1e-13 relative on the
-demo's pooled clouds), but the subsample below picks rows **by position**.
+order changes no statistic below the cap (a permutation: summation round-off only — the demo's
+pooled Ta and Ga volumes, eigenvalues and kurtosis move by ≤ 1e-14 of their scale, the pooled-Ga
+orientation map's values by ≤ 3e-13), but the subsample below picks rows **by position**.
 
 **Subsampling.** `pca_kde_volume()` caps the cloud fed to the KDE at
 `MAX_PCA_FIT_POINTS = 20000` points (same constant in both engines). Above it, both engines fit the
