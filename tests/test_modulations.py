@@ -568,32 +568,35 @@ class NullTests(unittest.TestCase):
         # several small ones, an anisotropic site, two equal ones over many --
         # the saddlepoint lies within -1 % and +8 % of it from p = 1e-2 to 1e-6.
         # (A three-moment gamma fell to 0.36 of it at 1e-6.)
-        def exact(weights, x, real):
+        def exact_tail(weights, real):
+            """P(sum lambda_k Y_k > x) as a function of x: a gamma mixture whose
+            coefficients (they do not depend on x) are computed once."""
             lam = np.asarray(weights, dtype=float)
             alpha = np.full(lam.size, 0.5 if real else 1.0)
             beta = lam * (2.0 if real else 1.0)
             b1 = beta.min()
             rho = alpha.sum()
             ratio = 1.0 - b1 / beta
-            gam, delta = [0.0], [1.0]
-            total = float(gammaincc(rho, x / b1))
-            for k in range(1, 4000):
-                gam.append(float(np.sum(alpha * ratio ** k)) / k)
-                delta.append(sum(i * gam[i] * delta[k - i] for i in range(1, k + 1)) / k)
-                term = delta[k] * float(gammaincc(rho + k, x / b1))
-                total += term
-                if k > 50 and abs(term) < 1e-17 * total:
-                    break
-            return math.exp(float(np.sum(alpha * np.log(b1 / beta)))) * total
+            terms = 2000  # the slowest pattern's coefficients fall below 1e-12 of the sum by about 900
+            k = np.arange(1, terms)
+            weighted = np.array([0.0] + [float(np.sum(alpha * ratio ** j)) for j in k])  # j gamma_j
+            delta = np.zeros(terms)
+            delta[0] = 1.0
+            for j in k:
+                delta[j] = float(weighted[1:j + 1] @ delta[j - 1::-1]) / j
+            scale = math.exp(float(np.sum(alpha * np.log(b1 / beta))))
+            orders = rho + np.arange(terms)
+            return lambda x: scale * float(np.sum(delta * gammaincc(orders, x / b1)))
 
         patterns = [[0.429] + [0.0713] * 8, [0.6, 0.25, 0.15], [0.39, 0.39] + [0.01375] * 16]
         for weights in patterns:
             for real in (True, False):
+                exact = exact_tail(weights, real)
                 for target in (1e-2, 1e-4, 1e-6):
                     lo, hi = 0.0, 100.0
                     for _ in range(80):
                         mid = 0.5 * (lo + hi)
-                        lo, hi = (mid, hi) if exact(weights, mid, real) > target else (lo, mid)
+                        lo, hi = (mid, hi) if exact(mid) > target else (lo, mid)
                     ratio = null_tail(0.5 * (lo + hi), weights, real) / target
                     self.assertTrue(0.99 < ratio < 1.08, (weights[:2], real, target, ratio))
 
