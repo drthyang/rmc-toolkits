@@ -141,7 +141,7 @@ Read `validation/cases.js` for the generators: the kinds, their options and the 
     4. **The expected significance** is the σ of step 3 at the median power,
        `P_med = σ²/(3σ² + δ²) · median χ'²₃(Z)`, since σ increases with P. The median is
        `scipy.stats.ncx2.median(3, Z)` in Python. In JavaScript it is the root x of
-       Σ_j e^(−Z/2) (Z/2)^j / j! · P(3/2 + j, x/2) = ½, where P is the lower regularized gamma
+       Σ_j e^(−Z/2) (Z/2)^j / j! · γ(3/2 + j, x/2) = ½, where γ(a, x) is the lower regularized gamma
        (`regularizedGamma(a, x).lower`, `workers/orientation.js`). Solve σ(P_med) = 3 for δ.
        - At a fixed F the result depends on Z, and only weakly on δ/σ: for F = 21, σ(P_med) = 3 at
          Z ≈ 20. The amplitude therefore scales as σ/√n, so the supercell sets it.
