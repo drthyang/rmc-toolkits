@@ -482,7 +482,16 @@ triplet, typed windows and bin width. Only Bond Geometry's computed angle distri
 dropped, never recomputed unasked — a result from the previous configuration must not sit next
 to the new model — and the page says so (press Compute again). The pages are never remounted, and
 every Three.js view releases its WebGL context on teardown (`renderer.forceContextLoss()` after
-`dispose()`), so repeated saves do not pile up contexts. **Limitation:** with
+`dispose()`), so repeated saves do not pile up contexts. The AI Copilot receives the configuration
+as `configKey` (`configEpoch` in Flask mode; for a browser-loaded run, static-mode Live Data
+included, the `fileSignature()` of its `.rmc6f` files, `configurationSignature()`). A new
+configuration is not a new run: the conversation stays on screen, a divider ends the earlier
+answers (*New configuration saved — earlier answers were about the previous one*), and the next
+question is sent with only the questions asked under the current configuration as memory, so the
+model never reads an answer about the previous one as current
+([ai-assistant.md](ai-assistant.md), *What "memory" contains*). The Detected SG pick is kept
+across a save or a Load of the same run, and returns to the card's default when another run opens.
+**Limitation:** with
 Live Data *off*, nothing is polled — a configuration saved while you are on an analysis page is
 picked up by that page's *next* request only. Before comparing numbers across a save, press
 **Load** again (it re-checks the `.rmc6f` and refreshes the analysis pages only if it changed),

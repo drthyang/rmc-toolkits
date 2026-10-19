@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     buildLocalRun,
+    configurationSignature,
     detectPlotKind,
     fitTypeByFilename,
     parseRunSettings,
@@ -368,5 +369,21 @@ describe('structure file choice (buildLocalRun)', () => {
         const run = await buildLocalRun([withPath('a-00.log', 'h\nh\n1 2 3\n'), withPath('a.rmc6f', '')]);
         expect(run.structureFile).toBeNull();
         expect(run.structureError).toBe('No usable .rmc6f file: a.rmc6f (empty (0 bytes))');
+    });
+});
+
+describe('configurationSignature', () => {
+    const file = (name, modified, size, type = 'file') => ({ name, path: `run/${name}`, type, modified, size, plotKind: null });
+
+    it('follows the .rmc6f entries only: a plot or .log that changes leaves it as it was', () => {
+        const before = configurationSignature([file('run.rmc6f', 1, 10), file('run-01.log', 1, 5)]);
+        expect(configurationSignature([file('run.rmc6f', 1, 10), file('run-01.log', 2, 9), file('run_FQ1.csv', 2, 3)]))
+            .toBe(before);
+        expect(configurationSignature([file('run.rmc6f', 2, 11), file('run-01.log', 1, 5)])).not.toBe(before);
+        // Order-free, any case of the extension, folders ignored, nothing for no listing.
+        expect(configurationSignature([file('run-01.log', 1, 5), file('RUN.RMC6F', 1, 10)]))
+            .toBe(configurationSignature([file('RUN.RMC6F', 1, 10)]));
+        expect(configurationSignature([file('old.rmc6f', 1, 1, 'directory')])).toBe('');
+        expect(configurationSignature(undefined)).toBe('');
     });
 });

@@ -4,18 +4,19 @@
 // Every run, side by side: one table per split, a row per case, a column per
 // (model, arm), and the summary metrics. Nothing is filtered: a run that
 // failed, stopped at the spend cap or wrote no verdict counts as score 0 and
-// is listed; the appendix names every run record used. Before it, what a
-// comparison across models also compares: the columns' run policies
-// (runPolicy.js) side by side, and what no policy sets.
+// is listed; the appendix names every run record used. Under each split's
+// tables, the comparison beside the case score (comparison.js, plan item 1.6
+// part i): the score's parts (the feature-only score among them), every
+// component against A+, and every disagreement with the planted truth.
+// Before the appendix, what a comparison across models also compares: the
+// columns' run policies (runPolicy.js) side by side, and what no policy sets.
 
 import { reproducibility } from './scoring';
 import { finalRoundSummary, limitsSummary, SERVER_LABELS, windowSummary } from './runPolicy';
+import { columnOf, renderComparison } from './comparison';
 
 const mean = (values) => (values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null);
 const fmt = (value, digits = 2) => (value == null ? '–' : value.toFixed(digits));
-
-// A run given the PCA table (run.js live --pca-table, a dev check) is its own column.
-const columnOf = (record) => `${record.model?.name ?? 'no model'} · ${record.arm}${record.view?.pcaSites ? ' + PCA table' : ''}`;
 
 /** Aggregates run records (live arms and the model-free arms alike). */
 export const aggregate = (records) => {
@@ -170,6 +171,7 @@ export const renderReport = (records, { title = 'Copilot validation runs' } = {}
                 + `${count('earned')} / ${count('over')} / ${count('under')} / ${count('held')} |`);
         });
         lines.push('');
+        renderComparison(records.filter((record) => record.split === split)).forEach((line) => lines.push(line));
     }
     renderPolicyComparison(records).forEach((line) => lines.push(line));
     lines.push('## Every run', '');

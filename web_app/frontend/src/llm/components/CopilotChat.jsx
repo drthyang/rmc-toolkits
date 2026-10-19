@@ -37,6 +37,9 @@ import './CopilotChat.css';
 // run data itself are built here. Each question is one turn of the turn
 // module (copilot/turn.js, through useCopilot.js), which adds ask_user and
 // read_skill (from the host's `skills`) and builds the prompt and the checks.
+// `runKey` names the open run (another one restarts the conversation) and
+// `configKey` its configuration (a new one, from a Live Data save, ends the
+// earlier answers with a divider and keeps them out of the model's memory).
 
 const hasMatchMedia = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function';
 const viewportWidth = () => (typeof window !== 'undefined' ? window.innerWidth : 1440);
@@ -150,8 +153,8 @@ const ResizeHandle = ({ mode, width, sheet, dockRef, onResize, onCommit, onReset
 };
 
 const CopilotPanel = ({
-    id, hidden, mode, onCollapse, run, hostTools, pages, onOpenPage, runKey, cards, focus, onTurnEnd, onBusyChange,
-    onQuestion, skills
+    id, hidden, mode, onCollapse, run, hostTools, pages, onOpenPage, runKey, configKey, cards, focus, onTurnEnd,
+    onBusyChange, onQuestion, skills
 }) => {
     const assistant = useAssistant({ ...run, enabled: true });
     const hasRun = Boolean((run.plotFiles && run.plotFiles.length) || run.structure);
@@ -232,6 +235,7 @@ const CopilotPanel = ({
                             pages={pages}
                             onOpenPage={onOpenPage}
                             runKey={runKey}
+                            configKey={configKey}
                             cards={cards}
                             focus={focus}
                             onTurnEnd={onTurnEnd}
@@ -250,7 +254,7 @@ const CopilotPanel = ({
 
 const CopilotChat = ({
     runName, plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites, liveData,
-    tools = [], pages = {}, onOpenPage, runKey = null, onOpenChange, defaultOpen = false,
+    tools = [], pages = {}, onOpenPage, runKey = null, configKey = null, onOpenChange, defaultOpen = false,
     cards = null, onMarks = null, onLayoutChange = null, className = '', storageKey = DOCK_STORAGE_KEY,
     skills = null
 }) => {
@@ -454,6 +458,7 @@ const CopilotChat = ({
                     pages={pages}
                     onOpenPage={onOpenPage}
                     runKey={runKey}
+                    configKey={configKey}
                     cards={cards}
                     focus={focus}
                     onTurnEnd={onTurnEnd}

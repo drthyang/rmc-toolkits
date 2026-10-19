@@ -1444,6 +1444,29 @@
     color: var(--warning, #b45309);
 }
 
+/* A new configuration of the run was saved (Live Data): the answers above
+   were about the previous one. A rule either side of one centred line. */
+.llm-config-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0;
+    font-size: 0.74rem;
+    color: var(--subtle);
+    text-align: center;
+}
+
+.llm-config-divider::before,
+.llm-config-divider::after {
+    content: '';
+    flex: 1 1 1rem;
+    border-top: 1px solid var(--border);
+}
+
+.llm-config-divider > span {
+    flex: 0 1 auto;
+}
+
 .llm-composer-foot {
     display: flex;
     align-items: center;
