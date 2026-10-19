@@ -17,6 +17,7 @@ import { buildCase, DEV_CASES } from '../cases';
 import { CONTEXT_SECTIONS, runLiveCase } from '../harness';
 import { loadSkills } from '../run';
 import { caseFiles, loadRun, RUN_FILES, RUN_NAME } from '../runFolder';
+import { pinRecord } from './recordFiles';
 
 const ITEM = DEV_CASES.find((item) => item.id === 'dev-fit-unconverged');
 const MODEL = { name: 'scripted', label: 'scripted test model', model: 'scripted', baseUrl: 'none', temperature: 0 };
@@ -165,5 +166,6 @@ describe('dev-fit-unconverged: a run with fit data (plan item 4.6)', () => {
         // The score is the structure's: right, whatever the answer says of the fit.
         expect(record.score.score).toBe(1);
         expect(record.truth.fit).toMatchObject({ convergence: 'improving', chi_column: 'X_ray_(R)1', misfit: { dataset: 'xpdf', r_A: 2.55 } });
+        await pinRecord('fitCase.in-the-harness', record);
     }, 60000);
 });

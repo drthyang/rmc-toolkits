@@ -18,6 +18,7 @@ import { answerNumbers, traceNumbers } from '../provenance';
 import { createSpendTracker, memoryLedger, meteredModel } from '../spend';
 import { loadSkills } from '../run';
 import { resolveModel } from '../models';
+import { pinRecord } from './recordFiles';
 
 // The provider providerModel sends through (src/llm/provider/contextGuard.js):
 // records each call and streams the next scripted reply. No server is contacted.
@@ -89,6 +90,7 @@ describe('the live harness, scripted model', () => {
 
         const report = renderReport([record]);
         expect(report).toMatch(/\| dev-thermal-null \| 0\.\d+ ± 0\.00 \(n=1\) 1 over-claim \|/);
+        await pinRecord('harness.over-claim', record);
     });
 
     it('arm C offers no skills; a window marked as the user\'s without asking is an unsafe action', async () => {
@@ -107,6 +109,7 @@ describe('the live harness, scripted model', () => {
         // The planted off-centring was missed: no feature, nothing spurious.
         expect(record.score.features[0].found).toBe(false);
         expect(record.score.spurious).toEqual([]);
+        await pinRecord('harness.unsafe-window', record);
     });
 
     it('the cluster and coordination checks catch the review\'s misreadings on the dev cases (review L5)', async () => {
@@ -120,6 +123,7 @@ describe('the live harness, scripted model', () => {
         });
         expect(rigid.final.audit.map((finding) => finding.rule)).toEqual(['cluster']);
         expect(rigid.audit_eval.caught).toEqual(['spurious rigid_cluster (Mo)']);
+        await pinRecord('harness.cluster-rigid', rigid);
         // The Jahn–Teller Cu read as four-coordinate: the whole shell holds 6 F.
         const square = await runLiveCase({
             built: built('dev-jahn-teller'), arm: 'C', model: MODEL,
@@ -135,6 +139,7 @@ describe('the live harness, scripted model', () => {
         expect(square.gates.map((gate) => gate.id)).toEqual(['no-order']);
         expect(square.final.audit.map((finding) => finding.rule)).toEqual(['coordination', 'evidence']);
         expect(square.final.outcome.status).toBe('not verified');
+        await pinRecord('harness.coordination-square', square);
     });
 
     it('THY-18: the gate sends a split site called disorder back to the superstructure test, which finds the order', async () => {
@@ -163,6 +168,7 @@ describe('the live harness, scripted model', () => {
         expect(transcript).toMatch(/Numbers by reference: 1 of 1 filled from the analyses/);
         const report = renderReport([record]);
         expect(report).toMatch(/\| scripted · B \| 1 \/ 0 of 1 \| 1 \/ 0 \| 1 \/ 0 \/ 0 \/ 0 \|/);
+        await pinRecord('harness.gate-split-site', record);
     });
 
     it('THY-18: a verdict written by reference is scored on the engine\'s numbers', async () => {
@@ -183,6 +189,7 @@ describe('the live harness, scripted model', () => {
         expect(record.provenance.by_reference.filled).toBe(9);
         // Written by reference, every number in the prose has a source.
         expect(record.provenance.unsourced).toEqual([]);
+        await pinRecord('harness.by-reference', record);
     });
 
     it('a call written as JSON text is run, and its withdrawn text is recorded apart from the reasons', async () => {
@@ -200,6 +207,7 @@ describe('the live harness, scripted model', () => {
         expect(record.steps[0].why.text).toBe('');
         expect(record.score.score).toBe(1);
         expect(renderTranscript(record)).toMatch(/the loop withdrew the text below/);
+        await pinRecord('harness.call-as-text', record);
     });
 
     it('stops at the spend cap with the run recorded', async () => {
@@ -216,6 +224,7 @@ describe('the live harness, scripted model', () => {
         // Refused before it was sent: no request is recorded as sent.
         expect(caught.record.requests).toEqual([]);
         expect(tracker.spent()).toBe(0);
+        await pinRecord('harness.spend-cap', caught.record);
     });
 
     it('charges what a request used and refuses one that could cross the cap', async () => {
@@ -263,6 +272,7 @@ describe('the harness on the turn module: what changed', () => {
         expect(provider.calls[1].apiKey).toBe('test-key');
         expect(JSON.stringify(record)).not.toContain('test-key');
         expect(ledger.load()).toHaveLength(2);
+        await pinRecord('harness.warmer-retry', record);
     });
 
     it('2. a model that refuses tools gets the no-tools prompt, as in the dock', async () => {
@@ -285,6 +295,7 @@ describe('the harness on the turn module: what changed', () => {
         expect(record.requests[1].sent.messages[0]).toEqual({ role: 'system', content: copilotSystemPrompt({ toolsEnabled: false, method: 'off' }) });
         expect(record.requests[1].sent.messages[0].content).not.toBe(COPILOT_PROMPT_NO_TOOLS);
         expect(record.requests[0].sent.messages[0].content).not.toBe(record.requests[1].sent.messages[0].content);
+        await pinRecord('harness.no-tools', record);
     });
 
     it('3. provenance is traced against the context as the model read it, not the whole context', async () => {
@@ -310,6 +321,7 @@ describe('the harness on the turn module: what changed', () => {
         const whole = buildRunContext((await loadRun(built('dev-offcentre'), { pcaSites })).props);
         expect(whole.pca_displacements.sites.map((site) => site.U_iso_A2)).toContain(0.0773);
         expect(sources['0.0773']).toBeNull();
+        await pinRecord('harness.provenance-shown', record);
     });
 
     // Where the two adapters' copies disagreed, the turn keeps one rule; the
@@ -346,6 +358,7 @@ describe('the harness on the turn module: what changed', () => {
         expect(record.error).toEqual({ name: 'AbortError', message: 'Aborted' });
         expect(record.final).toBeNull();
         expect(record.requests).toHaveLength(1);
+        await pinRecord('harness.stopped', record);
     });
 
     it('4. the record keeps every request as it was sent', async () => {
@@ -363,6 +376,7 @@ describe('the harness on the turn module: what changed', () => {
         expect(record.requests[1].sent.messages.at(-1)).toMatchObject({ role: 'tool' });
         expect(record.requests[0].sent).toMatchObject({ toolChoice: 'auto', retry: null });
         expect(record.tools_offered).toEqual(record.requests[0].sent.tools.map((tool) => tool.function.name));
+        await pinRecord('harness.every-request', record);
     });
 });
 

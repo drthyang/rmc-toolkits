@@ -1,0 +1,4 @@
+# The tool messages the model reads: a call that runs
+# echo({ value: 4 }): its result with its ref
+## messages[3] · tool · call_1_0
+{"ref":"r1","checks":[{"level":"ok","text":"fine"}],"data":{"value":4,"list":[1,2,3]}}

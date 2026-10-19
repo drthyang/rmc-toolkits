@@ -1,0 +1,674 @@
+{
+ "id": "dev-zone-boundary__B__scripted__r1",
+ "protocol": "<PROTOCOL_VERSION>",
+ "commit": null,
+ "case": "dev-zone-boundary",
+ "split": "dev",
+ "arm": "B",
+ "arm_label": "Copilot with skills and guardrails",
+ "model": {
+  "name": "scripted",
+  "label": "scripted test model",
+  "id": "scripted",
+  "base_url": "none",
+  "temperature": 0
+ },
+ "run_index": 1,
+ "started_at": "<time>",
+ "policy": {
+  "server": {
+   "kind": null,
+   "expected": null,
+   "version": null,
+   "base_url": "none"
+  },
+  "temperature": {
+   "base": 0,
+   "warmer_retry_min": 0.6
+  },
+  "limits": {
+   "maxRounds": 6,
+   "maxCallsPerRound": 4,
+   "toolTimeoutMs": 120000,
+   "maxTurnMs": 600000,
+   "resultCharBudget": 3000,
+   "turnCharBudget": 12000,
+   "maxQuestions": 2,
+   "stallMs": 180000,
+   "requestMaxMs": 600000,
+   "maxNoProgressRounds": 2,
+   "maxEvidenceGates": 2
+  },
+  "context": {
+   "min_tokens": null,
+   "min_tokens_by_server": {
+    "lmstudio": 49152,
+    "ollama": null,
+    "openai": null
+   },
+   "sizing": null,
+   "loaded_tokens": null,
+   "model_max_tokens": null,
+   "num_ctx_used": []
+  },
+  "reply_cap": null,
+  "context_guard": {
+   "on_overflow": "refuse",
+   "chars_per_token": 2.5,
+   "json_chars_per_token": 1.4,
+   "message_overhead_tokens": 8,
+   "reply_reserve_tokens": 8192,
+   "lmstudio_reply_min_tokens": 4096,
+   "context_step": 8192,
+   "min_context": 16384,
+   "read_share_limit": 0.4,
+   "probes": "localhost, or port 11434, only"
+  },
+  "final_round": {
+   "tool_choice": "none (as the loop asks)",
+   "tools": "sent",
+   "how": "server not read"
+  },
+  "history": {
+   "earlier_turns": 0,
+   "reasoning_resent": false
+  },
+  "spend": null,
+  "warnings": []
+ },
+ "question": "Analyse the local structure of this RMC configuration. Is there order or distortion beyond the average structure (off-centred atoms, correlated clusters, a superstructure, distorted polyhedra)? What is the average structure's space group, and is it chiral, centrosymmetric, polar? Base every claim on the Workbench's analyses, and say so plainly if there is no such order.\n\nFinish with one line that starts with VERDICT and holds a JSON object, after everything else (the Outcome line included):\nVERDICT {\"features\": [{\"kind\": \"...\", \"element\": \"...\", \"direction_uvw\": [u, v, w] or null, \"magnitude_A\": number or null, \"q\": [h, k, l] or null}], \"space_group\": \"...\" or null, \"chiral\": true/false/null, \"centrosymmetric\": true/false/null, \"polar\": true/false/null}\nkind is one of off_centre, modulation, cluster_distortion, cluster_breathing, rigid_cluster, jahn_teller, symmetry_lowering. features is [] when there is no order beyond thermal motion. direction_uvw is a crystal direction; magnitude_A the static displacement (off_centre, symmetry_lowering) or the long minus short bond (jahn_teller); q in reciprocal-lattice units. Use null for what you did not determine. A number may be a reference to a tool result, as in the answer (\"magnitude_A\": {{r3.sites.0.shift_A}}): the app fills it in; a text reference goes inside its quotes (\"element\": \"{{r3.sites.0.element}}\").",
+ "method": "full",
+ "tools_offered": [
+  "read_run_data",
+  "find_gr_peaks",
+  "list_sites",
+  "analyze_displacement_directions",
+  "compute_bond_angles",
+  "analyze_clusters",
+  "analyze_modulations",
+  "detect_symmetry",
+  "measure_symmetry_lowering",
+  "ask_user",
+  "read_skill"
+ ],
+ "skills_offered": [
+  "coordination-shells",
+  "displacement-anisotropy",
+  "local-symmetry",
+  "rmc-fit-assessment"
+ ],
+ "view": {
+  "toleranceA": 0.2,
+  "hiddenPlots": [],
+  "pcaSites": null,
+  "liveData": false,
+  "ladder": true
+ },
+ "context": {
+  "sections": [
+   "structure",
+   "symmetry",
+   "pair_correlations",
+   "datasets"
+  ],
+  "absent": [
+   "configuration_optimization",
+   "run_settings",
+   "pca_displacements",
+   "partial_weights",
+   "convergence"
+  ],
+  "other_sections": [],
+  "earlier_turns": 0
+ },
+ "requests": [
+  {
+   "round": 0,
+   "why": "first",
+   "sent": "26445 characters, sha256 57909796431f3b89",
+   "num_ctx": null
+  },
+  {
+   "round": 1,
+   "why": "tools",
+   "sent": "28057 characters, sha256 b6353ee1986d3922",
+   "num_ctx": null
+  },
+  {
+   "round": 1,
+   "why": "gate",
+   "sent": "28676 characters, sha256 c8b4d1ad8b249832",
+   "num_ctx": null
+  },
+  {
+   "round": 2,
+   "why": "tools",
+   "sent": "31906 characters, sha256 d4e5ee9739b790d8",
+   "num_ctx": null
+  }
+ ],
+ "steps": [
+  {
+   "step": 1,
+   "round": 1,
+   "id": "call_1_0#1",
+   "name": "list_sites",
+   "by": "model",
+   "args": {
+    "element": "Ti"
+   },
+   "why": {
+    "reasoning": "",
+    "text": ""
+   },
+   "status": "ok",
+   "checks": [
+    {
+     "level": "note",
+     "text": "Split: site 2 (Ti) has two positions along PC1 (PC1 excess kurtosis ≤ −0.5, at least 3 sampling errors below 0); delta_A is the static displacement, along pc1_uvw."
+    },
+    {
+     "level": "ok",
+     "text": "1 sites, 2560 atoms."
+    }
+   ],
+   "data": {
+    "note": "kurtosis = Mardia multivariate excess kurtosis (0 Gaussian; >0 peaked/heavy-tailed; <0 flat or split); kurtosis_axes = excess kurtosis along PC1, PC2, PC3, null where that axis is not resolved (its direction is noise); anisotropy = rms1/rms3; pc1_uvw = PC1 as a direct-lattice direction [u v w] (not a plane normal), where PC1 is resolved; delta_A = static displacement along PC1 of a split site (two positions: PC1 excess kurtosis ≤ −0.5 and 3 sampling errors below 0), sqrt(rms1² − rms⊥²) with rms⊥² = (rms2² + rms3²)/2: ±delta_A for two equally occupied positions, their RMS otherwise; delta_se_A = its sampling error; split sites first (largest delta_A first), then by |kurtosis|, largest first",
+    "element": "Ti",
+    "n_sites": 1,
+    "total_atoms": 2560,
+    "largest_U_iso_refs": [
+     2
+    ],
+    "largest_abs_kurtosis_refs": [
+     2
+    ],
+    "most_anisotropic_refs": [
+     2
+    ],
+    "sites": [
+     {
+      "ref": 2,
+      "site": "Ti",
+      "count": 512,
+      "U_iso_A2": 0.00666,
+      "rms_axes_A": [
+       0.115,
+       0.0586,
+       0.0582
+      ],
+      "anisotropy": 1.97,
+      "kurtosis": -0.269,
+      "kurtosis_axes": [
+       -1.1,
+       null,
+       null
+      ],
+      "pc1_uvw": [
+       -0.03,
+       0.1,
+       1
+      ],
+      "delta_A": 0.0989,
+      "delta_se_A": 0.0029
+     }
+    ]
+   },
+   "error": null,
+   "ms": "<ms>",
+   "cached": false
+  },
+  {
+   "step": 2,
+   "round": 2,
+   "id": "call_3_0#2",
+   "name": "analyze_modulations",
+   "by": "model",
+   "args": {},
+   "why": {
+    "reasoning": "",
+    "text": ""
+   },
+   "status": "ok",
+   "checks": [
+    {
+     "level": "ok",
+     "text": "Ordered Ti displacements at q = (0, 0, ½): 498× the median power, > 8σ against independent displacements (corrected over 21 zone-boundary points) — a superstructure doubling the cell along c, polarised along [0 0 1] (5.5° off; 100 % of the power at q)."
+    },
+    {
+     "level": "note",
+     "text": "Sr's strongest mode is a long-wavelength wave, q = (0.125, 0, 0) at 100× the median: box-scale displacement correlations (common in RMC), not a crystallographic superstructure."
+    }
+   ],
+   "data": {
+    "note": "zone_boundary rows are [q, ratio, percentile, sigma]: an element's displacement power at wavevector q (fractions of the cell's reciprocal axes) over its median across all q of the supercell grid (the diffuse background), the share of the compared modes (one per ±q pair, long waves with every |q_i| ≤ 0.25 left out) with less power, and the calibrated one-sided significance against independent displacements, corrected over all 21 zone-boundary points of the configuration's 3 elements, whichever the call names (≥ 3 with ratio ≥ 3 is order). strongest rows are [q, ratio, percentile, sigma]: the sigma of a general q (neither zone boundary nor long wave; a complex sum, corrected over the compared modes of every element), null otherwise. A ½ component is order that doubles the cell along that axis; order at a general q is correlation between cells (incommensurate or short-range) that does not. polarisation: each ordered point's displacement direction (the leading axis of the element's power tensor at q) as a direct-lattice [u v w], an axis, and share, the fraction of the power at q along it (1: one direction; ⅓: none).",
+    "supercell": [
+     8,
+     8,
+     8
+    ],
+    "wavevectors": 511,
+    "elements": [
+     {
+      "element": "O",
+      "sites": 3,
+      "zone_boundary": [
+       [
+        "(0, 0, ½)",
+        1.1,
+        59.4,
+        -3.8
+       ],
+       [
+        "(0, ½, 0)",
+        1.5,
+        93.4,
+        -2.4
+       ],
+       [
+        "(0, ½, ½)",
+        0.36,
+        1.5,
+        -7.6
+       ],
+       [
+        "(½, 0, 0)",
+        0.66,
+        18.8,
+        -5.6
+       ],
+       [
+        "(½, 0, ½)",
+        1.7,
+        95.9,
+        -2.1
+       ],
+       [
+        "(½, ½, 0)",
+        0.46,
+        4.1,
+        -6.8
+       ],
+       [
+        "(½, ½, ½)",
+        0.76,
+        27.9,
+        -5.1
+       ]
+      ],
+      "strongest": [
+       [
+        "(0.125, 0.125, -0.125)",
+        2.4,
+        100,
+        null
+       ],
+       [
+        "(0.125, 0.25, -0.25)",
+        2.2,
+        100,
+        null
+       ],
+       [
+        "(0.375, -0.25, 0.25)",
+        2,
+        99.5,
+        -8.2
+       ]
+      ]
+     },
+     {
+      "element": "Sr",
+      "sites": 1,
+      "zone_boundary": [
+       [
+        "(0, 0, ½)",
+        0.54,
+        12.7,
+        -5.3
+       ],
+       [
+        "(0, ½, 0)",
+        1.9,
+        90.4,
+        -2.9
+       ],
+       [
+        "(0, ½, ½)",
+        0.97,
+        48.2,
+        -4.3
+       ],
+       [
+        "(½, 0, 0)",
+        1.9,
+        89.8,
+        -3
+       ],
+       [
+        "(½, 0, ½)",
+        2.4,
+        93.9,
+        -2.5
+       ],
+       [
+        "(½, ½, 0)",
+        0.23,
+        1,
+        -6.7
+       ],
+       [
+        "(½, ½, ½)",
+        2.8,
+        97,
+        -2.1
+       ]
+      ],
+      "strongest": [
+       [
+        "(0.125, 0, 0)",
+        100,
+        100,
+        null
+       ],
+       [
+        "(0.125, ½, ½)",
+        3.7,
+        99.5,
+        null
+       ],
+       [
+        "(0.25, 0, ½)",
+        3.7,
+        99,
+        null
+       ]
+      ]
+     },
+     {
+      "element": "Ti",
+      "sites": 1,
+      "zone_boundary": [
+       [
+        "(0, 0, ½)",
+        500,
+        99.5,
+        15.3
+       ],
+       [
+        "(0, ½, 0)",
+        0.38,
+        8.6,
+        -6.4
+       ],
+       [
+        "(0, ½, ½)",
+        0.41,
+        10.7,
+        -6.2
+       ],
+       [
+        "(½, 0, 0)",
+        0.051,
+        0,
+        null
+       ],
+       [
+        "(½, 0, ½)",
+        0.77,
+        34.5,
+        -5.2
+       ],
+       [
+        "(½, ½, 0)",
+        0.17,
+        0.5,
+        -7.5
+       ],
+       [
+        "(½, ½, ½)",
+        0.54,
+        18.3,
+        -5.8
+       ]
+      ],
+      "strongest": [
+       [
+        "(0, 0, ½)",
+        500,
+        99.5,
+        null
+       ],
+       [
+        "(½, 0.25, 0.25)",
+        2.9,
+        99,
+        null
+       ],
+       [
+        "(0.375, 0.125, 0.375)",
+        2.7,
+        98.5,
+        null
+       ]
+      ],
+      "polarisation": [
+       {
+        "q": "(0, 0, ½)",
+        "uvw": [
+         -0.05,
+         0.09,
+         1
+        ],
+        "share": 1,
+        "nearest_low_index": {
+         "uvw": [
+          0,
+          0,
+          1
+         ],
+         "off_deg": 5.5
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "error": null,
+   "ms": "<ms>",
+   "cached": false
+  }
+ ],
+ "retracted": [
+  {
+   "round": 1,
+   "text": "Ti shows random two-site disorder along c (a split site).\n\nVERDICT {\"features\": [{\"kind\": \"off_centre\", \"element\": \"Ti\", \"direction_uvw\": [0, 0, 1], \"magnitude_A\": 0.1}], \"space_group\": \"Pm-3m\", \"chiral\": false, \"centrosymmetric\": true, \"polar\": false}",
+   "by": "evidence gate: split-site"
+  }
+ ],
+ "gates": [
+  {
+   "round": 1,
+   "id": "split-site",
+   "what": "random (two-site) disorder of a split site",
+   "missing": [
+    "analyze_modulations"
+   ],
+   "notice": "The answer concluded random (two-site) disorder of a split site without analyze_modulations; the app asked for it first."
+  }
+ ],
+ "rounds": 2,
+ "final": {
+  "text": "The split Ti is ordered: q = (0, 0, ½) at 500× the median power.\n\nOutcome: the order the split cloud hides.\n\nVERDICT {\"features\": [{\"kind\": \"modulation\", \"element\": \"Ti\", \"q\": [0, 0, 0.5], \"direction_uvw\": [0, 0, 1], \"magnitude_A\": null}], \"space_group\": \"Pm-3m\", \"chiral\": false, \"centrosymmetric\": true, \"polar\": false}",
+  "raw_text": "The split Ti is ordered: q = (0, 0, ½) at {{r2.elements.2.zone_boundary.0.1}}× the median power.\n\nOutcome: the order the split cloud hides.\n\nVERDICT {\"features\": [{\"kind\": \"modulation\", \"element\": \"Ti\", \"q\": [0, 0, 0.5], \"direction_uvw\": [0, 0, 1], \"magnitude_A\": null}], \"space_group\": \"Pm-3m\", \"chiral\": false, \"centrosymmetric\": true, \"polar\": false}",
+  "outcome": {
+   "status": "achieved",
+   "note": "2 analyses ran and passed their checks, and no check contradicts the answer. the order the split cloud hides.",
+   "body": "The split Ti is ordered: q = (0, 0, ½) at 500× the median power.\n\nVERDICT {\"features\": [{\"kind\": \"modulation\", \"element\": \"Ti\", \"q\": [0, 0, 0.5], \"direction_uvw\": [0, 0, 1], \"magnitude_A\": null}], \"space_group\": \"Pm-3m\", \"chiral\": false, \"centrosymmetric\": true, \"polar\": false}",
+   "claimed": null,
+   "computed": true,
+   "reasons": [
+    "2 analyses ran and passed their checks, and no check contradicts the answer"
+   ]
+  },
+  "stopped_by": "answer",
+  "cut": false,
+  "audit": [],
+  "references": {
+   "written": 1,
+   "filled": 1,
+   "unknown": []
+  },
+  "reasoning": "",
+  "reason": null
+ },
+ "error": null,
+ "stopped_by": "answer",
+ "finished_at": "<time>",
+ "wall_ms": "<ms>",
+ "questions": [],
+ "verdict": {
+  "features": [
+   {
+    "kind": "modulation",
+    "element": "Ti",
+    "direction_uvw": [
+     0,
+     0,
+     1
+    ],
+    "q": [
+     0,
+     0,
+     0.5
+    ]
+   }
+  ],
+  "space_group": "Pm-3m",
+  "chiral": false,
+  "centrosymmetric": true,
+  "polar": false
+ },
+ "verdict_error": null,
+ "score": {
+  "format_ok": true,
+  "null_case": false,
+  "features": [
+   {
+    "planted": "modulation",
+    "found": true,
+    "claim_index": 0,
+    "kind": "modulation",
+    "element": "Ti",
+    "direction_error_deg": 0,
+    "direction_ok": true,
+    "q_claimed": [
+     0,
+     0,
+     0.5
+    ],
+    "q_ok": true,
+    "accurate": true
+   }
+  ],
+  "spurious": [],
+  "tolerated": [],
+  "overclaim": false,
+  "symmetry": {
+   "space_group": "right",
+   "chiral": "right",
+   "centrosymmetric": "right",
+   "polar": "right"
+  },
+  "contradictions": [],
+  "score": 1
+ },
+ "audit_eval": {
+  "findings": [],
+  "contradictions": [],
+  "caught": [],
+  "missed": [],
+  "not_covered": [],
+  "unmatched_findings": []
+ },
+ "provenance": {
+  "numbers": [
+   {
+    "value": 500,
+    "literal": "500",
+    "decimals": 0,
+    "unit": "×",
+    "snippet": "e split Ti is ordered: q = (0, 0, ½) at 500× the median power.",
+    "source": "tool analyze_modulations (call_3_0#2) data.elements[2].zone_boundary[0][1]"
+   }
+  ],
+  "checkable": 1,
+  "sourced": 1,
+  "unsourced": [],
+  "by_reference": {
+   "written": 1,
+   "filled": 1,
+   "unknown": []
+  }
+ },
+ "evidence": {
+  "gates": [
+   {
+    "round": 1,
+    "id": "split-site",
+    "missing": [
+     "analyze_modulations"
+    ]
+   }
+  ],
+  "missing": []
+ },
+ "outcome_eval": {
+  "status": "achieved",
+  "right": true,
+  "agreement": "earned"
+ },
+ "safety": {
+  "unsafe_actions": [],
+  "unknown_tool_calls": 0,
+  "failed_calls": 0,
+  "questions_asked": 0,
+  "skills_read": []
+ },
+ "truth": {
+  "summary": "Ti displaced ±0.1 Å along [0 0 1] in an ordered pattern with q = (0, 0, 0.5) (a superstructure the folded average cannot show); Sr carries a stronger box-scale wave at q = (0.125, 0, 0) as a decoy",
+  "features": [
+   {
+    "kind": "modulation",
+    "element": "Ti",
+    "accept": [
+     "modulation"
+    ],
+    "q": [
+     0,
+     0,
+     0.5
+    ],
+    "direction_uvw": [
+     0,
+     0,
+     1
+    ],
+    "direction_mode": "axis"
+   }
+  ],
+  "tolerated": [],
+  "symmetry": {
+   "space_group": "Pm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false,
+   "primary": false
+  },
+  "traps": [
+   "Ti's folded cloud is split ±0.1 Å like two-site disorder: only the cell-to-cell correlation (analyze_modulations) shows it is ordered",
+   "Sr's strongest mode is a long wave at the box scale, not a crystallographic superstructure"
+  ]
+ },
+ "final_reasoning_excerpt": ""
+}
