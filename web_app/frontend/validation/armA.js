@@ -8,7 +8,7 @@
 // Detected SG card at 0.2 Å, the PCA Ellipsoid table, the Displacement
 // Directions page on each split site at its own defaults (the page's
 // DIRECTION_DEFAULTS, read from src/directionSettings.js, never copied:
-// since plan item 2.5, protocol 2026-10-19.16, the engine's resolution and
+// since plan item 2.5, protocol 2026-10-19.17, the engine's resolution and
 // the raw histogram's readouts, the settings analyze_displacement_directions
 // reads; until then ν = 10 with the readouts of the 2× smoothed map) and the
 // partial g(r) on the Dashboard. The cluster and superstructure engines have
@@ -249,7 +249,7 @@ export const runArmA = async (copilotRun) => {
  *                   centre explains it); the long axis has no app rule (the
  *                   g(r) is orientation-averaged), so the claim has none.
  *   direction resolution  directionResolved (copilotTools.js, the tool's
- *                   rule; plan item 2.5, protocol 2026-10-19.16): a split
+ *                   rule; plan item 2.5, protocol 2026-10-19.17): a split
  *                   site's direction is the map's significant peak only where
  *                   the peak cell's radius is within LOW_INDEX_CONE_DEG (15°),
  *                   else PC1 -- a cell cannot localise a direction more finely
@@ -257,7 +257,7 @@ export const runArmA = async (copilotRun) => {
  *
  * Arm A's rules (ARM_A_RULES) are the frozen protocol's and stay as they were,
  * apart from the Displacement Directions page's defaults, which are the
- * page's own (plan item 2.5, protocol 2026-10-19.16). A+ reads a split
+ * page's own (plan item 2.5, protocol 2026-10-19.17). A+ reads a split
  * site's direction map through the same reading (directionsOf), which since
  * then is analyze_displacement_directions' own result at its defaults; arm A
  * takes a significant peak whatever its cell's radius, as a user reading the

@@ -1187,7 +1187,7 @@ title; a re-run of the last question confirmed it). The model's numbers for the 
 from the drawn map because the tool lets the engine choose the resolution while the page keeps
 its own (ν = 10, smoothed), as noted under *Show in* in
 [ai-assistant.md Step 17](../../../../docs/algorithms/ai-assistant.md#step-17--the-copilot-tool-loop-analyses-checks-budgets-verdict). Since
-protocol 2026-10-19.16 the page opens at the engine's resolution (Auto) and reads its numbers from
+protocol 2026-10-19.17 the page opens at the engine's resolution (Auto) and reads its numbers from
 the raw histogram, so the page and the tool agree by default.
 
 ## Import boundary and extraction recipe

@@ -147,13 +147,20 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // first_shell.split, its description and its joined-shell note (which no
 // longer quotes the peaks' separation); arm A+ reads a Jahn–Teller claim's
 // magnitude from it;
-// 2026-10-19.16: the Displacement Directions page and the tool at the same
+// 2026-10-19.17: the Displacement Directions page and the tool at the same
 // settings (plan item 2.5) — the page opens at the engine's resolution (Auto)
 // and reads every readout from the raw histogram, so arm A (and A+, through
 // the same reading) reads a split site's direction map at the tiling
 // analyze_displacement_directions reads, from the page's own defaults
-// (src/directionSettings.js); what the model is sent is unchanged.
-export const PROTOCOL_VERSION = '2026-10-19.16';
+// (src/directionSettings.js); and the direction resolution, a measurement
+// limit — the engines give the peak cell's circumscribed radius, the tool
+// gives the peak direction ± that radius and, above 15° (LOW_INDEX_CONE_DEG),
+// says it is not resolved finer and names no low-index family (its
+// description and result change; nothing else the model is sent does), arm
+// A+ takes PC1 over a significant peak whose cell is wider than 15°
+// (directionResolved), arm A reads the page as a user would, and both record
+// the radius; the page's map opens unsmoothed (UI only).
+export const PROTOCOL_VERSION = '2026-10-19.17';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one
 // follows the full method.

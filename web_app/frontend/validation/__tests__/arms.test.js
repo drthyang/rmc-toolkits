@@ -34,7 +34,7 @@ const runBoth = async (item) => {
 // Plan item 4.2 (protocol 2026-10-19.15, A+ reads a joined shell's split): no
 // pin moved; dev-jahn-teller's A+ claim reads long − short 0.321 Å where it
 // read the maxima's 0.31, pinned below.
-// Plan item 2.5 (protocol 2026-10-19.16, the Displacement Directions page at
+// Plan item 2.5 (protocol 2026-10-19.17, the Displacement Directions page at
 // the engine's resolution, its readouts the raw histogram's): one pin moved,
 // dev-jt-off-centre's A and A+ 0.8571 → 0.7857. At its 216 copies Auto is
 // ν = 1, twelve cells with [0 0 1] on a boundary, so the now significant Ag

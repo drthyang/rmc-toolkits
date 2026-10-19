@@ -1,4 +1,4 @@
-### Displacement Directions: the page and the tool at the same settings (plan item 2.5; protocol 2026-10-19.16)
+### Displacement Directions: the page and the tool at the same settings (plan item 2.5; protocol 2026-10-19.17)
 
 - **The page opens at Auto**, the engine's recommended resolution (the finest ν whose cells still
   average at least 12 displacements), which is the tiling `analyze_displacement_directions` reads.
@@ -17,7 +17,7 @@
   readouts from `readout` (`DirectionReadouts`).
 - **Validation:** arm A, and A+ through the same reading, reads a split site's direction map at
   the page's own defaults (`ARM_A_RULES.DIRECTION_SETTINGS` is `DIRECTION_DEFAULTS`); the reading
-  records the ν it read. `PROTOCOL_VERSION` 2026-10-19.16. On the dev set nine A and A+ records
+  records the ν it read. `PROTOCOL_VERSION` 2026-10-19.17. On the dev set nine A and A+ records
   move, every one through that reading, and one judgment case's scores fall in both arms: a
   significant peak on Auto's 12-cell tiling names a direction 31.7° off its cube axis (beyond the
   15° tolerance) where PC1 named it before. The moved records are re-recorded in
