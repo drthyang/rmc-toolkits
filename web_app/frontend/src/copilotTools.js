@@ -1080,10 +1080,11 @@ const noCellDoubling = ({ best, rules }) => {
     let significance = 'significance undefined';
     if (point.because !== 'undefined_statistic') significance = sigma.near ? `${sigma.shown ?? `< ${rules.sigma}`}σ` : sigmaText(point.sigma);
     const bars = [ratio.near ? `${rules.ratio}×` : null, sigma.near ? `${rules.sigma}σ` : null].filter(Boolean);
+    const ratioText = ratio.near && ratio.shown == null ? `< ${rules.ratio}` : ratio.shown;
     return {
         level: 'ok',
         text: 'No order that doubles the cell: no zone-boundary point stands out of the diffuse background '
-            + `(the strongest, ${best.element} at ${qLabel(point.q)}, is ${ratio.shown ?? `< ${rules.ratio}`}× the median, `
+            + `(the strongest, ${best.element} at ${qLabel(point.q)}, is ${ratioText}× the median, `
             + `${significance} after the correction${bars.length ? `: below the ${bars.join(' and ')} bar${bars.length > 1 ? 's' : ''}` : ''}).`
     };
 };

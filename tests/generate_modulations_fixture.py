@@ -14,7 +14,7 @@ matches the Python engine.
 
 Every ratio and significance a verdict decides on sits more than ``MARGIN``
 from its threshold in every case, and every polarisation is well conditioned
-(its two largest eigenvalues more than ``MARGIN`` apart, relatively, and its
+(its two largest eigenvalues more than ``POLARISATION_GAP`` of the trace apart, and its
 sense not decided within ``AXIS_TIE_RTOL`` x 10 of a tie) (:func:`assert_margins`;
 the generator refuses to write otherwise), so the two engines cannot disagree
 on a verdict or a direction here. Regenerate from the checkout under test
@@ -51,6 +51,10 @@ OUT = ROOT / "web_app" / "frontend" / "src" / "__tests__" / "fixtures" / "modula
 
 #: The least distance between a decided ratio or sigma and its threshold.
 MARGIN = 1e-6
+#: The least gap between a polarisation's two largest eigenvalues, relative to
+#: the trace: a rounding change of 1e-15 then moves its eigenvector by at most
+#: ~1e-11, far inside the 1e-9 the engines and NumPy releases are held to.
+POLARISATION_GAP = 1e-4
 
 CASES = [
     ("doubled (4, 4, 4)", lambda: cluster_config_text("doubled", supercell=(4, 4, 4)), [None, "Nb"]),
@@ -75,8 +79,8 @@ CASES = [
 def _polarisation_margins(sites: SiteDisplacements, result: dict, where: str) -> None:
     """Every polarisation is well conditioned: the leading eigenvalue of the
     engine's own tensor at q (element_spectrum) apart from the next by more
-    than MARGIN of the trace, so its eigenvector is defined to far better
-    than the parity tolerance; and its sense decided clear of the tie
+    than POLARISATION_GAP of the trace, so its eigenvector is defined to far
+    better than the parity tolerance; and its sense decided clear of the tie
     tolerance (the two largest |cos| to a, b, c either tie well inside
     AXIS_TIE_RTOL or differ by more than ten times it)."""
     cell = np.asarray(sites.unit_vectors, dtype=float)
@@ -92,7 +96,7 @@ def _polarisation_margins(sites: SiteDisplacements, result: dict, where: str) ->
                 continue
             index = tuple(int(round(value * size)) % size for value, size in zip(point["q"], supercell))
             values = np.linalg.eigvalsh(tensor[index])
-            if (values[-1] - values[-2]) <= MARGIN * values.sum():
+            if (values[-1] - values[-2]) <= POLARISATION_GAP * values.sum():
                 raise AssertionError(f"{where}: {entry['element']} {point['q']} polarisation has no eigenvalue gap ({values!r})")
             magnitude = np.sort(np.abs(cell @ np.asarray(pol["direction"]) / lengths))[::-1]
             gap = 1.0 - magnitude[1] / magnitude[0]

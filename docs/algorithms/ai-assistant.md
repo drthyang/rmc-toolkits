@@ -1900,7 +1900,7 @@ sentence); the no-order sentence then adds "below the 3σ bar" (that 2.98σ poin
 the correction" beside "No order", and its row 3). A value at or above its bar rounds to at or
 above it, as before. `tests/generate_modulations_fixture.py` writes the
 verdicts and polarisations into `modulations_fixture.json` and refuses a case where a ratio or σ
-sits within 10⁻⁶ of its bar, where a polarisation's two largest eigenvalues lie within 10⁻⁶ of
+sits within 10⁻⁶ of its bar, where a polarisation's two largest eigenvalues lie within 10⁻⁴ of
 the trace, or where its sense is decided near the tie tolerance. Known answers: a planted doubling,
 order under a stronger long wave, order at q = (3/8, 0, 0) on an 8-cell axis (alone, and under a
 stronger long wave at (1/8, 0, 0): both found), independent displacements (nothing), the polarised

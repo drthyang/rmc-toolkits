@@ -96,7 +96,7 @@ AXIS_TIE_RTOL = 1e-9
 # whichever elements the call names: choosing the element to ask about after
 # seeing the data is selective inference, so the family never shrinks with the
 # request (finding F3, 2026-10-19; until then it was the elements of the call,
-# and naming Nb alone took a 2.96 sigma point to 3.3 sigma). The null: for independent
+# and naming one element of three took a 2.98 sigma point to 3.30 sigma). The null: for independent
 # displacements a site's normalised power at a half-integer q (a real Fourier
 # sum) is sum_c w_c chi2_1 with sum w_c = 1, so an element's mean over m sites
 # has at least m degrees of freedom: P >= chi2_m / m is the heaviest tail any
