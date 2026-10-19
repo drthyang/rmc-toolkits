@@ -221,23 +221,27 @@ function App() {
 
   // Static-mode Live Data: re-read the picked folder handle on an interval and rebuild
   // localRun only when files change, mirroring the Flask /api/files poll. Chromium only.
+  // Each tick reads the folder open now (dirHandleRef): none while no folder is open (before
+  // the first pick, or the Demo replaced it), and a read whose folder was replaced
+  // meanwhile is dropped, so a save into a folder no longer open never replaces the run.
   useEffect(() => {
-    if (!fsAccess || !watchFiles || !dirHandleRef.current) return undefined;
+    if (!fsAccess || !watchFiles) return undefined;
     let cancelled = false;
     let inFlight = false;
     const poll = async () => {
-      if (inFlight || cancelled) return;
+      const handle = dirHandleRef.current;
+      if (inFlight || cancelled || !handle) return;
       inFlight = true;
       try {
-        const nextRun = await buildLocalRunFromHandle(dirHandleRef.current);
+        const nextRun = await buildLocalRunFromHandle(handle);
         const signature = fileSignature(nextRun.files);
-        if (!cancelled && signature !== lastSignatureRef.current) {
+        if (!cancelled && dirHandleRef.current === handle && signature !== lastSignatureRef.current) {
           lastSignatureRef.current = signature;
           // Same folder, updated files: keep runId so the dashboard refreshes in place.
           setLocalRun({ ...nextRun, runId: runIdRef.current });
         }
       } catch (error) {
-        if (!cancelled) {
+        if (!cancelled && dirHandleRef.current === handle) {
           setWatchFiles(false);
           setBrowseStatus({
             kind: 'error',
@@ -411,6 +415,9 @@ function App() {
     setBrowseStatus({ kind: 'loading', text: 'Loading demo dataset…' });
     try {
       const nextRun = await loadDemoRun();
+      // The Demo replaces a picked folder: Live Data stops watching that folder.
+      dirHandleRef.current = null;
+      lastSignatureRef.current = '';
       runIdRef.current += 1;
       setLocalRun({ ...nextRun, runId: runIdRef.current });
       setDemoActive(true);
