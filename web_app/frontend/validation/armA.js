@@ -12,7 +12,9 @@
 //
 // Arm A+ (control), the engine sweep: every Copilot engine run exhaustively
 // with its own thresholds and fixed rules joining them, no model. What arm B
-// adds over A+ is what the language model itself adds.
+// adds over A+ is what the language model itself adds. The cluster and
+// modulation engines decide for themselves (their verdicts): A+ calls them
+// directly and maps their answers to claims.
 //
 // Each reading is recorded with the value it rests on, so a misleading
 // result can be traced to the page that misled.
@@ -22,9 +24,7 @@ import { extractPeaks, firstShell } from '../src/llm/context/pairCorrelations';
 import { symmetryNoiseFloor } from '../src/llm/context/runContext';
 import { describeSymmetry } from '../src/symmetryModel';
 import { unitCellVectors } from '../src/pcaCrystalFrame';
-import {
-    AXIS_ENHANCEMENT, CLUSTER_EFFECT, CLUSTER_Z, cartesianToUvw
-} from '../src/copilotTools';
+import { cartesianToUvw } from '../src/copilotTools';
 import { normalizeVerdict } from './verdict';
 
 // What the arms read of a case: the run as the Copilot is handed it
@@ -188,8 +188,41 @@ export const SWEEP_RULES = Object.freeze({
     CLUSTER_SHELL_MAX_A: 3.6
 });
 
-const significantChange = (row) => Number.isFinite(row?.z) && Math.abs(row.z) >= CLUSTER_Z
-    && Number.isFinite(row?.change) && Math.abs(row.change) >= CLUSTER_EFFECT;
+// An engine Finding as the readings record it: "answer (because)".
+const said = (finding) => `${finding.answer} (${finding.because})`;
+const qText = (q) => `(${q.map((value) => round(value, 3) ?? 0).join(', ')})`;
+
+// The modulation engine's verdicts, per element tested, as a reading.
+const modulationReading = (payload) => {
+    const tested = (payload.elements || []).filter((entry) => entry.sites);
+    const named = (name) => tested.filter((entry) => entry.verdict[name].answer === true)
+        .map((entry) => `${entry.element} at ${entry.verdict[name].decidedBy.map(qText).join(', ')}`);
+    return {
+        value: Object.fromEntries(tested.map((entry) => [entry.element, Object.fromEntries(
+            Object.entries(entry.verdict).map(([name, finding]) => [name, said(finding)])
+        )])),
+        reading: [['cellDoubling', 'cell doubling'], ['generalOrder', 'order at a general q'], ['longWave', 'long wave']]
+            .map(([name, label]) => `${label}: ${named(name).join('; ') || 'none'}`).join('; ')
+    };
+};
+
+// The cluster engine's verdict as a reading: its answers, and the two rows they mostly rest on.
+const clusterReading = (payload) => {
+    const { verdict } = payload;
+    const row = (record) => (record ? { obs: round(record.observed), null: round(record.null), z: round(record.z, 2), change: round(record.change, 2) } : null);
+    if (verdict.window.extendedNetwork.because !== 'finite_clusters') {
+        return { value: { window: said(verdict.window.extendedNetwork) }, reading: `no clusters: ${verdict.window.extendedNetwork.because}` };
+    }
+    const names = ['distorted', 'lessDistorted', 'breathing', 'rigid', 'staticDistortion', 'splitMemberSites', 'trigonalLean', 'favouredAxes'];
+    return {
+        value: {
+            ...Object.fromEntries(names.map((name) => [name, said(verdict[name])])),
+            ladder_width: row(verdict.lessDistorted.evidence[0]),
+            breathing_sd: row(verdict.breathing.evidence[0])
+        },
+        reading: names.map((name) => `${name} ${said(verdict[name])}`).join('; ')
+    };
+};
 
 /** Arm A+: every engine, its own thresholds, fixed joining rules; no model. `copilotRun` as in runArmA. */
 export const runArmSweep = async (copilotRun) => {
@@ -207,12 +240,16 @@ export const runArmSweep = async (copilotRun) => {
     const { payload: sites, found } = await splitSites(run, readings);
     const features = [];
 
-    // Superstructure: the modulation tool's own rules, for an ordered
-    // zone-boundary point and (batch 1, review L4) a general wavevector.
-    const modulations = await tools.analyze_modulations.run({});
-    readings.push({ page: 'analyze_modulations', what: 'zone-boundary points and general modes', value: null, reading: modulations.checks.map((c) => c.text).join(' ') });
+    // Superstructure: the modulation engine's verdict, a cell doubling (an
+    // ordered zone-boundary point) or (batch 1, review L4) order at a general
+    // wavevector, each a modulation claim at the q that decided it.
+    const modulations = await run.engine('modulations', {});
+    readings.push({ page: 'analyze_modulations', what: 'zone-boundary points and general modes (engine verdict)', ...modulationReading(modulations) });
+    const tested = (modulations.elements || []).filter((entry) => entry.sites);
+    const orderedAt = (name) => tested.filter((entry) => entry.verdict[name].answer === true)
+        .map((entry) => ({ element: entry.element, q: entry.verdict[name].decidedBy[0] }));
     const modulated = new Set();
-    for (const { element, q } of [...modulations.facts.modulation.ordered, ...(modulations.facts.modulation.general || [])]) {
+    for (const { element, q } of [...orderedAt('cellDoubling'), ...orderedAt('generalOrder')]) {
         if (modulated.has(element)) continue;
         modulated.add(element);
         // Polarisation: PC1 of the element's most prolate site.
@@ -245,7 +282,12 @@ export const runArmSweep = async (copilotRun) => {
         }
     }
 
-    // Clusters: every element whose own first shell is short and closed.
+    // Clusters: every element whose own first shell is short and closed, read
+    // by the cluster engine's verdict: distorted (the edge spread above the
+    // shape null, or a pattern: an axis family, a trigonal lean), breathing,
+    // rigid (never with split member sites, where the null mixes the sites'
+    // static choices).
+    const CLUSTER_CLAIMS = [['distorted', 'cluster_distortion'], ['breathing', 'cluster_breathing'], ['rigid', 'rigid_cluster']];
     const partials = run.plotFiles.find((file) => file.plotKind === 'pdf_partials');
     for (const series of partials?.plotData?.series || []) {
         const match = /^([A-Z][a-z]?)\s*-\s*([A-Z][a-z]?)$/.exec((series.label || '').trim());
@@ -254,33 +296,11 @@ export const runArmSweep = async (copilotRun) => {
         if (!shell || shell.boundaryR == null || shell.peakR > SWEEP_RULES.CLUSTER_SHELL_MAX_A) continue;
         const element = match[1];
         const window = [Number(shell.onsetR.toFixed(2)), Number(shell.boundaryR.toFixed(2))];
-        const result = await tools.analyze_clusters.run({ element, r_min: window[0], r_max: window[1] });
-        const local = result.data.local;
-        readings.push({
-            page: 'analyze_clusters', what: `${element} clusters in ${window[0]}–${window[1]} Å`,
-            value: local ? { ladder_width: local.ladder_width_A, breathing_sd: local.breathing_sd_A } : null,
-            reading: result.checks.map((c) => c.text).join(' ')
+        const result = await run.engine('clusters', { element, rMin: window[0], rMax: window[1] });
+        readings.push({ page: 'analyze_clusters', what: `${element} clusters in ${window[0]}–${window[1]} Å (engine verdict)`, ...clusterReading(result) });
+        CLUSTER_CLAIMS.forEach(([finding, kind]) => {
+            if (result.verdict[finding].answer === true) features.push({ kind, element });
         });
-        if (!local) continue;
-        const width = local.ladder_width_A;
-        const breathing = local.breathing_sd_A;
-        const kinds = new Set();
-        const breathes = significantChange(breathing) && breathing.change > 0;
-        // "Less than independent atoms" means rigid only for unimodal sites:
-        // for split sites the null mixes static choices, and a collective
-        // breathing alone lowers the shape spread.
-        const rigidReadable = !found.has(element) && !breathes;
-        if (significantChange(width)) {
-            if (width.change > 0) kinds.add('cluster_distortion');
-            else if (rigidReadable) kinds.add('rigid_cluster');
-        }
-        if (breathes) kinds.add('cluster_breathing');
-        else if (significantChange(breathing) && rigidReadable) kinds.add('rigid_cluster');
-        // An axis family the clusters favour is a shape distortion too.
-        Object.values({ ...(local.long_axis_within_15deg || {}), ...(local.short_axis_within_15deg || {}) }).forEach((entry) => {
-            if (entry.z >= CLUSTER_Z && entry.null > 0 && entry.obs / entry.null >= AXIS_ENHANCEMENT) kinds.add('cluster_distortion');
-        });
-        kinds.forEach((kind) => features.push({ kind, element }));
     }
     return { arm: 'A+', readings, verdict: normalizeVerdict({ features, ...symmetry.verdict }) };
 };
