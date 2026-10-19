@@ -291,7 +291,9 @@ harness, so each record states it:
   analysis budget used: `tool_choice` 'none') or `no_tools` (the retry of a model that refuses
   tools); `sent` is the request as the port prepared it (`providerModel`: base URL, model id,
   temperature, messages, tools, tool choice; never the API key). A request the spend cap refused
-  was never sent and is not there.
+  was never sent and is not there. One the context guard refuses (it would not fit the model's
+  window) is there, followed by the run's `error`: the guard decides as the request goes out, not
+  when it is prepared (the model-port PR, candidate 3, moves that decision into `prepare`).
 
 The transcript prints both under its header. **The PCA-table option** (`run.js live --pca-table`,
 dev set only; `runLiveCase({ pcaTable: true })`) gives each run the PCA table from its own engine,
