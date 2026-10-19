@@ -680,6 +680,8 @@ not approved): `compute_bond_angles` refuses on the CN-margin reading, the Workb
 window the Workbench did not question is not refused and a whole shell never is; the 10 slightly
 cut windows would then run (their CN within 15 % of the shell's), and the 4 sub-shell first peaks be
 refused unless the user chose them — which the Workbench's question already asks. The user decides.
+*(Approved by the user and implemented on 2026-10-19, with exactly those 15 changes: protocol
+2026-10-19.18 below, `validation/findings/decisions/2026-10-19-shell-cut-rule.json`.)*
 
 **Protocol 2026-10-19.9 (plan item 1.6, part ii: the judgment subset).** Five dev cases join the dev
 set ([the judgment subset](#the-judgment-subset-plan-item-16-part-ii)). The question, the scoring,
@@ -886,6 +888,46 @@ family is still unnamed). Every arm A and D record, every other A+ record and ev
 identical. The record is re-recorded in `arm-a-dev.json`; the others stay as recorded. The test
 set was not run. Approved by the manager on the user's delegation, 2026-10-19
 (`validation/findings/decisions/2026-10-19-jt-split.json`).
+
+**Protocol 2026-10-19.18 (one cut rule: `compute_bond_angles` refuses on the CN margin).** Protocol
+2026-10-19.8 left two readings of a window that cuts a shell, the Workbench asking on the CN margin
+and the tool refusing on the coordination counts, with a recommendation for the user (below that
+entry). The user approved it: one rule now decides, the shell module's `windowCut`
+([ai-assistant.md, Step 9](ai-assistant.md#step-9--assembling-contextpair_correlations)). A window
+that meets its first shell is cut when it holds fewer partner atoms than the whole shell by at least
+max(0.5, 15 % of its CN), whatever its counts; the counts (more than half unbonded, under 60 % with
+the modal count) decide only where the run reads no shell to compare: no partials file, no closed
+shell for the pair, no density, or a window apart from the first shell (the module reads first
+shells only). The Workbench asks on it and the tool refuses on it, unless `window_confirmed`. What
+changes for every arm:
+- **What the tool refuses.** `run.js shell-cuts` (now the Workbench's question and the tool's own
+  refusal on every natural window, beside the counts rule): on the record's 149 windows (the ten
+  dev cases it read and the Demo) the two agree on all 149 and 15 change verdict, as the readings
+  predicted — 11 no longer refused (dev-offcentre's whole Nb–Nb shell, and ten windows with the top
+  0.2 Å early, each within 15 % of its shell's CN), 4 refused now (the first peaks of the Demo's
+  Ta–Se and Se–Se, dev-jahn-teller's four short Cu–F and dev-offcentre's one short Nb–O). With the
+  judgment subset the dev and Demo windows number 227: 16 refused, the Workbench asking on the same
+  16, 22 changed (16 no longer refused, 6 refused now).
+- **What the model reads.** The refusal names the CN shortfall by path ("it holds 3.75 Se per Ta
+  (shell_ab.cn_in_window) of the shell's 6 (shell_ab.cn, in shell_ab.window_A)…") instead of the
+  share of central atoms; every result adds the shell reading (`shell_ab`, and `shell_bc` for a B–C
+  window of its own) and the counts' `modal`, `modal_share` and `unbonded_share`, as information:
+  no note says a count spread, since under a passing margin it was a whole shell running into the
+  next or a window within 15 % of its shell's CN. The model-visible snapshots move in the five
+  `compute_bond_angles` tool results (+197 characters of content for a whole shell, +248 for the
+  refused spot-check window) and four Workbench tool messages; the tool's description and schema,
+  the tool lists and the budget pins are unchanged. The scripted runs' record files move only in
+  `harness.unsafe-window` (its step's data and the two later requests' lengths and hashes).
+- **`facts.coordination.whole_shell`** of `compute_bond_angles` is the window's CN within the CN
+  margin of the shell's, so a window apart from the first shell, or one holding more than it by
+  the margin, is no whole-shell count for the coordination check.
+- **The skills** still state the counts rule (coordination-shells SKILL.md lines 61, 78 and 79):
+  the skill lint binds those numbers to the CN margin and holds them on its allow-list with both
+  sides until the skill fact-sync PR.
+
+**Arms A, A+ and D on dev** (`arm-a --split dev`, before and after): none of the 45 records moves
+(A+ reads no bond-angle window); `arm-a-dev.json` stays as recorded. The test set was not run.
+Approved by the user, 2026-10-19 (`validation/findings/decisions/2026-10-19-shell-cut-rule.json`).
 
 ### The report beside the case score (plan item 1.6, part i)
 
