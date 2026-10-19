@@ -87,8 +87,14 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // 2026-10-19.7: the model port — an Ollama run's final request carries no
 // tools (tool_choice 'none' enforced; the native API has none), each request
 // as sent keeps the context guard's plan, and a request the guard refuses is
-// not recorded as sent).
-export const PROTOCOL_VERSION = '2026-10-19.7';
+// not recorded as sent;
+// 2026-10-19.8: one shell reading per pair, per run (src/llm/context/
+// shells.js) — the first peak alone ends at the minimum between the first
+// two resolved peaks, no longer r ± FWHM; the context's pair_correlations and
+// find_gr_peaks read peaks below 8 Å and integrate each CN over exactly the
+// window they quote; find_gr_peaks' first_peak_window_A leaves for
+// first_shell.first_peak_only, and its shell no longer depends on r_max).
+export const PROTOCOL_VERSION = '2026-10-19.8';
 
 export const ARMS = Object.freeze({
     B: { skills: true, label: 'Copilot with skills and guardrails' },
