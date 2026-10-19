@@ -11,10 +11,9 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { plotDataFromText, structureFromRmc6f } from '../browserData';
 import { buildCopilotTools } from '../copilotTools';
-import { runCopilotTurn } from '../llm/copilot/agentLoop';
 import { auditAnswer } from '../llm/copilot/answerAudit';
-import { buildEvidenceGate } from '../llm/copilot/evidence';
 import { buildRunTools } from '../llm/copilot/runTools';
+import { runTurn } from '../llm/copilot/turn';
 import { handlePcaMessage } from '../workers/pcaKdeWorker';
 
 const read = (name) => readFileSync(new URL(`../../public/demo/${name}`, import.meta.url), 'utf8');
@@ -49,14 +48,14 @@ const scriptedModel = (replies) => {
     return { callModel, requests };
 };
 
-const replay = async (replies, { auditContext = null } = {}) => {
+// One question through the turn module (llm/copilot/turn.js), as the app runs
+// it, on the run props `run` (by default the χ² history only): the turn builds
+// the context, the evidence gate (on, THY-18) and the answer checks, whose
+// context facts (the watchdog's verdict) come from the run.
+const replay = async (replies, { run = { rValueFile } } = {}) => {
     const { callModel, requests } = scriptedModel([...replies]);
     const events = [];
-    for await (const event of runCopilotTurn({
-        model: callModel, messages: [{ role: 'system', content: 'S' }, { role: 'user', content: 'Q' }], tools, auditContext,
-        // The evidence gate is on, as in the app (THY-18).
-        evidence: buildEvidenceGate({ offered: tools.map((tool) => tool.name) })
-    })) events.push(event);
+    for await (const event of runTurn({ question: 'Q', run, model: callModel, tools })) events.push(event);
     const steps = events.filter((event) => event.type === 'tool_end');
     const toolMessages = requests.at(-1).filter((message) => message.role === 'tool').map((message) => JSON.parse(message.content));
     return { done: events.at(-1), steps, toolMessages };
@@ -79,7 +78,8 @@ describe('rmc-fit-assessment', () => {
         const wrong = { text: 'The run has converged — the χ² history has reached a plateau.\nOutcome: achieved — flat history.' };
         const { done } = await replay([ask, wrong]);
         expect(done.audit.map((finding) => finding.rule)).toEqual(['convergence']);
-        const fromContext = await replay([wrong], { auditContext: { convergence: 'improving', groups: [] } });
+        // No analysis: the run's context (the watchdog says improving) is the check.
+        const fromContext = await replay([wrong]);
         expect(fromContext.done.audit.map((finding) => finding.rule)).toEqual(['convergence']);
     });
 });
