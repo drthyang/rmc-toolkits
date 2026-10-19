@@ -3,17 +3,19 @@
 
 // The held-out test set stays held out: its cases are pinned (a change to
 // them, or to the generators they use, fails here until the pin is changed
-// in review), they share no id with the dev set, no tool, skill or app
-// source names them, the CLI runs them only on purpose from committed code,
-// and a supervisor finding on them cannot propose tuning.
+// in review), they share no id with the dev set, no tool, skill, app source
+// or doc names them or their materials, magnitudes and directions (the
+// holdout scan, holdoutScan.js), the CLI runs them only on purpose from
+// committed code, and a supervisor finding on them cannot propose tuning.
 
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildCase, DEV_CASES, TEST_CASES } from '../cases';
 import { parseFindings, validateFinding } from '../findings';
 import { guardSplit } from '../run';
+import { describeHit, holdoutTokens, readText, scanText } from './holdoutScan';
 
 const FRONTEND = resolve(__dirname, '../..');
 const REPO = resolve(FRONTEND, '../..');
@@ -48,23 +50,113 @@ describe('the dev / test split', () => {
         expect(hash.digest('hex')).toBe(TEST_SET_SHA256);
     });
 
-    it('no tool, skill or app source names a test case', () => {
-        const ids = TEST_CASES.map((item) => item.id);
-        const sources = [
-            ...filesUnder(join(FRONTEND, 'src'), (path) => /\.(js|jsx)$/.test(path)),
-            ...filesUnder(join(REPO, '.claude/skills'), (path) => path.endsWith('.md')),
-            ...filesUnder(join(REPO, 'rmc_toolkits'), (path) => path.endsWith('.py'))
-        ];
-        expect(sources.length).toBeGreaterThan(50);
-        const offenders = sources.filter((path) => ids.some((id) => readFileSync(path, 'utf8').includes(id)));
-        expect(offenders).toEqual([]);
-    });
-
     it('the CLI runs the test set only with --final, from a clean tree', () => {
         expect(() => guardSplit({ split: 'dev', final: false, clean: false })).not.toThrow();
         expect(() => guardSplit({ split: 'test', final: false, clean: true })).toThrow(/held out: add --final/);
         expect(() => guardSplit({ split: 'test', final: true, clean: false })).toThrow(/clean git tree/);
         expect(() => guardSplit({ split: 'test', final: true, clean: true })).not.toThrow();
+    });
+});
+
+// The holdout scan. Where it looks: what the tools, the prompts and the app
+// say (src: js, jsx, md, and the snapshots of what the model sees), every
+// skill file, the Python package, docs/ and the top-level docs. Not scanned:
+// the validation itself (web_app/frontend/validation/**, which must name its
+// cases) and copilot-validation.md, whose Cases table names every test case.
+// docs/AGENT_PLAN.md is scanned: it points at the overlap below without
+// naming it.
+const NOT_SCANNED = new Set(['docs/algorithms/copilot-validation.md']);
+const scannedFiles = () => [
+    ...filesUnder(join(FRONTEND, 'src'), (path) => /\.(js|jsx|md)$/.test(path) || path.includes('__snapshots__')),
+    ...filesUnder(join(REPO, '.claude/skills'), () => true),
+    ...filesUnder(join(REPO, 'rmc_toolkits'), (path) => path.endsWith('.py')),
+    ...filesUnder(join(REPO, 'docs'), (path) => path.endsWith('.md')),
+    ...readdirSync(REPO).filter((name) => name.endsWith('.md')).map((name) => join(REPO, name))
+].filter((path) => !NOT_SCANNED.has(relative(REPO, path)));
+
+// The known hits, each to be reviewed by a person. An entry allows exactly
+// `count` hits of one test case's kind of token in one file: a different
+// count fails, so a new mention in a listed file is still caught and a
+// removed one must leave the list. copilot-validation.md lists these as
+// known risks ("The holdout scan"). Nothing here names a test-case value.
+const HOLDOUT_ALLOWED = [
+    // By design (docs/AGENT_PLAN.md, section A): the test breathing case's
+    // cluster is the cluster of the skills' reference compound, whose
+    // published distortion this skill describes. A model that has read it may
+    // expect a distortion there; the case plants breathing only.
+    {
+        file: '.claude/skills/coordination-shells/lacunar-spinel-shells.md', case: 'test-breathing', kind: 'cluster', count: 3,
+        reason: 'by design: the skills\' reference compound has the test breathing case\'s cluster'
+    },
+    // FOUND 2026-10-19, to review: the same reference compound's cluster,
+    // outside the skills (the 5 K question of the Copilot's real-model check,
+    // an engine test's synthetic cluster, the cluster engine's synthetic
+    // checks, the Bond Geometry engine's test structures).
+    {
+        file: 'web_app/frontend/src/llm/README.md', case: 'test-breathing', kind: 'cluster', count: 1,
+        reason: 'FOUND 2026-10-19, to review: the reference compound\'s cluster in the real-model check\'s 5 K question'
+    },
+    {
+        file: 'web_app/frontend/src/workers/__tests__/triplets.test.js', case: 'test-breathing', kind: 'cluster', count: 1,
+        reason: 'FOUND 2026-10-19, to review: a synthetic cluster of the reference compound in a bond-angle engine test'
+    },
+    {
+        file: 'docs/algorithms/ai-assistant.md', case: 'test-breathing', kind: 'cluster', count: 2,
+        reason: 'FOUND 2026-10-19, to review: the cluster engine\'s synthetic checks use the reference compound\'s cluster'
+    },
+    {
+        file: 'docs/algorithms/bond-geometry.md', case: 'test-breathing', kind: 'cluster', count: 1,
+        reason: 'FOUND 2026-10-19, to review: the reference compound\'s cluster among the bond-angle engine\'s test geometries'
+    },
+    // FOUND 2026-10-19, to review: a real-compound fixture of the symmetry
+    // finder (an orthorhombic Pnma perovskite) whose composition is the test
+    // symmetry-lowering case's; unrelated to the planted shift.
+    {
+        file: 'web_app/frontend/src/__tests__/fixtures/symmetryStructures.js', case: 'test-symmetry-lowering', kind: 'composition', count: 1,
+        reason: 'FOUND 2026-10-19, to review: a symmetry-finder fixture of a real perovskite with the case\'s composition'
+    }
+];
+
+describe('the holdout scan: no tool, skill, app source or doc names a test case', () => {
+    const tokens = TEST_CASES.flatMap((item) => holdoutTokens(item, DEV_CASES));
+
+    it('derives every test case\'s tokens from its parameters: more than its id', () => {
+        TEST_CASES.forEach((item) => {
+            const kinds = tokens.filter((token) => token.case === item.id).map((token) => token.kind);
+            expect(kinds, item.id).toContain('id');
+            expect(kinds.length, item.id).toBeGreaterThanOrEqual(3);
+        });
+        expect(() => holdoutTokens({ id: 'test-new', kind: 'new_kind', params: {} }, DEV_CASES)).toThrow(/add it to PLANTED/);
+    });
+
+    it('finds every test case in its own truth, written as prose', () => {
+        TEST_CASES.forEach((item) => {
+            const { truth } = buildCase(item, { partials: false });
+            const text = [truth.summary, ...truth.traps].join('\n');
+            const found = scanText(readText(text), tokens.filter((token) => token.case === item.id && token.kind !== 'id'));
+            expect(found.length, item.id).toBeGreaterThan(0);
+        });
+    });
+
+    it('finds nothing outside the reviewed allow-list, and every entry still matches its count', () => {
+        const files = scannedFiles();
+        expect(files.length).toBeGreaterThan(300);
+        const seen = new Map(HOLDOUT_ALLOWED.map((entry) => [entry, 0]));
+        const unexpected = [];
+        files.forEach((path) => {
+            const file = relative(REPO, path);
+            const read = readText(readFileSync(path, 'utf8'));
+            const hits = scanText(read, tokens);
+            hits.forEach((hit) => {
+                const entry = HOLDOUT_ALLOWED.find((allowed) => allowed.file === file && allowed.case === hit.case && allowed.kind === hit.kind);
+                if (entry) seen.set(entry, seen.get(entry) + 1);
+                else unexpected.push(describeHit(read, hit, hits, file));
+            });
+        });
+        expect(unexpected, 'a held-out test case is named (matched text masked as ■); remove it, or add a reviewed HOLDOUT_ALLOWED entry').toEqual([]);
+        HOLDOUT_ALLOWED.forEach((entry) => {
+            expect(seen.get(entry), `${entry.file} ${entry.case} ${entry.kind}: update the entry's count after a review`).toBe(entry.count);
+        });
     });
 });
 
