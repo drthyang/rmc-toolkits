@@ -12,10 +12,11 @@
 //     reference names no value the turn has (references.js), or the answer
 //     concludes something whose analysis did not run (claims.js);
 //   not achieved — analyses ran and none of them succeeded;
-//   partial — the analyses were cut short (the round budget, or rounds that
-//     added nothing), the reply was cut at the length limit, an analysis failed
-//     and was not run again successfully, or one warned (use its result with
-//     the stated caveat);
+//   partial — the analyses were cut short (an ending STOPPED_BY marks
+//     cutShort, turnPolicy.js: the round budget or the turn's time, or rounds
+//     that added nothing), the reply was cut at the length limit, an analysis
+//     failed and was not run again successfully, or one warned (use its result
+//     with the stated caveat);
 //   achieved — otherwise: every analysis the answer rests on ran and passed
 //     its checks (or the context answered, and nothing contradicts it).
 // The model may lower that, never raise it: when it says its own answer is
@@ -25,6 +26,8 @@
 // `analysis`): not a question to the user, a skill read, a view tool, a call
 // to an unknown tool or one skipped by the budget.
 // Pure, no React.
+
+import { STOPPED_BY } from '../turnPolicy';
 
 export const VERDICT_STATUSES = ['achieved', 'partial', 'not verified', 'not achieved'];
 
@@ -55,8 +58,9 @@ const listNames = (steps) => [...new Set(steps.map((step) => step.name))].join('
  * The Outcome of one answer. `steps` are the turn's recorded tool steps
  * (`{ name, status: 'ok'|'warn'|'failed', error, executed, interactive, reading, view }`),
  * `findings` the answer's findings (answer checks, unfilled references,
- * missing evidence), `stoppedBy` the loop's, `modelOutcome` parseOutcome's
- * reading of the model's line (its status is only kept as `claimed`).
+ * missing evidence), `stoppedBy` the turn's ending (a key of STOPPED_BY),
+ * `modelOutcome` parseOutcome's reading of the model's line (its status is
+ * only kept as `claimed`).
  * Returns `{ status, note, body, claimed, computed: true, reasons }`.
  */
 // The model may lower the computed verdict to these, in this order.
@@ -79,7 +83,7 @@ export const computeOutcome = ({ text = '', steps = [], findings = [], stoppedBy
         const unresolved = analyses.filter((step, index) => step.status === 'failed'
             && !analyses.slice(index + 1).some((later) => later.name === step.name && later.status !== 'failed'));
         const warned = analyses.filter((step) => step.status === 'warn');
-        if (stoppedBy === 'max_rounds' || stoppedBy === 'no_progress') reasons.push('the analyses were cut short before the answer');
+        if (STOPPED_BY[stoppedBy]?.cutShort) reasons.push('the analyses were cut short before the answer');
         if (cut) reasons.push('the reply was cut at the length limit');
         if (unresolved.length) reasons.push(`${listNames(unresolved)} failed`);
         if (warned.length) reasons.push(`${listNames(warned)} warned: its result holds with the stated caveat`);

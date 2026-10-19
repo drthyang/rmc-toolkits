@@ -171,10 +171,14 @@ inputs on its page, stays the *user's* action.
 6. **`copilot/agentLoop.js`**: `runCopilotTurn()` is a pure async generator of UI events, the turn
    module's internal module (`copilot/turn.js` is its one production caller). It calls a model
    port, so the tests script the model's replies, and before each model call it emits the request
-   as sent (`request`). It records each tool step with the turn's verification and asks it to
-   judge each answer (*Evidence, numbers by reference, the computed verdict*). Its rules:
-   - **Budgets.** ≤ 6 rounds of tool calls; ≤ 4 calls per round (extra calls are answered
-     "skipped"); 120 s per call; no new round after 10 min. Each result is fitted to 3,000
+   as sent (`request`). It records each tool step with the turn's verification. What ends the
+   turn, and why each request is made, is the turn policy's (`copilot/turnPolicy.js`, *The turn
+   policy* below): the loop reports each event (the turn began, a reply, a round of calls, the
+   model refused its tools) and does what the step says; the policy judges each answer through the
+   verification (*Evidence, numbers by reference, the computed verdict*). Its rules:
+   - **Budgets.** ≤ 6 rounds of tool calls and no new round after 10 min (the policy's); ≤ 4 calls
+     per round (extra calls are answered "skipped") and 120 s per call (the loop's: they refuse a
+     call, never end a turn). Each result is fitted to 3,000
      characters, and a turn's tool messages to 12,000 in total. Older results are compacted to
      their checks first, so a small local context window keeps the run context and the rules.
    - **Duplicate calls.** An identical call (same validated arguments) returns the cached result
@@ -183,7 +187,7 @@ inputs on its page, stays the *user's* action.
      (the port enforces it on Ollama by sending no tools). Its calls are never run. If it still
      answers with tool calls only (a server that takes the field but does not honour it: LM Studio,
      Gemini and Anthropic are not verified), a fixed "budget used" answer with `Outcome: not
-     achieved` closes the turn.
+     achieved` closes the turn (the policy's empty-final ending).
    - **No tool support.** The port's `ToolsUnsupportedError` on the turn's first request retries
      the turn once without tools, under the tool-free prompt. The loop reacts to the type only:
      other errors, a schema 400 among them, are shown, whatever their text says.
@@ -314,9 +318,10 @@ describeTurn(spec) → { offered: { tools, skills, askUser, view }, prompt: 'too
     plan); `why` is `first`, `tools`, `reminder`, `gate`, `final` or `no_tools`. A request the
     port refuses in `prepare` (the guard, a spend cap) was never sent and has no `request` event:
     `round` is followed by `failed`;
-  - exactly one terminal event, always last: `done` (the loop's), `stopped { error }` (an abort) or
-    `failed { error, message, hint }` (`explainModelError`: a context-limit refusal or a spend cap
-    lands here too).
+  - exactly one terminal event, always last, each with its `stoppedBy` (a key of the turn policy's
+    `STOPPED_BY`): `done` (the loop's, the policy's one shape), `stopped { error, stoppedBy }` (an
+    abort: `'stopped'`) or `failed { error, message, hint, stoppedBy }` (`'error'`, a stall
+    included; `explainModelError`: a context-limit refusal or a spend cap lands here too).
 - **Order.** `start`, then a Workbench question (a `tool_start` / `tool_end` pair, `app: true`), then
   per request: `round`, `request`, the text and reasoning deltas, the tool pairs (sharing an id). A
   `gate` is always followed by a `retract`. `tools_unsupported` comes at most once, before any tool
@@ -386,10 +391,91 @@ the spend cap is refused in `prepare`, after the guard's plan, so it is never se
 
 **What stays in the adapters.** The dock: React state, Stop, the question card (its ask-user port),
 the card-focus effects (it maps events to focus), the unsupported-model memory, the `runKey`
-reset and the `configKey` history window. The harness: the case's run (the run module), its compute-only tools, the simulated user,
+reset and the `configKey` history window; it closes a turn on its terminal event's `stoppedBy`
+and shows that ending's note. The harness: the case's run (the run module), its compute-only tools, the simulated user,
 the arm's skills and method (arm C: `'off'`), the verdict's words for the gate
 (`validation/verdict.js` `VERDICT_PHRASINGS`, as `config.phrasings`), its port, and the record (every request as sent, the
-steps, the score; number provenance against `start.shown`; the method).
+steps, the score; number provenance against `start.shown`; the method; `stopped_by` from every
+terminal event).
+
+## The turn policy: what ends a turn (`copilot/turnPolicy.js`)
+
+One module decides when a turn ends and why each request is made (architecture candidate #10). It
+owns every counter that ends a turn — the rounds of tools, the turn's time, the rounds that added
+nothing, the one reminder and the warmer retry, the last-request note, the answer the evidence gate
+withdrew — and the order of the steps, behind one event-driven interface. The agent loop is its one
+caller: the loop streams the model, runs the calls and keeps the messages; it tells the policy what
+happened and does what the step says, so it cannot ask in the wrong order, add the last-request
+note twice or end a turn twice.
+
+```js
+createTurnPolicy({ limits, clock, tools, judge }) → { next(event) → step }
+STOPPED_BY               // the one set of endings: { [stoppedBy]: { cutShort, note } }
+stoppedByFailure(error)  // a turn that threw: 'stopped' for an AbortError, else 'error'
+```
+
+- **Configuration.** `limits` `{ maxRounds, maxTurnMs, maxNoProgressRounds }` (numbers, `Infinity`
+  allowed; the loop fills them from `DEFAULT_LIMITS`); `clock.now()` — the turn starts when the
+  policy is created, and a Workbench question before the first request is a wait; `tools`, whether
+  the first request carries tools; `judge`, the verification's (*Evidence, …*). The policy decides
+  when: whether a send-back is allowed, the `stoppedBy` an answer is judged under, which answer
+  stands. The verification decides what, and caps its own send-backs (`maxSendBacks`).
+- **Events**, in order: `start`, then each request's `reply`, followed by a `round` when it had
+  calls, or `no_tools` when the model refused its tools.
+
+  | Event | Fields |
+  | --- | --- |
+  | `start` | `waitedMs`: the Workbench's question before the first request |
+  | `reply` | `text` (none when looped), `calls` (an array), `looped` (stopped for repeating itself), `cut` (at the length limit) |
+  | `round` | `progressed` (anything new: a result that was not an error or a repeat, a user's answer), `waitedMs` (the user's answers in it) |
+  | `no_tools` | the first request's model cannot take tools (the port's `ToolsUnsupportedError`) |
+- **Steps.**
+
+  | Step | The loop |
+  | --- | --- |
+  | `{ next: 'ask', round, why, toolChoice, retry, notes, sendBack }` | adds the `notes` (`addNote`), then asks: `why` is `first`, `tools`, `reminder`, `gate`, `final` or `no_tools`; `toolChoice` `'auto'`, `'none'` (the request that asks for the answer) or undefined (no tools); `retry` `'warmer'` or null. With a `sendBack` (the verification's), it first withdraws the reply (`gate`, `retract`) and sends the nudge |
+  | `{ next: 'run' }` | runs the reply's calls, then reports their `round` |
+  | `{ next: 'end', done, say }` | yields `say` as text when there is one, then `done` |
+- **The one `done` shape**, built only here: `{ type: 'done', text, rawText, outcome, rounds,
+  stoppedBy, cut, reason, audit, references, gates }`. An answer: the verification's fields,
+  `reason` null, `rawText` as the model wrote it (the text when no reference changed it). The last
+  request came back empty with nothing standing: the fixed "budget used" answer (`say`), an Outcome
+  of `not achieved` with its note and body only (no `computed` or `reasons`: the harness copies the
+  Outcome whole into `record.final`), `rawText` = text, `references` null, `gates` []. An empty
+  reply after its reminder, before the last request: text and `rawText` '', `outcome` null,
+  `stoppedBy` `'empty'`, `reason` (why it was empty), `references` null, `gates` [].
+- **`STOPPED_BY`**, the endings the dock, the computed Outcome and the harness read:
+
+  | `stoppedBy` | `cutShort` | The dock's note | When |
+  | --- | --- | --- | --- |
+  | `answer` | no | (none) | the model answered |
+  | `max_rounds` | yes | Answered after using the analysis budget for one question. | the round budget or the turn's time was spent |
+  | `no_progress` | yes | Answered when repeated analyses stopped adding anything new. | two rounds in a row added nothing |
+  | `empty` | no | The model returned an empty reply. (with the reason) | nothing after the reminder, before the last request |
+  | `stopped` | no | Stopped. | Stop (an `AbortError`) |
+  | `error` | no | Stopped by an error. | any other error, a stall (`ModelTimeoutError`) included |
+
+  `cutShort` makes the computed Outcome partial (`verification/verdict.js`); `CopilotView` shows
+  the note; `useCopilot` closes a turn on its terminal event's `stoppedBy` (`stoppedByFailure` for
+  its own failure); the harness records `stopped_by` from every terminal event (`record.final`
+  is unchanged).
+- **Invariants.** `toolChoice` is undefined exactly when tools are off. A step's notes hold 0–2
+  messages, in order (the reminder, then the last-request note); the last-request note is added
+  once; the request that becomes the last gets why `final`, unless it is the first. One reminder a
+  turn; after a looping reply every later request is asked warmer. Turn time = now − start − the
+  waits reported, read at most once per event and never in round 0. In a reply without calls the
+  order is: the reminder, then the answer the gate withdrew stands, then the empty endings, then
+  the judge. The judge gets only non-empty text, and the withdrawn answer with `canSendBack` false.
+  `canSendBack` = tools on, this request not the last, and turn time left (and the verification's
+  own cap). Exactly one `end` a turn.
+- **Errors.** A TypeError for bad configuration, an event out of order or malformed (calls on a
+  request that allowed none, `no_tools` after tools ran), a send-back the policy did not allow, or a
+  judge that answers otherwise than `{ sendBack }`, `{ done }` or null. The judge's own errors
+  propagate (the turn's `failed`); a judge returning null gives the empty ending.
+- **What stays in the loop.** The calls per round and the questions (`maxCallsPerRound`,
+  `maxQuestions`: they refuse a call and never end a turn), the per-call time, the stall clock and
+  the request deadline (they throw: the turn's `failed`, `'error'`), loop detection
+  (`repeatsItself`), calls written as text, compaction, the messages, and `DEFAULT_LIMITS`.
 
 ## Asking the user (`ask_user`)
 
@@ -548,7 +634,7 @@ isAnalysis(step)           // the one definition of an analysis
 - **Who calls it.** The turn builds it (`turnChecks`: the run context, its shell catalogue, the
   tools offered, tools on or off, the method, `config.phrasings` and `config.limits.maxEvidenceGates`
   when set); the agent loop records every tool step with it, in the order the model reads them, and
-  judges every answer. `context` gives `{{ctx.…}}` (its shown, trimmed form only), the checks'
+  the turn policy judges every answer with its `judge`. `context` gives `{{ctx.…}}` (its shown, trimmed form only), the checks'
   context facts (the watchdog, the ladder's groups, the parents) and the gate's elements; `offered:
   []` means no claim row (no gate), while references are still filled and the checks and the
   Outcome computed (the loop's default without a verification).
@@ -565,8 +651,9 @@ isAnalysis(step)           // the one definition of an analysis
   the answer, in FACTS order; 4. add the unfilled-reference finding; 5. add the missing-evidence
   findings, whether tools were on, off or unsupported; 6. compute the Outcome, which the model's
   Outcome line (read from the filled text) can only lower. Blank text judges the standing answer
-  (never sent back again), or gives null when there is none; the loop's empty-reply paths are its
-  own. `sendBack` is `{ id, what, missing, nudge, notice }`; `done` is the turn's `done` event. One
+  (never sent back again), or gives null when there is none; the turn policy never sends blank text
+  (it keeps the withdrawn answer and judges it with `canSendBack` false), and the empty endings are
+  its own. `sendBack` is `{ id, what, missing, nudge, notice }`; `done` is the turn's `done` event. One
   verification serves one turn: record or judge after `done` throws. A phrasing for an unknown
   claim, or an `asserted` pattern that is not a global RegExp, is a TypeError; model text and tool
   facts never throw.
@@ -753,8 +840,10 @@ pieces the agent loop uses so a turn always ends with an answer or a reason:
 | A long conversation | Earlier answers above 2,000 characters are re-sent as their sentences with numbers and their Outcome line (`compactAnswer`, in the turn's history window) | `MEMORY_ANSWER_CHARS` (`turn.js`) |
 | Out of memory, context overflow, no model loaded, connection lost | The error gets a line on what to do (`explainModelError`) | |
 
-Notes to the model (a reminder, the last-round note) join the last user message when that is the
-last message: Gemma's chat template refuses two user messages in a row.
+The reminder, the warmer retry, the no-progress rule and the endings are the turn policy's (*The
+turn policy*); the loop finds the loop, the calls written as text and whether a round added
+anything. Notes to the model (a reminder, the last-round note) join the last user message when that
+is the last message: Gemma's chat template refuses two user messages in a row.
 
 ## The tool contract (the `tools` prop)
 
@@ -1066,6 +1155,16 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   `src/__tests__/modelVisible/turnRequests.test.js`: the turn's first request for a dock-shaped and
   a harness-shaped spec equals the snapshot files (it needs the host's run module, so it sits
   beside them: this folder imports nothing from the host).
+- **The turn policy** (`turnPolicy.test.js`, at its interface: rows of events → steps with a fake
+  clock and a stub judge): every ending, the last-request note once, `first` against `final`, a
+  reminder and the last-request note in one request, the warmer retry, the waits off the turn's
+  time (read at most once an event), when a send-back is allowed (the last request, out of time,
+  tools off, the verification's own cap), the withdrawn answer, `no_tools`, the 11 `done` keys on
+  every end, the TypeErrors, `stoppedByFailure` and `STOPPED_BY`; in the loop, the three ending
+  paths share one key set and the dock folds the new shape as it folded the old ones.
+  `src/__tests__/turnEndings.test.jsx` reaches every ending through the dock (`CopilotView`) and the
+  harness from the same scripted model: both read the same `stoppedBy`, the dock shows its note,
+  a stall is `'error'` and Stop `'stopped'` in both, and the empty paths' `record.final` is pinned.
 - **Streaming:** SSE parsing, including tool-call fragments split mid-arguments and Gemini-style
   whole calls with `extra_content`; tool-call assembly and argument validation.
 - **The context window** (`contextGuard.test.js`): the estimate errs high; the plan keeps a loaded
