@@ -14,8 +14,10 @@
 // as the harness builds a run), with arguments derived from each run's own
 // data: every read_run_data section, every partial g(r) pair, the whole first
 // shell of each mixed pair (and a cut, a confirmed cut, two windows and an
-// empty window), the clusters of each same-element shell, and so on. The
-// held-out test cases are never built here.
+// empty window), the clusters of each same-element shell, and so on. The fit
+// tools (assess_convergence, compare_fit) run on the Demo and on the fit-data
+// dev case (dev-fit-unconverged, plan item 4.6). The held-out test cases are
+// never built here.
 //
 // Each result must fit its shape (no undeclared key, no required key
 // missing, every value of its declared type), and every key a shape declares
@@ -39,7 +41,7 @@ import { bundledSkills, loadDemoAssistantRun } from './modelVisible/helpers';
 // reaches one; a key that turns up here unasked is stale or unexercised.
 const NOT_REACHED = {
     assess_convergence: {
-        non_finite_steps: 'the Demo\'s χ² history is finite'
+        non_finite_steps: 'the χ² histories here (the Demo\'s, dev-fit-unconverged\'s) are finite'
     },
     read_run_data: {
         'symmetry.note': 'only a structure the finder did not analyse',
@@ -49,8 +51,8 @@ const NOT_REACHED = {
         'pca_displacements.sites[].mixed': 'no mixed-occupancy site',
         'pca_displacements.sites[].element_counts': 'no mixed-occupancy site',
         'pca_displacements.sites[].element_counts.*': 'no mixed-occupancy site',
-        'convergence.non_finite_steps': 'the Demo\'s χ² history is finite',
-        'convergence.non_finite_note': 'the Demo\'s χ² history is finite'
+        'convergence.non_finite_steps': 'the χ² histories here (the Demo\'s, dev-fit-unconverged\'s) are finite',
+        'convergence.non_finite_note': 'the χ² histories here (the Demo\'s, dev-fit-unconverged\'s) are finite'
     },
     find_gr_peaks: {},
     compare_fit: {},
@@ -264,6 +266,27 @@ describe('every live tool\'s data fits its declared dataShape', () => {
         ]));
         const expected = Object.fromEntries(Object.entries(NOT_REACHED).map(([name, keys]) => [name, Object.keys(keys).sort()]));
         expect(unseen).toEqual(expected);
+    });
+
+    it('dev-fit-unconverged (plan item 4.6): both fit tools run on its own fit files, every dataset', () => {
+        const { tools, calls } = results.get('dev-fit-unconverged');
+        const fitTools = ['assess_convergence', 'compare_fit'];
+        expect(tools.filter((tool) => fitTools.includes(tool.name)).map((tool) => tool.name)).toEqual(fitTools);
+        const fitCalls = calls.filter(({ tool }) => fitTools.includes(tool.name));
+        expect(fitCalls.map(({ tool, args }) => `${tool.name}(${JSON.stringify(args)})`)).toEqual([
+            'assess_convergence({})',
+            'compare_fit({"dataset":"xray_sq"})',
+            'compare_fit({"dataset":"xpdf"})',
+            'compare_fit({"dataset":"xray_sq","n_ranges":12})'
+        ]);
+        fitCalls.forEach(({ error, data }) => {
+            expect(error ?? null).toBeNull();
+            expect(data).toBeTruthy();
+        });
+        // The other dev cases have no fit data, so no fit tool.
+        DEV_CASES.filter((item) => item.id !== 'dev-fit-unconverged').forEach((item) => {
+            expect(results.get(item.id).tools.some((tool) => fitTools.includes(tool.name)), item.id).toBe(false);
+        });
     });
 
     it('the model never receives a dataShape: a request tool is its name, description and parameters', () => {

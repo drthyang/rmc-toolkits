@@ -82,10 +82,12 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // 2026-10-19.5: the run policy — an LM Studio model runs only when loaded
 // with at least 48k, checked before every run; the record keeps the policy
 // and the window it ran under; what the model is sent is unchanged;
+// 2026-10-19.6: dev-fit-unconverged joins the dev set, the first case with fit
+// files (an F(Q), its G(r) and a χ² log; plan item 4.6);
 // 2026-10-19.7: the model port — an Ollama run's final request carries no
 // tools (tool_choice 'none' enforced; the native API has none), each request
 // as sent keeps the context guard's plan, and a request the guard refuses is
-// not recorded as sent; .6 is #87's, stacked beside this one on the run policy).
+// not recorded as sent).
 export const PROTOCOL_VERSION = '2026-10-19.7';
 
 export const ARMS = Object.freeze({
@@ -107,8 +109,9 @@ export const liveQuestion = (built) => `${built.question}\n\n${VERDICT_INSTRUCTI
 // The sections buildRunContext (src/llm/context/runContext.js) can give the
 // model besides the run's name and Live Data flag, in its order. A run in the
 // app can have them all (the Demo with the PCA table does: runFolder.test.js);
-// a case has the structure, its symmetry and the partial g(r) only, unless the
-// view adds the PCA table.
+// a case has the structure, its symmetry and the partial g(r), unless the view
+// adds the PCA table; a case with fit files (runFolder.js caseFiles) also has
+// the optimisation, the datasets, the partial weights and the convergence.
 export const CONTEXT_SECTIONS = Object.freeze([
     'structure', 'configuration_optimization', 'run_settings', 'symmetry', 'pca_displacements',
     'pair_correlations', 'datasets', 'partial_weights', 'convergence'

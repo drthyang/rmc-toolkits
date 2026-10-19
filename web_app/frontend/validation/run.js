@@ -31,7 +31,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { providerModel } from '../src/llm/provider/model';
 import { buildCase, casesOf } from './cases';
-import { loadRun, RUN_FILES, RUN_NAME } from './runFolder';
+import { caseFiles, loadRun, RUN_NAME } from './runFolder';
 import { runArmA, runArmSweep } from './armA';
 import { scoreVerdict } from './scoring';
 import { truthVerdict } from './verdict';
@@ -149,8 +149,7 @@ const commands = {
             const dir = join(out, built.id);
             const runDir = join(dir, RUN_NAME);
             mkdirSync(runDir, { recursive: true });
-            writeFileSync(join(runDir, RUN_FILES.rmc6f), built.rmc6f);
-            writeFileSync(join(runDir, RUN_FILES.partials), built.partials);
+            for (const { name, text } of caseFiles(built)) writeFileSync(join(runDir, name), text);
             writeFileSync(join(dir, 'truth.json'), `${JSON.stringify({ id: built.id, split: built.split, question: built.question, truth: built.truth }, null, 1)}\n`);
             console.log(`wrote ${runDir} (truth: ${join(dir, 'truth.json')})`);
         }

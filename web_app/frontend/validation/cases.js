@@ -13,7 +13,9 @@
 // case (the reported numbers only): the same physics with other elements,
 // directions, magnitudes or structures. Never tune on TEST: the split test
 // pins the TEST definitions by hash and keeps their ids out of the tools and
-// skills.
+// skills. A dev-only case (`devOnly`, saying why) has a kind of its own and
+// no test twin: dev-fit-unconverged, the one case with fit files (a χ² log,
+// an F(Q) and its G(r)), for the fit tools and the rmc-fit-assessment skill.
 
 // --- deterministic randomness -----------------------------------------------------
 
@@ -48,8 +50,10 @@ const unit = (v) => {
  * `sites` its reference sites `{ el, frac }`, and `shift(siteIndex, cellState,
  * rng)` an atom's displacement from its site in Å; `cellState(cellIndex, rng)`
  * draws what the atoms of one cell share (a cluster's breathing, a JT axis).
+ * `header` lines go right after the format line (RMCProfile's run counters,
+ * "Number of moves generated: …"); none by default.
  */
-export const buildConfiguration = ({ cell, supercell, sites, shift, cellState = () => null, seed }) => {
+export const buildConfiguration = ({ cell, supercell, sites, shift, cellState = () => null, seed, header: extraHeader = [] }) => {
     const rng = mulberry32(seed);
     const box = cell.map((length, i) => length * supercell[i]);
     const lines = [];
@@ -76,6 +80,7 @@ export const buildConfiguration = ({ cell, supercell, sites, shift, cellState = 
     }
     const header = [
         '(Version 6f format configuration file)',
+        ...extraHeader,
         `Number of atoms: ${count}`,
         `Supercell dimensions: ${supercell.join(' ')}`,
         'Lattice vectors (Ang):',
@@ -88,12 +93,13 @@ export const buildConfiguration = ({ cell, supercell, sites, shift, cellState = 
 };
 
 /**
- * The partial g(r) of every element pair (labels "A-B", elements in site
- * order), as RMCProfile's *_PDFpartials.csv: g → 1 at large r, B neighbours
- * per A = 4π ρ_B ∫ r² g dr. Each distance is a Gaussian of `kernel` Å (a
- * finite-resolution histogram), minimum image in the orthogonal box.
+ * The partial g(r) of every element pair (elements in site order): g → 1 at
+ * large r, B neighbours per A = 4π ρ_B ∫ r² g dr. Each distance is a Gaussian
+ * of `kernel` Å (a finite-resolution histogram), minimum image in the
+ * orthogonal box. Returns `{ r, pairs: [[i, j]], g: [[…] per pair], elements,
+ * number, volume }` (bin centres r = (k + ½)·dr); formatPartials writes it.
  */
-export const partialsCsv = (atoms, box, elements, { rMax = 8, dr = 0.01, kernel = 0.015 } = {}) => {
+export const partialGr = (atoms, box, elements, { rMax = 8, dr = 0.01, kernel = 0.015 } = {}) => {
     const reach = Math.min(rMax, Math.min(...box) / 2);
     const bins = Math.floor(reach / dr);
     const index = new Map(elements.map((el, i) => [el, i]));
@@ -129,19 +135,148 @@ export const partialsCsv = (atoms, box, elements, { rMax = 8, dr = 0.01, kernel 
     }
     const volume = box[0] * box[1] * box[2];
     const number = elements.map((el) => atoms.filter((atom) => atom.el === el).length);
-    const header = `   r (Ang),${pairs.map(([i, j]) => `     ${elements[i]}-${elements[j]}`).join(',')}`;
-    const rows = [];
+    const r = [];
+    const g = pairs.map(() => []);
     for (let k = 0; k < bins; k += 1) {
-        const r = (k + 0.5) * dr;
-        const shell = 4 * Math.PI * r * r * dr;
-        const values = pairs.map(([i, j], p) => {
+        const at = (k + 0.5) * dr;
+        const shell = 4 * Math.PI * at * at * dr;
+        r.push(at);
+        pairs.forEach(([i, j], p) => {
             const ordered = i === j ? 2 * counts[p][k] : counts[p][k];
-            return (volume * ordered) / (number[i] * number[j] * shell);
+            g[p].push((volume * ordered) / (number[i] * number[j] * shell));
         });
-        rows.push(`   ${r.toFixed(5)} ,${values.map((value) => `         ${value.toFixed(15)} `).join(',')}, `);
     }
+    return { r, pairs, g, elements, number, volume };
+};
+
+/** A partialGr as RMCProfile's *_PDFpartials.csv (labels "A-B"). */
+export const formatPartials = ({ r, pairs, g, elements }) => {
+    const header = `   r (Ang),${pairs.map(([i, j]) => `     ${elements[i]}-${elements[j]}`).join(',')}`;
+    const rows = r.map((at, k) => `   ${at.toFixed(5)} ,${g.map((values) => `         ${values[k].toFixed(15)} `).join(',')}, `);
     return `${[header, ...rows].join('\n')}\n`;
 };
+
+/** The partial g(r) of every element pair, as RMCProfile's *_PDFpartials.csv (partialGr, written). */
+export const partialsCsv = (atoms, box, elements, options = {}) => formatPartials(partialGr(atoms, box, elements, options));
+
+// --- fit outputs (RMCProfile's X-ray file family) --------------------------------
+//
+// What an RMCProfile run that fits one X-ray measurement writes beside its
+// configuration, in the formats of the committed Demo run
+// (web_app/frontend/public/demo): <stem>_FQ1.csv (Q, F(Q)_RMC, F(Q)_Expt),
+// <stem>_FT_XFQ1.csv (its Fourier transform: r(A), X_ray-calc,
+// X_ray_exp_renorm) and <stem>-00.log (the χ² history: clock time, moves
+// accepted and generated, one χ² column per fit term, the last one the X-ray
+// real-space term). The "calculated" columns are the configuration's own
+// functions; the "experimental" ones are made from them with a planted
+// difference, so the truth about the fit is known.
+
+// The X-ray G(r) of a partialGr, Faber–Ziman normalised as RMCProfile's xPDF
+// (f ≈ Z at Q → 0, constant): G = Σ_{i≤j} (2 − δ_ij) c_i c_j f_i f_j (g_ij − 1) / (Σ c f)²,
+// so G → −1 below the closest approach and → 0 at large r.
+const xrayGr = ({ g, pairs, elements, number }, f) => {
+    const total = number.reduce((sum, n) => sum + n, 0);
+    const c = number.map((n) => n / total);
+    const mean = elements.reduce((sum, el, i) => sum + c[i] * f[el], 0);
+    const weights = pairs.map(([i, j]) => ((i === j ? 1 : 2) * c[i] * c[j] * f[elements[i]] * f[elements[j]]) / (mean * mean));
+    return g[0].map((_, k) => pairs.reduce((sum, _pair, p) => sum + weights[p] * (g[p][k] - 1), 0));
+};
+
+// F(Q) = ρ0 ∫ 4π r² G(r) M(r) sin(Qr)/(Qr) dr over the partials' range, M the
+// Lorch window (no truncation ripples): the reciprocal-space function whose
+// transform RMCProfile writes as <stem>_FT_XFQ1.csv.
+const xrayFq = (r, G, rho0, q) => {
+    const dr = r[1] - r[0];
+    const reach = r[r.length - 1] + dr / 2;
+    const kernel = r.map((at, k) => {
+        const x = (Math.PI * at) / reach;
+        return 4 * Math.PI * at * at * G[k] * (Math.sin(x) / x) * dr;
+    });
+    return q.map((Q) => rho0 * r.reduce((sum, at, k) => sum + (kernel[k] * Math.sin(Q * at)) / (Q * at), 0));
+};
+
+// RMCProfile's .log number format, Fortran E10.3: 0.161E+00.
+const fortranE = (value) => {
+    if (value === 0) return '0.000E+00';
+    let exponent = Math.floor(Math.log10(Math.abs(value))) + 1;
+    let mantissa = Math.round((Math.abs(value) / 10 ** exponent) * 1000);
+    if (mantissa >= 1000) {
+        mantissa = 100;
+        exponent += 1;
+    }
+    const sign = exponent < 0 ? '-' : '+';
+    return `${value < 0 ? '-' : ''}0.${String(mantissa).padStart(3, '0')}E${sign}${String(Math.abs(exponent)).padStart(2, '0')}`;
+};
+
+// A χ² that is still falling: a fast early drop, then a slow tail that has
+// not levelled off (floor + fast·e^(−t/τfast) + slow·e^(−t/τslow), t the log row).
+const chiLaw = ({ floor, fast, tauFast, slow, tauSlow }) => (t) => floor + fast * Math.exp(-t / tauFast) + slow * Math.exp(-t / tauSlow);
+
+// The run's move counters, one entry per log row: moves generated at a steady
+// rate, accepted ever more rarely as χ² falls; `total` is what the .rmc6f
+// header says at the end of the run (no randomness: the header does not
+// depend on the partial g(r)).
+const runMoves = (fit) => {
+    let accepted = 0;
+    let generated = 0;
+    const rows = [];
+    for (let t = 0; t < fit.rows; t += 1) {
+        generated += fit.movesPerRow;
+        accepted += Math.round(fit.movesPerRow * (fit.accept.floor + fit.accept.start * Math.exp(-t / fit.accept.tau)));
+        rows.push({ accepted, generated });
+    }
+    return { rows, total: { generated, tried: Math.round(generated * fit.triedShare), accepted, seconds: fit.rows * fit.minutes * 60 } };
+};
+
+/**
+ * The run's fit files from its partial g(r) and the plan `fit` (the case's
+ * params): the X-ray G(r) and F(Q) of the configuration, the "measured" ones
+ * with the planted missing feature and noise, and a χ² log whose last term is
+ * still falling. Returns `{ fq, gr, log }` (file texts).
+ */
+const xrayFitFiles = (partial, { f, fit }) => {
+    const rng = mulberry32(fit.seed);
+    const calcG = xrayGr(partial, f);
+    const { centre, height, sd } = fit.missed;
+    const missed = partial.r.map((at) => height * Math.exp(-0.5 * ((at - centre) / sd) ** 2));
+    const rho0 = partial.number.reduce((sum, n) => sum + n, 0) / partial.volume;
+
+    // G(r) from rMin, as RMCProfile writes it above the closest approach.
+    const grRows = partial.r.map((at, k) => [at, calcG[k], calcG[k] + missed[k] + gaussian(rng) * fit.grNoise])
+        .filter(([at]) => at >= fit.rMin);
+    const gr = ['r(A) ,   X_ray-calc  ,   X_ray_exp_renorm',
+        ...grRows.map((row) => row.map((value) => `   ${value.toFixed(14)}       `).join(','))].join('\n');
+
+    const q = Array.from({ length: Math.round((fit.qMax - fit.qMin) / fit.dq) + 1 }, (_, k) => fit.qMin + k * fit.dq);
+    const calcF = xrayFq(partial.r, calcG, rho0, q);
+    const dataF = xrayFq(partial.r, calcG.map((value, k) => value + missed[k]), rho0, q).map((value) => value + gaussian(rng) * fit.fqNoise);
+    const fq = ['       Q,      F(Q)_RMC,  F(Q)_Expt',
+        ...q.map((Q, k) => [Q, calcF[k], dataF[k]].map((value) => `${value.toFixed(7).padStart(15)} `).join(',').trimEnd())].join('\n');
+
+    // The log: one row per `minutes` of clock time (HHMMSS.sss, as
+    // RMCProfile writes it), the cumulative moves, one χ² column per fit term.
+    const laws = fit.chi.map(chiLaw);
+    const rows = runMoves(fit).rows.map(({ accepted, generated }, t) => {
+        const seconds = (fit.startS + t * fit.minutes * 60) % 86400;
+        const clock = [Math.floor(seconds / 3600), Math.floor((seconds % 3600) / 60), seconds % 60].map((v) => String(v).padStart(2, '0')).join('');
+        const chi = laws.map((law) => fortranE(law(t) * Math.exp(gaussian(rng) * fit.chiNoise)));
+        return `${clock}.000  ${String(accepted).padStart(10)}  ${String(generated).padStart(10)}  ${chi.join('  ')}`;
+    });
+    const log = [
+        `Time       moves_acc moves_gen  ${fit.chiColumns.join('  ')}`,
+        `h/m/s/.th    WEIGHT PARAMETERS  ${fit.chiColumns.map(() => '0.100E+01').join('  ')}`,
+        ...rows
+    ].join('\n');
+    return { fq: `${fq}\n`, gr: `${gr}\n`, log: `${log}\n` };
+};
+
+// The .rmc6f header's run counters (RMCProfile writes them after the format line).
+const movesHeader = (moves) => [
+    `Number of moves generated:           ${moves.generated}`,
+    `Number of moves tried:               ${moves.tried}`,
+    `Number of moves accepted:            ${moves.accepted}`,
+    `Accumulated time (s) in running loop: ${moves.seconds.toFixed(2)}`
+];
 
 // --- structures ----------------------------------------------------------------------
 
@@ -421,6 +556,60 @@ const KINDS = {
         };
     },
 
+    // A run that has not finished, with its fit files (dev only). The
+    // configuration is rock salt M X (Fm-3m) with isotropic thermal motion
+    // only: the structural answer is "no order". The truth is about the FIT:
+    // the χ² history still falls (a fast drop, then a slow tail that has not
+    // levelled off: the watchdog says improving, though the plot's end looks
+    // flat), and the "measured" X-ray G(r) holds a peak the configuration does
+    // not reproduce (a Gaussian of `missed.height` at `missed.centre` Å, data
+    // above the model); in F(Q), the same measurement, that one peak is a slow
+    // oscillation strongest at low Q.
+    unconverged_fit: (p) => {
+        const [M, X] = p.elements;
+        const sites = [...FCC.map((t) => ({ el: M, frac: t })), ...FCC.map((t) => ({ el: X, frac: t.map((value) => (value + 0.5) % 1) }))];
+        const moves = runMoves(p.fit).total;
+        const config = buildConfiguration({
+            cell: [p.a, p.a, p.a],
+            supercell: p.supercell,
+            sites,
+            seed: p.seed,
+            header: movesHeader(moves),
+            shift: (index, _, rng) => gauss3(rng, p.sigma[sites[index].el])
+        });
+        const { centre, height, sd } = p.fit.missed;
+        const last = p.fit.chiColumns.at(-1);
+        return {
+            config,
+            truth: {
+                summary: `rock-salt ${M}${X}, thermal motion only (independent isotropic Gaussian displacements): no local order; Fm-3m. `
+                    + `The run has not converged: the ${last} χ² is still falling at the end of its history (a slow tail after a fast drop). `
+                    + `The measured X-ray G(r) has a peak at ${centre} Å (height ${height}, sd ${sd} Å, data above the model) that the configuration `
+                    + 'does not reproduce; F(Q) is the same measurement in reciprocal space',
+                features: [],
+                tolerated: [],
+                symmetry: { space_group: 'Fm-3m', chiral: false, centrosymmetric: true, polar: false, primary: false },
+                // Not scored (the verdict has no fit fields): what the fit
+                // tools and the answer checks should find, for the record.
+                fit: {
+                    convergence: 'improving',
+                    chi_column: last,
+                    misfit: { dataset: 'xpdf', r_A: centre, height, sd_A: sd, sign: 'data above the model' },
+                    same_measurement: ['xray_sq', 'xpdf'],
+                    accepted_moves_per_atom: Number((moves.accepted / (sites.length * p.supercell.reduce((n, k) => n * k, 1))).toFixed(2))
+                },
+                traps: [
+                    `the end of the χ² plot looks flat, but ${last} is still falling: the watchdog and assess_convergence say improving, so the run has not converged`,
+                    `the G(r) misfit is one feature at ${centre} Å that the configuration lacks, not noise spread over r`,
+                    `F(Q) and its Fourier transform G(r) are one measurement: the F(Q) misfit sits at low Q because that one missing peak is a slow `
+                        + `oscillation in Q (period 2π/${centre} ≈ ${((2 * Math.PI) / centre).toFixed(1)} Å⁻¹, fading as 1/Q), not a scale or box-size error`,
+                    'a misfit is not order in the configuration: every analysis of the configuration shows thermal motion only'
+                ]
+            },
+            fit: (partial) => xrayFitFiles(partial, p)
+        };
+    },
+
     // Thermal motion only, on a structure given by its sites (the symmetry
     // cases: an achiral non-centrosymmetric group, or a chiral one).
     sites_only: (p) => {
@@ -497,6 +686,34 @@ export const DEV_CASES = [
             sites: [...b20(0.1358).map((frac) => ({ el: 'Fe', frac })), ...b20(0.844).map((frac) => ({ el: 'Si', frac }))],
             group: 'P2_13', facts: { chiral: true, centrosymmetric: false, polar: false }, traps: [CHIRAL_TRAP], seed: 109
         }
+    },
+    // Dev only (plan item 4.6): no test case has fit data. Scored on its
+    // structure as every case is (no order, Fm-3m); its fit truth is for the
+    // fit tools, the answer checks and the record.
+    {
+        id: 'dev-fit-unconverged', kind: 'unconverged_fit',
+        devOnly: 'fit data: exercises assess_convergence, compare_fit and the rmc-fit-assessment skill (plan item 4.6)',
+        params: {
+            elements: ['Mg', 'O'], a: 4.212, supercell: [6, 6, 6], sigma: { Mg: 0.062, O: 0.066 }, seed: 110,
+            // X-ray scattering factors at Q → 0 (f ≈ Z).
+            f: { Mg: 12, O: 8 },
+            fit: {
+                seed: 111,
+                // G(r) written from rMin Å; the peak the configuration lacks.
+                rMin: 1.0, grNoise: 0.004, missed: { centre: 2.55, height: 0.15, sd: 0.08 },
+                qMin: 0.5, qMax: 25, dq: 0.02, fqNoise: 0.002,
+                // 400 log rows 10 minutes apart from 08:00; moves.
+                rows: 400, minutes: 10, startS: 8 * 3600, movesPerRow: 540, triedShare: 0.97,
+                accept: { floor: 0.05, start: 0.25, tau: 40 },
+                // χ² per fit term (the last is the history the Workbench charts).
+                chiColumns: ['F(Q)_1', 'X_ray_(R)1'],
+                chi: [
+                    { floor: 0.02, fast: 0.5, tauFast: 30, slow: 0.03, tauSlow: 500 },
+                    { floor: 0.01, fast: 1.0, tauFast: 25, slow: 0.02, tauSlow: 600 }
+                ],
+                chiNoise: 0.002
+            }
+        }
     }
 ];
 
@@ -539,16 +756,18 @@ export const casesOf = (split) => {
 const elementsInOrder = (sites) => [...new Set(sites.map((site) => site.el))];
 
 /**
- * A case built: the .rmc6f text, its partial g(r) CSV and the truth. Built
- * lazily (a perovskite case is ~2,500 atoms; its g(r) takes about a second).
- * Its run folder's names are runFolder.js's RUN_NAME and RUN_FILES, the same
- * for every case: no name is built from the case id, which names its kind.
+ * A case built: the .rmc6f text, its partial g(r) CSV, its fit files when the
+ * case has fit data (dev-fit-unconverged), and the truth. Built lazily (a
+ * perovskite case is ~2,500 atoms; its g(r) takes about a second). Its run
+ * folder's names are runFolder.js's RUN_NAME and RUN_FILES, the same for
+ * every case: no name is built from the case id, which names its kind.
  */
 export const buildCase = (item, { partials = true } = {}) => {
     const make = KINDS[item.kind];
     if (!make) throw new Error(`unknown case kind '${item.kind}'`);
-    const { config, truth } = make(item.params);
+    const { config, truth, fit } = make(item.params);
     const elements = elementsInOrder(config.atoms);
+    const partial = partials ? partialGr(config.atoms, config.box, elements) : null;
     return {
         id: item.id,
         split: splitOf(item.id),
@@ -558,6 +777,9 @@ export const buildCase = (item, { partials = true } = {}) => {
         truth,
         elements,
         rmc6f: config.text,
-        partials: partials ? partialsCsv(config.atoms, config.box, elements) : null
+        partials: partial ? formatPartials(partial) : null,
+        // A case with fit data: its RMCProfile fit files ({ fq, gr, log }),
+        // made from the partial g(r), so only when the partials are built.
+        fitFiles: partial && fit ? fit(partial) : null
     };
 };

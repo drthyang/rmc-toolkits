@@ -39,8 +39,18 @@ describe('the dev / test split', () => {
         expect(new Set(ids).size).toBe(ids.length);
         expect(DEV_CASES.every((item) => item.id.startsWith('dev-'))).toBe(true);
         expect(TEST_CASES.every((item) => item.id.startsWith('test-'))).toBe(true);
-        expect(DEV_CASES.map((item) => item.kind).sort()).toEqual(TEST_CASES.map((item) => item.kind).sort());
-        expect(DEV_CASES.length).toBeGreaterThanOrEqual(8);
+        // A dev-only case (`devOnly`: why) has a kind of its own, for
+        // developing tools and skills; it is never a reported number.
+        const paired = DEV_CASES.filter((item) => !item.devOnly);
+        expect(paired.map((item) => item.kind).sort()).toEqual(TEST_CASES.map((item) => item.kind).sort());
+        expect(paired.length).toBeGreaterThanOrEqual(8);
+        expect(TEST_CASES.some((item) => item.devOnly)).toBe(false);
+        DEV_CASES.filter((item) => item.devOnly).forEach((item) => {
+            expect(typeof item.devOnly, item.id).toBe('string');
+            expect(TEST_CASES.some((test) => test.kind === item.kind), item.id).toBe(false);
+        });
+        // Plan item 4.6: the fit-data case.
+        expect(DEV_CASES.filter((item) => item.devOnly).map((item) => item.id)).toEqual(['dev-fit-unconverged']);
     });
 
     it('pins the test set: configurations, partials and truths', () => {

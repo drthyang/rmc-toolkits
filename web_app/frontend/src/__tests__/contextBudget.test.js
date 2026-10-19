@@ -108,24 +108,27 @@ const DOCK_WORST_TURN_TODAY = Object.freeze({
 // By how much the dock's worst turn overflows the window today.
 const DOCK_OVERFLOW_TOKENS_TODAY = 5794;
 
-// Arm B's first request on each dev case is 9.6k–10.4k tokens; the largest:
-const ARM_B_LARGEST_DEV_CASE = 'dev-symmetry-lowering';
+// Arm B's first request on each dev case is 9.7k–11.2k tokens; the largest,
+// since plan item 4.6, is the fit-data case: its fit tools (assess_convergence,
+// compare_fit) and its sampling, datasets, weights and convergence sections
+// (before it, dev-symmetry-lowering: 10,391 tokens, 35,119 needed, 2,351 over).
+const ARM_B_LARGEST_DEV_CASE = 'dev-fit-unconverged';
 const ARM_B_WORST_TURN_TODAY = Object.freeze({
     systemPrompt: 4422,
-    toolJson: 4039,
-    contextBlock: 1224,
-    question: 707,
+    toolJson: 4572,
+    contextBlock: 1574,
+    question: 610,
     skills: 7814,
     analyses: 8723,
     replyReserve: 8192,
-    firstRequest: 10391,
-    prompt: 26927,
-    needed: 35119,
-    headroom: -2351,
-    lmStudioHeadroom: 1745
+    firstRequest: 11178,
+    prompt: 27714,
+    needed: 35906,
+    headroom: -3138,
+    lmStudioHeadroom: 958
 });
 // By how much arm B's worst turn (largest dev case) overflows the window today.
-const ARM_B_OVERFLOW_TOKENS_TODAY = 2351;
+const ARM_B_OVERFLOW_TOKENS_TODAY = 3138;
 
 // --- the turn ------------------------------------------------------------------------
 
@@ -334,7 +337,7 @@ describe('the worst realistic turn in a 32,768-token window (plan 5.5)', () => {
     // The run policy's minimum for an LM Studio model (48k) holds both worst
     // turns with the full reply reserve, under both of the guard's rules
     // (planContext's, and LM Studio's prompt + LMSTUDIO_REPLY_MIN_TOKENS):
-    // the dock's with 10,590 tokens to spare, arm B's with 14,033.
+    // the dock's with 10,590 tokens to spare, arm B's (dev-fit-unconverged since 4.6) with 13,246.
     it('fits both worst turns in the live runs\' LM Studio minimum (48k, validation/runPolicy.js)', () => {
         const window = MIN_CONTEXT_TOKENS.lmstudio;
         expect(window).toBe(49152);
@@ -344,6 +347,6 @@ describe('the worst realistic turn in a 32,768-token window (plan 5.5)', () => {
             expect(plan.needed).toBe(turn.numbers.needed);
             expect(turn.numbers.prompt + LMSTUDIO_REPLY_MIN_TOKENS).toBeLessThanOrEqual(window);
         }
-        expect([window - dockTurn.numbers.needed, window - armBTurn.numbers.needed]).toEqual([10590, 14033]);
+        expect([window - dockTurn.numbers.needed, window - armBTurn.numbers.needed]).toEqual([10590, 13246]);
     });
 });
