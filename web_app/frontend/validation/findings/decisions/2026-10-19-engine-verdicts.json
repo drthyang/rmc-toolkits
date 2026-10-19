@@ -1,0 +1,36 @@
+{
+  "case": "dev-jahn-teller",
+  "run": "architecture candidate 5: the cluster and modulation engines on the dev cases, synthetic known answers and both fixtures; today's tool summaries against the new renderers on 1,010 tool results; arms A and A+ on the dev set, before and after, 2026-10-19",
+  "step": null,
+  "kind": "bug",
+  "evidence": "Candidate 5 (docs/AGENT_PLAN.md, sections B and C): the cluster and modulation decisions lived in the Copilot tool (copilotTools.js summarizeClusters / summarizeModulations), and arm A+ re-derived them with rules of its own (no trigonality; rigidity blocked by arm A's split-site rule and by breathing, but not by a pattern), so the control arm and the tool could disagree; analyze_clusters asked the engine twice, and when its second ('sites') request failed the split-site note was dropped silently and split sites could read as rigid (dev-jahn-teller's F octahedra are the case it protects). After the change the engines decide (Findings with recomputable Evidence, the tool's rules ported rule for rule): today's summaries and the new renderers give the same data and checks on 1,010 tool results (the Demo, the dev cases, both fixtures and 12 random configurations over a grid of windows); the model-visible snapshots pass without -u; Python and JS agree on every verdict of both fixtures, which refuse a decided statistic within 1e-6 of its threshold; the Python known answers (tests/test_clusters.py, test_modulations.py, test_clusters_api.py) and the JS ones below hold. Arms A and A+ on the dev set: every score and claim unchanged; only the nine A+ records' cluster and modulation readings change. Approved by the manager on the user's delegation, 2026-10-19.",
+  "proposed_fix": "cluster_distortion (clusters.py, workers/clusters.js) always returns a verdict: distorted, lessDistorted, breathing, rigid, staticDistortion, splitMemberSites, trigonalLean, favouredAxes and the window, each {answer, because, evidence}, read from the unrounded statistics by CLUSTER_RULES (echoed); the split rule (isSplitSite) moves into the cluster engine and list_sites imports it. displacement_modulations gives each tested point sigma (+inf as SIGMA_MAX = 40, -inf as null, as the tool showed them), kind, ordered, because and bar, each element {cellDoubling, generalOrder, longWave} with decidedBy and the nearest miss, and the payload family and rules; one long-wave predicate. The tools render the verdicts through sentence tables keyed by (finding, because); arm A+ maps the answers to claims (distorted, breathing, rigid; a cell doubling or general order as a modulation at its q). No model-visible change. Approved by the manager on the user's delegation, 2026-10-19; the user may reverse it.",
+  "needs_user_approval": true,
+  "status": "implemented",
+  "approval": {
+    "by": "user",
+    "date": "2026-10-19",
+    "batch": 2
+  },
+  "commit": "d3432a2ebb089baf9bc401d89c9663f62cd86a81",
+  "tests": [
+    "web_app/frontend/src/workers/__tests__/clusters.test.js › pins the closed vocabularies and the rules to the Python engine's (the fixture's enums)",
+    "web_app/frontend/src/workers/__tests__/clusters.test.js › every fixture verdict: because from its closed set, clears recomputable from the record, clearing evidence first",
+    "web_app/frontend/src/workers/__tests__/clusters.test.js › the split rule: one definition, the PC1 kurtosis on a resolved axis at or below −0.5 and three sampling errors",
+    "web_app/frontend/src/workers/__tests__/clusters.test.js › split F6 octahedra: every F site split (the one rule, on the engine's own site rows), LESS distorted, the pattern shows",
+    "web_app/frontend/src/workers/__tests__/clusters.test.js › dev-breathing: the Mo3 triangles breathe; against independent atoms the edge spread is far below (z < −3), at their own size it is not",
+    "web_app/frontend/src/workers/__tests__/clusters.test.js › dev-jahn-teller: the F6 octahedra are distorted (an axis family), their F sites split, so not rigid",
+    "web_app/frontend/src/workers/__tests__/clusters.test.js › dev-cell-wrap: the V2 dimers at fraction 0 are rigid (their size far stiffer than independent atoms)",
+    "web_app/frontend/src/workers/__tests__/modulations.test.js › every fixture point: ordered recomputable from its ratio, σ and bar; because from its closed set",
+    "web_app/frontend/src/workers/__tests__/modulations.test.js › σ is reported as the tool showed it: +∞ is SIGMA_MAX (shown >8), −∞ is null",
+    "web_app/frontend/src/workers/__tests__/modulations.test.js › one long-wave predicate: on every grid point it is the tool's |q_i| ≤ 0.25 and the engine's |q_i| ≤ 0.25 + 1e-12",
+    "web_app/frontend/src/workers/__tests__/modulations.test.js › independent or randomly split displacements are not order (the earlier rule called them ordered)",
+    "web_app/frontend/src/workers/__tests__/modulations.test.js › dev-zone-boundary: the planted Ti order at (0, 0, ½) is found, and only it; the decoy Sr wave is a long wave",
+    "web_app/frontend/src/__tests__/copilotTools.test.js › the sentence tables: every because the engines can give has an entry (a check, or null when another finding says it)",
+    "web_app/frontend/src/__tests__/copilotTools.test.js › cluster facts are the engine's answers",
+    "web_app/frontend/src/__tests__/listSitesSplit.test.js › dev-jahn-teller: list_sites and the cluster summary call the same sites split (one rule)",
+    "web_app/frontend/src/__tests__/modelVisible/toolResults.test.js › %s",
+    "web_app/frontend/validation/__tests__/arms.test.js › %s: arm A %s, A+ %s",
+    "web_app/frontend/validation/__tests__/arms.test.js › A+ reads the cluster and modulation engines' own verdicts (candidate 5, 2026-10-19)"
+  ]
+}

@@ -28,7 +28,8 @@ regression pin on the demo run.
    "order" in 6 of 12 configurations without any, the thermal null included. Now a point needs
    ratio ≥ 3 and ≥ 3σ against independent displacements: χ² with at least m degrees of freedom
    for m sites, which holds for any site anisotropy, Šidák-corrected. Planted order stays above 8σ.
-   (`zoneBoundarySigma`, copilotTools.test.js)
+   (`zoneBoundarySigma`, in the modulation engines since 2026-10-19: workers/modulations.js,
+   modulations.py, and their tests)
 2. **The cluster check denied a distortion its own axis test found.** For JT octahedra it printed
    "LESS distorted … no correlated shape distortion on top" next to "more clusters elongated along
    <100>". The sentence now names the favoured axis.
