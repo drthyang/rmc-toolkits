@@ -192,12 +192,12 @@ describe('B against A+ on synthetic records', () => {
     });
 
     it('B over-claiming on the no-order case: the spurious-claim test −1, a spurious claim listed with B', () => {
-        const over = live('dev-thermal-null', { features: [{ kind: 'off_centre', element: 'Ti', direction_uvw: [1, 1, 1], magnitude_A: 0.05 }], ...symmetryOf('dev-thermal-null') });
+        const over = live('dev-thermal-null', { features: [{ kind: 'off_centre', element: 'Ti', direction_uvw: [1, 1, 2], magnitude_A: 0.05 }], ...symmetryOf('dev-thermal-null') });
         const result = withBaseline([over]);
         expect(result.differences[0]).toMatchObject({ column: B, cases: 1, groups: { feature: null, spurious: -1, symmetry: 0 } });
         expect(result.differences[0].score).toBeCloseTo(-0.2, 10);
         expect(row(result, 'dev-thermal-null', 'no spurious claim').differences[B]).toBe(-1);
-        expect(disagreementsIn(result, 'dev-thermal-null')).toEqual([`spurious claim: off_centre Ti | [1 1 1], 0.05 Å | ${B} 1/1`]);
+        expect(disagreementsIn(result, 'dev-thermal-null')).toEqual([`spurious claim: off_centre Ti | [1 1 2], 0.05 Å | ${B} 1/1`]);
         expect(result.disagreements.find((item) => item.case === 'dev-thermal-null').truth).toBe('no order planted');
         const lines = renderComparison([...BASELINE, over]);
         expect(lines).toContain(`| ${B} − A+ | 1 paired | −0.20 | – | −1.00 | 0.00 |`);

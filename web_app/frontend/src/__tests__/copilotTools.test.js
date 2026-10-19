@@ -19,7 +19,7 @@ import { MODULATION_BECAUSE, SIGMA_MAX } from '../workers/modulations';
 import { coordinationSummaryOf } from '../workers/triplets';
 import { checkText, toolDescription } from '../llm/copilot/method';
 import { createVerification } from '../llm/copilot/verification';
-import { ALL_CASES, buildCase, buildConfiguration } from '../../validation/cases';
+import { buildCase, buildConfiguration, DEV_CASES } from '../../validation/cases';
 import {
     CLUSTER_SENTENCES,
     MODULATION_RESULT_BUDGET,
@@ -448,13 +448,13 @@ describe('Copilot summarizers', () => {
     });
 
     it('modulation sentences: the planted order said, and only it; the decoy said as a long wave (dev-zone-boundary); none where there is none', () => {
-        const planted = buildCase(ALL_CASES.find((item) => item.id === 'dev-zone-boundary'), { partials: false });
+        const planted = buildCase(DEV_CASES.find((item) => item.id === 'dev-zone-boundary'), { partials: false });
         const { checks, facts } = summarizeModulations(displacementModulations(siteDisplacementsFromRmc6f(planted.rmc6f)));
         expect(facts.modulation.ordered).toEqual([{ element: 'Ti', q: [0, 0, 0.5] }]);
         expect(checks[0].text).toMatch(/^Ordered Ti displacements at q = \(0, 0, ½\)/);
         expect(checks.filter((check) => /^Ordered/.test(check.text))).toHaveLength(1);
         expect(checks.some((check) => /Sr's strongest mode is a long-wavelength wave/.test(check.text))).toBe(true);
-        const thermal = buildCase(ALL_CASES.find((item) => item.id === 'dev-thermal-null'), { partials: false });
+        const thermal = buildCase(DEV_CASES.find((item) => item.id === 'dev-thermal-null'), { partials: false });
         const none = summarizeModulations(displacementModulations(siteDisplacementsFromRmc6f(thermal.rmc6f)));
         expect(none.checks.find((check) => check.level === 'ok').text).toMatch(/^No order that doubles the cell: no zone-boundary point stands out of the diffuse background \(the strongest, /);
         expect(none.facts.modulation).toMatchObject({ ordered: [], general: [] });
@@ -464,7 +464,7 @@ describe('Copilot summarizers', () => {
         // An O flattened across its bond, thermal motion only: the map test
         // passes (7.2σ), the peak test does not (2.3σ). The direction fact
         // used to count the map test, so "preferred direction" went unflagged.
-        const built = buildCase(ALL_CASES.find((item) => item.id === 'dev-thermal-null'), { partials: false });
+        const built = buildCase(DEV_CASES.find((item) => item.id === 'dev-thermal-null'), { partials: false });
         const payload = await handlePcaMessage({ kind: 'orientation', referenceNumber: 3, geometry: false }, async () => built.rmc6f);
         const { checks, facts } = summarizeOrientation(payload, null);
         expect(payload.peakSignificance).toBeLessThan(3);
@@ -483,7 +483,7 @@ describe('Copilot summarizers', () => {
     });
 
     it('cluster summary: "LESS distorted" does not deny a distortion the axis families show (Jahn–Teller octahedra)', () => {
-        const built = buildCase(ALL_CASES.find((item) => item.id === 'dev-jahn-teller'), { partials: false });
+        const built = buildCase(DEV_CASES.find((item) => item.id === 'dev-jahn-teller'), { partials: false });
         const { checks } = summarizeClusters(clusterDistortion(siteDisplacementsFromRmc6f(built.rmc6f), 'F', [2.5, 3.25]));
         const less = checks.find((check) => /LESS distorted/.test(check.text));
         expect(less.text).toMatch(/yet more clusters than by chance are (elongated|compressed) along <100>/);
@@ -495,7 +495,7 @@ describe('Copilot summarizers', () => {
         // Mo3 triangles whose size fluctuates collectively (sd 4 %), shape
         // regular: the engine reads the shape at each cluster's own size
         // (its tests pin the decision), and the tool says so.
-        const breathing = buildCase(ALL_CASES.find((item) => item.id === 'dev-breathing'), { partials: false });
+        const breathing = buildCase(DEV_CASES.find((item) => item.id === 'dev-breathing'), { partials: false });
         const ask = (built) => inProcessEngine(built.rmc6f);
         const triangles = buildCopilotTools({ request: ask(breathing), structure: null, elements: ['Mo', 'O'] })
             .find((tool) => tool.name === 'analyze_clusters');
@@ -509,7 +509,7 @@ describe('Copilot summarizers', () => {
         // Jahn–Teller F6 octahedra: the F sites have two positions each (the
         // engine finds them from its own clouds, with no second request), so
         // the null holds the distortion's amplitude; the pattern shows it.
-        const jt = buildCase(ALL_CASES.find((item) => item.id === 'dev-jahn-teller'), { partials: false });
+        const jt = buildCase(DEV_CASES.find((item) => item.id === 'dev-jahn-teller'), { partials: false });
         const requests = [];
         const counting = (kind, params) => {
             requests.push(kind);
@@ -527,7 +527,7 @@ describe('Copilot summarizers', () => {
 
     it('measure_symmetry_lowering: the coherent shift the 0.2 Å card hides, and none where there is none (review L4)', async () => {
         const tool = (id) => {
-            const built = buildCase(ALL_CASES.find((item) => item.id === id), { partials: false });
+            const built = buildCase(DEV_CASES.find((item) => item.id === id), { partials: false });
             const parsed = structureFromRmc6f({ path: `${id}.rmc6f`, text: built.rmc6f });
             return buildCopilotTools({ request: null, structure: parsed, elements: [] }).find((entry) => entry.name === 'measure_symmetry_lowering');
         };
@@ -577,7 +577,7 @@ describe('Copilot summarizers', () => {
 
     // A dev case's engine tools (the run's own engine, in-thread).
     const devTools = (id) => {
-        const built = buildCase(ALL_CASES.find((item) => item.id === id), { partials: false });
+        const built = buildCase(DEV_CASES.find((item) => item.id === id), { partials: false });
         const parsed = structureFromRmc6f({ path: `${id}.rmc6f`, text: built.rmc6f });
         const runElements = Object.keys(parsed.elementCounts).sort();
         return Object.fromEntries(buildCopilotTools({ request: inProcessEngine(built.rmc6f), structure: parsed, elements: runElements })
