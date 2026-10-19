@@ -10,3 +10,9 @@ export { default as WatchdogBadge } from './components/WatchdogBadge';
 // What a point group implies (inversion, chirality, polarity), for host tools
 // that report a space group (copilotTools.js detect_symmetry).
 export { describePointGroup, pointGroupFacts } from './context/pointGroups';
+// The run's one shell reading (context/shells.js): when two coordination
+// numbers agree, and compute_bond_angles' counts rule for a window that cuts
+// a shell, with its thresholds (copilotTools.js).
+export {
+    cnMatches, countsCut, MODAL_COORDINATION_SHARE, shellCatalogue, UNBONDED_APEX_FRACTION
+} from './context/shells';

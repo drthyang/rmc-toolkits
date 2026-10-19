@@ -16,6 +16,7 @@ import modulationsFixture from './fixtures/modulations_fixture.json';
 import clustersFixture from './fixtures/clusters_fixture.json';
 import { CLUSTER_BECAUSE, clusterDistortion } from '../workers/clusters';
 import { MODULATION_BECAUSE, SIGMA_MAX } from '../workers/modulations';
+import { coordinationSummaryOf } from '../workers/triplets';
 import { auditAnswer } from '../llm/copilot/answerAudit';
 import { ALL_CASES, buildCase, buildConfiguration } from '../../validation/cases';
 import {
@@ -273,7 +274,7 @@ describe('Copilot summarizers', () => {
 
     it('bond-angle checks: a window that misses most central atoms is refused', () => {
         const { checks } = summarizeBondAngles({
-            triplet: ['Se', 'Ta', 'Se'], angleCount: 2, apexCount: 10, coordination: [8, 0, 2],
+            triplet: ['Se', 'Ta', 'Se'], angleCount: 2, apexCount: 10, coordination: [8, 0, 2], coordinationSummary: coordinationSummaryOf([8, 0, 2]),
             binCenters: [89.5, 90.5], counts: [1, 1], meanAngle: 90, stdAngle: 0.5,
             lengths12: { meanLength: 2.6, uniqueBonds: 4 }, sharedEnds: true
         });
@@ -285,11 +286,25 @@ describe('Copilot summarizers', () => {
         }]);
     });
 
+    it('bond-angle checks read the engine\'s coordinationSummary through the shell module\'s counts rule, and fail loudly without it', () => {
+        const payload = {
+            triplet: ['Se', 'Ta', 'Se'], angleCount: 20, apexCount: 10, coordination: [0, 0, 4, 3, 3],
+            binCenters: [89.5, 90.5], counts: [10, 10], meanAngle: 90, stdAngle: 0.5,
+            lengths12: { meanLength: 2.6, uniqueBonds: 14 }, sharedEnds: true
+        };
+        // 4 of 10 share the modal count (2): below 60 %, refused; the tie-free summary is the engine's.
+        const refusedResult = summarizeBondAngles({ ...payload, coordinationSummary: coordinationSummaryOf(payload.coordination) });
+        expect(refusedResult.data.refused).toMatch(/cuts the coordination shell/);
+        expect(refusedResult.checks[0].text).toMatch(/^Refused: Only 40 % of the Ta atoms have the most common count \(2 Se–Ta bonds\); the counts spread from 2 to 4\./);
+        expect(refusedResult.data.coordination.mean).toBe(2.9);
+        expect(() => summarizeBondAngles(payload)).toThrow(/coordinationSummary/);
+    });
+
     it('bond-angle reference: only an A–B–A triplet in one window is read against a polyhedron (review 2026-10-12 #5)', () => {
         // Six Se per Ta, every angle near 90°: a whole octahedral shell's
         // numbers, but for a mixed or a split triplet the angles are a subset.
         const base = {
-            angleCount: 15, apexCount: 1, coordination: [0, 0, 0, 0, 0, 0, 1],
+            angleCount: 15, apexCount: 1, coordination: [0, 0, 0, 0, 0, 0, 1], coordinationSummary: coordinationSummaryOf([0, 0, 0, 0, 0, 0, 1]),
             binCenters: [89.5, 90.5], counts: [8, 7], meanAngle: 90, stdAngle: 0.5,
             lengths12: { meanLength: 2.6, uniqueBonds: 6 }
         };
@@ -319,6 +334,7 @@ describe('Copilot summarizers', () => {
         );
         const summary = summarizeBondAngles({
             triplet: ['Se', 'Ta', 'Se'], sharedEnds: true, angleCount: 1800, apexCount: 100, coordination: [0, 0, 0, 0, 0, 0, 100],
+            coordinationSummary: coordinationSummaryOf([0, 0, 0, 0, 0, 0, 100]),
             binCenters: centers, counts: centers.map(() => 150), meanAngle: 90, stdAngle: 50, lengths12: { meanLength: 2.6, uniqueBonds: 600 }
         });
         expect(summary.data.histogram_10deg.every((value) => value > 0.05)).toBe(true);

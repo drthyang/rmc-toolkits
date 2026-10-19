@@ -13,11 +13,17 @@
 //              module that decides it (skillLint/tables.js BINDINGS), and every
 //              number after a comparator is bound or listed as no gate;
 //   firm-rule  every "*Firm rule in the app:*" is mapped to the check or
-//              refusal that enforces it, and that code is exercised.
+//              refusal that enforces it, and that code is exercised;
+//   value      every value a skill quotes as measured on the Demo that
+//              tables.js VALUES binds equals what the tool shows there now
+//              (the shell readings: find_gr_peaks, the shell catalogue, the
+//              bond-angle counts summary).
 //
 // Today's violations are in ALLOW_LIST (tables.js), each with why: any new
-// one fails, and so does an entry no violation needs any more. The lint's
-// logic is lint.js; its own tests are at the end of this file.
+// one fails, and so does an entry no violation needs any more. A value entry
+// also names the line, the skill's value and the tool's, and fails when any
+// of them moves. The lint's logic is lint.js; its own tests are at the end of
+// this file.
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -31,13 +37,14 @@ import { buildAskUserTool } from '../llm/copilot/askUser';
 import { buildReadSkillTool } from '../llm/copilot/skills';
 import { buildRunTools } from '../llm/copilot/runTools';
 import { buildFocusTools } from '../llm/copilot/viewTools';
+import { shellCatalogue } from '../llm/context/shells';
 import { handlePcaMessage } from '../workers/pcaKdeWorker';
 import { bundledSkills, COPILOT_PAGES, loadDemoAssistantRun } from './modelVisible/helpers';
 import {
-    classifyIdentifier, compareAllowList, describeFinding, evaluateBinding, firmRuleSentences, flatten, gateNumberCandidates,
+    classifyIdentifier, compareAllowList, describeFinding, evaluateBinding, evaluateValue, firmRuleSentences, flatten, gateNumberCandidates,
     identifierMentions, lintSkills
 } from './skillLint/lint';
-import { ALLOW_LIST, BINDINGS, FIRM_RULES, NOT_GATES } from './skillLint/tables';
+import { ALLOW_LIST, BINDINGS, FIRM_RULES, NOT_GATES, VALUES } from './skillLint/tables';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = join(HERE, '..');
@@ -45,12 +52,17 @@ const SNAPSHOTS = join(HERE, 'modelVisible/__snapshots__');
 
 // --- what the Copilot offers and what the model sees ----------------------------------
 
-/** Every tool the Copilot can offer, from the builders, on the Demo run (all of them are built there). */
+/**
+ * Every tool the Copilot can offer, from the builders, on the Demo run (all
+ * of them are built there), and the probe context the value check measures
+ * with: find_gr_peaks' and compute_bond_angles' data (each call once), the
+ * bond-angle engine's payload and the run's shell catalogue.
+ */
 const offeredTools = async () => {
     const { run, rmc6fText } = await loadDemoAssistantRun();
     const request = (kind, params) => handlePcaMessage({ kind, ...params }, async () => rmc6fText);
     const cards = buildCopilotCards({ plotFiles: run.plotFiles, rValueFile: run.rValueFile, symmetry: run.symmetry });
-    return [
+    const tools = [
         ...buildRunTools(run, { cards }),
         ...buildFocusTools({ cards, pages: COPILOT_PAGES }),
         ...buildCopilotTools({ request, structure: run.structure, elements: Object.keys(run.structure.elementCounts || {}).sort() }),
@@ -58,6 +70,23 @@ const offeredTools = async () => {
         buildAskUserTool(),
         buildReadSkillTool(bundledSkills(), { load: copilotSkills.load })
     ].filter(Boolean);
+    const byName = new Map(tools.map((tool) => [tool.name, tool]));
+    const once = (compute) => {
+        const seen = new Map();
+        return (args) => {
+            const key = JSON.stringify(args);
+            if (!seen.has(key)) seen.set(key, compute(args));
+            return seen.get(key);
+        };
+    };
+    const probes = {
+        tools: byName,
+        gr: once(async (pair) => (await byName.get('find_gr_peaks').run({ pair })).data),
+        bondAngles: once(async (args) => (await byName.get('compute_bond_angles').run(args)).data),
+        triplets: once((params) => request('triplets', { binWidth: 1, ...params })),
+        catalogue: shellCatalogue(run)
+    };
+    return { tools, probes };
 };
 
 const addSchemaKeys = (schema, into) => {
@@ -118,7 +147,8 @@ describe('the skill lint (AGENT_PLAN 5.1)', () => {
     let result;
 
     beforeAll(async () => {
-        tools = await offeredTools();
+        const offered = await offeredTools();
+        tools = offered.tools;
         files = await bundledFiles();
         result = await lintSkills({
             files,
@@ -127,9 +157,10 @@ describe('the skill lint (AGENT_PLAN 5.1)', () => {
             bindings: BINDINGS,
             notGates: NOT_GATES,
             firmRules: FIRM_RULES,
-            probeContext: { tools: new Map(tools.map((tool) => [tool.name, tool])) }
+            values: VALUES,
+            probeContext: offered.probes
         });
-    }, 60000);
+    }, 120000);
 
     it('checks against every tool the dock and the harness send', () => {
         const offered = new Set(tools.map((tool) => tool.name));
@@ -153,7 +184,8 @@ describe('the skill lint (AGENT_PLAN 5.1)', () => {
     it.each([
         ['tool', 'every tool a skill names is one the Copilot offers'],
         ['gate', 'every gate number a skill states equals the constant that decides it'],
-        ['firm-rule', 'every firm rule names a check or refusal that exists']
+        ['firm-rule', 'every firm rule names a check or refusal that exists'],
+        ['value', 'every value a skill quotes as measured on the Demo equals the tool\'s']
     ])('%s: %s (beyond the allow-list)', (check) => {
         const { unexpected } = compareAllowList(result.findings.filter((finding) => finding.check === check), ALLOW_LIST);
         expect(unexpected.map(describeFinding), `new ${check} violations: fix the skill or the code, or add an entry with why`).toEqual([]);
@@ -164,8 +196,17 @@ describe('the skill lint (AGENT_PLAN 5.1)', () => {
         expect(stale.map((entry) => `${entry.file} [${entry.check}] "${entry.fragment}"`), 'fixed: remove these allow-list entries').toEqual([]);
         for (const entry of ALLOW_LIST) {
             expect(entry.fragment.length, entry.fragment).toBeLessThanOrEqual(60);
-            expect(['tool', 'gate', 'firm-rule']).toContain(entry.check);
+            expect(['tool', 'gate', 'firm-rule', 'value']).toContain(entry.check);
             expect(entry.why.length, entry.fragment).toBeGreaterThan(20);
+        }
+    });
+
+    it('names each value mismatch it holds: the line, the skill\'s value and the tool\'s', () => {
+        for (const entry of ALLOW_LIST.filter((item) => item.check === 'value')) {
+            const finding = result.findings.find((item) => item.check === 'value' && item.file === entry.file && item.context.includes(entry.fragment));
+            expect(finding, entry.fragment).toBeDefined();
+            expect({ line: finding.line, skill: finding.stated, tool: finding.measured }, `${entry.file}: ${entry.fragment}`)
+                .toEqual({ line: entry.line, skill: entry.skill, tool: entry.tool });
         }
     });
 
@@ -235,6 +276,38 @@ describe('the lint itself', () => {
         expect(findings.map((finding) => [finding.check, finding.kind])).toEqual([['firm-rule', 'unmapped'], ['firm-rule', 'broken'], ['firm-rule', 'stale']]);
         expect(findings[0].context).toBe('the Outcome is computed.');
         expect(findings[1].detail).toContain('rule x is gone');
+    });
+
+    it('reads a measured value as written, and compares it at the skill\'s own precision', async () => {
+        const entry = { what: 'the first peak\'s CN', find: 'the first peak holds', number: /holds (?<n>\d+(?:\.\d+)?) atoms/, tool: 't' };
+        const read = (text, measured, extra = {}) => evaluateValue({ ...entry, ...extra }, flatten(text).flat, measured);
+        expect(read('Here the first peak holds 3.9 atoms.', 3.25)).toMatchObject({ problem: 'differs', stated: '3.9', measured: '3.25' });
+        expect(read('Here the first peak holds 3.3 atoms.', 3.25).problem).toBeNull();
+        // A count written whole agrees within half an atom.
+        expect(read('Here the first peak holds 3 atoms.', 2.75).problem).toBeNull();
+        expect(read('Here the first peak holds 3 atoms.', 2.4).problem).toBe('differs');
+        expect(read('No such sentence.', 3).problem).toBe('stale');
+        expect(read('Here the first peak holds many atoms.', 3).problem).toBe('no-number');
+        // A window, and a share in %.
+        const window = { what: 'w', find: 'window', number: /window (?<n>\d+\.\d+)–(?<m>\d+\.\d+) Å/, tool: 't' };
+        expect(evaluateValue(window, 'the window 2.33–2.71 Å', [2.21, 2.65])).toMatchObject({ problem: 'differs', stated: '2.33–2.71', measured: '2.21–2.65' });
+        expect(evaluateValue(window, 'the window 2.21–2.65 Å', [2.21, 2.65]).problem).toBeNull();
+        const share = { what: 's', find: 'share', number: /share (?<n>\d+) %/, unit: '%', tool: 't' };
+        expect(evaluateValue(share, 'a share 47 %', 0.4748).problem).toBeNull();
+        expect(evaluateValue(share, 'a share 47 %', 0.4)).toMatchObject({ problem: 'differs', stated: '47 %', measured: '40 %' });
+        // In the lint: a finding with the line of the number, and a measurement that throws is one too.
+        const text = 'Line one.\nHere the first peak holds\n3.9 atoms.\n';
+        const { findings } = await lintSkills({
+            files: { '.claude/skills/demo/SKILL.md': text },
+            tools: new Set(),
+            fields: new Set(),
+            values: [
+                { ...entry, file: 'demo/SKILL.md', measure: () => 3.25 },
+                { ...entry, file: 'demo/SKILL.md', what: 'x', measure: () => { throw new Error('no run'); } }
+            ]
+        });
+        expect(findings.map((finding) => [finding.check, finding.kind, finding.line, finding.stated, finding.measured]))
+            .toEqual([['value', 'differs', 3, '3.9', '3.25'], ['value', 'broken', 2, undefined, undefined]]);
     });
 
     it('compares findings with the allow-list both ways', () => {
