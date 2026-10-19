@@ -16,6 +16,15 @@
 // model except through the tools. The record keeps the case id; the model
 // never sees the record.
 //
+// The run is opened through the run module's in-process adapter
+// (runFolder.js loadRun → src/openRunFolder.js), the app's own path from a
+// folder's files to the Copilot's run props, tools and engine, with a view
+// (HARNESS_VIEW: the app's defaults). The record keeps the view and the
+// context sections the model was given, and that the question was one fresh
+// question with no earlier turns; `pcaTable` adds the PCA table, as after a
+// visit to the PCA Ellipsoid page, for a dev check of its effect (off by
+// default).
+//
 // One run gives one record: every decision (round, tool, arguments, the
 // reasoning and text the model wrote before it, the result it read), the
 // final answer, its verdict and score, the answer checks against the
@@ -38,8 +47,7 @@ import { contextAuditFacts } from '../src/llm/copilot/answerAudit';
 import { buildRunContext } from '../src/llm/context/runContext';
 import { pointGroupFacts } from '../src/llm/context/pointGroups';
 import { buildCopilotMessages, shownContext } from '../src/llm/prompts/copilot';
-import { buildCopilotTools } from '../src/copilotTools';
-import { loadRun } from './runFolder';
+import { HARNESS_VIEW, loadRun } from './runFolder';
 import { parseVerdict, VERDICT_INSTRUCTIONS, VERDICT_MARK } from './verdict';
 import { outcomeAgreement, scoreVerdict } from './scoring';
 import { shownValues, traceNumbers } from './provenance';
@@ -67,26 +75,48 @@ const clip = (text, limit) => (text && text.length > limit ? `${text.slice(0, li
 /** The question each live run is asked: the case question plus the verdict format. */
 export const liveQuestion = (built) => `${built.question}\n\n${VERDICT_INSTRUCTIONS}`;
 
+// The sections buildRunContext (src/llm/context/runContext.js) can give the
+// model besides the run's name and Live Data flag, in its order. A run in the
+// app can have them all (the Demo with the PCA table does: runFolder.test.js);
+// a case has the structure, its symmetry and the partial g(r) only, unless the
+// view adds the PCA table.
+export const CONTEXT_SECTIONS = Object.freeze([
+    'structure', 'configuration_optimization', 'run_settings', 'symmetry', 'pca_displacements',
+    'pair_correlations', 'datasets', 'partial_weights', 'convergence'
+]);
+
+/**
+ * What the model was told about the run, for the record: the context sections
+ * it had and lacked, and that the question came with no earlier turns (the
+ * app sends up to eight).
+ */
+export const contextRecord = (context) => ({
+    sections: CONTEXT_SECTIONS.filter((key) => key in context),
+    absent: CONTEXT_SECTIONS.filter((key) => !(key in context)),
+    other_sections: Object.keys(context).filter((key) => key !== 'run' && key !== 'live_mode' && !CONTEXT_SECTIONS.includes(key)),
+    earlier_turns: 0
+});
+
 /**
  * One live run. `callModel(request)` streams a model reply (contextGuard's
  * streamCopilotChat bound to a model, or a scripted fake in tests); `skills`
- * is `{ files, references, load }` as copilotSkills.js gives the app.
+ * is `{ files, references, load }` as copilotSkills.js gives the app. `view`
+ * (merged over HARNESS_VIEW) and `pcaTable` set what is "on screen" (runFolder.js
+ * loadRun); the defaults change nothing.
  */
 export const runLiveCase = async ({
-    built, arm, model, runIndex = 0, callModel, skills = null, commit = null, limits = {}, signal = null, now = () => Date.now()
+    built, arm, model, runIndex = 0, callModel, skills = null, commit = null, limits = {}, signal = null, now = () => Date.now(),
+    view = HARNESS_VIEW, pcaTable = false
 }) => {
     if (!ARMS[arm]) throw new Error(`unknown arm '${arm}' (B or C)`);
     const startedAt = now();
-    const run = loadRun(built);
-    const props = {
-        runName: run.runName, plotFiles: run.plotFiles, rValueFile: null, structure: run.structure,
-        symmetry: run.symmetry, runSettings: null, pcaSites: null, liveData: false
-    };
+    const run = await loadRun(built, view, { pcaTable });
+    const { props } = run;
     const context = buildRunContext(props);
     const parsedSkills = ARMS[arm].skills && skills?.files ? parseSkillFiles(skills.files, { available: skills.references || null }) : [];
     const tools = [
         ...buildRunTools(props, { cards: [] }),
-        ...buildCopilotTools({ request: run.request, structure: run.structure, elements: run.elements }),
+        ...run.tools,
         buildAskUserTool(),
         ARMS[arm].skills ? buildReadSkillTool(parsedSkills, { load: skills?.load }) : null
     ].filter(Boolean);
@@ -97,7 +127,7 @@ export const runLiveCase = async ({
         skills: ARMS[arm].skills ? skillIndex(parsedSkills) : ''
     });
     const asked = [];
-    const clarifier = buildClarifier({ plotFiles: run.plotFiles, structure: run.structure, symmetry: run.symmetry },
+    const clarifier = buildClarifier({ plotFiles: props.plotFiles, structure: props.structure, symmetry: props.symmetry },
         { noiseFloor: context.symmetry?.noise_floor_A ?? null });
 
     const record = {
@@ -114,6 +144,10 @@ export const runLiveCase = async ({
         question,
         tools_offered: tools.map((tool) => tool.name),
         skills_offered: parsedSkills.map((skill) => skill.name),
+        // The view the run was opened with (the run module's, normalised) and
+        // what the model was told: its context sections, one fresh question.
+        view: run.view,
+        context: contextRecord(context),
         steps: [],
         retracted: [],
         gates: [],

@@ -15,7 +15,8 @@ const fmt = (value, digits = 2) => (value == null ? '–' : value.toFixed(digits
 export const aggregate = (records) => {
     const groups = new Map();
     records.forEach((record) => {
-        const column = `${record.model?.name ?? 'no model'} · ${record.arm}`;
+        // A run given the PCA table (run.js live --pca-table, a dev check) is its own column.
+        const column = `${record.model?.name ?? 'no model'} · ${record.arm}${record.view?.pcaSites ? ' + PCA table' : ''}`;
         const key = `${record.split}|${column}|${record.case}`;
         if (!groups.has(key)) groups.set(key, { split: record.split, column, case: record.case, runs: [] });
         groups.get(key).runs.push(record);
