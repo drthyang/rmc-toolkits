@@ -11,7 +11,7 @@
 // without the view tools, which need a screen; the Workbench's own questions;
 // the evidence gate; the answer checks): a recording model calls the tool,
 // and its second request holds the tool message. The engines run in-thread
-// (pcaKdeWorker's handlePcaMessage, as src/openRunFolder.js runs them).
+// (pcaKdeWorker's inProcessEngine, as src/openRunFolder.js runs them).
 // Also: an ask_user answer, a read_skill result, and a window that cuts the
 // Ta–Se shell, once as the app runs it (the Workbench asks, the user skips:
 // the call runs in the whole shell, with a note) and once as the tool itself
@@ -34,7 +34,7 @@ import { buildCopilotMessages, shownContext } from '../../llm/prompts/copilot';
 import { copilotSkills } from '../../copilotSkills';
 import { buildCopilotCards } from '../../copilotCards';
 import { buildCopilotTools } from '../../copilotTools';
-import { handlePcaMessage } from '../../workers/pcaKdeWorker';
+import { inProcessEngine } from '../../workers/pcaKdeWorker';
 import { bundledSkills, jsonFile, loadDemoAssistantRun, recordingModel } from './helpers';
 
 const QUESTION = 'Run the analysis.';
@@ -73,7 +73,7 @@ describe('tool results as the model reads them (the Demo run)', () => {
 
     beforeAll(async () => {
         const { run, rmc6fText } = await loadDemoAssistantRun();
-        const request = (kind, params) => handlePcaMessage({ kind, ...params }, async () => rmc6fText);
+        const request = inProcessEngine(rmc6fText);
         const cards = buildCopilotCards({ plotFiles: run.plotFiles, rValueFile: run.rValueFile, symmetry: run.symmetry });
         const skills = bundledSkills();
         const tools = [

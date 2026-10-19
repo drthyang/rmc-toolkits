@@ -27,7 +27,6 @@ import {
     siteOrientationHistogram
 } from '../orientation.js';
 import { siteDisplacementsFromRmc6f } from '../pcaKde.js';
-import { handlePcaMessage } from '../pcaKdeWorker.js';
 import fixture from '../../__tests__/fixtures/orientation_fixture.json';
 
 // Deterministic Gaussian sampler (same construction as orientation.test.js).
@@ -267,16 +266,8 @@ describe('element "all" normalisation', () => {
         }
         expect(siteOrientationHistogram(parsed, { element: 'Se', frequency: 2, geometry: false }).element).toBe('Se');
     });
-
-    it('normalises element "all" in the worker transport like the Flask route', async () => {
-        const text = twoSiteRmc6f();
-        const result = await handlePcaMessage(
-            { kind: 'orientation', element: 'all', frequency: 2, geometry: false },
-            async () => text
-        );
-        expect(result.totalPoints).toBe(128);
-        expect('element' in result).toBe(false);
-    });
+    // The worker transport's 'all': the request contract
+    // (fixtures/analysis_requests.json, src/__tests__/analysisRequests.test.js).
 });
 
 // orientation.numerics.2/.14, orientation.parity.11/.16, orientation.physics.21

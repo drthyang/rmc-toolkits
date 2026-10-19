@@ -3,10 +3,11 @@
 
 // Static-mode workers refuse what the Flask routes refuse, and never leave the
 // caller waiting:
-// - pcaKdeWorker: orientation `frequency` must be an integer and `smoothing` an
-//   integer in [0, 64] (/api/pca/orientation); kde and orientation results that
-//   hold NaN/Infinity are an error with _strict_result_response's message; an
-//   unknown `kind` is an error, not a silent KDE.
+// - pcaKdeWorker: kde and orientation results that hold NaN/Infinity are an
+//   error with _strict_result_response's message; an unknown `kind` is an
+//   error, not a silent KDE. Its request rules (each parameter's range, the
+//   kinds) are the request contract, fixtures/analysis_requests.json, replayed
+//   by src/__tests__/analysisRequests.test.js.
 // - autoScaleWorker: manual mode needs a finite, non-zero `a` and a finite `b`
 //   (/api/scaling/*), and a non-finite scaling result is an error
 //   (_require_finite_scaling), never `ok: true` with NaN curves.
@@ -94,28 +95,9 @@ describe('requestNumber mirrors app._number', () => {
     });
 });
 
-describe('pcaKdeWorker request rules (as /api/pca/*)', () => {
+describe('pcaKdeWorker results and messages (as /api/pca/*)', () => {
     const dataset = buildRmc6f(['Ga', 'Se'], { seed: 21 });
     const get = async () => dataset;
-
-    it('orientation smoothing must be an integer in [0, 64]', async () => {
-        await expect(handlePcaMessage({ kind: 'orientation', referenceNumber: 1, smoothing: 1e9 }, get))
-            .rejects.toThrow('smoothing must be <= 64, got 1000000000');
-        await expect(handlePcaMessage({ kind: 'orientation', referenceNumber: 1, smoothing: 1.5 }, get))
-            .rejects.toThrow('smoothing must be an integer, got 1.5');
-        await expect(handlePcaMessage({ kind: 'orientation', referenceNumber: 1, smoothing: -1 }, get))
-            .rejects.toThrow('smoothing must be >= 0, got -1');
-    });
-
-    it('orientation frequency must be an integer', async () => {
-        await expect(handlePcaMessage({ kind: 'orientation', referenceNumber: 1, frequency: 2.5 }, get))
-            .rejects.toThrow('frequency must be an integer, got 2.5');
-        await expect(handlePcaMessage({ kind: 'orientation', referenceNumber: 1, frequency: 'many' }, get))
-            .rejects.toThrow("frequency must be a number, got 'many'");
-        const ok = await handlePcaMessage(
-            { kind: 'orientation', referenceNumber: 1, frequency: '3', geometry: false }, get);
-        expect(ok.frequency).toBe(3);
-    });
 
     it('a kde result with NaN/Infinity is refused with the Flask message', async () => {
         for (const extreme of [{ bw: 1e-200 }, { extent: 1e300 }, { bw: 1e200 }]) {
@@ -125,11 +107,6 @@ describe('pcaKdeWorker request rules (as /api/pca/*)', () => {
         }
         const ok = await handlePcaMessage({ kind: 'kde', referenceNumber: 1, grid: 12, projections: false }, get);
         expect(ok.density.length).toBe(12 ** 3);
-    });
-
-    it('an unknown kind is an error, not a silent KDE', async () => {
-        await expect(handlePcaMessage({ kind: 'bogus' }, get))
-            .rejects.toThrow("unknown request kind 'bogus'");
     });
 
     it('a null message is an error the caller receives', async () => {
