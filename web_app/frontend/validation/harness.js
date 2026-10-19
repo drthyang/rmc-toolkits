@@ -97,8 +97,10 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // 2026-10-19.9: the judgment subset joins the dev set (plan item 1.6 ii:
 // cases where A+'s fixed joining rules are ambiguous or wrong; dev only until
 // a fresh author writes their held-out matches), so a dev batch now holds
-// them, and its means are not an earlier batch's).
-export const PROTOCOL_VERSION = '2026-10-19.9';
+// them, and its means are not an earlier batch's);
+// 2026-10-19.11: five held-out judgment cases join the test set, written
+// blind from judgment-spec.md.
+export const PROTOCOL_VERSION = '2026-10-19.11';
 
 export const ARMS = Object.freeze({
     B: { skills: true, label: 'Copilot with skills and guardrails' },
