@@ -9,9 +9,14 @@
 // second adapter: it adds the case's run, its tools, the simulated user, the
 // arm's skills and the port, and keeps the record.
 //
-//   B — tools, skills (read_skill + the skills' index), guardrails (tool
-//       refusals, the Workbench's window questions, the answer checks);
-//   C — the same without the skills: the ablation.
+//   B — tools, skills (read_skill + the skills' index), the method in the
+//       prompt, the tool descriptions and the checks, guardrails (tool
+//       refusals, the Workbench's window questions, the evidence gate, the
+//       answer checks);
+//   C — the same without the method: the ablation. The turn's method 'off'
+//       (src/llm/copilot/method.js, plan item 1.8): no skills, no
+//       EVIDENCE_RULES, no method sentence in the prompt's rules, no method
+//       advice in a tool description or a check; the guardrails still run.
 //
 // The view tools (highlight_cards, orient_3d_view) need a screen and are left
 // out of both arms; every tool offered only computes. The simulated user
@@ -97,14 +102,21 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // 2026-10-19.9: the judgment subset joins the dev set (plan item 1.6 ii:
 // cases where A+'s fixed joining rules are ambiguous or wrong; dev only until
 // a fresh author writes their held-out matches), so a dev batch now holds
-// them, and its means are not an earlier batch's);
+// them, and its means are not an earlier batch's;
+// 2026-10-19.10: arm C follows no method (the turn's method 'off', plan item
+// 1.8) — no EVIDENCE_RULES, no method sentence in TOOL_RULES or ASK_RULES, the
+// domain rules' definitions and conduct without their inference, no method
+// advice in a tool description or a check, and an evidence-gate send-back
+// that names no analysis; arm B unchanged);
 // 2026-10-19.11: five held-out judgment cases join the test set, written
-// blind from judgment-spec.md.
+// blind from judgment-spec.md).
 export const PROTOCOL_VERSION = '2026-10-19.11';
 
+// `method` is the turn's (src/llm/copilot/method.js); an arm without one
+// follows the full method.
 export const ARMS = Object.freeze({
     B: { skills: true, label: 'Copilot with skills and guardrails' },
-    C: { skills: false, label: 'Copilot without skills (ablation)' }
+    C: { skills: false, method: 'off', label: 'Copilot without the method: no skills, method rules or advice (ablation)' }
 });
 
 /** The simulated user: skips every question, so the model uses its own default. */
@@ -177,7 +189,9 @@ export const runLiveCase = async ({
         // across models also compares.
         policy: buildRunPolicy({ model, limits, server }),
         question,
-        // What the turn offered (its `start`): the tools and the skills.
+        // What the turn offered (its `start`): the method it followed, the
+        // tools and the skills.
+        method: null,
         tools_offered: [],
         skills_offered: [],
         // The view the run was opened with (the run module's, normalised) and
@@ -204,7 +218,8 @@ export const runLiveCase = async ({
     // One question through the turn module (src/llm/copilot/turn.js), as the
     // dock runs it; the harness adds only what is its own: the case's run, its
     // compute-only tools (the tools over the run props, with no cards, and the
-    // run's engine tools), the simulated user, the arm's skills and its port.
+    // run's engine tools), the simulated user, the arm's skills and method,
+    // and its port.
     for await (const event of runTurn({
         question,
         run: run.props,
@@ -214,12 +229,13 @@ export const runLiveCase = async ({
         skills: ARMS[arm].skills ? skills : null,
         signal,
         clock: { now },
-        config: { limits }
+        config: { limits, method: ARMS[arm].method || 'full' }
     })) {
         if (event.type === 'start') {
             // Refused before any request: a broken harness, not a run.
             if (event.offered.view) throw new Error('a view tool was offered: the live arms offer compute-only tools');
             if (event.skillsError) throw new Error(event.skillsError);
+            record.method = event.method;
             record.tools_offered = event.offered.tools.map((tool) => tool.name);
             record.skills_offered = event.offered.skills;
             record.context = contextRecord(event.shown);

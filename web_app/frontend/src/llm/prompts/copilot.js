@@ -1,14 +1,33 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-import { SYSTEM_PROMPT } from './system';
+import { SYSTEM_PROMPT, systemPrompt } from './system';
 import { contextToJson } from '../context/runContext';
+import { TURN_METHODS } from '../copilot/method';
 
 // Messages for one Copilot turn. The domain rules (SYSTEM_PROMPT) are shared
 // with the watchdog; the Copilot adds how to work with tools and the verdict
 // line its page turns into the Outcome chip (copilot/outcome.js). The run
 // context still travels inside a fenced JSON block, so the model can tell
 // data from instructions, and tool results arrive as `tool` messages.
+//
+// The method (copilot/method.js): with method 'full' the prompt holds the
+// skills' index, EVIDENCE_RULES, every sentence of TOOL_RULES and ASK_RULES
+// and every part of the domain rules; with 'off' (the validation's arm C)
+// none of the first two, only the sentences of those rules that say how to
+// work with the tools, ask and quote (each rule is a list of sentences, its
+// method sentences marked), and of the domain rules only what defines a
+// context field and how to answer (system.js GROUND_RULES, each part marked
+// definition, inference or conduct).
+
+// A rule as sentences in order; a method sentence is sent with method 'full'
+// only. Each is its lines joined by a space, as the rule always was.
+const sentence = (...lines) => Object.freeze({ text: lines.join(' ') });
+const methodSentence = (...lines) => Object.freeze({ text: lines.join(' '), method: true });
+const ruleText = (sentences, method) => sentences
+    .filter((item) => method === 'full' || !item.method)
+    .map((item) => item.text)
+    .join(' ');
 
 // The Outcome line explains; the app computes the verdict from its checks
 // (copilot/verdict.js), so the model is not asked to grade itself.
@@ -29,6 +48,8 @@ export const REFERENCE_RULES = [
     '{{ctx.<path>}}. Type a number yourself only when you derived it, and say how.'
 ].join(' ');
 
+// Which analysis each conclusion needs: the local-order method, sent with
+// method 'full' only (the evidence gate checks under either method).
 export const EVIDENCE_RULES = [
     'Every conclusion needs its analysis in this question: order between cells',
     'or a split site called disorder, analyze_modulations; a preferred direction,',
@@ -38,48 +59,71 @@ export const EVIDENCE_RULES = [
     'answer back when its analysis did not run.'
 ].join(' ');
 
-const TOOL_RULES = [
-    'You are the Copilot: you can run the Workbench analyses with the tools',
-    'provided, and you should, whenever the question needs numbers the context',
-    'does not hold. Do not call a tool when the context already answers.',
-    'Work in steps:',
-    '(1) decide what evidence the question needs;',
-    '(2) call the tools, saying in one short sentence why before each call;',
-    '(3) read each result and its `checks` — `fail` means the result does not',
-    'answer as asked: change the arguments (e.g. widen a bond window, pick',
-    'another site) or the approach, and never repeat an identical call;',
-    '`warn` means use the result with the stated caveat;',
-    '(4) answer, quoting the numbers from the tool results.',
-    'peakSignificance, mapSignificance and anisotropy significances are',
-    'calibrated one-sided sigma; ≥ 3 is significant.',
-    'A g(r) peak position or width cannot tell a distortion from thermal',
-    'spread: for a cluster or polyhedron distortion (Jahn–Teller, dimers,',
-    'trimers) run analyze_clusters or compute_bond_angles, and for where the',
-    'fit fails run compare_fit. A z-score with a tiny change is not a finding:',
-    'quote both.'
-].join(' ');
+// How to work with the tools (kept with method 'off'), then the method: how
+// to read the significances, which analysis tells a distortion, and what
+// makes a finding (sent with method 'full' only).
+export const TOOL_RULE_SENTENCES = Object.freeze([
+    sentence('You are the Copilot: you can run the Workbench analyses with the tools',
+        'provided, and you should, whenever the question needs numbers the context',
+        'does not hold.'),
+    sentence('Do not call a tool when the context already answers.'),
+    sentence('Work in steps:',
+        '(1) decide what evidence the question needs;',
+        '(2) call the tools, saying in one short sentence why before each call;',
+        '(3) read each result and its `checks` — `fail` means the result does not',
+        'answer as asked: change the arguments (e.g. widen a bond window, pick',
+        'another site) or the approach, and never repeat an identical call;',
+        '`warn` means use the result with the stated caveat;',
+        '(4) answer, quoting the numbers from the tool results.'),
+    methodSentence('peakSignificance, mapSignificance and anisotropy significances are',
+        'calibrated one-sided sigma; ≥ 3 is significant.'),
+    methodSentence('A g(r) peak position or width cannot tell a distortion from thermal',
+        'spread: for a cluster or polyhedron distortion (Jahn–Teller, dimers,',
+        'trimers) run analyze_clusters or compute_bond_angles, and for where the',
+        'fit fails run compare_fit.'),
+    methodSentence('A z-score with a tiny change is not a finding:',
+        'quote both.')
+]);
 
 const COMPUTE_ONLY = 'Tools only compute: they never change what the user sees.';
 
 // With ask_user (copilot/askUser.js): ask instead of guessing a parameter that
-// changes the science, and only then.
-export const ASK_RULES = [
-    'Ask instead of guessing a parameter that changes the science. When the',
-    'question leaves open a choice that changes which analysis you run or its',
-    'parameters — which coordination shell or r-window, which site or element',
-    'pair, which symmetry tolerance, which run or dataset — and neither the',
-    'context nor an analysis can settle it, call ask_user with 2–4 short',
-    'options, each saying what it means (the window in Å, the site), and your',
-    'default. A request that names an element but not which neighbours,',
-    'triplet or site (e.g. "the bond angles around Ta") is such a choice: ask,',
-    'offering the likely ones. Settle what the data can first: e.g. run',
-    'find_gr_peaks, then offer its shells as the options. Never ask when the',
-    'question is clear, when the context or an analysis answers it, or for',
-    'permission to run an analysis. One question at a time, at most two per',
-    'request. Then use exactly the option the user chose and say in the answer',
-    'which one you used; when you choose without asking, say which choice you',
-    'made.'
-].join(' ');
+// changes the science, and only then. Its one method sentence names the
+// analysis that settles a shell first.
+export const ASK_RULE_SENTENCES = Object.freeze([
+    sentence('Ask instead of guessing a parameter that changes the science.'),
+    sentence('When the',
+        'question leaves open a choice that changes which analysis you run or its',
+        'parameters — which coordination shell or r-window, which site or element',
+        'pair, which symmetry tolerance, which run or dataset — and neither the',
+        'context nor an analysis can settle it, call ask_user with 2–4 short',
+        'options, each saying what it means (the window in Å, the site), and your',
+        'default.'),
+    sentence('A request that names an element but not which neighbours,',
+        'triplet or site (e.g. "the bond angles around Ta") is such a choice: ask,',
+        'offering the likely ones.'),
+    methodSentence('Settle what the data can first: e.g. run',
+        'find_gr_peaks, then offer its shells as the options.'),
+    sentence('Never ask when the',
+        'question is clear, when the context or an analysis answers it, or for',
+        'permission to run an analysis.'),
+    sentence('One question at a time, at most two per',
+        'request.'),
+    sentence('Then use exactly the option the user chose and say in the answer',
+        'which one you used; when you choose without asking, say which choice you',
+        'made.')
+]);
+
+const TOOL_RULES = ruleText(TOOL_RULE_SENTENCES, 'full');
+export const ASK_RULES = ruleText(ASK_RULE_SENTENCES, 'full');
+
+/**
+ * Every method sentence of the prompt's rules (TOOL_RULES and ASK_RULES),
+ * which method 'off' leaves out; EVIDENCE_RULES goes whole.
+ */
+export const METHOD_SENTENCES = Object.freeze([...TOOL_RULE_SENTENCES, ...ASK_RULE_SENTENCES]
+    .filter((item) => item.method)
+    .map((item) => item.text));
 
 // With the view tools (highlight_cards from the host's cards, and the host's
 // own orient_3d_view / current_view): explain by pointing at the page.
@@ -138,28 +182,34 @@ export const skillsBlock = (index) => [
  * The system prompt for the tools the turn offers: the tool rules, the ask
  * rules when ask_user is among them, the skills' index when read_skill is,
  * then pointing (view tools) or the compute-only sentence, then the Outcome
- * rule.
+ * rule. With method 'off' (copilot/method.js) the rules lose their method
+ * sentences, the domain rules their inference parts (system.js), and
+ * EVIDENCE_RULES and the skills' index are not sent. With tools off the
+ * prompt is the no-tools one: the domain rules, under the same method, and
+ * the Outcome rule.
  */
-export const copilotSystemPrompt = ({ toolsEnabled = true, viewTools = false, askUser = false, skills = '' } = {}) => {
-    if (!toolsEnabled) return COPILOT_PROMPT_NO_TOOLS;
+export const copilotSystemPrompt = ({ toolsEnabled = true, viewTools = false, askUser = false, skills = '', method = 'full' } = {}) => {
+    if (!TURN_METHODS.includes(method)) throw new TypeError(`copilotSystemPrompt: method must be one of ${TURN_METHODS.join(', ')}`);
+    const full = method === 'full';
+    if (!toolsEnabled) return full ? COPILOT_PROMPT_NO_TOOLS : `${systemPrompt(method)} ${OUTCOME_RULE}`;
     return [
-        SYSTEM_PROMPT,
-        TOOL_RULES,
+        systemPrompt(method),
+        ruleText(TOOL_RULE_SENTENCES, method),
         REFERENCE_RULES,
-        EVIDENCE_RULES,
-        askUser ? ASK_RULES : null,
-        skills ? skillsBlock(skills) : null,
+        full ? EVIDENCE_RULES : null,
+        askUser ? ruleText(ASK_RULE_SENTENCES, method) : null,
+        full && skills ? skillsBlock(skills) : null,
         viewTools ? VIEW_RULES : COMPUTE_ONLY,
         OUTCOME_RULE
     ].filter(Boolean).join(' ');
 };
 
 export const buildCopilotMessages = ({
-    context, history = [], userText, toolsEnabled = true, viewTools = false, askUser = false, skills = ''
+    context, history = [], userText, toolsEnabled = true, viewTools = false, askUser = false, skills = '', method = 'full'
 }) => [
     {
         role: 'system',
-        content: copilotSystemPrompt({ toolsEnabled, viewTools, askUser, skills })
+        content: copilotSystemPrompt({ toolsEnabled, viewTools, askUser, skills, method })
     },
     { role: 'user', content: contextBlock(context) },
     {

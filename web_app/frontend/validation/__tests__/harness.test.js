@@ -7,7 +7,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { buildRunContext } from '../../src/llm/context/runContext';
-import { COPILOT_PROMPT_NO_TOOLS } from '../../src/llm/prompts/copilot';
+import { COPILOT_PROMPT_NO_TOOLS, copilotSystemPrompt } from '../../src/llm/prompts/copilot';
 import { ANTI_REPEAT_TEMPERATURE, providerModel } from '../../src/llm/provider/model';
 import { buildCase, DEV_CASES } from '../cases';
 import { runLiveCase } from '../harness';
@@ -280,8 +280,11 @@ describe('the harness on the turn module: what changed', () => {
         expect(record.tools_unsupported).toMatch(/does not support tools/);
         expect(record.requests.map((request) => request.why)).toEqual(['first', 'no_tools']);
         expect(record.requests[1].sent.tools).toBeUndefined();
-        expect(record.requests[1].sent.messages[0]).toEqual({ role: 'system', content: COPILOT_PROMPT_NO_TOOLS });
-        expect(record.requests[0].sent.messages[0].content).not.toBe(COPILOT_PROMPT_NO_TOOLS);
+        // Arm C's tool-free prompt, without the method (protocol 2026-10-19.10):
+        // the dock's, with the domain rules' definitions and conduct only.
+        expect(record.requests[1].sent.messages[0]).toEqual({ role: 'system', content: copilotSystemPrompt({ toolsEnabled: false, method: 'off' }) });
+        expect(record.requests[1].sent.messages[0].content).not.toBe(COPILOT_PROMPT_NO_TOOLS);
+        expect(record.requests[0].sent.messages[0].content).not.toBe(record.requests[1].sent.messages[0].content);
     });
 
     it('3. provenance is traced against the context as the model read it, not the whole context', async () => {

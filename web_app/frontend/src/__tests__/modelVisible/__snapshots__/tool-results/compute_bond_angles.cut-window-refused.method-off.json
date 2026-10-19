@@ -1,0 +1,39 @@
+{
+  "tool": "compute_bond_angles",
+  "arguments": {
+    "end1": "Se",
+    "apex": "Ta",
+    "end2": "Se",
+    "r12_min": 2.3,
+    "r12_max": 2.7
+  },
+  "content_chars": 774,
+  "content": {
+    "ref": "r1",
+    "checks": [
+      {
+        "level": "fail",
+        "text": "Refused: Only 47 % of the Ta atoms have the most common count (3 Se–Ta bonds); the counts spread from 1 to 6. The window cuts through a coordination shell. If the user wants this window, ask them (ask_user) and call again with window_confirmed: true."
+      }
+    ],
+    "data": {
+      "triplet": "Se–Ta–Se (Ta central)",
+      "window_ab_A": [2.3, 2.7],
+      "window_bc_A": "same as A–B",
+      "angle_count": 88854,
+      "central_atoms": 16000,
+      "bond_ab": {
+        "mean_A": 2.547,
+        "unique_bonds": 59936,
+        "sd_A": 0.08
+      },
+      "bond_bc": "same as A–B",
+      "coordination": {
+        "note": "counts[n] = central atoms with exactly n A–B bonds in the window",
+        "counts": [0, 7, 231, 7596, 4930, 2457, 779],
+        "mean": 3.75
+      },
+      "refused": "the window cuts the coordination shell, so its angles are not the polyhedron's and are not returned"
+    }
+  }
+}

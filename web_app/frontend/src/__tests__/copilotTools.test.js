@@ -18,6 +18,7 @@ import { CLUSTER_BECAUSE, clusterDistortion } from '../workers/clusters';
 import { MODULATION_BECAUSE, SIGMA_MAX } from '../workers/modulations';
 import { coordinationSummaryOf } from '../workers/triplets';
 import { auditAnswer } from '../llm/copilot/answerAudit';
+import { checkText, toolDescription } from '../llm/copilot/method';
 import { ALL_CASES, buildCase, buildConfiguration } from '../../validation/cases';
 import {
     CLUSTER_SENTENCES,
@@ -237,7 +238,9 @@ describe('Copilot tools on the demo run', () => {
             {
                 level: 'note',
                 text: 'Point group -43m: cubic; no inversion centre; achiral (not a Sohncke group); non-polar. '
-                    + 'Take inversion, chirality and polarity from this, not from memory.'
+                    + 'Take inversion, chirality and polarity from this, not from memory.',
+                // The advice arm C's method 'off' leaves out (llm copilot/method.js).
+                method: [' Take inversion, chirality and polarity from this, not from memory.']
             }
         ]);
         expect(data.point_group_facts).toBe('-43m: cubic; no inversion centre; achiral (not a Sohncke group); non-polar');
@@ -282,7 +285,9 @@ describe('Copilot summarizers', () => {
             level: 'fail',
             text: 'Refused: 80 % of the Ta atoms have no Se–Ta bond in the window: it misses most of the shell. '
                 + 'Use the whole shell (find_gr_peaks\' first_shell.window_A). If the user wants this window, ask them (ask_user) '
-                + 'and call again with window_confirmed: true.'
+                + 'and call again with window_confirmed: true.',
+            // The advice arm C's method 'off' leaves out (llm copilot/method.js).
+            method: [' Use the whole shell (find_gr_peaks\' first_shell.window_A).']
         }]);
     });
 
@@ -572,5 +577,83 @@ describe('Copilot summarizers', () => {
         expect(summarizeSymmetry({ spaceGroup: 'undetermined', orbits: [] }, 0.2).checks[0].level).toBe('note');
         expect(summarizeSymmetry({ spaceGroup: '≥ -43m', orbits: [] }, 0.2).checks[0].text).toMatch(/lower bound/);
         expect(summarizeSymmetry(null, 0.2).checks[0].level).toBe('fail');
+    });
+});
+
+// The method advice in the engine tools (llm copilot/method.js, plan item
+// 1.8): the validation's arm C (method 'off') reads each description without
+// it and each check without it — a refusal still refuses, a fact stays. With
+// method 'full' (the dock, arm B) every text is as before; the model-visible
+// snapshots pin that, and arm C's tools (harness/tools.arm-C.json).
+describe('the engine tools\' method advice: what arm C reads without it', () => {
+    // Every tool the Copilot offers a model, by name.
+    const TOOL_NAME = /\b(?:read_run_data|assess_convergence|find_gr_peaks|compare_fit|list_sites|analyze_[a-z_]+|compute_bond_angles|detect_symmetry|measure_symmetry_lowering|ask_user|read_skill)\b/g;
+    const toolNames = (text) => text.match(TOOL_NAME) || [];
+
+    it('each description keeps what the tool does and returns: no other tool named but site_ref\'s source', () => {
+        const advised = Object.values(tools).filter((tool) => tool.method != null).map((tool) => tool.name);
+        expect(advised).toEqual(['list_sites', 'compute_bond_angles', 'analyze_clusters', 'analyze_modulations', 'detect_symmetry', 'measure_symmetry_lowering']);
+        for (const tool of Object.values(tools)) {
+            const off = toolDescription(tool, 'off');
+            expect(off).toBe(tool.description);
+            // site_ref's values are list_sites' refs: the parameter's meaning, not advice.
+            expect(toolNames(off)).toEqual(tool.name === 'analyze_displacement_directions' ? ['list_sites'] : []);
+        }
+        expect(toolDescription(tools.compute_bond_angles, 'full')).toMatch(/tetrahedron\. Use the whole first coordination shell \(find_gr_peaks' first_shell\.window_A\): /);
+        expect(toolDescription(tools.analyze_clusters, 'full'))
+            .toContain('in the average structure (take the window from find_gr_peaks: first_shell.window_A of that element pair). Every cluster');
+        expect(toolDescription(tools.detect_symmetry, 'full')).toMatch(/Wyckoff orbits\. Compare tolerances to see which symmetry the local distortion breaks\. Does not change the card\.$/);
+        // The refusal stays stated in arm C: on window_confirmed.
+        expect(tools.compute_bond_angles.parameters.properties.window_confirmed.description).toMatch(/A window that cuts the coordination shell is refused unless it is set\./);
+    });
+
+    it('compute_bond_angles: the cut-window refusal still refuses; only which window to use goes', async () => {
+        const cut = await tools.compute_bond_angles.run({ end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.3, r12_max: 2.7 });
+        const [check] = cut.checks;
+        expect(checkText(check, 'full')).toBe(check.text);
+        expect(checkText(check, 'off')).toBe('Refused: Only 47 % of the Ta atoms have the most common count (3 Se–Ta bonds); the counts spread from 1 to 6. '
+            + 'The window cuts through a coordination shell. If the user wants this window, ask them (ask_user) and call again with window_confirmed: true.');
+        expect(cut.data.refused).toMatch(/cuts the coordination shell/);
+    });
+
+    it('compute_bond_angles: no angles — the failure and the plain remedy, not where the window comes from', async () => {
+        const { checks } = await tools.compute_bond_angles.run({ end1: 'Ta', apex: 'Ta', end2: 'Ta', r12_min: 0.1, r12_max: 0.5 });
+        expect(checks[0].text).toBe('No angles: no central atom has two neighbours in the window(s). Widen the window '
+            + '(find_gr_peaks gives the whole first shell, first_shell.window_A) or check the elements.');
+        expect(checkText(checks[0], 'off')).toBe('No angles: no central atom has two neighbours in the window(s). Widen the window or check the elements.');
+    });
+
+    it('analyze_displacement_directions: a pooled map keeps its caveat; which analysis to run instead goes', async () => {
+        const pooled = await tools.analyze_displacement_directions.run({ element: 'Ta', frequency: 4 });
+        const note = pooled.checks.find((check) => /^Pooled over/.test(check.text));
+        expect(note.text).toMatch(/cluster distortion\. Test single sites \(site_ref\), or analyze_clusters for a cluster's shape\.$/);
+        expect(checkText(note, 'off')).toBe('Pooled over 16 sites. Where their local axes differ (the four vertices of a tetrahedral cluster), a direction '
+            + 'each site prefers in its own frame cancels here, so an isotropic pooled map is not evidence against a per-site or cluster distortion.');
+    });
+
+    it('the reading hints that name no tool are method too: arm C reads the point group\'s facts and the octahedron counts alone', async () => {
+        const symmetry = await tools.detect_symmetry.run({ tolerance_A: 0.2 });
+        const pointGroup = symmetry.checks.find((check) => /^Point group/.test(check.text));
+        expect(checkText(pointGroup, 'full')).toBe('Point group -43m: cubic; no inversion centre; achiral (not a Sohncke group); non-polar. '
+            + 'Take inversion, chirality and polarity from this, not from memory.');
+        expect(checkText(pointGroup, 'off')).toBe('Point group -43m: cubic; no inversion centre; achiral (not a Sohncke group); non-polar.');
+        const whole = await tools.compute_bond_angles.run({ end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.33, r12_max: 2.97 });
+        const octahedron = whole.checks.find((check) => /^Raw counts deplete/.test(check.text));
+        expect(octahedron.text).toMatch(/at 90°\. Read the shape from histogram_10deg_sin_corrected \(1 = random directions\), not from the raw modes\.$/);
+        expect(checkText(octahedron, 'off')).toMatch(/^Raw counts deplete angles near 180° \(as sin θ\): .* against an ideal octahedron's 20 % trans at 180° and 80 % cis at 90°\.$/);
+    });
+
+    it('analyze_clusters: the window\'s failures and the split sites\' caveat, without which window or analysis', () => {
+        const extended = CLUSTER_SENTENCES['window.extendedNetwork'].extended_network({ element: 'O', lo: 2.4, hi: 3.13 });
+        expect(extended.text).toBe('The 2.4–3.13 Å window links the O atoms into an extended network (chains or a 3-D net), not finite clusters: '
+            + 'narrow it to the intra-cluster bond (find_gr_peaks: first_shell.window_A of O-O).');
+        expect(checkText(extended, 'off')).toBe('The 2.4–3.13 Å window links the O atoms into an extended network (chains or a 3-D net), not finite clusters: narrow it.');
+        const none = CLUSTER_SENTENCES['window.extendedNetwork'].no_clusters({ element: 'Ta', lo: 0.1, hi: 0.5 });
+        expect(none.text).toBe('No two Ta sites of the average structure lie 0.1–0.5 Å apart: no clusters. Widen the window (find_gr_peaks gives the Ta-Ta first shell).');
+        expect(checkText(none, 'off')).toBe('No two Ta sites of the average structure lie 0.1–0.5 Å apart: no clusters. Widen the window.');
+        const split = CLUSTER_SENTENCES.splitMemberSites.half_or_more_split({ verdict: { splitMemberSites: { sites: [3, 5], memberSites: [3, 5, 7] } } });
+        expect(split.text).toMatch(/does not make the clusters regular\. Read the pattern \(axis families, trigonality\), the partial g\(r\) shell \(find_gr_peaks\) and the bond angles\.$/);
+        expect(checkText(split, 'off')).toMatch(/^Split sites: 2 of the 3 member sites \(3, 5\) have two positions .* does not make the clusters regular\.$/);
+        for (const check of [extended, none, split]) expect(toolNames(checkText(check, 'off'))).toEqual([]);
     });
 });

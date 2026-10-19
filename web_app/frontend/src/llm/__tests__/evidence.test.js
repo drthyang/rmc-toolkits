@@ -24,6 +24,34 @@ describe('the evidence gate', () => {
         expect(gate.check('Ti forms a superstructure.', { ran: [], fired: new Set(['order-between-cells']) })).toBeNull();
     });
 
+    it('under method off (arm C) checks the same rules, and its send-back names no analysis and no tool', () => {
+        const catalog = { elements: ['Mo', 'O'], shell: (centre, partner) => (centre === partner ? { cn: centre === 'Mo' ? 2 : 6 } : null) };
+        const full = buildEvidenceGate({ catalog });
+        const off = buildEvidenceGate({ catalog, method: 'off' });
+        const tools = /\b(?:find_gr_peaks|list_sites|analyze_[a-z_]+|compute_bond_angles|detect_symmetry|measure_symmetry_lowering|compare_fit|read_run_data|assess_convergence|ask_user|read_skill)\b/;
+        const answers = [
+            'Ti forms a superstructure at (0, 0, ½).',
+            'Nb shows random two-site disorder along [001].',
+            'Site 2 has a preferred displacement direction along [0 0 1].',
+            'The Mo3 clusters breathe.',
+            'Cu is six-coordinated, a Jahn–Teller octahedron.',
+            'Ta is coherently shifted along c, lowering the symmetry to P4mm.',
+            'There is no local order beyond thermal motion.'
+        ];
+        for (const answer of answers) {
+            const sent = off.check(answer, { ran: [] });
+            const named = full.check(answer, { ran: [] });
+            // The same rule, the same missing analyses (for the record), the same notice.
+            expect({ ...sent, nudge: null }).toEqual({ ...named, nudge: null });
+            expect(sent.nudge).toBe(`(From the app, not the user.) Your answer concludes ${sent.what}, but this conclusion needs its evidence `
+                + 'from an analysis run in this question. Answer from the analysis\'s result (quote its numbers by reference). If none can run, '
+                + 'say so in the answer instead of concluding.');
+            expect(sent.nudge).not.toMatch(tools);
+            expect(named.nudge).toMatch(tools);
+        }
+        expect(off.check('Ti forms a superstructure.', { ran: ran('analyze_modulations') })).toBeNull();
+    });
+
     it('reads each kind of conclusion, prose or verdict words, as the answer checks read claims', () => {
         const rule = (text, calls = []) => gate.unmet(text, ran(...calls)).map((item) => item.id);
         expect(rule('Nb shows random two-site disorder along [001].')).toEqual(['split-site']);

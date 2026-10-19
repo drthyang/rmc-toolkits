@@ -13,12 +13,15 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ASK_USER, buildAskUserTool } from '../copilot/askUser';
+import { methodCheck } from '../copilot/method';
 import { READ_SKILL, buildReadSkillTool } from '../copilot/skills';
 import { MEMORY_ANSWER_CHARS, TURN_METHODS, describeTurn, runTurn } from '../copilot/turn';
 import { configurationBreaks, turnHistory } from '../useCopilot';
 import {
-    ASK_RULES, COPILOT_PROMPT, COPILOT_PROMPT_NO_TOOLS, COPILOT_PROMPT_VIEW, HISTORY_MESSAGES, copilotSystemPrompt
+    ASK_RULES, COPILOT_PROMPT, COPILOT_PROMPT_NO_TOOLS, COPILOT_PROMPT_VIEW, EVIDENCE_RULES, HISTORY_MESSAGES, METHOD_SENTENCES,
+    OUTCOME_RULE, REFERENCE_RULES, copilotSystemPrompt
 } from '../prompts/copilot';
+import { GROUND_RULES, systemPrompt } from '../prompts/system';
 import { ContextLimitError, forgetServers } from '../provider/contextGuard';
 import { ANTI_REPEAT_TEMPERATURE, ToolsUnsupportedError, providerModel } from '../provider/model';
 
@@ -318,14 +321,17 @@ describe('runTurn: how a turn ends', () => {
             { ...spec(), model: port, askUser: 'yes' },
             { ...spec(), model: port, skills: { list: 'none' } },
             { ...spec(), model: port, history: ['q'] },
-            { ...spec(), model: port, config: { method: 'off' } },
-            { ...spec(), model: port, config: { toolsEnabled: 'yes' } }
+            { ...spec(), model: port, config: { method: 'none' } },
+            { ...spec(), model: port, config: { toolsEnabled: 'yes' } },
+            // A tool's method advice must put back into its description.
+            { ...spec(), model: port, tools: [echoTool({ method: [{ after: 'not in it', text: ' advice' }] })] },
+            { ...spec(), model: port, tools: [echoTool({ method: 42 })] }
         ];
         for (const input of bad) {
             const turn = runTurn(input);
             await expect(turn.next()).rejects.toBeInstanceOf(TypeError);
         }
-        expect(TURN_METHODS).toEqual(['full']);
+        expect(TURN_METHODS).toEqual(['full', 'off']);
     });
 });
 
@@ -417,6 +423,131 @@ describe('the tools a turn offers, and the prompt for them', () => {
         const { port } = scriptedPort([{ calls: [{ name: 'echo', args: { value: 1 } }] }, answer()]);
         await collect(runTurn(spec({ model: port, tools: [tool], askUser, toolContext: { focus } })));
         expect(tool.run).toHaveBeenCalledWith({ value: 1 }, { focus, askUser, signal: expect.any(AbortSignal) });
+    });
+});
+
+// The method switch (copilot/method.js, plan item 1.8): 'full' sends the
+// skills and the method in the prompt, the descriptions and the checks, as
+// before the switch; 'off' (the validation's arm C) sends none of it, while
+// the tools, their refusals and the gate still run.
+describe('the method: full (the Copilot as it ships) and off (arm C)', () => {
+    // A tool whose description and check carry method advice, inside a
+    // sentence and after it.
+    const advised = () => echoTool({
+        description: 'Echo the value (it stays a number).',
+        method: [{ after: 'Echo the value (', text: 'from the run context: ' }, 'Use it to check a number.'],
+        run: vi.fn(async ({ value }) => ({
+            data: { value },
+            checks: [methodCheck('fail', 'Nothing echoed.', { method: ' Echo the run\'s own value instead.' }), { level: 'ok', text: 'echoed' }]
+        }))
+    });
+    const firstRequest = async (overrides) => {
+        const { port, requests } = scriptedPort([answer()]);
+        const events = await collect(runTurn(spec({ model: port, ...overrides })));
+        return { start: events[0], sent: requests[0].sent };
+    };
+    const names = (sent) => (sent.tools || []).map((tool) => tool.function.name);
+
+    it('full: each description goes out with its advice put back, and the prompt holds every rule', async () => {
+        const { start, sent } = await firstRequest({ tools: [advised()], askUser: vi.fn(), skills: SKILLS });
+        expect(start.method).toBe('full');
+        expect(names(sent)).toEqual(['echo', ASK_USER, READ_SKILL]);
+        expect(sent.tools[0].function.description).toBe('Echo the value (from the run context: it stays a number). Use it to check a number.');
+        expect(sent.messages[0].content).toBe(copilotSystemPrompt({ askUser: true, skills: '- fit-check: How to judge fit-check.' }));
+        expect(sent.messages[0].content).toContain(EVIDENCE_RULES);
+        METHOD_SENTENCES.forEach((text) => expect(sent.messages[0].content).toContain(text));
+        // The tools as offered carry no method field: the advice is in the description.
+        expect(start.offered.tools[0]).not.toHaveProperty('method');
+        expect(start.offered.tools[0].description).toBe(sent.tools[0].function.description);
+    });
+
+    it('off: no skills, no EVIDENCE_RULES, no method sentence, and descriptions without their advice', async () => {
+        const { start, sent } = await firstRequest({ tools: [advised()], askUser: vi.fn(), skills: SKILLS, config: { method: 'off' } });
+        expect(start).toMatchObject({ method: 'off', prompt: 'tools', toolsActive: true, offered: { askUser: true, skills: [] } });
+        expect(names(sent)).toEqual(['echo', ASK_USER]);
+        expect(sent.tools[0].function.description).toBe('Echo the value (it stays a number).');
+        const system = sent.messages[0].content;
+        expect(system).toBe(copilotSystemPrompt({ askUser: true, method: 'off' }));
+        expect(system).toBe(copilotSystemPrompt({ askUser: true, skills: '- fit-check: How to judge fit-check.', method: 'off' }));
+        expect(system).not.toContain(EVIDENCE_RULES);
+        expect(system).not.toContain('Skills —');
+        expect(system).not.toContain('fit-check');
+        METHOD_SENTENCES.forEach((text) => expect(system).not.toContain(text));
+        // How to work with the tools, ask and quote stays.
+        expect(system).toContain('Work in steps: (1) decide what evidence the question needs;');
+        expect(system).toContain(REFERENCE_RULES);
+        expect(system).toContain('Ask instead of guessing a parameter that changes the science.');
+        expect(system).toContain('Never ask when the question is clear');
+        expect(describeTurn({ run: RUN, tools: [advised()], skills: SKILLS, config: { method: 'off' } }))
+            .toMatchObject({ method: 'off', offered: { skills: [] } });
+    });
+
+    it('off: a check reaches the model, and the step card, without its advice; full: as written', async () => {
+        for (const [method, text] of [['full', 'Nothing echoed. Echo the run\'s own value instead.'], ['off', 'Nothing echoed.']]) {
+            const { port, requests } = scriptedPort([{ calls: [{ name: 'echo', args: { value: 1 } }] }, answer()]);
+            const events = await collect(runTurn(spec({ model: port, tools: [advised()], config: { method } })));
+            const message = JSON.parse(requests[1].sent.messages.at(-1).content);
+            expect(message.checks).toEqual([{ level: 'fail', text }, { level: 'ok', text: 'echoed' }]);
+            expect(events.find((event) => event.type === 'tool_end').checks).toEqual(message.checks);
+        }
+    });
+
+    it('off: a check whose advice is not in its text fails the call, and the advice is never sent', async () => {
+        const broken = echoTool({ run: async () => ({ data: {}, checks: [{ level: 'note', text: 'A fact.', method: [' Run another analysis.'] }] }) });
+        const { port, requests } = scriptedPort([{ calls: [{ name: 'echo', args: { value: 1 } }] }, answer()]);
+        const events = await collect(runTurn(spec({ model: port, tools: [broken], config: { method: 'off' } })));
+        expect(events.find((event) => event.type === 'tool_end').error).toMatch(/method advice is not in its text/);
+        expect(JSON.stringify(requests[1].sent.messages)).not.toContain('Run another analysis');
+    });
+
+    it('the evidence gate sends a conclusion back under either method; with off its words name no analysis', async () => {
+        for (const method of TURN_METHODS) {
+            const { port, requests } = scriptedPort([
+                { text: 'Ti forms a superstructure.\nOutcome: sure.' },
+                answer('No conclusion about order between cells.')
+            ]);
+            const events = await collect(runTurn(spec({ tools: [modulations()], model: port, config: { method } })));
+            expect(events.find((event) => event.type === 'gate')).toMatchObject({ id: 'order-between-cells', missing: ['analyze_modulations'] });
+            expect(requests[1].sent.messages.at(-1).role).toBe('user');
+            const nudge = requests[1].sent.messages.at(-1).content;
+            expect(nudge.startsWith('(From the app, not the user.) Your answer concludes order between cells, but ')).toBe(true);
+            if (method === 'off') {
+                expect(nudge).toContain('this conclusion needs its evidence from an analysis run in this question');
+                expect(nudge).not.toContain('analyze_modulations');
+            } else {
+                expect(nudge).toContain('this question has not run analyze_modulations. Run it');
+            }
+        }
+    });
+
+    it('with tools off, the no-tools prompt under the method: with off, the domain rules without their inference', async () => {
+        for (const method of TURN_METHODS) {
+            const { sent } = await firstRequest({ tools: [advised()], skills: SKILLS, config: { toolsEnabled: false, method } });
+            expect(sent.messages[0].content).toBe(method === 'full' ? COPILOT_PROMPT_NO_TOOLS : `${systemPrompt('off')} ${OUTCOME_RULE}`);
+            expect(sent.tools).toBeUndefined();
+        }
+        expect(() => copilotSystemPrompt({ method: 'none' })).toThrow(TypeError);
+    });
+
+    it('off: a model that refuses tools is asked again under the tool-free prompt without the method', async () => {
+        for (const method of TURN_METHODS) {
+            const unsupported = new ToolsUnsupportedError('HTTP 400: qwen does not support tools', { status: 400 });
+            const { port, requests } = scriptedPort([unsupported, answer()]);
+            const events = await collect(runTurn(spec({ model: port, tools: [advised()], config: { method } })));
+            expect(events.some((event) => event.type === 'tools_unsupported')).toBe(true);
+            expect(requests[1].sent.messages[0].content).toBe(copilotSystemPrompt({ toolsEnabled: false, method }));
+        }
+        expect(copilotSystemPrompt({ toolsEnabled: false, method: 'off' })).not.toBe(COPILOT_PROMPT_NO_TOOLS);
+    });
+
+    it('off: the system prompt holds the domain rules\' definitions and conduct, and no inference part', async () => {
+        const { sent } = await firstRequest({ tools: [advised()], askUser: vi.fn(), config: { method: 'off' } });
+        const system = sent.messages[0].content;
+        expect(system.startsWith(systemPrompt('off'))).toBe(true);
+        for (const part of GROUND_RULES.flat()) {
+            if (part.kind === 'inference') expect(system).not.toContain(part.text.trim());
+            else expect(system).toContain(part.text);
+        }
     });
 });
 

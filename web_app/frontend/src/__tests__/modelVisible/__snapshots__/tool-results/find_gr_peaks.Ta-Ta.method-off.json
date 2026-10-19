@@ -1,0 +1,42 @@
+{
+  "tool": "find_gr_peaks",
+  "arguments": {
+    "pair": "Ta-Ta"
+  },
+  "content_chars": 603,
+  "content": {
+    "ref": "r1",
+    "checks": [
+      {
+        "level": "warn",
+        "text": "The first shell is not separated from the next: at its boundary (3.33 Å) g(r) is still 6 % of the peak, so Ta–Ta distances fill the gap between shells and the coordination number depends on the cut (2.33–2.86 for a cut 0.2 Å earlier or later)."
+      }
+    ],
+    "data": {
+      "pair": "Ta-Ta",
+      "r_max_A": 6,
+      "peaks_A": [
+        {
+          "r": 2.93,
+          "fwhm": 0.32
+        },
+        {
+          "r": 4.31,
+          "fwhm": 0.2
+        }
+      ],
+      "first_shell": {
+        "window_A": [2.65, 3.33],
+        "peaks_in_shell_A": [2.93],
+        "mean_d_A": 3,
+        "sd_d_A": 0.12,
+        "cn": {
+          "Ta_per_Ta": 2.75
+        },
+        "cn_if_cut_0p2A_earlier_later": [2.33, 2.86],
+        "trough_g_fraction": 0.057
+      },
+      "min_distance_constraint_A": 2.2
+    }
+  }
+}

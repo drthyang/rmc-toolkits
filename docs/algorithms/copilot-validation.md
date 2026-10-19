@@ -13,7 +13,7 @@ that went with it is [copilot-review.md](copilot-review.md).
 | **A** | The default Workbench, no agent: the Detected SG card (0.2 Å), the PCA Ellipsoid table, the Displacement Directions page (ν = 10, smoothing 2) and the partial g(r), read by fixed rules (`ARM_A_RULES`). The cluster and superstructure engines have no page, so A cannot use them | `armA.js` `runArmA` |
 | **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules; no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19). Where the app has a rule, A+ calls the app's function (`SWEEP_RULES`, since 2026-10-19: the split site, the cluster elements, the lower group's tolerance). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
 | **B** | The Copilot as the app assembles it: tools, skills, guardrails (refusals, the Workbench's window questions, answer checks) | `harness.js` |
-| **C** | B without the skills (no `read_skill`, no skills index): the ablation | `harness.js` |
+| **C** | B without the method ([below](#arm-c-the-copilot-without-the-method)): no skills (no `read_skill`, no skills index), no method rules in the prompt, no method advice in a tool's description or check; the tools, refusals, the Workbench's questions, the evidence gate and the answer checks still run. The ablation | `harness.js` |
 | **D** | The planted truth, scored as a verdict; it must score 1 (a test checks this) | `verdict.js` `truthVerdict` |
 
 Arm A's rules are a competent reading, not a straw man. A site is called split only when its
@@ -44,9 +44,86 @@ builds the context, the prompt, `ask_user` and `read_skill`, the history, the Wo
 questions, the evidence gate, the answer checks and the references from the run props. The
 harness (`harness.js`) is its second adapter and passes only what is its own: the case's run, its
 compute-only tools (the tools over the run props with no cards, and the run's engine tools), the
-simulated user, the arm's skills (arm B) and a model port. `run.js` builds that port as the app
+simulated user, the arm's skills (arm B) and method (arm C) and a model port. `run.js` builds that port as the app
 does, with `providerModel` (`src/llm/provider/model.js`: the context guard, the warmer retry), and
 meters it for an API model (`spend.js` `meteredModel`).
+
+### Arm C: the Copilot without the method
+
+Decided 2026-10-19 (plan item 1.8; protocol 2026-10-19.10). The method is what the skills teach,
+wherever the model would read it: which analysis answers which question, where an analysis takes a
+parameter from (a window from `find_gr_peaks`), which window is the right one, how to judge a
+result. Before this, arm C dropped only the skills, over a prompt and tool descriptions that
+carried most of their rules, so it measured the skills' text, not the method. Arm C now removes the
+whole method, structurally: one switch in the turn module (`config.method: 'off'`,
+`src/llm/copilot/method.js`; `planTurn` decides every part from it), never text edits in the
+harness. `ARMS.C` sets it; arm B and the dock follow `'full'`, byte for byte as before (their
+snapshot files pass unchanged).
+- **The skills:** no `read_skill` and no skills' index (as before).
+- **The prompt:** no `EVIDENCE_RULES` (which analysis each conclusion needs). `TOOL_RULES` loses its
+  three method sentences: the significances are calibrated one-sided σ with ≥ 3 significant; a g(r)
+  peak cannot tell a distortion, so run `analyze_clusters` or `compute_bond_angles` (and
+  `compare_fit` for where the fit fails); a z-score with a tiny change is not a finding. `ASK_RULES`
+  loses its one ("Settle what the data can first: e.g. run find_gr_peaks, then offer its shells as
+  the options."). The sentences on working with the tools (the four steps, reading `checks`, never
+  repeating a call), asking, quoting by reference and the Outcome line stay.
+- **The domain rules** (`SYSTEM_PROMPT`'s ground rules, shared with the watchdog; decided by the
+  manager on the user's delegation, 2026-10-19): every part of every sentence is marked in
+  `src/llm/prompts/system.js` (`GROUND_RULES`) as a **definition** (what a context field is: the
+  quantity, its units, how it is computed, its limits as a measurement), an **inference** (which
+  field to use for a conclusion, or what a pattern is evidence of) or **conduct** (how to answer:
+  numbers from the context or a tool, no invented uncertainty, say what is missing, be cautious). A
+  sentence that does both is split into its parts. Arm C reads the definitions and the conduct;
+  every inference part goes (an inference part that ends a sentence leaves its full stop). Of the 26
+  ground-rule sentences, 7 are definitions, 2 inference, 4 conduct and 13 split; for example "first
+  shell gives the shell's mean distance (from r^2 g, unbiased) …" stays, and "Compare
+  first_shell.mean_d_A, not the peak, with the average distance" and "A split shell … is evidence of
+  short-range correlations …" go. `systemPrompt.test.js` pins the classification sentence by
+  sentence. The tool-free prompt follows the method too (a model that refuses tools in arm C is asked
+  again under the domain rules' definitions and conduct and the Outcome rule).
+- **The tool descriptions:** a tool spec carries its advice apart from its description (`method`),
+  sent with `'full'` and left out with `'off'`; the description keeps what the tool does and
+  returns. On `dev-offcentre` eight pieces go: `find_gr_peaks`' "use first_shell.window_A for
+  compute_bond_angles"; `list_sites`' "Use it to find the most disordered, anisotropic or anharmonic
+  sites"; `compute_bond_angles`' "Use the whole first coordination shell (find_gr_peaks'
+  first_shell.window_A): …" (its refusal stays stated on `window_confirmed`); `analyze_clusters`'
+  "(take the window from find_gr_peaks: first_shell.window_A of that element pair)" and "Use it for
+  cluster or polyhedron distortion … single-site displacement directions cannot show these";
+  `analyze_modulations`' "and detect_symmetry" (cannot show a superstructure); `detect_symmetry`'
+  "Compare tolerances to see which symmetry the local distortion breaks"; `measure_symmetry_lowering`'
+  "which the displacement analyses cannot show — each site's cloud is centred on its own mean".
+  With fit files, `compare_fit`'s "Use it for "where does the fit fail" …; run it once per dataset".
+- **The checks:** a check whose text names an analysis, a tool or the window to use carries that
+  advice apart (`methodCheck`), and arm C reads the fact and the verdict without it; a refusal still
+  refuses. `compute_bond_angles`' cut-window refusal loses "Use the whole shell (find_gr_peaks'
+  first_shell.window_A)." and keeps how the user confirms a window; its no-angles failure loses
+  where the window comes from and keeps "Widen the window or check the elements"; the pooled
+  directions note loses "Test single sites (site_ref), or analyze_clusters for a cluster's shape";
+  `analyze_clusters`' window failures lose the `find_gr_peaks` window and its split-site note "Read
+  the pattern …, the partial g(r) shell (find_gr_peaks) and the bond angles"; `find_gr_peaks`' two
+  split-shell notes lose "Use first_shell.window_A, not the first peak alone" and "use it only if the
+  user chooses it". Three reading hints that name no tool go too (decided by the manager on the
+  user's delegation, 2026-10-19): `find_gr_peaks`' unseparated-shell warning loses "Ask whether the
+  crystal has A–B distances there", `compute_bond_angles`' octahedron note "Read the shape from
+  histogram_10deg_sin_corrected (1 = random directions), not from the raw modes", and
+  `detect_symmetry`'s point-group note "Take inversion, chirality and polarity from this, not from
+  memory".
+- **The evidence gate** runs and checks the same rules (decided by the manager on the user's
+  delegation, 2026-10-19), but its send-back names no analysis and no tool: "… Your answer concludes
+  "no order beyond thermal motion", but this conclusion needs its evidence from an analysis run in
+  this question. Answer from the analysis's result (quote its numbers by reference). If none can
+  run, say so in the answer instead of concluding." (arm B's names the analyses missing). The record
+  keeps the rule and the missing analyses for the reviewer (`gates`), and the end-of-turn finding
+  names them too; the model reads neither (`harness/gate-send-back.arm-B.txt`, `.arm-C.txt`).
+
+The other texts the model can receive name no analysis as method and are the same in both arms:
+the Workbench's questions and their notes, the view rules (never offered in the live arms), the
+loop's notes and reminders (`ask_user` is named there as the way to ask, not as a method),
+`ask_user`'s own messages, and the "unknown tool" answer to a `read_skill` call in arm C (it lists the
+tools offered). `modelVisible/harness.test.js` checks arm C's first
+request for every skill name, the skills' step headings of more than one word, the prompt's method
+sentences, `EVIDENCE_RULES`, the domain rules' inference parts and every piece of tool advice. So B against C measures what the
+method adds: the skills together with the method in the prompt, the descriptions and the checks.
 
 ## Cases
 
@@ -592,6 +669,18 @@ Approved by the manager on the user's delegation, 2026-10-19
 (`validation/findings/decisions/2026-10-19-aplus-app-rules.json`; known answers in
 `validation/__tests__/aplusRules.test.js`).
 
+**Protocol 2026-10-19.10 (arm C without the method, plan item 1.8).** Arm C runs the turn with
+`method: 'off'` ([Arm C](#arm-c-the-copilot-without-the-method)): no skills, no `EVIDENCE_RULES`, no
+method sentence of `TOOL_RULES` or `ASK_RULES`, no method advice in a tool description or a check.
+What arm C is sent changes: on `dev-offcentre` its system prompt is the `tools-ask.method-off`
+variant (5,975 characters, the domain rules' inference parts gone too; the full method's `tools-ask`
+is 8,575), its tool-free prompt is `no-tools.method-off`, its tool descriptions are
+`harness/tools.arm-C.json`, a check that carried advice reaches it without
+(`tool-results/*.method-off.json`), and the evidence gate's send-back names no analysis
+(`harness/gate-send-back.arm-C.txt`). Arm B, the dock and arms A, A+ and D are unchanged: every
+other snapshot file passes as it was. No arm C run exists under an earlier protocol. Each record
+keeps the method its run followed (`method`).
+
 **Protocol 2026-10-19.11 (the judgment subset's held-out matches, plan item 1.6 ii).** Five
 judgment cases join `TEST_CASES`, one per dev judgment case, each with its situation, kind and
 option: test-two-features (two_features: Rb/Cr/Br Jahn–Teller octahedra, 4 × 2.53 + 2 × 2.97 Å,
@@ -714,7 +803,8 @@ Each live run writes:
 - `.md`: the same as a self-contained transcript, with numbered steps and the planted truth last.
 
 **What the run had (plan item 1.3).** The app's Copilot can be handed more than a case gives the
-harness, so each record states it:
+harness, so each record states it (and, since protocol 2026-10-19.10, `method`: the method the turn
+followed, `'full'` in arm B and `'off'` in arm C):
 - `view`: the run module's normalised view, `{ toleranceA, hiddenPlots, pcaSites, liveData,
   ladder }`. By default it is `HARNESS_VIEW`: 0.2 Å with the ladder, nothing hidden, no PCA table,
   Live Data off. In the app the tolerance is the user's ladder pick, and the PCA table joins once
@@ -1039,17 +1129,25 @@ A run means something only while the model is sent the same thing. The tests in
 folder, with no model and no network:
 
 - `system-prompt/<variant>.txt`: every system prompt `copilotSystemPrompt` builds (tools off; tools
-  on with or without the view tools, `ask_user` and the skills' index), with a line break after each
-  sentence for reading, and the exact length and hash of the string sent;
+  on with or without the view tools, `ask_user` and the skills' index; and with method `'off'`,
+  arm C's, `*.method-off.txt`: tools off, and tools on with or without the view tools and `ask_user`), with a line break
+  after each sentence for reading, and the exact length and hash of the string sent;
 - `dock/first-request.txt` and `dock/tools.json`: the dock's first request on the Demo run
   (CopilotChat → useCopilot, captured at `streamCopilotChat`): its fields, its messages and the
   `tools` field exactly as sent;
-- `harness/first-request.arm-B.txt`, `harness/first-request.arm-C.txt` and
-  `harness/tools.arm-B.json`: the same for `runLiveCase` on `dev-offcentre`, captured at its model
-  port (the files' header still calls it `callModel`, its name before the turn module);
+- `harness/first-request.arm-B.txt`, `harness/first-request.arm-C.txt`,
+  `harness/tools.arm-B.json` and `harness/tools.arm-C.json`: the same for `runLiveCase` on
+  `dev-offcentre`, captured at its model port (the files' header still calls it `callModel`, its
+  name before the turn module); a test also checks arm C's request for every skill name, the
+  skills' step headings, the prompt's method sentences, `EVIDENCE_RULES` and every piece of tool
+  advice; `harness/gate-send-back.arm-B.txt` and `.arm-C.txt`: the evidence gate's send-back on
+  the same case (a first answer that concludes "no order" with no analysis run), the message each
+  arm's model receives, beside the rule and the missing analyses the record keeps;
 - `tool-results/<tool>.json`: one result of every run tool and engine tool on the Demo, plus an
   `ask_user` answer, a `read_skill` and a window that cuts the Ta–Se shell, as the `tool` message
-  the agent loop appends (budget applied, checks, `ref`, note).
+  the agent loop appends (budget applied, checks, `ref`, note); `*.method-off.json`: the Demo's
+  results whose checks carry method advice (`find_gr_peaks` on Ta–Se and Ta–Ta, `compute_bond_angles`
+  on the whole shell and in the refused cut window, `detect_symmetry`), as arm C reads them.
 
 `turnRequests.test.js` (no snapshot file of its own) runs the turn module directly with a
 dock-shaped spec (the Demo run, the dock's tools, `providerModel`) and a harness-shaped one
