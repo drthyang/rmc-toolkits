@@ -88,6 +88,12 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // tools (tool_choice 'none' enforced; the native API has none), each request
 // as sent keeps the context guard's plan, and a request the guard refuses is
 // not recorded as sent;
+// 2026-10-19.8: one shell reading per pair, per run (src/llm/context/
+// shells.js) — the first peak alone ends at the minimum between the first
+// two resolved peaks, no longer r ± FWHM; the context's pair_correlations and
+// find_gr_peaks read peaks below 8 Å and integrate each CN over exactly the
+// window they quote; find_gr_peaks' first_peak_window_A leaves for
+// first_shell.first_peak_only, and its shell no longer depends on r_max;
 // 2026-10-19.9: the judgment subset joins the dev set (plan item 1.6 ii:
 // cases where A+'s fixed joining rules are ambiguous or wrong; dev only until
 // a fresh author writes their held-out matches), so a dev batch now holds

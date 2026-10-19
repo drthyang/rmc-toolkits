@@ -86,7 +86,9 @@ export const openCorpusRun = async (key = 'Demo') => {
         buildAskUserTool(),
         buildReadSkillTool(bundledSkills(), { load: copilotSkills.load })
     ].filter(Boolean);
-    const clarifier = buildClarifier({ plotFiles: run.plotFiles, structure: run.structure, symmetry: run.symmetry },
+    // As the turn builds it (turn.js loopChecks): the run's shell catalogue
+    // with its run settings.
+    const clarifier = buildClarifier({ plotFiles: run.plotFiles, structure: run.structure, runSettings: run.runSettings, symmetry: run.symmetry },
         { noiseFloor: context.symmetry?.noise_floor_A ?? null });
     return {
         tools,

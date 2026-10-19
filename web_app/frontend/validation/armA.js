@@ -20,7 +20,7 @@
 // result can be traced to the page that misled.
 
 import { pointGroupFacts } from '../src/llm/context/pointGroups';
-import { extractPeaks, firstShell } from '../src/llm/context/pairCorrelations';
+import { extractPeaks, shellCatalogue } from '../src/llm/context/shells';
 import { symmetryNoiseFloor } from '../src/llm/context/runContext';
 import { describeSymmetry } from '../src/symmetryModel';
 import { unitCellVectors } from '../src/pcaCrystalFrame';
@@ -29,10 +29,18 @@ import { normalizeVerdict } from './verdict';
 
 // What the arms read of a case: the run as the Copilot is handed it
 // (runFolder.js loadRun: a CopilotRun, or the promise loadRun returns), its
-// structure and plot files, its engine, elements and engine tools.
+// structure, plot files and run settings, its engine, elements and engine
+// tools.
 const readRun = async (copilotRun) => {
     const run = await copilotRun;
-    return { structure: run.props.structure, plotFiles: run.props.plotFiles, engine: run.engine, elements: run.elements, tools: run.tools };
+    return {
+        structure: run.props.structure,
+        plotFiles: run.props.plotFiles,
+        runSettings: run.props.runSettings ?? null,
+        engine: run.engine,
+        elements: run.elements,
+        tools: run.tools
+    };
 };
 
 /** Arm A's reading rules, fixed before any run. */
@@ -286,16 +294,14 @@ export const runArmSweep = async (copilotRun) => {
     // by the cluster engine's verdict: distorted (the edge spread above the
     // shape null, or a pattern: an axis family, a trigonal lean), breathing,
     // rigid (never with split member sites, where the null mixes the sites'
-    // static choices).
+    // static choices). The shell and its window are the run's one shell
+    // reading (shells.js), the window find_gr_peaks gives the model.
     const CLUSTER_CLAIMS = [['distorted', 'cluster_distortion'], ['breathing', 'cluster_breathing'], ['rigid', 'rigid_cluster']];
-    const partials = run.plotFiles.find((file) => file.plotKind === 'pdf_partials');
-    for (const series of partials?.plotData?.series || []) {
-        const match = /^([A-Z][a-z]?)\s*-\s*([A-Z][a-z]?)$/.exec((series.label || '').trim());
-        if (!match || match[1] !== match[2]) continue;
-        const shell = firstShell(series.x, series.y);
-        if (!shell || shell.boundaryR == null || shell.peakR > SWEEP_RULES.CLUSTER_SHELL_MAX_A) continue;
-        const element = match[1];
-        const window = [Number(shell.onsetR.toFixed(2)), Number(shell.boundaryR.toFixed(2))];
+    const catalogue = shellCatalogue({ plotFiles: run.plotFiles, structure: run.structure, runSettings: run.runSettings });
+    for (const shell of catalogue?.pairs || []) {
+        if (shell.centre !== shell.partner || !shell.window || shell.peaks[0].r > SWEEP_RULES.CLUSTER_SHELL_MAX_A) continue;
+        const element = shell.centre;
+        const { window } = shell;
         const result = await run.engine('clusters', { element, rMin: window[0], rMax: window[1] });
         readings.push({ page: 'analyze_clusters', what: `${element} clusters in ${window[0]}–${window[1]} Å (engine verdict)`, ...clusterReading(result) });
         CLUSTER_CLAIMS.forEach(([finding, kind]) => {

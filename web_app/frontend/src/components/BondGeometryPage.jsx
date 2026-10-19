@@ -597,22 +597,9 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
         };
     }, [partialSeries, partialCurve23, split23, guideMin, guideMax, guide23Min, guide23Max]);
 
-    // Coordination summary: mean bonds per B, the modal n and its share.
-    const coordinationSummary = useMemo(() => {
-        if (!result) return null;
-        const total = result.coordination.reduce((acc, value) => acc + value, 0);
-        const bonds = result.coordination.reduce((acc, value, n) => acc + value * n, 0);
-        if (!total) return null;
-        let best = 0;
-        result.coordination.forEach((value, n) => {
-            if (value > result.coordination[best]) best = n;
-        });
-        return {
-            mean: bonds / total,
-            mode: best,
-            modeShare: (100 * result.coordination[best]) / total
-        };
-    }, [result]);
+    // Coordination summary: mean bonds per B, the modal n and its share — the
+    // engine's (coordinationSummary; null values without central atoms).
+    const coordinationSummary = result?.coordinationSummary?.modal != null ? result.coordinationSummary : null;
 
     // Bond tiles show physical bonds, each once (uniqueBonds). With the end
     // element equal to the central one every bond is found from both of its
@@ -958,7 +945,7 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
                             value={coordinationSummary ? formatNumber(coordinationSummary.mean) : null}
                             unit={`per ${tripletB}`}
                             sub={coordinationSummary
-                                && `${coordinationSummary.mode}-fold ${formatNumber(coordinationSummary.modeShare, 1)}% · of ${result.apexCount.toLocaleString()}`}
+                                && `${coordinationSummary.modal}-fold ${formatNumber(100 * coordinationSummary.modalShare, 1)}% · of ${result.apexCount.toLocaleString()}`}
                         />
                         {bondTiles.map((tile) => {
                             const mean = tile.lengths?.meanLength;

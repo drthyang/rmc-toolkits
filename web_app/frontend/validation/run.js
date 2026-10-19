@@ -9,6 +9,11 @@
 //   npx vite-node validation/run.js -- live    --arm B --model qwen3.8-27b --split dev [--runs 3] [--cases id,id] [--out <dir>] [--pca-table]
 //   npx vite-node validation/run.js -- report  --in <dir> [--in <dir>…] [--out <file>]
 //   npx vite-node validation/run.js -- findings <file.jsonl | folder of .json records>
+//   npx vite-node validation/run.js -- shell-cuts [--out <file.json>]
+//
+// `shell-cuts` (dev cases and the Demo only, no model): the two readings of a
+// window that cuts a coordination shell side by side on every natural window
+// (shellCuts.js), the evidence for the cut-rule recommendation of candidate #6.
 //
 // The held-out test set: `--split test` also needs `--final` and a clean git
 // tree (its commit is recorded in every record), so its numbers always come
@@ -32,7 +37,9 @@ import { fileURLToPath } from 'node:url';
 import { providerModel } from '../src/llm/provider/model';
 import { buildCase, casesOf } from './cases';
 import { caseFiles, loadRun, RUN_NAME } from './runFolder';
+import { openRunFolder } from '../src/openRunFolder';
 import { runArmA, runArmSweep } from './armA';
+import { renderShellCuts, shellCutRows } from './shellCuts';
 import { scoreVerdict } from './scoring';
 import { truthVerdict } from './verdict';
 import { ARMS, PROTOCOL_VERSION, runLiveCase } from './harness';
@@ -273,6 +280,33 @@ const commands = {
         const results = parseFindings(readFileSync(path, 'utf8'));
         results.forEach((result) => console.log(`line ${result.line}: ${result.ok ? 'ok' : result.errors.join('; ')}`));
         if (results.some((result) => !result.ok)) process.exitCode = 1;
+    },
+
+    // Both cut readings on the dev cases' natural windows and the Demo's
+    // (shellCuts.js), with the Demo's historical Ta–Se windows beside them.
+    // Development evidence only: the held-out test set is never read.
+    'shell-cuts': async (args) => {
+        if (args.split && args.split !== 'dev') throw new Error('shell-cuts reads the dev cases only (and the Demo)');
+        const rows = [];
+        for (const item of casesOf('dev')) {
+            const run = await loadRun(buildCase(item), { ladder: false });
+            rows.push(...await shellCutRows({ name: item.id, props: run.props, engine: run.engine }));
+        }
+        const demoDir = join(REPO, 'web_app/frontend/public/demo');
+        const demo = await openRunFolder(readdirSync(demoDir).sort().map((name) => ({
+            path: `Demo/${name}`, file: new File([readFileSync(join(demoDir, name))], name, { lastModified: 0 })
+        })), { ladder: false });
+        rows.push(...await shellCutRows({ name: 'demo', props: demo.props, engine: demo.engine }, {
+            extraWindows: {
+                'Ta|Se': [
+                    ['spot check, 2026-10-10', [2.3, 2.7]],
+                    ['first peak by r ± FWHM, before 2026-10-19', [2.33, 2.71]],
+                    ['review window', [2.33, 2.96]]
+                ]
+            }
+        }));
+        console.log(renderShellCuts(rows));
+        if (args.out) writeFileSync(resolve(args.out), `${JSON.stringify(rows, null, 1)}\n`);
     }
 };
 

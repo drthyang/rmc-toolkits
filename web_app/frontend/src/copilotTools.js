@@ -19,7 +19,7 @@
 import { describeSymmetry, orbitLabel } from './symmetryModel';
 import { siteLabel } from './siteLabel';
 import { crystalOrientationRows, invert3, matVec3, transpose3, unitCellVectors } from './pcaCrystalFrame';
-import { describePointGroup, pointGroupFacts } from './llm';
+import { cnMatches, countsCut, describePointGroup, pointGroupFacts } from './llm';
 import { symmetryNoiseFloor } from './llm/context/runContext';
 import { symmetryShifts } from './symmetryShift';
 import { nearestLowIndex } from './viewer3d';
@@ -46,12 +46,6 @@ const roundFixed = (value, decimals = 2) => (
 export const MIN_ORIENTATION_POINTS = 100;
 // Calibrated one-sided sigma at which a peak or a whole-map departure counts.
 export const SIGNIFICANCE_SIGMA = 3;
-// Central atoms with no A–B bond above this fraction: the window misses them.
-export const UNBONDED_APEX_FRACTION = 0.5;
-// Fewer central atoms than this share with the most common A–B bond count:
-// the coordination is spread, as when the window edge cuts through a shell
-// (demo Se–Ta–Se at 2.3–2.7 Å: 47 %; whole shells there: 83–96 %).
-export const MODAL_COORDINATION_SHARE = 0.6;
 
 const parseWarningCheck = (payload) => (
     payload?.parseWarning ? [{ level: 'warn', text: `Structure file: ${payload.parseWarning}` }] : []
@@ -482,14 +476,14 @@ const polyhedronReference = (centers, counts, total, meanCoordination) => {
         });
         return { share: round(n / total, 2), mean_deg: n ? roundFixed(sum / n, 1) : null };
     };
-    if (Math.abs(meanCoordination - 6) <= 0.5) {
+    if (cnMatches(meanCoordination, 6)) {
         return {
             ideal: 'octahedron: 80 % cis at 90°, 20 % trans at 180°',
             cis_below_135_deg: band((center) => center < POLYHEDRON_SPLIT_DEG),
             trans_above_135_deg: band((center) => center >= POLYHEDRON_SPLIT_DEG)
         };
     }
-    if (Math.abs(meanCoordination - 4) <= 0.5) {
+    if (cnMatches(meanCoordination, 4)) {
         return { ideal: 'tetrahedron: every angle at 109.5°', within_15_deg_of_109_5: band((center) => Math.abs(center - 109.47) <= 15) };
     }
     return null;
@@ -544,17 +538,25 @@ const BOND_ANGLES_SHAPE = {
  * its angles are not the polyhedron's — unless the user chose it
  * (`windowConfirmed`, the coordination-shells skill's firm rule; its 60 %
  * threshold is an interview item): the counts that show the cut are returned
- * instead. For a whole shell of about six or four neighbours the angles are
- * also read against an ideal octahedron or tetrahedron, and the sin
- * θ-corrected histogram shows the trans angles raw counts hide.
+ * instead. The rule is the shell module's counts reading (llm/context/
+ * shells.js countsCut, MODAL_COORDINATION_SHARE and UNBONDED_APEX_FRACTION),
+ * on the engine's coordinationSummary. For a whole shell of about six or four
+ * neighbours the angles are also read against an ideal octahedron or
+ * tetrahedron, and the sin θ-corrected histogram shows the trans angles raw
+ * counts hide.
  */
 export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) => {
     const total = payload.angleCount || 0;
     const coordination = Array.isArray(payload.coordination) ? payload.coordination : [];
     const apexTotal = coordination.reduce((sum, count) => sum + count, 0);
-    const meanCoordination = apexTotal
-        ? coordination.reduce((sum, count, bonds) => sum + count * bonds, 0) / apexTotal
-        : null;
+    // The engine's summary of the counts (triplets.py coordination_summary,
+    // workers/triplets.js coordinationSummaryOf): the mean, the modal count
+    // and the shares the window refusal reads.
+    const summary = payload.coordinationSummary;
+    if (!summary || typeof summary !== 'object') {
+        throw new Error('the bond-angle engine returned no coordinationSummary (triplets.py bond_angle_summary, workers/triplets.js bondAngleSummary)');
+    }
+    const meanCoordination = Number.isFinite(summary.mean) ? summary.mean : null;
     const [a, b, c] = payload.triplet || [];
     const data = {
         triplet: `${a}–${b}–${c} (${b} central)`,
@@ -580,23 +582,18 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
         checks.push({
             level: 'fail',
             text: 'No angles: no central atom has two neighbours in the window(s). Widen the window '
-                + '(find_gr_peaks gives a first-peak window) or check the elements.'
+                + '(find_gr_peaks gives the whole first shell, first_shell.window_A) or check the elements.'
         });
         return { data, checks };
     }
     let cutText = null;
-    const unbonded = apexTotal ? (coordination[0] || 0) / apexTotal : 0;
-    if (unbonded > UNBONDED_APEX_FRACTION) {
-        cutText = `${Math.round(unbonded * 100)} % of the ${b} atoms have no ${a}–${b} bond in the window: it misses most of the shell.`;
-    } else if (apexTotal) {
-        const modalCount = Math.max(...coordination);
-        const modal = coordination.indexOf(modalCount);
-        const share = modalCount / apexTotal;
+    const counts = countsCut(summary);
+    if (counts.by === 'unbonded') {
+        cutText = `${Math.round(summary.unbondedShare * 100)} % of the ${b} atoms have no ${a}–${b} bond in the window: it misses most of the shell.`;
+    } else if (counts.by === 'count-spread') {
         const present = coordination.map((count, bonds) => (count > 0 ? bonds : null)).filter((bonds) => bonds != null);
-        if (share < MODAL_COORDINATION_SHARE) {
-            cutText = `Only ${Math.round(share * 100)} % of the ${b} atoms have the most common count (${modal} ${a}–${b} bonds); `
-                + `the counts spread from ${present[0]} to ${present.at(-1)}. The window cuts through a coordination shell.`;
-        }
+        cutText = `Only ${Math.round(summary.modalShare * 100)} % of the ${b} atoms have the most common count (${summary.modal} ${a}–${b} bonds); `
+            + `the counts spread from ${present[0]} to ${present.at(-1)}. The window cuts through a coordination shell.`;
     }
     // For the coordination answer check (review L5): the A–B count in this
     // window, and whether it is the whole shell or a window the user chose.

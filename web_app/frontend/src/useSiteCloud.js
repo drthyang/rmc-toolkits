@@ -16,6 +16,7 @@ import axios from 'axios';
 import API_BASE_URL from './api';
 import { isStaticMode } from './browserData';
 import { unitCellVectors } from './pcaCrystalFrame';
+import { analysisRoute } from './workers/requestGuards';
 
 // One worker for the whole app, never torn down: its parse cache is keyed by
 // file content (+ cluster threshold), so pages share the parsed model and
@@ -29,16 +30,42 @@ const getWorker = () => {
     return sharedWorker;
 };
 
-// One analysis request on either data source: a worker when the `.rmc6f`
-// text of a browser-loaded run is given, otherwise the Flask /api/pca/* or
-// /api/triplets endpoint against the run directory. `kind` is 'sites' | 'kde'
-// | 'orientation' | 'triplets' | 'clusters' | 'modulations'; `params` are the flat request fields both
-// transports take, and can never override `kind`, `text` or `dir`. The pages
-// reach it through useSiteCloud's requestPca (the shared worker, no signal);
-// the AI Copilot's tools (copilotTools.js) pass their own `worker`, which they
-// terminate on abort, and a `signal` that also cancels the HTTP request.
+const abortError = () => new DOMException('Aborted', 'AbortError');
+
+/**
+ * One analysis request: the seam between the pages and the Copilot's tools and
+ * the engines. Its adapters are a worker (the `.rmc6f` text of a
+ * browser-loaded run is given), Flask (the run `directory`), and, outside the
+ * app, pcaKdeWorker's inProcessEngine, which keeps the same interface.
+ *
+ * - `kind` must be a key of ANALYSIS_ROUTES (requestGuards.js). Anything else
+ *   rejects with "unknown request kind" before any work, on every adapter.
+ * - `params` are flat JSON scalars; null or undefined means absent. They can
+ *   never override `kind`, `text`, `dir` or `id`.
+ * - It resolves with the engine payload. A refusal is a rejected Error whose
+ *   message names the parameter: the name is the contract, the rest of the
+ *   message is not. What each kind accepts and refuses, and where the two
+ *   adapters still differ, is src/__tests__/fixtures/analysis_requests.json.
+ * - Cancel: an already aborted `signal` rejects with AbortError, and nothing
+ *   is posted or fetched; an abort during a request rejects with AbortError on
+ *   every adapter. Whether the computation stops is the adapter's: this
+ *   function never terminates a worker (its owner does: useCopilotRun's engine
+ *   terminates the Copilot's worker on abort, and the pages' shared worker is
+ *   never given a signal), Flask cancels the HTTP request but the route
+ *   computes to its end, and the in-process adapter runs to its end.
+ *
+ * The pages reach it through useSiteCloud's requestPca (the shared worker, no
+ * signal); the AI Copilot's engine (useCopilotRun.js) passes its own `worker`
+ * and a `signal`.
+ */
 export function requestAnalysis(kind, params, { rmc6fText, directory, worker = null, signal = null }) {
-    if (signal?.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
+    let endpoint;
+    try {
+        endpoint = analysisRoute(kind);
+    } catch (error) {
+        return Promise.reject(error);
+    }
+    if (signal?.aborted) return Promise.reject(abortError());
     if (rmc6fText) {
         return new Promise((resolve, reject) => {
             const target = worker || getWorker();
@@ -56,20 +83,13 @@ export function requestAnalysis(kind, params, { rmc6fText, directory, worker = n
             }
             function onAbort() {
                 cleanup();
-                reject(new DOMException('Aborted', 'AbortError'));
+                reject(abortError());
             }
             target.addEventListener('message', handler);
             signal?.addEventListener('abort', onAbort, { once: true });
             target.postMessage({ ...params, id, kind, text: rmc6fText });
         });
     }
-    const endpoint = {
-        sites: '/api/pca/sites',
-        orientation: '/api/pca/orientation',
-        triplets: '/api/triplets',
-        clusters: '/api/clusters',
-        modulations: '/api/modulations'
-    }[kind] ?? '/api/pca/kde';
     return axios
         .get(`${API_BASE_URL}${endpoint}`, { params: { ...params, dir: directory || '.' }, ...(signal ? { signal } : {}) })
         .then((response) => response.data)
@@ -77,7 +97,7 @@ export function requestAnalysis(kind, params, { rmc6fText, directory, worker = n
             // Surface the server's own message ("displacement cloud has zero
             // spread", a non-finite coordinate, ...) rather than axios's generic
             // "Request failed with status code 400".
-            if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+            if (signal?.aborted) throw abortError();
             const message = error?.response?.data?.error;
             throw message ? new Error(message) : error;
         });

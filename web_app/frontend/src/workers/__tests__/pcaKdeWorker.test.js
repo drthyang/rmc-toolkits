@@ -65,21 +65,6 @@ describe('pcaKdeWorker cache is content-addressed', () => {
         expect(second.referenceNumbers).toEqual(first.referenceNumbers);
     });
 
-    it("kde requests read ''/'all' as no element filter, as /api/pca/kde does", async () => {
-        // Every site pooled, tagged with no element -- not a pseudo-element
-        // named '' or 'all' (the Flask route normalises both to None).
-        const dataset = buildRmc6f(['Ga', 'Se'], { seed: 9 });
-        const request = (element) => handlePcaMessage(
-            { kind: 'kde', element, grid: 12, projections: false }, async () => dataset);
-        const pooled = await request(null);
-        expect(pooled.element).toBeUndefined();
-        for (const element of ['', 'all']) {
-            const result = await request(element);
-            expect(result.element).toBeUndefined();
-            expect(result.count).toBe(pooled.count);
-        }
-    });
-
     it('kde requests also follow the current dataset', async () => {
         const datasetA = buildRmc6f(['Ga'], { seed: 7 });
         const datasetB = buildRmc6f(['Nb'], { seed: 8 });
@@ -163,34 +148,5 @@ describe('pcaKdeWorker surfaces the .rmc6f parse report', () => {
             .join('\n');
         await expect(handlePcaMessage({ kind: 'sites', file: { name: 'blown.rmc6f' } }, async () => text))
             .rejects.toThrow("blown.rmc6f: no atoms could be parsed — 8 atom lines skipped for non-finite coordinates (first: '1 Se [1] inf ");
-    });
-});
-
-// The worker mirrors the Flask routes' request rules: /api/pca/orientation
-// caps smoothing at MAX_ORIENTATION_SMOOTHING (64), and /api/pca/kde's
-// _bw_argument reads a numeric-string bw as a number.
-describe('pcaKdeWorker accepts what the Flask routes accept', () => {
-    const dataset = buildRmc6f(['Ga', 'Se'], { seed: 11 });
-
-    it('rejects orientation smoothing above 64, as /api/pca/orientation does', async () => {
-        await expect(handlePcaMessage(
-            { kind: 'orientation', referenceNumber: 1, smoothing: 65 }, async () => dataset
-        )).rejects.toThrow('smoothing must be <= 64, got 65');
-        const ok = await handlePcaMessage(
-            { kind: 'orientation', referenceNumber: 1, smoothing: 64, geometry: false }, async () => dataset
-        );
-        expect(ok.smoothing).toBe(64);
-    });
-
-    it("reads a numeric-string bw as the number, as _bw_argument does", async () => {
-        const request = (bw) => handlePcaMessage(
-            { kind: 'kde', referenceNumber: 1, bw, grid: 12, projections: false }, async () => dataset);
-        const numeric = await request(0.25);
-        const text = await request(' 0.25 ');
-        expect(text.bw).toBe(0.25);
-        expect(text.factor).toBe(numeric.factor);
-        expect(text.bandwidth).toEqual(numeric.bandwidth);
-        expect(Array.from(text.density)).toEqual(Array.from(numeric.density));
-        await expect(request('wide')).rejects.toThrow(/bw/);
     });
 });

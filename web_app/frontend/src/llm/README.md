@@ -188,9 +188,15 @@ inputs on its page, stays the *user's* action.
 7. **`copilot/runTools.js`** holds the tools over data the module already receives:
    - `read_run_data(section)`: one context section as built, before the budget trim;
    - `assess_convergence`: the watchdog heuristics plus tail slopes;
-   - `find_gr_peaks(pair)`: partial-g(r) peaks and the first coordination shell — its window,
-     mean distance, coordination numbers and their sensitivity to the cut, whether it is separated
-     from the next shell — and whether the pair's minimum-distance constraint cuts the distribution;
+   - `find_gr_peaks(pair)`: partial-g(r) peaks below `r_max` (a display) and the first
+     coordination shell as the run reads it (`context/shells.js`, the one shell reading the
+     context, the Workbench's questions, the evidence gate, the answer checks and
+     `compute_bond_angles` also read): `first_shell` — its window, peaks, mean distance,
+     coordination numbers both ways and their sensitivity to the cut, whether it is separated from
+     the next shell, and for two or more resolved peaks `first_peak_only` (to the minimum between
+     the first two: window, CN, trough; the old `first_peak_window_A`, r ± FWHM, left on
+     2026-10-19) — and whether the pair's minimum-distance constraint cuts the distribution. The
+     shell does not depend on `r_max`;
    - `compare_fit(dataset)`: where the model misses the data, as Rw and the share of the misfit
      per range of r or Q, and the largest residual features.
 8. **`copilot/askUser.js`**: the `ask_user` tool (*Asking the user* below).
@@ -416,7 +422,7 @@ the sin θ factor depletes near 180°.
 
 gemma4 never asked; so where the computed signals show a real ambiguity that changes the result,
 the Workbench shows the question card itself, with the options it computed and a default
-(`copilot/clarify.js`, `buildClarifier`). The card is an `ask_user` step marked `app: true`
+(`copilot/clarify.js`, `buildClarifier`, over the run's shell catalogue `context/shells.js`). The card is an `ask_user` step marked `app: true`
 ("The Workbench asks before the analysis"); it counts toward the two questions per request, and
 the model's own `ask_user` still works beside it.
 
@@ -431,7 +437,8 @@ the model's own `ask_user` still works beside it.
     which window — the whole first shell (default), the first peak only, or a cut 0.2 Å either
     side of the minimum — only when the coordination number changes by ≥ max(0.5, 15 %) between
     them. The Demo's "Se–Ta–Se bond angles": whole shell 2.21–3.23 Å (CN 6) or first peak
-    2.33–2.71 Å (CN 3.9). The Ta–Ta shell runs into the next (6 % of the peak at the minimum) but
+    2.21–2.65 Å (CN 3.2; to the minimum between the two Ta–Se peaks since 2026-10-19, before
+    r ± FWHM: 2.33–2.71 Å, CN 3.9). The Ta–Ta shell runs into the next (6 % of the peak at the minimum) but
     a cut 0.2 Å either side changes its CN by < 0.5: not asked;
   - *displacement directions of an element with several sites whose site symmetry is not
     cubic:* one site of each orbit (default; its sites are equivalent by symmetry) or all pooled
@@ -987,8 +994,12 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   tables in `skillLint/tables.js`) reads every skill and reference file and never edits them: every
   tool a skill names is one the builders offer; every gate number equals the constant that decides
   it (each number after a comparator is bound or listed as no gate); every "*Firm rule in the app:*"
-  is mapped to the check or refusal that enforces it, and that code is exercised. Today's
-  violations sit in its allow-list with why; a new one fails, and so does an entry a fix cleared.
+  is mapped to the check or refusal that enforces it, and that code is exercised; every value a skill
+  quotes as measured on the Demo that `VALUES` binds (the shell readings: `find_gr_peaks`, the shell
+  catalogue, the bond-angle counts summary) equals the tool's there, rounded as the skill writes it.
+  Today's violations sit in its allow-list with why (a value entry with its line, the skill's value
+  and the tool's: the coordination-shells skill's old first peak, 2.33–2.71 Å and 3.9, against
+  2.21–2.65 Å and 3.25); a new one fails, and so does an entry a fix cleared.
 - **Checks and the Workbench's questions:** the answer checks with their negated and qualified
   phrasings (`answerAudit.test.js`); the evidence gate, numbers by reference and the computed
   verdict on their own (`evidence.test.js`) and in the loop (`agentLoop.test.js`); the clarifier on synthetic shells — split,

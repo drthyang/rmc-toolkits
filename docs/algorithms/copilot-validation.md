@@ -137,10 +137,18 @@ ambiguous or wrong, so a model that reads the tools with judgment has room to ad
   | Two features at once | dev-jt-off-centre | `jahn_teller`, `offCentre` | Jahn–Teller octahedra whose centre is also off-centred: both on the centre | A split centre explains its own split shell |
   | A signal at 2.5–4σ | dev-weak-order-a, dev-weak-order-b | `zone_boundary`, `weak: true`, `decoy: null` | A weak cell-doubling order of B, below half its thermal rms; the truth names q only. One seed on each side of the bar | The fixed 3σ bar |
   | Two tools read differently | dev-eight-site | `offcentre`, `wells: 8` | Eight-site <111> off-centring of B | A split only from a prolate ellipsoid; the 3 + 3 shell it leaves unexplained |
-  | A choice only the user can make | dev-octahedral-clusters | `elongated_clusters` (new) | M6 octahedra, each elongated along a random axis: a cluster distortion | The cluster window cut at the first g(r) trough, where the Workbench joins the split shell and asks |
+  | A choice only the user can make | dev-octahedral-clusters | `elongated_clusters` (new) | M6 octahedra, each elongated along a random axis: a cluster distortion | None: the control (below) |
 
   `elongated_clusters` is the subset's one new kind: no other kind plants a cluster distortion. The
   other cases are options of existing kinds; without the option a kind draws exactly as before.
+- **The control.** The octahedral clusters' M–M shell is split across a trough. The Workbench joins
+  it (an octahedron) and asks when an analysis' window cuts it. The choice of window is the user's,
+  and the case's truth follows the default, the whole shell. Since protocol 2026-10-19.8, A+ takes
+  its cluster windows from the same shell reading (`armA.js`), so its fixed rule and the default
+  coincide: on the score this situation is a control, and the judgment (saying which window was
+  used and what the other gives) shows in the answer only. The case was designed against the
+  earlier rule, a cut at the first trough. It still pins the question and its default
+  (`judgment.test.js`) and would show a reader that leaves the one shell reading again.
 - **Seeds.** The first three cases take the first seed, upward from their base, on which A+ errs
   only where the situation says, so each measures its own situation. The situation's own failure
   held on every seed tried. The side failures seen are reported with the PR as findings for the
@@ -287,6 +295,10 @@ Reported beside the score, per run:
   score below 1: what the checks cannot see), *under* (not achieved, score 1) and *held* (not
   achieved, score below 1: the verdict warned). The Outcome is the app's, computed from its checks;
   the model only explains it.
+
+Per split, the report also takes the case score apart: its parts (the feature-only score among
+them), every component against A+, and every disagreement with the planted truth
+([below](#the-report-beside-the-case-score-plan-item-16-part-i)).
 
 **Protocol 2026-10-17.2 (THY-18).** The live arms run with the evidence gate, numbers by reference
 and the computed verdict, exactly as the app does. The case score is unchanged; the three are
@@ -443,15 +455,78 @@ exercise the rule changes; the test set was not run, and its A+ records are re-r
 freeze. Approved
 by the manager on the user's delegation, 2026-10-19 (`validation/findings/decisions/2026-10-19-engine-verdicts.json`).
 
+**Protocol 2026-10-19.8 (one shell reading per pair, per run, architecture candidate 6).** The first
+coordination shell of every pair is read once (`src/llm/context/shells.js`, ai-assistant.md Step 9),
+and the context, `find_gr_peaks`, the Workbench's questions, the evidence gate, the answer checks,
+`compute_bond_angles`' refusal and A+ all read it; before, five readers searched their own ranges and
+integrated their own way. What the model sees changes:
+1. **The first peak alone ends at the minimum between the first two resolved peaks** (approved by
+   the manager on the user's delegation, 2026-10-19), no longer at r ± FWHM, whose half-height walk
+   reached into the second peak: the Demo's Ta–Se first peak is 2.21–2.65 Å holding 3.25 Se per Ta
+   (2.33–2.71 Å and 3.86–3.9 before; the known answer, a 3 + 3 split with overlapping widths, gives
+   3 ± 0.1 where r ± FWHM gives 3.4–4.0). A shell of one peak has none.
+2. **`find_gr_peaks`:** `first_peak_window_A` leaves; the first peak is `first_shell.first_peak_only`
+   (window, CN, trough) for every shell of two or more resolved peaks, and the split-shell note
+   gives its CN; the shell no longer depends on `r_max` (a pair whose first peak lies above it gets
+   a note and the shell, where it got "no peak"), and the tool's description says so; the
+   constraint warning loses its FWHM clause (nothing moved on the Demo or the dev cases).
+3. **The context's `pair_correlations`:** peaks below 8 Å (the Demo's Ga–Ga 7.33 Å, Ga–Ta's second
+   peak), `first_peak_to_A` / `first_peak_cn` for every shell of two or more resolved peaks (the
+   Demo's Ta–Se and Se–Se, dev-offcentre's K–Nb and Nb–O), and each CN integrated over exactly the
+   window it quotes (third-digit moves: the Demo's Ta–Ta 2.76 → 2.75, Ga–Ta 12 → 11.9,
+   dev-offcentre's O–O 8 → 7.99).
+4. **The Workbench's "First peak only"** on the Demo: 2.21–2.65 Å, CN 3.2 (was 2.33–2.71 Å, 3.9).
+
+The snapshots moved where expected: `find_gr_peaks.json`, `dock/first-request.txt` and
+`harness/first-request.arm-B.txt` (the context), and the two `tools` files (the description); the
+`compute_bond_angles` snapshots did not (the cut rule is unchanged; only its no-angles advice now
+points at `first_shell.window_A`). The dock's worst turn grows by 90 tokens (the context +73, the
+description +16: 38,652 needed, 10,500 to spare at 48k; `contextBudget.test.js`), arm B's worst
+(dev-fit-unconverged) by 16 (35,922 needed, 13,230 to spare). Live runs under earlier protocols are not
+comparable on shell, coordination or bond-angle questions. **Arms A and A+ on dev:** every score
+and claim unchanged; three A+ records move, only in the window their cluster reading names, whose
+low end is now the catalogue's (onset − one grid step, 0.01 Å) — dev-breathing Mo 2.40 → 2.39,
+dev-jahn-teller F 2.50 → 2.49, dev-symmetry-lowering O 2.52 → 2.51 Å — with the engines' verdicts
+unchanged; re-recorded in `arm-a-dev.json` at f763969, the other 27 records as recorded. The test
+set was not run.
+
+**The skill review is a precondition for the freeze.** The skill text is the user's and is not
+edited: until the user updates the coordination-shells skill, arm B reads (`read_skill`) "the
+first-peak window 2.33–2.71 Å holds 3.9 Se per Ta" (SKILL.md step 2, and the Demo table in
+`lacunar-spinel-shells.md`) while `find_gr_peaks` says 2.21–2.65 Å and 3.25. The skill lint's new
+value check finds the four places and holds them on its allow-list with both values.
+
+**The cut rule did not change; a recommendation waits for the user.** Two readings of a window that
+cuts a shell live in the shell module: the Workbench asks on the CN margin (the window holds fewer
+atoms than the shell by ≥ max(0.5, 15 %)), `compute_bond_angles` refuses on the counts (more than half
+the central atoms unbonded, or fewer than 60 % with the most common count). `run.js shell-cuts`
+tabulates both on every natural window of the dev cases and the Demo (the whole shell, its first
+peak alone, its top 0.2 Å earlier and later, and the Demo's historical Ta–Se windows). Of 149
+windows they agree on 134 (6 cut by both, 128 by neither):
+- **The counts alone refuse 11:** dev-offcentre's whole Nb–Nb shell (3.40–4.24 Å, CN 5.46; 52 %
+  share the modal 5 — its counts spread because the shell runs into the next, 4.2 % at the
+  boundary), and 10 windows with the top 0.2 Å early whose CN stays within the margin (e.g. the
+  Demo's Ga–Ga 6.88–7.53 Å, 11.2 of 11.9; dev-jahn-teller's Cu–K 6.87 of 8 at 38 %).
+- **The CN margin alone asks on 4:** first peaks whose counts form a sub-shell — the Demo's Ta–Se
+  (3.25 of 6; 72 % have exactly 3), dev-jahn-teller's four short Cu–F (3.98 of 6; 92 % have 4), the
+  Demo's Se–Se (2.78 of 12; 76 %) and dev-offcentre's one short Nb–O (0.89 of 6; 72 %).
+- **Both:** the spot check's 2.3–2.7 Å and the old first-peak window 2.33–2.71 Å on the Demo, two
+  first peaks and two early cuts on the dev cases.
+
+The recommendation (decision record `validation/findings/decisions/2026-10-19-shell-catalogue.json`,
+not approved): `compute_bond_angles` refuses on the CN-margin reading, the Workbench's own, so a
+window the Workbench did not question is not refused and a whole shell never is; the 10 slightly
+cut windows would then run (their CN within 15 % of the shell's), and the 4 sub-shell first peaks be
+refused unless the user chose them — which the Workbench's question already asks. The user decides.
+
 **Protocol 2026-10-19.9 (plan item 1.6, part ii: the judgment subset).** Five dev cases join the dev
-set ([the judgment subset](#the-judgment-subset-plan-item-16-part-ii)); 2026-10-19.8 is the shell
-catalogue's (PR #94). The question, the scoring, the verdict schema, the tools and the skills are
-unchanged, and the run module reads the new cases as any case. What a dev batch holds changes, so
-the protocol moves: a dev batch under an earlier protocol has no judgment case, and its means are
-not comparable with one under this.
-- **Arms A, A+ and D on the new cases** are appended to `arm-a-dev.json`, under this protocol. The
-  earlier dev records stay as recorded: a re-run equals each of them apart from protocol and commit.
-  D scores 1 on each new case.
+set ([the judgment subset](#the-judgment-subset-plan-item-16-part-ii)). The question, the scoring,
+the verdict schema, the tools and the skills are unchanged, and the run module reads the new cases
+as any case. What a dev batch holds changes, so the protocol moves: a dev batch under an earlier
+protocol has no judgment case, and its means are not comparable with one under this.
+- **Arms A, A+ and D on the new cases** are appended to `arm-a-dev.json`, under this protocol and
+  on top of protocol 2026-10-19.8's re-recorded windows. The earlier dev records stay as recorded:
+  a re-run equals each of them apart from protocol and commit. D scores 1 on each new case.
 - **The test set is unchanged:** every test case builds byte for byte as before, and
   `TEST_SET_SHA256` holds.
 - **What the model is told:** nothing about the case. No new id, kind or id stem reaches a request
@@ -460,6 +535,80 @@ not comparable with one under this.
   (`contextBudget.test.js`).
 - Approved by the manager on the user's delegation, 2026-10-19
   (`validation/findings/decisions/2026-10-19-judgment-dev-cases.json`).
+
+### The report beside the case score (plan item 1.6, part i)
+
+The engines alone (A+) score 0.99, because most components of a case are facts they get right every
+time: a perovskite case has four symmetry fields and the spurious-claim test beside one planted
+feature. On the case score alone B can at best tie A+ ([the bar after batch 1](#arm-a-results-no-model-2026-10-14-commit-b4fe09f)).
+So under each split's tables, `report` takes the case score apart (`comparison.js`, from the run
+records). It adds three sections:
+
+1. **The case score's parts.** For each column, the case score restricted to one group of its
+   components (`scoring.js` `scoreComponents`, `restrictedScore`):
+   - the **feature-only score**: the planted-feature components alone (1 found and accurate,
+     0.5 a quantity off, 0 missed). A case with no planted feature has none and is left out, so
+     the cell says over how many cases it is taken;
+   - **no spurious claim**: the share of runs with no claim beyond the planted and tolerated ones;
+   - **the symmetry fields** (a case whose truth defines none is left out).
+
+   Each case weighs once. Under each live column, a row gives its difference from A+, taken on
+   the cases both have.
+2. **Component by component, against A+.** Every component of every case, with arm A's value,
+   A+'s, each live column's (its mean over the runs) and the live column minus A+. A non-zero
+   difference is bold, and a line per live column counts the components higher, lower and the
+   same.
+3. **Every disagreement with the planted truth.** For each case, each feature or fact a run got
+   wrong, with the answer, the truth (with its tolerance) and the columns that made it, with
+   their runs (2/3):
+   - a missed feature, with what took its place: another kind on its element ("wrong kind",
+     an ordered mode read as off-centring) or its kind on another element ("wrong element");
+   - a direction, magnitude or q off;
+   - a spurious claim;
+   - a symmetry field wrong or unanswered;
+   - no parseable verdict.
+
+   Tolerated claims (true partial descriptions) are not disagreements. Each disagreement costs a
+   component, and each component below 1 has at least one. The cases where no run disagrees are
+   listed after the table.
+
+**How to read it.**
+- B − A+ on the feature-only score is what the model adds or loses on the planted order.
+- A lower "no spurious claim" is an over-claim the engines did not make.
+- A disagreement that A+ and B share is the engines' limit (the JT long axis on dev). One that
+  B makes alone is the model's own. One that A+ makes alone is where the model added something.
+
+**On the dev baselines** (`arm-a-dev.json`; no B run yet, so the report says so and shows A
+beside A+). These are the ten dev cases outside the judgment subset; the subset's results are kept
+out of this document ([the judgment subset](#the-judgment-subset-plan-item-16-part-ii)), and
+`comparison.test.js` pins this table on the ten:
+
+| Column | Case score | Feature-only score (6 cases) | No spurious claim | Symmetry fields (9 cases) |
+| --- | --- | --- | --- | --- |
+| A | 0.825 | 0.25 | 0.90 | 0.92 |
+| A+ | 0.99 | 0.92 | 1 | 1 |
+| D | 1 | 1 | 1 | 1 |
+
+A+ has one disagreement: the Cu long axis in dev-jahn-teller is not given (A has the same one).
+A's other disagreements:
+- dev-zone-boundary: modulation Ti missed, read as off_centre Ti (wrong kind), which is also a
+  spurious claim;
+- dev-breathing: cluster_breathing Mo missed;
+- dev-cell-wrap: rigid_cluster V missed;
+- dev-symmetry-lowering: symmetry_lowering Ta missed; Pm-3m given for P4mm, and called
+  centrosymmetric and non-polar.
+
+On dev, B can gain over A+ at most 0.08 on the feature-only score (the JT axis is half of one of
+six features), against 0.008 on the case score.
+
+**What does not change.** The case score, every existing export of `scoring.js` and the arm A/A+
+pins (`arms.test.js`) are unchanged. `scoreComponents` reads the components back from
+`scoreVerdict`'s result, and `__tests__/comparison.test.js` checks three things on every dev
+baseline record, the truth and no verdict: their mean is the case score; the baseline re-scores
+exactly as recorded; and the listing matches the components. **Not a protocol change.** The report
+reads records: it changes no record, no score and nothing a run sends, so `PROTOCOL_VERSION`
+stays 2026-10-19.7, and records under every protocol go through it. Plan item 1.6's part (ii),
+the judgment cases, is a separate change (protocol 2026-10-19.9).
 
 ## Records, transcripts, findings
 
@@ -513,8 +662,10 @@ that section changes and is off by default. Such runs write to their own folder 
 and `report` gives them their own column (`<model> · <arm> + PCA table`). It changes the context the
 model reads, so those runs are not comparable with the default runs.
 
-`report` puts every record side by side (case × model·arm), keeps failed runs as score 0, sets
-the columns' run policies side by side ([what a comparison across models also
+`report` puts every record side by side (case × model·arm), keeps failed runs as score 0, takes
+each split's case score apart against A+ ([the report beside the case
+score](#the-report-beside-the-case-score-plan-item-16-part-i)), sets the columns' run policies
+side by side ([what a comparison across models also
 compares](#what-a-comparison-across-models-also-compares)), and lists every run used.
 
 Supervisor findings (`findings.js`, `run.js findings <file.jsonl>` validates them) take the form
@@ -629,8 +780,9 @@ each model a window that holds the worst turn (`MIN_CONTEXT_TOKENS`):
 | Cloud | None | The provider; never probed |
 
 48k holds the worst realistic turn of the dock and of arm B (two skills read whole, a full round of
-analyses, the 8,192-token reply reserve; `src/__tests__/contextBudget.test.js`), with 10,590 and
-13,246 tokens to spare (arm B's worst is dev-fit-unconverged since protocol 2026-10-19.6).
+analyses, the 8,192-token reply reserve; `src/__tests__/contextBudget.test.js`), with 10,500 and
+13,230 tokens to spare (arm B's worst is dev-fit-unconverged since protocol 2026-10-19.6; protocol
+2026-10-19.8 added 90 tokens to the dock's and 16 to arm B's).
 
 **The pre-run check.** `run.js live` calls `preflight` before every run. It reads the model's
 server the way the guard does: `detectServer`, then LM Studio's `GET /api/v0/models`
@@ -653,8 +805,8 @@ request at LM Studio's default), the record, the transcript and the report carry
 
 **The dock at 32k.** The decision fixes the validation, not the dock. A user who loads
 qwen3.8-27b in LM Studio at 32k can have the worst two-skill turn refused. The budget test pins the
-dock's worst turn 1,698 tokens over by LM Studio's rule (5,794 by `planContext`'s), and arm B's
-2,351 over by `planContext`'s. The fix is on-demand skill references (plan item 5.5, second half):
+dock's worst turn 1,788 tokens over by LM Studio's rule (5,884 by `planContext`'s), and arm B's
+3,154 over by `planContext`'s. The fix is on-demand skill references (plan item 5.5, second half):
 the skills' long reference material leaves what `read_skill` returns whole. That is skill text, so
 it waits for the user.
 
@@ -773,6 +925,10 @@ more than 0.01 on the case score: on these cases the question "does the model ad
 reduces to whether B *matches* A+ — reaches the engines' conclusions, no over-claim — and to what
 the score does not measure (the answer checks, the evidence gate, number provenance,
 reproducibility). B − A (0.81) is still where the Copilot's value over the default pages shows.
+The report shows where B matches, adds or loses beside the case score: the feature-only score,
+B against A+ component by component and every disagreement with the truth
+([The report beside the case score](#the-report-beside-the-case-score-plan-item-16-part-i); on
+dev the engines' feature-only score is 0.92, not 0.99).
 
 The dev-only fit-data case (protocol 2026-10-19.6) is not in these tables, whose means are over the
 nine paired kinds: A and A+ both score 1 on it, so over the ten dev cases outside the judgment

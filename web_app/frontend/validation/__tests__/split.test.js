@@ -333,7 +333,8 @@ describe('where a finding stands, and validation batch 1', () => {
 
     it('decision records: one JSON file per record, read in id order, each validated by the findings schema', () => {
         expect(Object.keys(decisions())).toEqual([
-            '2026-10-19-engine-verdicts', '2026-10-19-judgment-dev-cases', '2026-10-19-list-sites-split', '2026-10-19-test-breathing-recomposed'
+            '2026-10-19-engine-verdicts', '2026-10-19-judgment-dev-cases', '2026-10-19-list-sites-split', '2026-10-19-shell-catalogue',
+            '2026-10-19-shell-cut-rule', '2026-10-19-test-breathing-recomposed'
         ]);
         expect(existsSync(join(FRONTEND, 'validation/findings/decisions.jsonl'))).toBe(false);
         const record = readFileSync(join(DECISIONS, '2026-10-19-test-breathing-recomposed.json'), 'utf8');
@@ -392,5 +393,21 @@ describe('where a finding stands, and validation batch 1', () => {
             const [path, title] = test.split(' › ');
             expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
         });
+    });
+
+    it('decisions: one shell reading per pair (candidate 6): the first-peak window approved on the user\'s delegation and implemented; the cut rule only proposed', () => {
+        const catalogue = decisions()['2026-10-19-shell-catalogue'];
+        expect(catalogue).toMatchObject({ case: 'dev-jahn-teller', kind: 'bug' });
+        delegated(catalogue);
+        expect(catalogue.tests.length).toBeGreaterThan(0);
+        catalogue.tests.forEach((test) => {
+            const [path, title] = test.split(' › ');
+            expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+        });
+        // The cut-rule recommendation waits for the user: proposed, never approved here.
+        const cutRule = decisions()['2026-10-19-shell-cut-rule'];
+        expect(cutRule).toMatchObject({ case: 'dev-offcentre', kind: 'orchestration', needs_user_approval: true, status: 'proposed' });
+        expect(cutRule.approval).toBeUndefined();
+        expect(cutRule.proposed_fix).toMatch(/not approved/i);
     });
 });

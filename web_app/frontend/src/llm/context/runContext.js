@@ -9,6 +9,7 @@
 // no network — which is what makes it the most testable part of the module.
 
 import { pairCorrelationsContext } from './pairCorrelations';
+import { labelledMinimumDistances } from './shells';
 import { partialWeights } from './scatteringWeights';
 // A cycle (heuristics imports seriesStats from here), safe because neither
 // module calls the other while it is being evaluated.
@@ -270,20 +271,11 @@ const configurationOptimizationContext = (structure) => {
     return Object.keys(block).length ? block : null;
 };
 
-// Element-pair labels in RMCProfile's upper-triangle row-wise order (Ga-Ga,
-// Ga-Nb, Ga-Se, Nb-Nb, …) — the order MINIMUM_DISTANCES values are given in,
-// matching the partial-PDF column order.
-const pairLabels = (atoms) => {
-    const labels = [];
-    for (let i = 0; i < atoms.length; i++) {
-        for (let j = i; j < atoms.length; j++) labels.push(`${atoms[i]}-${atoms[j]}`);
-    }
-    return labels;
-};
-
 // The run-control settings parsed from <stem>.dat (browserData.parseRunSettings).
-// Minimum distances are labeled per element pair when the counts line up, so
-// the model can spot g(r) peaks pinned at a closest-approach constraint.
+// Minimum distances are labeled per element pair when the counts line up (in
+// RMCProfile's upper-triangle pair order, the labelling the shells' constraint
+// reads: shells.js labelledMinimumDistances), so the model can spot g(r) peaks
+// pinned at a closest-approach constraint.
 const runSettingsContext = (settings) => {
     if (!settings) return null;
     const block = {};
@@ -291,12 +283,8 @@ const runSettingsContext = (settings) => {
         if (settings[key]) block[key] = settings[key];
     }
     const atoms = settings.atoms || [];
-    if (settings.minimumDistancesA?.length) {
-        const labels = pairLabels(atoms);
-        block.min_distances_A = labels.length === settings.minimumDistancesA.length
-            ? Object.fromEntries(settings.minimumDistancesA.map((d, i) => [labels[i], d]))
-            : settings.minimumDistancesA;
-    }
+    const minDistances = labelledMinimumDistances(settings);
+    if (minDistances) block.min_distances_A = minDistances;
     if (settings.maximumMovesA?.length) {
         block.max_move_A = atoms.length === settings.maximumMovesA.length
             ? Object.fromEntries(settings.maximumMovesA.map((d, i) => [atoms[i], d]))
@@ -432,7 +420,7 @@ export const buildRunContext = ({
     if (symmetryInfo) context.symmetry = symmetryInfo;
     const pcaInfo = pcaContext(pcaSites);
     if (pcaInfo) context.pca_displacements = pcaInfo;
-    const pairs = pairCorrelationsContext(structure, plotFiles, { constraints: settingsInfo?.min_distances_A });
+    const pairs = pairCorrelationsContext(structure, plotFiles, { runSettings });
     if (pairs) context.pair_correlations = pairs;
     const datasets = datasetContext(plotFiles);
     if (datasets.length) context.datasets = datasets;

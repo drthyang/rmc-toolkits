@@ -12,7 +12,8 @@ a dev case, no dev result and no arm score, and it must stay that way:
   score is made of facts a fixed rule gets right: the symmetry fields and the spurious-claim test.
   On those cases a model can at best tie A+.
 - **The subset.** Cases where A+'s fixed joining rules (`validation/armA.js`, `runArmSweep`) are
-  ambiguous or wrong, so a model that reads the tools' results with judgment has room to add.
+  ambiguous or wrong, so a model that reads the tools' results with judgment has room to add. One
+  situation, the user's choice, is a control on the score (below).
 - **Dev now, held out later.** The dev cases exist (`judgment: true`, `devOnly`). Reported numbers
   need held-out matches, written by you without the dev results, joining the test set as a new pinned
   version on the user's decision.
@@ -125,13 +126,17 @@ Read `validation/cases.js` for the generators: the kinds, their options and the 
 
 ### 4. A choice only the user can make (`user_choice`)
 
-- **The rule at issue.** A window choice.
-  - A+ cuts an element's own first shell at its first deep trough (`firstShell` without the
-    densities) and uses that as the cluster window.
+- **The choice.** A window.
   - The Workbench joins a split shell whose peaks close at an ideal coordination number. It asks
     the user when an analysis' window cuts that shell (`src/llm/copilot/clarify.js`).
   - The simulated user skips, so the default (the whole shell) stands. A good answer states that
-    default and what the other window would give.
+    default and what the other window would give. The truth follows the default.
+- **The control.** Since protocol 2026-10-19.8, A+ takes its cluster windows from the same shell
+  reading as the Workbench (`src/llm/context/shells.js`, `validation/armA.js`), so its fixed rule
+  and the default coincide. On the score this situation is a control; the judgment shows in the
+  answer only. The dev case was designed against the earlier rule (a cut at the first trough of the
+  M–M g(r)). Match it as it is: it pins the question and its default, and it would show a reader
+  that leaves the one shell reading again.
 - **The kind.** `elongated_clusters`, the subset's one kind of its own (`validation/cases.js`):
   - finite M6 octahedra around the body centre, an anion at the origin;
   - each octahedron elongated along x, y or z at random, its two apical atoms pushed out by
@@ -142,8 +147,8 @@ Read `validation/cases.js` for the generators: the kinds, their options and the 
   Symmetry: Pm-3m.
 - **Knobs: constraints the configuration must meet.**
   - The M–M shell is split across a deep trough: its first minimum is below
-    `SHELL_TROUGH_FRACTION` of the first peak (`src/llm/context/pairCorrelations.js`). This sets
-    the elongation against the edge's thermal width.
+    `SHELL_TROUGH_FRACTION` of the first peak (`src/llm/context/shells.js`). This sets the
+    elongation against the edge's thermal width.
   - The joined shell closes at 4 M per M (an octahedron), within `SPLIT_SHELL_REACH_A` of the first
     peak.
   - The average octahedron's edge lies beyond the first trough, so the first peak alone holds no

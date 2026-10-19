@@ -7,7 +7,7 @@
 // arm-A numbers come from the CLI (`arm-a --split test --final`), never here.
 
 import { describe, expect, it } from 'vitest';
-import { elementDensity, firstShell } from '../../src/llm/context/pairCorrelations';
+import { shellCatalogue } from '../../src/llm/context/shells';
 import { buildCase, DEV_CASES } from '../cases';
 import { loadRun } from '../runFolder';
 import { ARM_A_RULES, runArmA, runArmSweep } from '../armA';
@@ -42,7 +42,7 @@ const BAR = [
     ['dev-fit-unconverged', 1, [], 1, []],
     ['dev-jt-off-centre', 0.8571, [], 0.8571, []],
     ['dev-eight-site', 0.6667, ['jahn_teller Nb'], 0.6667, ['jahn_teller Nb']],
-    ['dev-octahedral-clusters', 0.8333, [], 0.8333, []],
+    ['dev-octahedral-clusters', 0.8333, [], 1, []],
     ['dev-weak-order-a', 0.8333, [], 1, []],
     ['dev-weak-order-b', 0.8333, [], 0.8333, []]
 ];
@@ -122,17 +122,23 @@ describe('the model-free arms on the dev cases (the bar)', () => {
         expect(fine.peakSignificance).toBeGreaterThan(ARM_A_RULES.SIGMA);
         expect(fine.peakDirection.map((value) => Math.abs(value))).toEqual(fine.peakDirection.map(() => expect.closeTo(1 / Math.sqrt(3), 2)));
 
-        // A choice only the user can make: A+ cuts the W–W shell at its first
-        // trough, where no edge of the average octahedron lies; the whole
-        // shell, as the Workbench joins it (CN 4), holds the distorted octahedra.
+        // A choice only the user can make, the one control: since the one
+        // shell reading (protocol 2026-10-19.8) A+ reads the Workbench's own
+        // joined W–W shell (CN 4, its default) and finds the distorted
+        // octahedra. The first peak alone, the window the Workbench asks
+        // about when a call cuts the shell, holds no cluster. The judgment
+        // (stating the default and what the other window gives) shows in the
+        // answer, not in the score.
         const octahedra = await judged('dev-octahedral-clusters');
-        expect(octahedra.sweep.readings.find((r) => r.page === 'analyze_clusters').reading).toBe('no clusters: no_clusters');
+        expect(found(octahedra.scoreSweep)).toEqual(['cluster_distortion:true']);
         const run = await octahedra.run;
-        const ww = run.props.plotFiles.find((file) => file.plotKind === 'pdf_partials').plotData.series.find((s) => s.label.trim() === 'W-W');
-        const density = elementDensity(run.props.structure, 'W');
-        const shell = firstShell(ww.x, ww.y, { partnerDensity: density, centreDensity: density });
-        expect(shell.split).toBeTruthy();
-        expect((await run.engine('clusters', { element: 'W', rMin: shell.onsetR, rMax: shell.boundaryR })).verdict.distorted.answer).toBe(true);
+        const shell = shellCatalogue(run.props).shell('W', 'W');
+        expect(shell.joined).toBe(true);
+        expect(shell.firstPeak.changesCn).toBe(true);
+        expect(octahedra.sweep.readings.find((r) => r.page === 'analyze_clusters').what)
+            .toBe(`W clusters in ${shell.window[0]}–${shell.window[1]} Å (engine verdict)`);
+        const cut = await run.engine('clusters', { element: 'W', rMin: shell.firstPeak.window[0], rMax: shell.firstPeak.window[1] });
+        expect(cut.verdict.window.extendedNetwork.because).toBe('no_clusters');
 
         // A signal at the edge of significance: one weak order, a seed on
         // each side of the fixed 3σ bar; A+ claims the one above only.

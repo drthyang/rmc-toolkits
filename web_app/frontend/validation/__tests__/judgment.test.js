@@ -20,7 +20,7 @@
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildShellCatalog } from '../../src/llm/copilot/clarify';
+import { shellCatalogue } from '../../src/llm/context/shells';
 import { buildCase, DEV_CASES, JUDGMENT_SITUATIONS } from '../cases';
 import { runLiveCase } from '../harness';
 import { aggregate, renderJudgment, renderReport } from '../report';
@@ -104,7 +104,7 @@ const judgedCase = (id) => buildCase(JUDGED.find((item) => item.id === id));
 describe('two situations through the live harness (scripted model, no model runs)', () => {
     it('a choice only the user can make: a window that cuts the split shell is asked about, the skip keeps the whole shell', async () => {
         const built = judgedCase('dev-octahedral-clusters');
-        const shell = buildShellCatalog((await loadRun(built)).props).shell('W', 'W');
+        const shell = shellCatalogue((await loadRun(built)).props).shell('W', 'W');
         // The window a cut at the first trough gives (A+'s rule): it holds part of the shell only.
         const [lo, hi] = shell.firstPeak.window;
         expect(shell.cn).toBeCloseTo(4, 1);
@@ -174,8 +174,8 @@ const DOC = readFileSync(join(REPO, 'docs/algorithms/copilot-validation.md'), 'u
 const READ_BY_THE_AUTHOR = [
     { name: 'validation/judgment-spec.md', text: readFileSync(join(FRONTEND, 'validation/judgment-spec.md'), 'utf8'), ids: false },
     { name: 'docs/changes/unreleased/judgment-dev-cases.md', text: readFileSync(join(REPO, 'docs/changes/unreleased/judgment-dev-cases.md'), 'utf8'), ids: false },
-    { name: 'copilot-validation.md, The judgment subset', text: part(DOC, '### The judgment subset', ['## ', '### ']), ids: true },
-    { name: 'copilot-validation.md, Protocol 2026-10-19.9', text: part(DOC, '**Protocol 2026-10-19.9', ['## ', '**']), ids: true },
+    { name: 'copilot-validation.md, The judgment subset', text: part(DOC, '### The judgment subset', ['#']), ids: true },
+    { name: 'copilot-validation.md, Protocol 2026-10-19.9', text: part(DOC, '**Protocol 2026-10-19.9', ['#', '**']), ids: true },
     {
         name: 'validation/findings/decisions/2026-10-19-judgment-dev-cases.json',
         text: readFileSync(join(FRONTEND, 'validation/findings/decisions/2026-10-19-judgment-dev-cases.json'), 'utf8'),

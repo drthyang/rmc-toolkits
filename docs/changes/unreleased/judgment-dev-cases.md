@@ -7,7 +7,8 @@
   - a signal at 2.5–4σ: one weak cell-doubling order, one seed on each side of the 3σ bar;
   - two tools read differently: eight-site <111> off-centring;
   - a choice only the user can make: elongated octahedral clusters whose split shell the Workbench
-    joins and asks about.
+    joins and asks about. Since protocol 2026-10-19.8 A+ reads that joined shell too, so on the
+    score this case is the subset's control.
 - Their parameters sit in `validation/judgmentCases.js`, apart from `validation/cases.js`, which
   builds them:
   - new options on existing kinds: `jahn_teller` `offCentre`, `zone_boundary` `weak` (no decoy),

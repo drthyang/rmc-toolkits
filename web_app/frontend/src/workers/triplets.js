@@ -507,9 +507,34 @@ export const tripletInputsFromRequest = ({
 };
 
 /**
+ * The coordination histogram (coordination[n] = central atoms with exactly n
+ * window-1 bonds) in four numbers: the mean bonds per central atom, the modal
+ * count (the lowest n on a tie), its share of the central atoms and the share
+ * with no bond; every value null without central atoms. Port of
+ * triplets.py coordination_summary (the fixture pins the two equal); what
+ * compute_bond_angles' window refusal and the Bond Geometry page read.
+ */
+export const coordinationSummaryOf = (coordination) => {
+  const counts = Array.isArray(coordination) ? coordination : [];
+  const total = counts.reduce((sum, count) => sum + count, 0);
+  if (!total) return { mean: null, modal: null, modalShare: null, unbondedShare: null };
+  let modal = 0;
+  counts.forEach((count, n) => {
+    if (count > counts[modal]) modal = n;
+  });
+  return {
+    mean: counts.reduce((sum, count, n) => sum + count * n, 0) / total,
+    modal,
+    modalShare: counts[modal] / total,
+    unbondedShare: (counts[0] || 0) / total
+  };
+};
+
+/**
  * The Bond Geometry payload: angle histogram (counts / per-degree density /
  * exact sin-corrected), bond-length histograms per window, and the
- * coordination distribution — mirrors rmc_toolkits.triplets.bond_angle_summary.
+ * coordination distribution with its summary (coordinationSummaryOf) —
+ * mirrors rmc_toolkits.triplets.bond_angle_summary.
  * Angles stream straight into the histogram and running moments (Welford),
  * so memory does not grow with the angle count; `collectAngles: true` also
  * keeps them and adds `sortedAngles` (degrees) for tests. `maxAngles` refuses
@@ -575,7 +600,8 @@ export const bondAngleSummary = (fractional, elements, latticeVectors, options =
     lengths23: core.sharedEnds
       ? null
       : lengthHistogram(core.bonds23, core.window23, core.triplet[2] === core.triplet[1]),
-    coordination
+    coordination,
+    coordinationSummary: coordinationSummaryOf(coordination)
   };
   if (collected) {
     summary.sortedAngles = collected.sort((a, b) => a - b);

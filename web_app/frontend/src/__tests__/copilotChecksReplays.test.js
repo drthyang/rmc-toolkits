@@ -29,12 +29,12 @@ import { pointGroupFacts } from '../llm/context/pointGroups';
 import { buildRunContext } from '../llm/context/runContext';
 import { shownContext } from '../llm/prompts/copilot';
 import { describeSymmetry, toleranceLadder } from '../symmetryModel';
-import { handlePcaMessage } from '../workers/pcaKdeWorker';
+import { inProcessEngine } from '../workers/pcaKdeWorker';
 
 const read = (name) => readFileSync(new URL(`../../public/demo/${name}`, import.meta.url), 'utf8');
 const RMC6F = read('GTS_250K.rmc6f');
 const structure = structureFromRmc6f({ path: 'Demo/GTS_250K.rmc6f', text: RMC6F });
-const request = (kind, params) => handlePcaMessage({ kind, ...params }, async () => RMC6F);
+const request = inProcessEngine(RMC6F);
 const partialsName = 'GTS_250K_PDFpartials.csv';
 const plotFiles = [{
     name: partialsName,
@@ -213,10 +213,13 @@ describe('the questions the Workbench asks itself', () => {
     });
 
     it('(a) a split shell: which Ta–Se window, and the chosen one is not asked about again', async () => {
+        // The first peak alone ends at the minimum between the two Ta–Se
+        // peaks (shells.js, approved 2026-10-19): 2.21–2.65 Å, CN 3.2 — no
+        // longer r ± FWHM (2.33–2.71 Å, CN 3.9).
         const run = await replay('What are the Se–Ta–Se bond angles?', [
             (body) => {
-                expect(body.messages.at(-1).content).toMatch(/the user chose "First peak only" for the Ta–Se bonds: the window 2\.33–2\.71 Å \(CN 3\.9 Se per Ta\)/);
-                return angles(2.33, 2.71);
+                expect(body.messages.at(-1).content).toMatch(/the user chose "First peak only" for the Ta–Se bonds: the window 2\.21–2\.65 Å \(CN 3\.2 Se per Ta\)/);
+                return angles(2.21, 2.65);
             },
             answer('The short bonds only.')
         ], { answer: () => ({ answer: 'First peak only', source: 'option', index: 1 }) });
@@ -224,8 +227,9 @@ describe('the questions the Workbench asks itself', () => {
         expect(run.asked[0]).toMatchObject({ question: 'Which Ta–Se window should the analysis use?', defaultIndex: 0 });
         expect(run.asked[0].options.map((option) => option.label)).toEqual(['Whole first shell', 'First peak only']);
         expect(run.asked[0].options[0].description).toBe('2.21–3.23 Å, both peaks (2.52 and 2.74 Å): CN 6 Se per Ta');
-        // The model's 2.33–2.71 Å is the user's choice: it runs as asked.
-        expect(run.lastToolMessage().data.window_ab_A).toEqual([2.33, 2.71]);
+        expect(run.asked[0].options[1].description).toBe('2.21–2.65 Å, the shortest bonds: CN 3.2 Se per Ta');
+        // The model's 2.21–2.65 Å is the user's choice: it runs as asked.
+        expect(run.lastToolMessage().data.window_ab_A).toEqual([2.21, 2.65]);
     });
 
     it('(b) a window that cuts the shell: the user picks the whole shell, and the analysis runs in it', async () => {
