@@ -7,16 +7,19 @@
 // is listed; the appendix names every run record used.
 
 import { reproducibility } from './scoring';
+import { finalRoundSummary, limitsSummary, SERVER_LABELS, windowSummary } from './runPolicy';
 
 const mean = (values) => (values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null);
 const fmt = (value, digits = 2) => (value == null ? '–' : value.toFixed(digits));
+
+// A run given the PCA table (run.js live --pca-table, a dev check) is its own column.
+const columnOf = (record) => `${record.model?.name ?? 'no model'} · ${record.arm}${record.view?.pcaSites ? ' + PCA table' : ''}`;
 
 /** Aggregates run records (live arms and the model-free arms alike). */
 export const aggregate = (records) => {
     const groups = new Map();
     records.forEach((record) => {
-        // A run given the PCA table (run.js live --pca-table, a dev check) is its own column.
-        const column = `${record.model?.name ?? 'no model'} · ${record.arm}${record.view?.pcaSites ? ' + PCA table' : ''}`;
+        const column = columnOf(record);
         const key = `${record.split}|${column}|${record.case}`;
         if (!groups.has(key)) groups.set(key, { split: record.split, column, case: record.case, runs: [] });
         groups.get(key).runs.push(record);
@@ -40,6 +43,80 @@ export const aggregate = (records) => {
         verdicts: group.runs.map((run) => run.outcome_eval?.agreement ?? 'none')
     }));
     return cells;
+};
+
+const distinct = (values) => [...new Set(values)];
+const tokens = (count) => Math.round(count).toLocaleString('en-US');
+
+// What no run policy sets: each server's or model's own, the same request or not.
+export const NOT_IN_THE_POLICY = Object.freeze([
+    'sampling beyond the temperature (top_p, top_k, min_p, the repetition penalty): each server\'s or model\'s defaults, never sent',
+    'the reasoning (thinking) mode and its effort: each server\'s default',
+    'the tokenizer: the guard\'s estimate of a request is the same for every model (characters, not tokens), the real count is not',
+    'the weights\' quantization and the server\'s release'
+]);
+
+// A column's window over its runs: the num_ctx Ollama was sent (lowest to
+// highest), else each run's window (LM Studio's loaded context, before and
+// after when it changed; the provider's own).
+const columnWindow = (policies) => {
+    const kinds = distinct(policies.map((policy) => policy.server.kind ?? 'none'));
+    if (kinds.length === 1 && kinds[0] === 'ollama') {
+        const used = policies.flatMap((policy) => policy.context.num_ctx_used).filter(Number.isFinite);
+        const max = distinct(policies.map((policy) => policy.context.model_max_tokens).filter(Number.isFinite));
+        const range = used.length ? (Math.min(...used) === Math.max(...used) ? tokens(used[0]) : `${tokens(Math.min(...used))}–${tokens(Math.max(...used))}`) : 'none sent';
+        return `num_ctx ${range}, sized per request${max.length ? ` (the model holds ${max.map(tokens).join(', ')})` : ''}`;
+    }
+    return distinct(policies.map(windowSummary)).join('; ');
+};
+
+/**
+ * What a comparison across models also compares (plan item 1.2): each live
+ * column's run policy side by side — the server, the window, the reply cap,
+ * the final round's tool_choice form, the temperature and the limits — then
+ * whether the limits, the temperature and the context guard are the same in
+ * every column, and what no policy sets. Lines of Markdown; none without live
+ * runs.
+ */
+export const renderPolicyComparison = (records) => {
+    const live = records.filter((record) => record.model);
+    if (!live.length) return [];
+    const columns = distinct(live.map(columnOf)).sort();
+    const lines = ['## What a comparison across models also compares', '',
+        'The cases, the question, the prompt, the tools and the scoring are the same in every column. The run policy '
+        + '(`record.policy`, validation/runPolicy.js) is not all the same:', '',
+        '| Column | Server | Context window | Reply cap | Final round (tool_choice "none") | Temperature | Limits | Policy warnings |',
+        '| --- | --- | --- | --- | --- | --- | --- | --- |'];
+    columns.forEach((column) => {
+        const runs = live.filter((record) => columnOf(record) === column);
+        const recorded = runs.filter((record) => record.policy).map((record) => record.policy);
+        const missing = runs.length - recorded.length;
+        const join = (values) => distinct(values).join('; ') || '–';
+        const cells = recorded.length ? [
+            join(recorded.map((policy) => (policy.server.kind ? `${SERVER_LABELS[policy.server.kind]}${policy.server.version ? ` ${policy.server.version}` : ''}` : 'not read'))),
+            columnWindow(recorded),
+            join(recorded.map((policy) => policy.reply_cap?.rule ?? 'server not read')),
+            join(recorded.map(finalRoundSummary)),
+            join(recorded.map((policy) => `${policy.temperature.base} (retry ≥ ${policy.temperature.warmer_retry_min})`)),
+            join(recorded.map((policy) => limitsSummary(policy.limits))),
+            String(recorded.reduce((sum, policy) => sum + (policy.warnings?.length || 0), 0))
+        ] : Array(7).fill('not recorded');
+        if (missing && recorded.length) cells[0] += ` (${missing} run${missing === 1 ? '' : 's'} with no policy)`;
+        lines.push(`| ${column} | ${cells.join(' | ')} |`);
+    });
+    lines.push('');
+    const policies = live.map((record) => record.policy).filter(Boolean);
+    const differs = [['the limits', 'limits'], ['the temperature', 'temperature'], ['the context guard', 'context_guard']]
+        .filter(([, key]) => distinct(policies.map((policy) => JSON.stringify(policy[key]))).length > 1)
+        .map(([name]) => name);
+    lines.push(differs.length
+        ? `**Not the same in every run: ${differs.join(', ')}.** Read the columns with that in mind.`
+        : 'The limits, the temperature and the context guard are the same in every run with a policy.');
+    lines.push('');
+    lines.push('No run policy sets these, so a comparison across models compares them too:');
+    NOT_IN_THE_POLICY.forEach((item) => lines.push(`- ${item};`));
+    lines.push('');
+    return lines;
 };
 
 export const renderReport = (records, { title = 'Copilot validation runs' } = {}) => {
@@ -92,6 +169,7 @@ export const renderReport = (records, { title = 'Copilot validation runs' } = {}
         });
         lines.push('');
     }
+    renderPolicyComparison(records).forEach((line) => lines.push(line));
     lines.push('## Every run', '');
     records.map((record) => `- \`${record.id}\`: score ${record.score?.score ?? 0}${record.error ? `, error ${record.error.name}` : ''}`)
         .sort().forEach((line) => lines.push(line));
