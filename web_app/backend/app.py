@@ -35,6 +35,7 @@ from rmc_toolkits.pca_kde import (
 )
 from rmc_toolkits.triplets import APP_MAX_ANGLES, bond_angle_summary_from_file
 from rmc_toolkits.clusters import cluster_distortion
+from rmc_toolkits.structure_basis import structure_basis
 from rmc_toolkits.modulations import displacement_modulations
 from rmc_toolkits.parsers import (
     Rmc6fParseReport,
@@ -402,6 +403,24 @@ def _strict_result_response(payload):
     return app.response_class(f"{body}\n", mimetype=getattr(provider, "mimetype", "application/json"))
 
 
+def _require_finite_basis(basis: list[dict]) -> None:
+    """Refuse an average-structure basis that holds NaN or Infinity (ValueError -> 400).
+
+    The rest of ``/api/structure`` is data, where a non-finite point reaches the
+    browser as ``null``. The basis is a computed result -- the space-group finder,
+    the CIF export and the Copilot's symmetry tools read it -- so, like every
+    computed result (``_strict_result_response``), it is refused rather than nulled:
+    a coordinate or lattice vector so large that folding it overflows.
+    """
+    try:
+        json.dumps(basis, allow_nan=False)
+    except ValueError:
+        raise ValueError(
+            "the average-structure basis is not finite (a coordinate or lattice vector too "
+            "large to fold into the unit cell); check the .rmc6f"
+        ) from None
+
+
 # --- Parsed-file caches ----------------------------------------------------------
 # Parsing a 50k-atom .rmc6f takes about a second, so the analysis routes keep
 # small LRU caches of parsed files. Every cache is keyed on the file signature
@@ -714,6 +733,12 @@ def structure():
             if atom["reference_number"] is not None:
                 index_sets.setdefault(atom["element"], set()).add(int(atom["reference_number"]))
         atom_indices = {element: sorted(indices) for element, indices in index_sets.items()}
+        # The average-structure basis (one site per reference number, with its
+        # moments) from this same read of the file, as structureFromRmc6f adds
+        # it in the browser: the Detected SG card, its CIF export and the
+        # Copilot's symmetry tools exist for a server folder too.
+        basis = structure_basis(atoms, lattice_vectors, supercell)
+        _require_finite_basis(basis)
         sampled, stride = _sample_atoms_by_site(atoms, max_points)
         points = []
         counts: dict[str, int] = {}
@@ -747,6 +772,7 @@ def structure():
                 "atomIndices": atom_indices,
                 "supercell": supercell.tolist(),
                 "latticeVectors": lattice_vectors.tolist(),
+                "basis": basis,
                 "moves": moves,
                 "parseReport": parse_report.to_dict(),
                 "parseWarning": parse_report.warning(),
