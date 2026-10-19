@@ -29,7 +29,7 @@ drafts of batch 1 wait in PR #71 for the user's review.
   snapshot of the prompt, the tool list and the descriptions (phase 1.7) shows any change in the
   diff.
 
-## Status (plan-status 2, 2026-10-19)
+## Status (plan-status 3, 2026-10-19)
 
 **Scope.** On 2026-10-19 the user widened the work to the whole plan, through phase 6, and
 delegated approvals to the manager. Still the user's: skill text (#71, 5.2, 5.4, and 5.5's
@@ -64,26 +64,35 @@ PR, and a decision record in `validation/findings/decisions/` and here.
 | 9 | #92 | one request contract, checked against every adapter |
 | — | #93 | an App-level smoke test of the dock; two Live Data fixes |
 | 6 | #94 | one shell reading per pair, per run; the first peak at the inter-peak minimum (protocol 2026-10-19.8) |
+| — | #95 | plan status 2 |
 | 2.6 | #96 | one PCA fit subsample in both runtimes above the 20,000-copy cap |
 | 1.6 (ii) dev | #97 | five judgment dev cases; the spec for the blind held-out author (protocol 2026-10-19.9) |
 | 1.8 | #98 | arm C without the method: a structural switch; the gate names no analysis in C (protocol 2026-10-19.10) |
 | 8 (2.3, 2.4) | #99 | arm A+ reads the app's rules: the split site, the cluster elements, the lower group's tolerance |
+| 1.6 (ii) test | #100 | five held-out judgment cases written blind, with a disclosure (protocol 2026-10-19.11) |
+| 4 | #101 | one verification module answers "is this answer verified?" |
+| 4.3, F2, F3 | #102 | each ordered mode's polarisation; no value rounded onto its bar; one Šidák family over every element (protocol 2026-10-19.12) |
+| 10 | #103 | one turn policy decides what ends a turn |
+| — | #104 | the held-out test set sealed behind one loader; no held-out value in any doc; the scan covers docs, decisions and fragments |
 
 **In progress:**
-- 1.6 (ii) on the test set: five held-out cases written blind, with a disclosure (#100);
-- 4, the verification module;
-- 4.3, with F2 and F3: the polarisation of an ordered mode, an unrounded value at the 3σ bar, and
-  the Šidák family over every element.
+- 11, the tool transcript: each result's status on the tool contract, and the event stream as the
+  transcript; with the stricter "asked before" and provenance readings (protocol 2026-10-19.13);
+- 4.5, the symmetry tools in Flask mode.
 
-**Then:** 2.5, 10, 11, 4.2, 4.4 (with F1, the modulation null for sites that share a cell-level
-variable), 4.5, and phase 6.
+**Then:** 4.4 (with F1), 4.2 and 2.5, each by a fresh builder that has seen no held-out value; then
+phase 6.
 
 **Waiting for the user (preconditions for the freeze):**
 - the skill review. #71 (5.2), and the skill-lint mismatches #94 lists: the coordination-shells
   skill quotes the Ta–Se first peak as 3.9 over 2.33–2.71 Å, where the tool now reads 3.25 over
   2.21–2.65 Å;
 - #6's window-cut rule: today's 60 % modal share against the CN margin (the table in #94);
-- 5.4 and 5.5's on-demand references, which are skill text.
+- 5.4 and 5.5's on-demand references, which are skill text;
+- F5, the shell join that needs an ideal CN: the evidence table (accepting CN 2 and 3 joins one dev
+  shell, a dimer with its next neighbour, which is not the cluster's edge, and moves one A+ score);
+- whether a tool's own refusal (a bond-angle window that cuts the shell) should still count as the
+  analysis behind a coordination claim (#11's drift item A5).
 
 **Decisions** (the manager, on the user's delegation, 2026-10-19):
 - **1.8:** arm C removes the whole method, through a structural switch in the turn module.
@@ -96,6 +105,17 @@ variable), 4.5, and phase 6.
     Demo's Ta–Se reads 3.25, not 3.86.
   - The window-cut rule stays at the 60 % modal share. That is the user's interview item, and the
     CN-margin alternative goes to the user with its dev evidence.
+- **Findings F1–F5** (from building the judgment cases): F1, the modulation null for sites that share
+  a cell-level variable, is fixed in 4.4 and calibrated at or below α; F2 and F3 are done (#102); F4
+  did not reproduce (#99); F5 stays a known limit, with its evidence for the user.
+- **The sealed test set (#104):** the test definitions load only through one loader, on the final
+  path and in CI. No doc, decision record, fragment or changelog states a held-out value. Builders
+  read only the working tree: no history (log -p, show, blame, diff) of the validation docs,
+  decisions, fragments, the changelog or the sealed folder. A builder that has seen a held-out value
+  does no further science, threshold or scoring work.
+- **#11:** "asked before" counts only a question the user saw or answered, and provenance credits
+  only what the model was told. No evidence never counts. The freeze report shows any test-split
+  number they move beside the old reading.
 - **4.4:** approved, provided it is calibrated on thermal-only seeds (the observed false-positive
   rate at or below α), has a known-answer test on a planted spread, and uses dev cases only.
 - **5.4:** waits for the user's skill review. Arm B's descriptions keep their method advice until
@@ -207,11 +227,14 @@ variable), 4.5, and phase 6.
     that file, so it reaches arm B, and a model may expect a distortion there. The skill text is
     the user's, so the decision is too.
   - **Widened (1.5, 2026-10-19).** The scan derives each test case's id, composition, cluster,
-    structure type, planted lengths, directions and wavevector from `cases.js` at run time, and
+    structure type, planted lengths, directions and wavevector from the test definitions at run time, and
     looks across `src`, every skill file, `rmc_toolkits`, `docs/` and the top-level docs. Only
     text no model can read may be allow-listed (five test- or doc-only hits found that day). The
     leak above is listed apart, printed on every run and pinned line by line; both lists are in
-    [copilot-validation.md](algorithms/copilot-validation.md#the-holdout-scan). PR #71's skill
+    [copilot-validation.md](algorithms/copilot-validation.md#the-holdout-scan). Since #104 the
+    definitions are sealed (they load only through one loader, on the final path and in CI), and the
+    scan also reads copilot-validation.md (ids only), the validation's docs and comments, the
+    decision records, the change fragments and the changelog. PR #71's skill
     drafts carry the same leak and nothing else. This plan is scanned too, so it points at the
     leak without naming it.
   - **Resolved (2026-10-19, protocol 2026-10-19.2):** the test breathing case was recomposed, not
@@ -224,7 +247,7 @@ variable), 4.5, and phase 6.
 ### The A+ ceiling: what the validation can still measure
 
 The engines alone now score 0.99 on dev and on test
-(`validation/baseline/arm-a-test.json`; [copilot-validation.md](algorithms/copilot-validation.md),
+(the sealed arm A/A+ test record; [copilot-validation.md](algorithms/copilot-validation.md),
 "Batch 1"):
 
 - **Where B can still gain.** The case score lets arm B gain at most 0.01 over A+, on the one
@@ -274,13 +297,13 @@ user decided on 2026-10-19:
 | a | **The case-id leak** (a bug, not a deepening). The harness names the run after the case id (`validation/runFolder.js:30`), which reaches the model as `context.run` in the first message (`src/llm/context/runContext.js:422`). Every arm B and C run is told its case kind. | — | Start, first: **fixed** (protocol 2026-10-19.1) |
 | 2 | **The run as the Copilot sees it.** One module turns a run's files and the view state into the Copilot's run. Today App, Dashboard and useAssistant each hold a piece, and the harness copies them (`runFolder.js:15-38`). The browser and the harness become its two adapters. | Strong · local-substitutable | Start, second: **built** (`src/copilotRun.js` with `useCopilotRun.js` and `openRunFolder.js`) |
 | 1 | **The turn.** One module runs one question. Today `useCopilot.js:126,137-181` and `harness.js:75-132` each assemble the turn, and they have drifted apart: the harness loses the warmer retry, the no-tools prompt and the tools-on rule, and the gate setup is copied in both. The dock and the harness become its two adapters, and the module emits each request as it was sent. | Strong · mock (model port) | Start, third |
-| C | **Arm C's "method off" switch** in the turn module (1.8). | — | Start, after 1 |
+| C | **Arm C's "method off" switch** in the turn module (1.8). | — | Start, after 1: **built** (#98) |
 | 3 | **Provider quirks behind the model port.** `streamCopilotChat` takes over the retry temperature, honours or enforces `tool_choice: 'none'`, and reports "tools unsupported" as a typed failure instead of a regex over error text. | Strong · mock | Start, fourth |
 | 4 | **One verification module: is this answer verified?** It owns the claim catalogue (phrasing, the analysis that backs a claim, the fact that contradicts it), reference filling, the facts schema, the gate's bookkeeping and the order the checks run in. The prompt's evidence sentence is generated from the catalogue. This replaces the side lists in `evidence.js:86-148`, `verdict.js:61` / `turnState.js:161` and `prompts/copilot.js:32-39`. | Strong · in-process | Start, fifth |
 | 7 | **Generated golden fixtures at the orientation and site seams.** The 3σ direction verdict and the split-site statistics are pinned by one generated fixture, not by twin hand-copied pins. | Strong · ports & adapters | Start, in parallel |
 | 5 | **The engines return their own verdicts** (clusters, modulations), with the row that decided each, so the tool only renders them. | Strong · ports & adapters | Approved 2026-10-19 (manager, on the user's delegation): A+ results change, and the verdict becomes part of the library output |
 | 6 | **One shell reading per pair, per run** (find_gr_peaks, the clarifier, the context, the audit and A+), and a coordination reading in the triplets payload. | Strong · in-process | Approved 2026-10-19 (manager, on the user's delegation): a context flag and the cut rule change |
-| 8 | **Arm A+ reads the app's rules** for the split site, the cluster elements and the symmetry floor (A+ uses the floor; the tool and the clarifier use 1.25 × the floor). | Worth exploring · in-process | Approved 2026-10-19 (manager, on the user's delegation): the A+ baseline moves; the app's rule unless there is evidence it is wrong |
+| 8 | **Arm A+ reads the app's rules** for the split site, the cluster elements and the symmetry floor (A+ uses the floor; the tool and the clarifier use 1.25 × the floor). | Worth exploring · in-process | Approved 2026-10-19 (manager, on the user's delegation): the A+ baseline moves; the app's rule unless there is evidence it is wrong; **built** (#99) |
 | 9 | **One request contract for the worker and Flask adapters**: names, defaults, caps, normalisation, error modes, cancelling. | Worth exploring · ports & adapters | Approved 2026-10-19 (manager, on the user's delegation) |
 | 10 | **Turn policy: what ends a turn.** One owner for the counters, and one `done` shape. | Worth exploring · in-process | Approved 2026-10-19 (manager, on the user's delegation) |
 | 11 | **Tool transcript: what the model is told about a result.** One store for the loop and the UI. Result statuses (old 3.2) attach here. | Speculative · in-process | Approved 2026-10-19 (manager, on the user's delegation) |
@@ -418,11 +441,11 @@ Beyond single contradictions:
 | --- | --- | --- |
 | 1.1 | **Done (#84).** **The warmer retry in the harness.** Now part of the turn module (1) and the model port (3): both adapters get the same retry, and a test at the port asserts it. | — |
 | 1.2 | **Done (#86).** **One run policy, recorded.** A `RunPolicy` states the limits, temperature, server kind, context size, reply cap and the context-guard decisions; each record and transcript keeps it; the report lists what a comparison across models also compares. One scripted check that the final round's `tool_choice: 'none'` is sent in the form each provider accepts. | M |
-| 1.3 | **Context parity, stated.** The record says which context sections the run had (no PCA table, no run settings, the 0.2 Å card) and that it is one fresh question; the harness gets an option for a PCA-table context, as after a visit to the PCA page, for a dev check of its effect. **Built with the run module (Phase 2, PR 2):** `record.view`, `record.context`, `run.js live --pca-table`. | S |
+| 1.3 | **Done (#78).** **Context parity, stated.** The record says which context sections the run had (no PCA table, no run settings, the 0.2 Å card) and that it is one fresh question; the harness gets an option for a PCA-table context, as after a visit to the PCA page, for a dev check of its effect. **Built with the run module (Phase 2, PR 2):** `record.view`, `record.context`, `run.js live --pca-table`. | S |
 | 1.4 | **Done (#90, #93).** **State lifecycle.** A Live Data save that changes the configuration starts a new conversation, as a new run does, or marks earlier answers as about the previous configuration; the Detected SG pick resets with the run. | S |
-| 1.5 | **Holdout scan widened** (done, 2026-10-19): test-case materials, formulas, magnitudes and directions (from `cases.js`) across `src`, `.claude/skills`, `rmc_toolkits` and `docs/` except the validation docs. The overlap with the skills' reference compound reaches arm B through `read_skill`: copilot-validation.md lists it as an open leak pending the user. Only test- or doc-only hits are allow-listed, as known risks. | S |
+| 1.5 | **Holdout scan widened** (done, 2026-10-19): test-case materials, formulas, magnitudes and directions (from the test definitions, sealed since #104) across `src`, `.claude/skills`, `rmc_toolkits` and `docs/` except the validation docs. The overlap with the skills' reference compound reaches arm B through `read_skill`: copilot-validation.md lists it as an open leak pending the user. Only test- or doc-only hits are allow-listed, as known risks. | S |
 | 1.6 | **An informative comparison with A+** *(approved 2026-10-19; the held-out judgment cases are written by a fresh author without the dev results)*. Dev set only. (i) The report gives feature-only scores, B against A+ per component, and every disagreement with the planted truth beside it, with no change to the case score. (ii) A "judgment" dev subset, designed and tried on dev only: cases where A+'s fixed joining rules are ambiguous or wrong — two features at once, a signal at 2.5–4σ, evidence that two tools read differently, a choice only the user can make — so the model has room to add. The test set gets matching cases only through a new, pinned test version authored without reference to the dev results, decided by the user. | M |
-| 1.7 | **Snapshots of what the model sees.** A test snapshots the system prompt (every variant), the tool list, every description and schema, the first request as the dock and the harness send it, and a sample of each tool's result text, so a refactor that changes them shows in the diff. Arm C's snapshot is checked for skill names. First of the started set. | S |
+| 1.7 | **Done (#73).** **Snapshots of what the model sees.** A test snapshots the system prompt (every variant), the tool list, every description and schema, the first request as the dock and the harness send it, and a sample of each tool's result text, so a refactor that changes them shows in the diff. Arm C's snapshot is checked for skill names. First of the started set. | S |
 | 1.8 | **What arm C ablates: decided 2026-10-19.** C removes the whole method: no skill names, stage lists, `EVIDENCE_RULES`, method sentences in `TOOL_RULES` or method advice in tool descriptions. It is a structural switch in the turn module, after 1 (B and C, item C). | M |
 
 ### Phase 2 — The started set (decided 2026-10-19)
@@ -431,13 +454,13 @@ The candidates of B and C, in this order. Each is one PR, stacked on the one bef
 
 | PR | Change | Size |
 | --- | --- | --- |
-| a | **The case-id leak.** The harness gives the run a neutral name; a test asserts that no case id or kind reaches the model. The model-visible snapshot changes by the run name only. **(this PR:** `rmc_run`, `caseBlind.test.js`, protocol 2026-10-19.1**)** | S |
-| 2 | **The run module** (candidate 2). The browser and the harness are its two adapters; the harness records the view state it chose. **(this PR:** `copilotRun.js`, `useCopilotRun.js`, `openRunFolder.js`, the harness on `openRunFolder`, item 1.3**)** | M |
+| a | **Done (#75).** **The case-id leak.** The harness gives the run a neutral name; a test asserts that no case id or kind reaches the model. The model-visible snapshot changes by the run name only. **(this PR:** `rmc_run`, `caseBlind.test.js`, protocol 2026-10-19.1**)** | S |
+| 2 | **Done (#78).** **The run module** (candidate 2). The browser and the harness are its two adapters; the harness records the view state it chose. **(this PR:** `copilotRun.js`, `useCopilotRun.js`, `openRunFolder.js`, the harness on `openRunFolder`, item 1.3**)** | M |
 | 1 | **Done (#84).** **The turn module** (candidate 1). The dock and the harness are its two adapters; it emits each request as sent. | L |
-| C | **Arm C's "method off" switch** in the turn module (1.8). Arm C's snapshot is checked for skill names and the method sentences. | M |
+| C | **Done (#98).** **Arm C's "method off" switch** in the turn module (1.8). Arm C's snapshot is checked for skill names and the method sentences. | M |
 | 3 | **Done (#88).** **The model port** (candidate 3): the retry temperature, `tool_choice: 'none'`, "tools unsupported" as a typed failure. | S |
-| 4 | **The verification module** (candidate 4). The prompt's evidence sentence is generated from its claim catalogue. | L |
-| 7 | **Golden fixtures** at the orientation and site seams (candidate 7), in parallel, cut from `main`. Built: `orientation_fixture.json` and `pca_sites_fixture.json` from their generators, with staleness tests on both sides; the hand-copied twin pins are gone. | S |
+| 4 | **Done (#101).** **The verification module** (candidate 4). The prompt's evidence sentence is generated from its claim catalogue. | L |
+| 7 | **Done (#74).** **Golden fixtures** at the orientation and site seams (candidate 7), in parallel, cut from `main`. Built: `orientation_fixture.json` and `pca_sites_fixture.json` from their generators, with staleness tests on both sides; the hand-copied twin pins are gone. | S |
 
 ### Phase 3 — Approved 2026-10-19 (manager, on the user's delegation)
 
@@ -445,13 +468,13 @@ The candidates of B and C, in this order. Each is one PR, stacked on the one bef
 | --- | --- | --- |
 | 5 | **Done (#89).** **The engines return their own verdicts** (clusters, modulations) *(approved 2026-10-19)*. | M |
 | 6 | **Done (#94; the cut rule waits for the user).** **One shell reading per pair, per run** *(approved 2026-10-19)*. Changes the numbers a question quotes (by < 0.05 atom), a context flag and the cut rule. | M |
-| 8 | **Arm A+ reads the app's rules** for the split site, the cluster elements and the symmetry floor *(approved 2026-10-19)*. It covers old 2.3 and 2.4, which land with 5.3, since the rule and the skill change together. Arm A's rule is part of the frozen protocol and changes only with a dated note. | S |
+| 8 | **Done (#99).** **Arm A+ reads the app's rules** for the split site, the cluster elements and the symmetry floor *(approved 2026-10-19)*. It covers old 2.3 and 2.4, which land with 5.3, since the rule and the skill change together. Arm A's rule is part of the frozen protocol and changes only with a dated note. | S |
 | 9 | **Done (#92).** One request contract for the worker and Flask adapters: one fixture checked against every adapter. | M |
-| 10 | Turn policy: what ends a turn. | M |
+| 10 | **Done (#103).** Turn policy: what ends a turn. One owner for the counters and one `done` shape. | M |
 | 11 | Tool transcript; result statuses (old 3.2). | M |
 | 2.5 | **The page and the tool at the same settings** *(approved 2026-10-19)*: the directions tool also reports at the page's ν and smoothing, or the page defaults to the engine's choice. Changes arm A's reading. | S |
 | 2.6 | **Done (#96).** PCA subsamples identical in both runtimes (AGENTS.md next step 8). | M |
-| 3.3 | **Output-shape contracts** for every live tool: a schema of its `data` (the paths references name), checked on the demo and on each dev case. Before any tool output changes in phase 4. Built: each live tool's spec carries a `dataShape` (`llm/copilot/dataShape.js`, never sent to the model), and `toolDataShapes.test.js` checks every result on the demo and the dev cases against it, both ways (no undeclared key; every declared key returned by some call, the unreachable forms listed). | M |
+| 3.3 | **Done (#77).** **Output-shape contracts** for every live tool: a schema of its `data` (the paths references name), checked on the demo and on each dev case. Before any tool output changes in phase 4. Built: each live tool's spec carries a `dataShape` (`llm/copilot/dataShape.js`, never sent to the model), and `toolDataShapes.test.js` checks every result on the demo and the dev cases against it, both ways (no undeclared key; every declared key returned by some call, the unreachable forms listed). | M |
 | 3.5 | A small corpus of real answers for the claim regexes of the checks and the gate. **Built (#83):** `answerCorpus.test.js`, 9 real answers (3 verbatim, 1 transcribed, 5 quoted), one adapter, pins with judgements; 0 false alarms in 4 readings, 1 miss (a negative cluster conclusion is not read). The dev live runs' answers join it before the freeze (6.3). | S |
 
 ### Phase 4 — Tool science
@@ -463,7 +486,7 @@ change what A+ sweeps are noted.
 | --- | --- | --- |
 | 4.1 | **`list_sites` shows the split** *(approved 2026-10-19)*: per-axis kurtosis on resolved axes, PC1 as [u v w], and the static displacement of a split site (√(rms₁² − rms⊥²) with its sampling error), so the model quotes it by reference. **Done (#82):** `kurtosis_axes`, `pc1_uvw`, `delta_A` ± `delta_se_A` (ai-assistant.md Step 20); one rule, `isSplitSite`; known answer over 5 × 1,000 seeds (95 % coverage 0.939–0.958; a prolate Gaussian site never called split); arms A/A+ unchanged; protocol 2026-10-19.3. | S |
 | 4.2 | **The Jahn–Teller split by number** *(approved 2026-10-19)*: `find_gr_peaks` returns the long − short bond of a joined shell and the share in each part. | S |
-| 4.3 | **The polarisation of an ordered mode** *(approved 2026-10-19)*: `analyze_modulations` returns each ordered point's displacement direction (the mode's eigenvector over the element's sites). Changes A+ (it reads the tool, not PC1). | M |
+| 4.3 | **Done (#102).** **The polarisation of an ordered mode** *(approved 2026-10-19)*: `analyze_modulations` returns each ordered point's displacement direction (the mode's eigenvector over the element's sites). Changes A+ (it reads the tool, not PC1). | M |
 | 4.4 | **Diffuse order between cells** *(approved 2026-10-19; new statistic, calibrated on thermal-only seeds, false-positive rate ≤ α)*: a calibrated test of excess power spread over many q (not one mode), against the same independent-displacement null, with a false-positive test over many seeds of thermal-only configurations. | L |
 | 4.5 | **The symmetry tools in Flask mode**: the basis (with its moments) from `/api/structure`, so `detect_symmetry` and `measure_symmetry_lowering` exist for server folders (AGENTS.md next step 4). | M |
 | 4.6 | **Done (#87).** **A fit-data dev case** for rmc-fit-assessment: a configuration with a synthetic fit and χ² history, so `assess_convergence` and `compare_fit` are exercised. Dev only. | M |
