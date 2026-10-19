@@ -3,12 +3,14 @@
 /* @vitest-environment jsdom */
 
 // What the model sees, 2-3 of 4, the app's path: the dock (CopilotChat →
-// CopilotView → useCopilot) on the Demo run, props as App.jsx passes them, a
-// question typed and sent. The first request is captured at the model port
-// useCopilot calls, streamCopilotChat (provider/contextGuard.js), replaced
-// here by a recording fake; everything before it is the app's own code. No
-// model runs and no server is contacted (the connection probe gets a stubbed
-// model list).
+// CopilotView → useCopilot → the turn module) on the Demo run, props as
+// App.jsx passes them, a question typed and sent. The first request is
+// captured where the dock's model port (providerModel, provider/model.js)
+// sends it, streamCopilotChat (provider/contextGuard.js), replaced here by a
+// recording fake; everything before it is the app's own code. No model runs
+// and no server is contacted (the connection probe gets a stubbed model
+// list). The file's header line still says "as useCopilot.js calls it", its
+// wording before the turn module, so the file stays byte-identical.
 //
 //   dock/first-request.txt   fields, tool names, messages
 //   dock/tools.json          the `tools` field exactly as sent

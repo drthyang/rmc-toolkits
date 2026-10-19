@@ -88,42 +88,42 @@ const TWO_LARGEST_SKILLS_TODAY = Object.freeze([
 
 const DOCK_WORST_TURN_TODAY = Object.freeze({
     systemPrompt: 4762,
-    toolJson: 6752,
+    toolJson: 6790,
     contextBlock: 2213,
     question: 70,
     skills: 7814,
     analyses: 8724,
     replyReserve: 8192,
-    firstRequest: 13796,
-    prompt: 30333,
-    needed: 38525,
-    headroom: -5757,
-    lmStudioHeadroom: -1661
+    firstRequest: 13833,
+    prompt: 30370,
+    needed: 38562,
+    headroom: -5794,
+    lmStudioHeadroom: -1698
 });
 // By how much the dock's worst turn overflows the window today.
-const DOCK_OVERFLOW_TOKENS_TODAY = 5757;
+const DOCK_OVERFLOW_TOKENS_TODAY = 5794;
 
-// Arm B's first request on each dev case is 9.6k–11.1k tokens; the largest,
+// Arm B's first request on each dev case is 9.7k–11.2k tokens; the largest,
 // since plan item 4.6, is the fit-data case: its fit tools (assess_convergence,
 // compare_fit) and its sampling, datasets, weights and convergence sections
-// (before it, dev-symmetry-lowering: 10,353 tokens, 35,081 needed, 2,313 over).
+// (before it, dev-symmetry-lowering: 10,391 tokens, 35,119 needed, 2,351 over).
 const ARM_B_LARGEST_DEV_CASE = 'dev-fit-unconverged';
 const ARM_B_WORST_TURN_TODAY = Object.freeze({
     systemPrompt: 4422,
-    toolJson: 4535,
+    toolJson: 4572,
     contextBlock: 1574,
     question: 610,
     skills: 7814,
     analyses: 8723,
     replyReserve: 8192,
-    firstRequest: 11140,
-    prompt: 27676,
-    needed: 35868,
-    headroom: -3100,
-    lmStudioHeadroom: 996
+    firstRequest: 11178,
+    prompt: 27714,
+    needed: 35906,
+    headroom: -3138,
+    lmStudioHeadroom: 958
 });
 // By how much arm B's worst turn (largest dev case) overflows the window today.
-const ARM_B_OVERFLOW_TOKENS_TODAY = 3100;
+const ARM_B_OVERFLOW_TOKENS_TODAY = 3138;
 
 // --- the turn ------------------------------------------------------------------------
 
@@ -161,7 +161,7 @@ const skillMessages = async (skills, messages) => {
     const out = [];
     for (const skill of skills) {
         const model = recordingModel([{ calls: [[READ_SKILL, { name: skill.name }]] }, { text: 'Recorded.' }]);
-        await drain(runCopilotTurn({ callModel: model.callModel, messages, tools }));
+        await drain(runCopilotTurn({ model: model.port, messages, tools }));
         const message = model.requests[1].messages.at(-1);
         out.push({ skill, message, chars: message.content.length, tokens: estimatePromptTokens({ messages: [message] }) });
     }
@@ -203,7 +203,7 @@ const worstTurn = async ({ first, skills, readSkills }) => {
         { calls: ANALYSES.map(([name, args]) => [name, args(elements)]) },
         { text: 'Recorded.\n\nOutcome: a recorded turn.' }
     ]);
-    await drain(runCopilotTurn({ callModel: model.callModel, messages: first.messages, tools }));
+    await drain(runCopilotTurn({ model: model.port, messages: first.messages, tools }));
     const request = model.requests[2];
     // The tools went out exactly as in the first request.
     expect(request.tools).toEqual(first.tools);
@@ -267,7 +267,7 @@ describe('the worst realistic turn in a 32,768-token window (plan 5.5)', () => {
         armB = [];
         for (const item of DEV_CASES) {
             const recording = recordingModel();
-            const record = await runLiveCase({ built: buildCase(item), arm: 'B', model, callModel: recording.callModel, skills: disk });
+            const record = await runLiveCase({ built: buildCase(item), arm: 'B', model, port: recording.port, skills: disk });
             expect(record.error).toBeNull();
             const [request] = recording.requests;
             armB.push({ id: item.id, request, tokens: estimatePromptTokens({ messages: request.messages, tools: request.tools }) });

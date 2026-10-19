@@ -141,7 +141,7 @@ describe('dev-fit-unconverged: a run with fit data (plan item 4.6)', () => {
         const record = await runLiveCase({
             built, arm: 'B', model: MODEL, skills: loadSkills(),
             // The fit tools, then the analyses a "no order" answer needs (the evidence gate).
-            callModel: scripted([
+            port: scripted([
                 { calls: [['assess_convergence', {}], ['compare_fit', { dataset: 'xpdf' }]] },
                 { calls: [['analyze_modulations', {}], ['analyze_displacement_directions', { site_ref: 1 }], ['analyze_displacement_directions', { site_ref: 5 }]] },
                 { text: answer }

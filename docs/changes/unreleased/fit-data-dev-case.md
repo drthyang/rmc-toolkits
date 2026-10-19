@@ -20,5 +20,5 @@
   unchanged.
 - Pins updated: `arms.test.js`, `split.test.js` (a dev-only kind), `caseBlind.test.js` (the dev
   cases now offer every tool its sweep calls), `toolDataShapes.test.js` (the fit tools on the
-  case), and `contextBudget.test.js`: arm B's largest dev case is now this one, 35,868 tokens
-  needed, 3,100 over 32,768.
+  case), and `contextBudget.test.js`: arm B's largest dev case is now this one, 35,906 tokens
+  needed, 3,138 over 32,768.

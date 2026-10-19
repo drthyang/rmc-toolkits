@@ -3,16 +3,20 @@
 
 // What the model sees, 2-3 of 4, the validation harness's path: the first
 // request runLiveCase (validation/harness.js) sends on a dev case, captured at
-// its model port (`callModel`, which validation/run.js binds to
-// streamCopilotChat with the model's base URL, id and temperature), with the
-// simulated user that skips every question. No model runs.
+// its model port (`port`: a recording port here, which records the turn's
+// intent — messages, tools, tool choice — with its signal; validation/run.js
+// gives providerModel, which adds the model's base URL, id and temperature
+// and sends through streamCopilotChat), with the simulated user that skips
+// every question. No model runs.
 //
 //   harness/first-request.arm-B.txt   arm B (skills): fields, tool names, messages
 //   harness/first-request.arm-C.txt   arm C (no skills), against arm B
 //   harness/tools.arm-B.json          the `tools` field exactly as sent (arm B)
 //
 // A change to these files is a change to what the model sees: call it out in
-// the PR.
+// the PR. The files' header line still names the capture point by its name
+// before the turn module (runLiveCase's callModel): PORT below is kept as it
+// was so the files stay byte-identical.
 
 import { describe, expect, it } from 'vitest';
 import { buildCase, DEV_CASES } from '../../../validation/cases';
@@ -31,7 +35,7 @@ const firstRequest = async (arm) => {
     const model = recordingModel();
     const record = await runLiveCase({
         built: buildCase(DEV_CASES.find((item) => item.id === CASE)), arm, model: MODEL,
-        callModel: model.callModel, skills: arm === 'B' ? loadSkills() : null
+        port: model.port, skills: arm === 'B' ? loadSkills() : null
     });
     expect(record.error).toBeNull();
     return { request: model.requests[0], record };

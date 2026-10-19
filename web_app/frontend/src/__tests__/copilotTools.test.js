@@ -65,7 +65,9 @@ describe('Copilot tools on the demo run', () => {
             site: first.element,
             count: first.count
         }));
-        // Most remarkable first, so trimming to the budget drops the dullest sites.
+        // Most remarkable first, so trimming to the budget drops the dullest
+        // sites: split sites first (the demo has none), then by |kurtosis|.
+        expect(data.sites.filter((row) => row.delta_A != null)).toEqual([]);
         const magnitudes = data.sites.map((row) => Math.abs(row.kurtosis));
         expect(magnitudes).toEqual([...magnitudes].sort((a, b) => b - a));
         expect(data.largest_abs_kurtosis_refs[0]).toBe(data.sites[0].ref);

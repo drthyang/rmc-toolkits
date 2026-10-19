@@ -38,6 +38,16 @@ Copilot worker's handler in-thread. The view is `HARNESS_VIEW`, the app's defaul
 SG card at 0.2 Å with its ladder, nothing hidden, no PCA table (the PCA Ellipsoid page not
 visited), Live Data off. Arms A and A+ read the same run, with the ladder off.
 
+**The question is the app's.** Each live run is one question through the turn module
+(`src/llm/copilot/turn.js`, `runTurn`), the same module the dock runs each question through: it
+builds the context, the prompt, `ask_user` and `read_skill`, the history, the Workbench's
+questions, the evidence gate, the answer checks and the references from the run props. The
+harness (`harness.js`) is its second adapter and passes only what is its own: the case's run, its
+compute-only tools (the tools over the run props with no cards, and the run's engine tools), the
+simulated user, the arm's skills (arm B) and a model port. `run.js` builds that port as the app
+does, with `providerModel` (`src/llm/provider/model.js`: the context guard, the warmer retry), and
+meters it for an API model (`spend.js` `meteredModel`).
+
 ## Cases
 
 Nine kinds, each a **dev** case (for improving tools and skills) and a held-out **test** case (for
@@ -256,8 +266,8 @@ user's text and is unchanged.
   0.0622 Å against the old case's 0.0607 Å (2.5 % larger). A+'s cluster engine reads the breathing
   at z = 30, against 22 before.
 - **Approved by the manager on the user's delegation, 2026-10-19**
-  (`validation/findings/decisions.jsonl`). The user may reverse it: keep their compound in the test
-  case and disclose it as a known arm-B advantage.
+  (`validation/findings/decisions/2026-10-19-test-breathing-recomposed.json`). The user may reverse
+  it: keep their compound in the test case and disclose it as a known arm-B advantage.
 - **Nothing is lost:** no arm B or C run has touched the test set. `TEST_SET_SHA256` changes, so
   any result on the old test set would not be comparable.
 - **Arms A and A+ on the test set**, re-recorded with `--final` at 4ab9eab: only the three
@@ -275,7 +285,35 @@ user's text and is unchanged.
 - **The holdout scan's open-leak list is now empty**, and the four allow-list entries for the old
   cluster have left it ([the holdout scan](#the-holdout-scan)).
 
-**Protocol 2026-10-19.3 (plan item 4.6: the fit-data dev case).** dev-fit-unconverged joins the dev
+**Protocol 2026-10-19.3 (`list_sites` shows the split, plan 4.1).** Each site row gains its
+per-axis excess kurtosis on resolved axes (`kurtosis_axes`), PC1 as a direct-lattice [u v w]
+(`pc1_uvw`), and, for a site the tools call split (one rule, `isSplitSite`), its static
+displacement `delta_A` with its sampling error `delta_se_A`; the tool's description says so. What
+the model sees changes (the `list_sites` result and its description), so live runs under earlier
+protocols are not comparable. Arms A and A+ do not call `list_sites` and are unchanged. Approved by
+the manager on the user's delegation, 2026-10-19 (`validation/findings/decisions/`).
+
+**Protocol 2026-10-19.4 (the turn module).** The harness had assembled each question itself,
+beside the dock's own assembly, and the two had drifted apart. Both now run the turn module
+(above), and four things change for the harness; each is pinned in `harness.test.js`:
+1. **The warmer retry.** After a reply that kept repeating itself, the loop asks again warmer: the
+   dock sent that request at a temperature of 0.6 or more, the harness at the model's own (0.2), as
+   `streamCopilotChat` ignored the loop's flag. It now runs at 0.6 or more in both
+   (`providerModel`, `ANTI_REPEAT_TEMPERATURE`).
+2. **The no-tools prompt.** A model that refuses tools gets the tool-free system prompt, as in the
+   dock; the harness had kept the tool rules.
+3. **Provenance against what the model read.** Each answer number is matched against the run
+   context as the model was shown it (trimmed to its budget, the turn's `start.shown`), no longer
+   the whole context: a value the trim removed was never shown. No case's context is over the
+   budget at the default view (the largest is ~4,500 of 6,000 characters, ~5,600 for the Demo with
+   the PCA table), so no default record moves.
+4. **Every request as sent.** The record keeps `requests` (below).
+
+Changes 1 and 2 change what a run sends, so the protocol moves. Live runs under an earlier
+protocol that looped or met a model without tools are not comparable; arms A, A+ and D have no
+model and are unaffected.
+
+**Protocol 2026-10-19.5 (plan item 4.6: the fit-data dev case).** dev-fit-unconverged joins the dev
 set ([Cases](#cases)). The question, the scoring, the verdict schema, the tools and the skills are
 unchanged; the run module reads the new files exactly as it reads a user's run.
 - **Arms A and A+ on it**, appended to `arm-a-dev.json` (`arm-a --split dev` at 2383578): both
@@ -285,9 +323,9 @@ unchanged; the run module reads the new files exactly as it reads a user's run.
   27 dev records equal the committed ones apart from protocol and commit, and stay as recorded.
 - **The means:** over the nine paired dev kinds they stay A 0.81 and A+ 0.99; over all ten dev
   cases they are A 0.825 and A+ 0.99. The test set and `TEST_SET_SHA256` are unchanged.
-- **Arm B on dev:** the new case's first request is the dev set's largest (11,140 tokens: the two
+- **Arm B on dev:** the new case's first request is the dev set's largest (11,178 tokens: the two
   fit tools and four more context sections). `contextBudget.test.js` now pins its worst turn:
-  35,868 tokens needed, 3,100 over 32,768 (dev-symmetry-lowering's was 35,081, 2,313 over). The
+  35,906 tokens needed, 3,138 over 32,768 (dev-symmetry-lowering's was 35,119, 2,351 over). The
   snapshots of what the model sees (the Demo, dev-offcentre) are unchanged.
 - **What the model is told:** nothing about the case. Its id, its kind and the id's stem reach no
   request and no tool result (`caseBlind.test.js`, which now also checks that the dev cases
@@ -315,7 +353,17 @@ harness, so each record states it:
   `configuration_optimization` (no move counters), `run_settings`, `partial_weights` or
   `convergence`, and no `pca_displacements` unless the PCA table is on. The exception is
   dev-fit-unconverged, whose fit files add `configuration_optimization`, both fitted datasets
-  with their Rw, `partial_weights` and `convergence` (it has no `run_settings` either).
+  with their Rw, `partial_weights` and `convergence` (it has no `run_settings` either). Read from
+  the context as the model was shown it (the turn's `start`);
+- `requests` (since protocol 2026-10-19.3): every model request as it was sent, in order, as
+  `{ round, why, sent }`: `why` is `first`, `tools` (the results of the round before), `reminder`
+  (after an empty or looping reply), `gate` (an answer the evidence gate sent back), `final` (the
+  analysis budget used: `tool_choice` 'none') or `no_tools` (the retry of a model that refuses
+  tools); `sent` is the request as the port prepared it (`providerModel`: base URL, model id,
+  temperature, messages, tools, tool choice; never the API key). A request the spend cap refused
+  was never sent and is not there. One the context guard refuses (it would not fit the model's
+  window) is there, followed by the run's `error`: the guard decides as the request goes out, not
+  when it is prepared (the model-port PR, candidate 3, moves that decision into `prepare`).
 
 The transcript prints both under its header. **The PCA-table option** (`run.js live --pca-table`,
 dev set only; `runLiveCase({ pcaTable: true })`) gives each run the PCA table from its own engine,
@@ -342,10 +390,65 @@ Batch 1 (`validation/findings/batch-1.jsonl`) holds every tool change of the
 [review](copilot-review.md), approved by the user on 2026-10-14 and implemented on 2026-10-17:
 L1–L5 (L4 is two analyses), six findings; the five skill proposals are added by the skills PR,
 which waits for the user's review. `split.test.js` validates the file.
-Decisions on the validation itself take the same form in `validation/findings/decisions.jsonl`,
-also validated by `split.test.js`: so far one, the recomposed test breathing case (protocol
-2026-10-19.2), approved by the manager on the user's delegation on 2026-10-19. The schema's
-approver is the user, so the delegation is stated in the entry's evidence and proposed fix.
+Decisions on the validation itself take the same form, one JSON file per record in
+`validation/findings/decisions/`, named by the record's id (the date and a slug,
+`2026-10-19-list-sites-split.json`), so that parallel changes never edit the same file.
+`parseFindingFiles` (`findings.js`) reads every `*.json` there in id order and validates each by the
+findings schema, in `split.test.js` and in `run.js findings <folder>`. So far two, both approved by
+the manager on the user's delegation on 2026-10-19: the recomposed test breathing case (protocol
+2026-10-19.2) and plan item 4.1, `list_sites` showing a split site's static displacement
+([ai-assistant.md](ai-assistant.md), Step 20). The schema's approver is the user, so the delegation
+is stated in each record's evidence and proposed fix.
+
+### The answer corpus (plan item 3.5)
+
+The evidence gate (`src/llm/copilot/evidence.js`) and the checks on the answer
+(`answerAudit.js`) read claims with regexes. `src/__tests__/answerCorpus.test.js` runs them over
+real answers and records what they read:
+- **The corpus:** one file per answer in `src/__tests__/answerCorpus/entries/`. Each file holds:
+  - the text and its `fidelity`: `verbatim` (committed as the model's words), `transcribed` (read
+    off a committed recording) or `quoted` (a docs or skill quotation, possibly shortened);
+  - its `source` (file, lines, commit), the model, the question and the run (the Demo or a dev
+    case, never a test case);
+  - the steps that ran, by name and arguments, or `null` when the record does not show them.
+- **The steps run** with the real engines. They must reproduce the numbers the transcript shows
+  (`reproduces`).
+- **One adapter** turns an answer into the pinned reading (`readAnswer` in
+  `answerCorpus/readAnswer.js`, public functions only):
+  - the claims the gate reads;
+  - the gate's send-back given the steps, or "steps unknown";
+  - the checks that fire.
+- **Each reading is judged by a person.** Every send-back, every finding, or the silence carries
+  `right` and a one-line `reason`. The test lists the false alarms and the misses.
+- **When one verification module replaces the gate and the checks**, only `readAnswer` changes.
+  The pins stay.
+
+**On 2026-10-19** the corpus holds nine answers on the Demo:
+- **Verbatim:** gemma4:26b's three correct answers of 2026-10-11.
+- **Transcribed:** Muse Glimmer's GaSe₄ answer from the README GIF.
+- **Quoted:** five wrong answers from the 2026-10-10 spot check and review.
+
+Four readings fire, and all four are right:
+- chirality and inversion lost, on qwen3.8's "P-42₁m is chiral and centrosymmetry is lost";
+- convergence, on "Converged — a plateau.";
+- the gate's cluster send-back, on "the cluster is distorted" with no `analyze_clusters`.
+
+There is no false alarm and one miss: "no cluster distortion", concluded from a pooled direction
+map, needs no analysis under any rule.
+
+No real answer yet makes a claim that the gate's split-site, lowering, modulation, direction or
+no-order rules read, or that the superstructure, cluster, polar or coordination checks read. The
+live runs' records are what will exercise them.
+
+**Adding an answer:**
+1. Copy the final answer of a live run's record on a dev case (or of a Demo session) verbatim into
+   `entries/<date>-<model>-<topic>.json`. Never use a test case's record.
+2. Copy the steps from the record, and a few of its numbers into `reproduces`.
+3. Run the test. Its diff gives the reading to put in `expected`.
+4. Judge each send-back and finding, or the silence.
+
+**A change to a claim regex** must keep every pin, or update the entry in the same PR with a
+judgement for each new reading. A new false alarm or miss shows in the test's lists.
 
 ## Models and spend
 
@@ -357,8 +460,9 @@ Each model gets the same cases, prompt, tools and scoring, and the results are r
 
 The API model (`claude-sonnet-5-5`) runs the test set only, arm B, 3 runs per case, under RMC's
 $12 share of the cycle's $40 cap. The spend tracker prices each request before sending it (prompt
-estimate + the largest reply) and refuses one that could cross the cap; a JSON-lines ledger keeps
-the total across restarts. The client sees no usage report, so the charge is an upper bound: the
+estimate + the largest reply) and refuses one that could cross the cap (`spend.js`
+`meteredModel`, a decorator over the model port: it reserves when the request is prepared, so a
+refused request is never sent); a JSON-lines ledger keeps the total across restarts. The client sees no usage report, so the charge is an upper bound: the
 Copilot's conservative token estimate (2.5 characters per token of text), with every prompt token
 at the dearest prompt rate. Prices (USD per million tokens, 2026-10-14): input $2, output $10,
 cache hits $0.10, cache writes $2.50, so prompts are charged at $2.50. `RMC_EVAL_SONNET_MODEL`,
@@ -424,7 +528,7 @@ reduces to whether B *matches* A+ — reaches the engines' conclusions, no over-
 the score does not measure (the answer checks, the evidence gate, number provenance,
 reproducibility). B − A (0.81) is still where the Copilot's value over the default pages shows.
 
-The dev-only fit-data case (protocol 2026-10-19.3) is not in these tables, whose means are over the
+The dev-only fit-data case (protocol 2026-10-19.5) is not in these tables, whose means are over the
 nine paired kinds: A and A+ both score 1 on it, so over all ten dev cases the means are A 0.825
 and A+ 0.99.
 
@@ -441,11 +545,16 @@ folder, with no model and no network:
   (CopilotChat → useCopilot, captured at `streamCopilotChat`): its fields, its messages and the
   `tools` field exactly as sent;
 - `harness/first-request.arm-B.txt`, `harness/first-request.arm-C.txt` and
-  `harness/tools.arm-B.json`: the same for `runLiveCase` on `dev-offcentre`, captured at its
-  `callModel`;
+  `harness/tools.arm-B.json`: the same for `runLiveCase` on `dev-offcentre`, captured at its model
+  port (the files' header still calls it `callModel`, its name before the turn module);
 - `tool-results/<tool>.json`: one result of every run tool and engine tool on the Demo, plus an
   `ask_user` answer, a `read_skill` and a window that cuts the Ta–Se shell, as the `tool` message
   the agent loop appends (budget applied, checks, `ref`, note).
+
+`turnRequests.test.js` (no snapshot file of its own) runs the turn module directly with a
+dock-shaped spec (the Demo run, the dock's tools, `providerModel`) and a harness-shaped one
+(`dev-offcentre` through the run module, arms B and C): its first requests are the requests in
+these files, so the dock and the harness send what the one module builds.
 
 Beside them, `caseBlind.test.js` (no snapshot file) checks that the harness tells the model nothing
 about the case:
