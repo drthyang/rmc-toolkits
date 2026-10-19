@@ -372,6 +372,21 @@ def _query_number(name: str, default, **rules):
     return _number(raw, name, **rules)
 
 
+def _build_order_response(payload):
+    """JSON response with the payload's keys in the order they were built.
+
+    The app's provider sorts object keys, which loses an order that means
+    something: ``/api/structure``'s ``elementCounts`` lists the species in the
+    order the .rmc6f first lists them (RMCProfile's atom-type order, the order
+    the partial g(r) columns name the pairs), as the browser's
+    ``structureFromRmc6f`` does, and the Copilot's run context labels the
+    partial weights in that order (``Ta-Se``, never ``Se-Ta`` for one runtime
+    only). Otherwise the same strict JSON: non-finite data become ``null``.
+    """
+    provider = app.json
+    return app.response_class(f"{provider.dumps(payload, sort_keys=False)}\n", mimetype=provider.mimetype)
+
+
 def _strict_result_response(payload):
     """JSON response for a computed numeric result; NaN/Infinity is a ValueError (400).
 
@@ -769,7 +784,10 @@ def structure():
                 }
             )
 
-        return jsonify(
+        # In build order: elementCounts (and atomIndices, and each basis row's
+        # elementCounts) list the species in the order the .rmc6f first lists
+        # them, as structureFromRmc6f builds them in the browser.
+        return _build_order_response(
             {
                 "source": str(rmc6f_path),
                 "totalAtoms": len(atoms),

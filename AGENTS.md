@@ -66,6 +66,7 @@ web_app/frontend/src/
   browserData.js                 static-mode local file parsing + run assembly (makeRunFromEntries; chooseStructureFile mirrors parsers.find_run_configuration, code-point tie-breaks); the Dashboard's plot files, one source for the screen and the Copilot's run module: `dashboardPlotFiles` (isDashboardPlotFile + compareDashboardPlotFiles), `chartedRValueFile` (the visible logs' χ² history), `parseDashboardPlotFile`, `DASHBOARD_MAX_POINTS` (100)
   rmc6f.js                       shared .rmc6f atom-line grammar + parse report (classifyAtomLine, parseRmc6fAtoms, readRmc6fCellVectors) — mirror of parsers.py; keep in sync
   plotDomain.js                  one-pass axis domains, null-tolerant hover search (nearestFiniteIndex), plot payload checks
+  plotDataCache.js               Flask mode's /api/plot/data, one request per file and version (refreshKey), shared by InteractivePlot and the run the Dashboard publishes for the Copilot; masked points (JSON null) back to NaN; a failure is not kept
   symmetry.js                    browser-only space-group finder: strain-tested lattice rotations, least-squares-refined operations, closure walk, tolerance ladder, orbits
   spaceGroupSymbol.js / spaceGroupTable.js   H-M symbol, standard-setting search, centring from the full translation lattice, 230-group table
   wyckoff.js / wyckoffTable.js   Wyckoff letters (1731 ITA positions) read in the naming cell
@@ -114,7 +115,7 @@ web_app/frontend/src/
   ui/                            the UI kit — every shared look: ui.css (ui- classes, loaded once from main.jsx right after index.css) + thin components (Page, Card/CardHeader, ControlsBar/Control/Switch, Segmented, Pill/ToolButton/IconButton/PrimaryButton, Chip, StatRail/Stat/StatCard, Banner/Hint/EmptyState, InfoBadge, SaveMenu, the Problems section: Issues.jsx + issueStore.js); see ui/README.md
   components/
     AutoStogPage.jsx             Auto StoG tab (hidden in the shipped build: `SHOW_AUTO_STOG = false`) — pre-processing, fully client-side in BOTH runtimes and independent of the run folder: page-local S(Q) upload (± stog.inp) → grouped params (fieldsets with ? help) → worker auto-scale (+ rho0 self-consistency estimate when rho0 is empty) → readout + S(Q)/GK/D(r) plots → zip export. Does NOT call /api/scaling/* (those remain for API/CLI use)
-    Dashboard.jsx                all-plots run dashboard; once the Copilot is open (`wantAssistantData`) it publishes its run (`onRunChange`: { files, structure, structurePath, hiddenPlots }) for useCopilotRun; in Flask mode its structure (/api/structure, basis included) is re-read on `dataEpoch`, the latest request's answer applied
+    Dashboard.jsx                all-plots run dashboard; once the Copilot is open (`wantAssistantData`) it publishes its run (`onRunChange`: { files, structure, structurePath, hiddenPlots }) for useCopilotRun; in Flask mode its structure (/api/structure, basis included) is re-read on `dataEpoch`, the latest request's answer applied; in Flask mode, with the Copilot open, it fetches every plot file's /api/plot/data (hidden ones included, the charted χ² log for its run's whole history) through plotDataCache.js and publishes the files with `plotData` / `parseError`, as a picked folder's
     ModelSummary.jsx             Model information + Detected SG cards (parse warning, move counters, tolerance ladder; a brick click selects, the `⤓ CIF · <group>` button under the title downloads the selected group's symmetry-averaged CIF)
     InteractivePlot.jsx          browser-native SVG plot renderer (hover, legend, drag-zoom; opt-in angle-axis/step options, and legend={false} + actionsTarget to move Save into a card header)
     AppFooter.jsx                the footer shared by the workspace pages (kit ui-footer class)
@@ -730,6 +731,8 @@ plot-parity tests, so those run in CI.
   triplets cross-checks — skip in CI; only the committed demo run and synthetic fixtures run there.
 - With Live Data **off**, a Flask analysis page picks up a newly saved configuration only on its
   next request (press Load, or switch Live Data on); notation.md §3c.
+- Flask-mode Live Data sends `/api/files` twice per 3 s tick (the Dashboard's poll and App's
+  configuration watcher). Left as is.
 - Maintainer decisions deferred beyond 0.6.0 are listed in [docs/ROADMAP.md](docs/ROADMAP.md)
   ("Candidates after 0.6.0").
 

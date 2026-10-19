@@ -13,10 +13,12 @@ import {
     isStaticMode,
     parseDashboardPlotFile,
     plotMetadataFromFile,
+    rValueGroupKey,
     WATCH_INTERVAL_MS
 } from '../browserData';
 import { saveSvgFiguresAsZip } from '../figureExport';
 import { WatchdogBadge } from '../llm';
+import { fetchPlotData } from '../plotDataCache';
 import { isIncompleteStructure } from '../structureReport';
 import InteractivePlot from './InteractivePlot';
 import {
@@ -59,11 +61,19 @@ const renderRwpChip = (meta) => {
 // marks on a plot card while it points at it (highlight_cards).
 const NO_MARKS = {};
 
+const NO_TARGETS = Object.freeze([]);
+const NO_SERVER_PLOTS = Object.freeze({});
+
+// A plot file's version: what its chart's data is fetched for (InteractivePlot's refreshKey).
+const plotVersion = (file) => `${file.modified ?? ''}:${file.size ?? ''}`;
+
 // `wantAssistantData` (the AI Copilot has been opened) gates `onRunChange`:
 // only then does the page publish its run ({ files, structure, structurePath,
 // hiddenPlots }) for App's Copilot run module (useCopilotRun.js), so before
-// that its parses and Live Data polls do not re-render App. `dataEpoch` is
-// App's Flask-mode configuration epoch: the structure follows it (below).
+// that its parses and Live Data polls do not re-render App. In Flask mode it
+// also fetches each plot file's data for that run (below), as a picked
+// folder's files are parsed. `dataEpoch` is App's Flask-mode configuration
+// epoch: the structure follows it (below).
 const Dashboard = ({
     directory, localRun, watchFiles = false, wantAssistantData = false, onRunChange, cardMarks = NO_MARKS, dataEpoch = 0
 }) => {
@@ -97,6 +107,13 @@ const Dashboard = ({
     // flight together, or a request for the folder or run that was open
     // before, never overwrite a newer structure.
     const structureRequestRef = useRef(0);
+    // Flask mode, once the Copilot is open: the data of each plot file the
+    // published run carries, `{ [path]: { plotData } | { parseError } }`, and
+    // the version last asked for per path. A load of a folder starts a new
+    // map, so an answer for the folder before, or for a version older than
+    // the one last asked for, is dropped.
+    const [serverPlots, setServerPlots] = useState(NO_SERVER_PLOTS);
+    const serverPlotRequestsRef = useRef(new Map());
 
     useEffect(() => {
         filesRef.current = files;
@@ -136,9 +153,14 @@ const Dashboard = ({
     }, [directory]);
 
     const loadServerDashboard = useCallback(async ({ silent = false, loadedFiles: knownFiles = null } = {}) => {
-        // A (non-silent) load of a folder: a structure still in flight is the folder's before.
-        if (!silent) structureRequestRef.current += 1;
-        if (!silent) setLoading(true);
+        // A (non-silent) load of a folder: a structure or plot data still in
+        // flight is the folder's before.
+        if (!silent) {
+            structureRequestRef.current += 1;
+            serverPlotRequestsRef.current = new Map();
+            setServerPlots(NO_SERVER_PLOTS);
+            setLoading(true);
+        }
         setError(null);
         try {
             let loadedFiles = knownFiles;
@@ -376,6 +398,68 @@ const Dashboard = ({
         [plotFiles]
     );
 
+    // Flask mode: the χ² chart's data is the server's concatenation of every
+    // log of the charted run (related_r_value_logs, hidden logs included), so
+    // its version is all of theirs: a later log a running job appends to
+    // changes it, not only the first log's time and size.
+    const rValueVersion = useMemo(() => {
+        if (!rValueFile || localRun || isStaticMode()) return null;
+        const run = rValueGroupKey(rValueFile.path);
+        return fileSignature(allPlotFiles.filter((file) => file.plotKind === 'r_value' && rValueGroupKey(file.path) === run));
+    }, [rValueFile, allPlotFiles, localRun]);
+
+    // Flask mode, once the Copilot is open: what the published run fetches,
+    // so the run module gets the plot data a picked folder's parsed files
+    // carry. Every Dashboard plot file, hidden ones included (a picked folder
+    // parses them all), at its own version; and the charted χ² log, whose
+    // data is its run's whole history, at the run's version. Not the other
+    // logs: each would bring the same whole history, which the run module
+    // would concatenate again.
+    const serverPlotTargets = useMemo(() => {
+        if (!wantAssistantData || localRun || isStaticMode()) return NO_TARGETS;
+        const targets = allPlotFiles
+            .filter((file) => file.plotKind !== 'r_value')
+            .map((file) => ({ file, version: plotVersion(file) }));
+        if (rValueFile) targets.push({ file: rValueFile, version: rValueVersion });
+        return targets;
+    }, [wantAssistantData, localRun, allPlotFiles, rValueFile, rValueVersion]);
+
+    // Each target is asked for once per version, through the cache the charts
+    // share (plotDataCache.js): a chart already drawn costs no second request,
+    // and a Live Data poll asks again only for the files whose version moved.
+    // The answers of one round land together, as a picked folder's parses do.
+    useEffect(() => {
+        const requested = serverPlotRequestsRef.current;
+        const asked = serverPlotTargets.filter(({ file, version }) => requested.get(file.path) !== version);
+        if (!asked.length) return;
+        asked.forEach(({ file, version }) => requested.set(file.path, version));
+        Promise.all(asked.map(({ file, version }) => fetchPlotData(file.path, version).then(
+            (plotData) => ({ path: file.path, version, entry: { plotData } }),
+            (failure) => ({ path: file.path, version, entry: { parseError: failure.message || 'Could not load the plot data' } })
+        ))).then((answers) => {
+            const current = answers.filter(({ path, version }) => (
+                requested === serverPlotRequestsRef.current && requested.get(path) === version
+            ));
+            if (!current.length) return;
+            setServerPlots((plots) => ({
+                ...plots,
+                ...Object.fromEntries(current.map(({ path, entry }) => [path, entry]))
+            }));
+        });
+    }, [serverPlotTargets]);
+
+    // The files as the Copilot's run gets them: a target carries its latest
+    // answer (the one before stays until a newer version's lands, as a picked
+    // folder keeps a file's parse until its re-parse is done).
+    const copilotFiles = useMemo(() => {
+        if (!serverPlotTargets.length) return files;
+        const targets = new Set(serverPlotTargets.map(({ file }) => file.path));
+        return files.map((file) => {
+            const entry = targets.has(file.path) ? serverPlots[file.path] : null;
+            return entry ? { ...file, ...entry } : file;
+        });
+    }, [files, serverPlots, serverPlotTargets]);
+
     // Every problem on this page is listed in its Problems section: the run
     // folder, a structure that failed to load, and each plot file or χ² log
     // that failed to parse (their cards keep their own line too).
@@ -393,6 +477,14 @@ const Dashboard = ({
         return items;
     }, [allPlotFiles, rValueFile]);
     useIssueSet('files', fileIssues);
+    // Flask mode: a file whose data the Copilot's run could not get, hidden
+    // or collapsed charts included (a chart on screen lists the same failure
+    // under the same file name, and the section shows it once).
+    const serverPlotIssues = useMemo(() => serverPlotTargets
+        .filter(({ file }) => serverPlots[file.path]?.parseError)
+        .map(({ file }) => ({ key: file.path, message: serverPlots[file.path].parseError, source: file.name })),
+    [serverPlotTargets, serverPlots]);
+    useIssueSet('plot-data', serverPlotIssues);
     const reportIssue = useReportIssue();
 
     // Publish the run as this page holds it for App's Copilot run module
@@ -401,13 +493,14 @@ const Dashboard = ({
     // the parsed .dat. Only once the Copilot has been opened, so Dashboard- or
     // KDE-only use does no extra work; the WatchdogBadge below stays on the
     // dashboard. The hidden list keeps its identity while the hidden set does.
+    // In Flask mode the files carry the plot data fetched above.
     const hiddenPlots = useMemo(() => [...hiddenPlotPaths], [hiddenPlotPaths]);
     const publishedRun = useMemo(() => (wantAssistantData ? {
-        files,
+        files: copilotFiles,
         structure,
         structurePath: structurePath ?? null,
         hiddenPlots,
-    } : null), [wantAssistantData, files, structure, structurePath, hiddenPlots]);
+    } : null), [wantAssistantData, copilotFiles, structure, structurePath, hiddenPlots]);
 
     useEffect(() => {
         onRunChange?.(publishedRun);
@@ -481,7 +574,7 @@ const Dashboard = ({
         );
     };
 
-    const renderPlotBody = (file, variant, marks = null) => {
+    const renderPlotBody = (file, variant, marks = null, refreshKey = plotVersion(file)) => {
         if (file.sourceFile && !file.plotData && !file.parseError) {
             return <div className="ui-loading ui-loading--sm">Parsing plot file…</div>;
         }
@@ -492,7 +585,7 @@ const Dashboard = ({
             <InteractivePlot
                 file={file}
                 plotData={file.plotData}
-                refreshKey={`${file.modified ?? ''}:${file.size ?? ''}`}
+                refreshKey={refreshKey}
                 variant={variant}
                 marks={marks}
             />
@@ -580,7 +673,9 @@ const Dashboard = ({
                         </Pill>
                     </div>
                 </div>
-                {showRValue && renderPlotBody(rValueFile, 'wide', cardMarks['chi2-history'] || null)}
+                {showRValue && renderPlotBody(
+                    rValueFile, 'wide', cardMarks['chi2-history'] || null, rValueVersion ?? plotVersion(rValueFile)
+                )}
                 {renderDashboardError(`r-value:${rValueFile.parseError}`, errorLine, errorDetails)}
             </Card>
         );
