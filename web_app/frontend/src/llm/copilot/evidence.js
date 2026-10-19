@@ -37,6 +37,12 @@
 //
 // Pure, no React. Words of the validation's verdict schema (off_centre,
 // cluster_breathing, "features": [] …) are read as the claims they are.
+//
+// Under the turn's method 'off' (method.js: the validation's arm C) the gate
+// runs and checks the same rules, but its send-back names no analysis and no
+// tool (OFF_NUDGE): which analysis a conclusion needs is the method. The
+// notice and `missing` (the step card, the record) still name them; the
+// model never reads those.
 
 import { BREATHING, CELL_DOUBLING, CN_CLAIMS, DISTORTED, POLYHEDRON_CN, PREFERRED, RIGID, SUPERSTRUCTURE, asserts } from './answerAudit';
 import { CLUSTER_CN_MAX, clusterElementsOf } from '../context/shells';
@@ -64,14 +70,21 @@ export { CLUSTER_CN_MAX };
 // The tool calls that ran: [{ name, args }] → helpers.
 const ranTool = (ran, name) => ran.some((call) => call.name === name);
 
+// The send-back under method 'off', after "Your answer concludes <what>, but":
+// the evidence a conclusion needs, with no analysis or tool named (decided by
+// the manager on the user's delegation, 2026-10-19).
+export const OFF_NUDGE = 'this conclusion needs its evidence from an analysis run in this question. Answer from '
+    + 'the analysis\'s result (quote its numbers by reference). If none can run, say so in the answer instead of concluding.';
+
 /**
  * The gate for one run. `catalog` (the run's shell catalogue, context/
  * shells.js shellCatalogue; optional) names the elements whose own first
  * shell is a finite cluster's (its CN, `shell(element, element).cn`, as the
  * context and find_gr_peaks report it); `offered` the tool names this turn
- * offers (a rule never asks for a tool that is not there).
+ * offers (a rule never asks for a tool that is not there); `method` the
+ * turn's ('off': the send-back names no analysis).
  */
-export const buildEvidenceGate = ({ catalog = null, offered = null, elements = null } = {}) => {
+export const buildEvidenceGate = ({ catalog = null, offered = null, elements = null, method = 'full' } = {}) => {
     const has = (name) => !offered || offered.includes(name);
     // A sentence about this run (above); every sentence without the elements.
     const symbols = elements?.length ? elements.map((element) => new RegExp(`(?<![A-Za-z])${element}(?![a-z])`)) : null;
@@ -156,9 +169,11 @@ export const buildEvidenceGate = ({ catalog = null, offered = null, elements = n
             if (!rule) return null;
             return {
                 ...rule,
-                nudge: `(From the app, not the user.) Your answer concludes ${rule.what}, but this question has not run `
-                    + `${rule.missing.join(', ')}. Run it, then answer from its result (quote its numbers by reference). If it cannot `
-                    + 'run, say so in the answer instead of concluding.',
+                nudge: method === 'off'
+                    ? `(From the app, not the user.) Your answer concludes ${rule.what}, but ${OFF_NUDGE}`
+                    : `(From the app, not the user.) Your answer concludes ${rule.what}, but this question has not run `
+                        + `${rule.missing.join(', ')}. Run it, then answer from its result (quote its numbers by reference). If it cannot `
+                        + 'run, say so in the answer instead of concluding.',
                 notice: `The answer concluded ${rule.what} without ${rule.missing.join(', ')}; the app asked for it first.`
             };
         }

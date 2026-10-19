@@ -16,6 +16,9 @@
 // Ta–Se shell, once as the app runs it (the Workbench asks, the user skips:
 // the call runs in the whole shell, with a note) and once as the tool itself
 // refuses it (no Workbench question: no shell catalog, or its questions used).
+// And the Demo's results whose checks carry method advice as the validation's
+// arm C reads them (*.method-off.json: the turn's method 'off', each tool
+// offered through toolAsSent as the turn offers it).
 //
 // A change to these files is a change to what the model sees: call it out in
 // the PR.
@@ -26,6 +29,7 @@ import { contextAuditFacts } from '../../llm/copilot/answerAudit';
 import { buildAskUserTool } from '../../llm/copilot/askUser';
 import { buildClarifier } from '../../llm/copilot/clarify';
 import { buildEvidenceGate } from '../../llm/copilot/evidence';
+import { toolAsSent } from '../../llm/copilot/method';
 import { buildReadSkillTool, skillIndex } from '../../llm/copilot/skills';
 import { buildRunTools } from '../../llm/copilot/runTools';
 import { buildRunContext } from '../../llm/context/runContext';
@@ -68,6 +72,20 @@ const SAMPLES = [
     ['read_skill', 'read_skill', { name: 'coordination-shells' }]
 ];
 
+// As the validation's arm C reads them (method 'off', llm copilot/method.js,
+// plan item 1.8): the Demo's results whose checks carry method advice, each
+// sent without it — the split-shell note keeps its reading, the cut window is
+// still refused, the octahedron counts, the point group's facts and the
+// unseparated Ta–Ta shell keep their facts. With method 'full' the first four
+// are the files above (Ta–Ta has no full-method file).
+const METHOD_OFF_SAMPLES = [
+    ['find_gr_peaks.method-off', 'find_gr_peaks', { pair: 'Ta-Se' }, { method: 'off' }],
+    ['find_gr_peaks.Ta-Ta.method-off', 'find_gr_peaks', { pair: 'Ta-Ta' }, { method: 'off' }],
+    ['compute_bond_angles.method-off', 'compute_bond_angles', { end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.21, r12_max: 3.23 }, { method: 'off' }],
+    ['compute_bond_angles.cut-window-refused.method-off', 'compute_bond_angles', CUT, { workbench: false, method: 'off' }],
+    ['detect_symmetry.method-off', 'detect_symmetry', { tolerance_A: 0.2 }, { method: 'off' }]
+];
+
 describe('tool results as the model reads them (the Demo run)', () => {
     let setup;
 
@@ -95,8 +113,10 @@ describe('tool results as the model reads them (the Demo run)', () => {
         expect(setup.tools.map((tool) => tool.name).filter((name) => !sampled.has(name))).toEqual([]);
     });
 
-    it.each(SAMPLES)('%s', async (file, name, args, { user = null, workbench = true } = {}) => {
-        const { run, tools, context, index, clarifier } = setup;
+    it.each([...SAMPLES, ...METHOD_OFF_SAMPLES])('%s', async (file, name, args, { user = null, workbench = true, method = 'full' } = {}) => {
+        const { run, context, index, clarifier } = setup;
+        // The tools as the turn offers them under the method (toolAsSent).
+        const tools = setup.tools.map((tool) => toolAsSent(tool, method));
         const model = recordingModel([{ calls: [[name, args]] }, { text: 'Recorded.\n\nOutcome: a recorded tool result.' }]);
         const questions = [];
         const askUser = async (asked) => {
@@ -104,7 +124,7 @@ describe('tool results as the model reads them (the Demo run)', () => {
             return user || { answer: null, source: 'skipped', index: null };
         };
         const messages = buildCopilotMessages({
-            context, history: [], userText: QUESTION, toolsEnabled: true, viewTools: false, askUser: true, skills: index
+            context, history: [], userText: QUESTION, toolsEnabled: true, viewTools: false, askUser: true, skills: index, method
         });
         const events = [];
         for await (const event of runCopilotTurn({

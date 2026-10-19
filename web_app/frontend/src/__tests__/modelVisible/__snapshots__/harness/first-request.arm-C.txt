@@ -1,11 +1,11 @@
-# First request of the validation harness, arm C (no skills), dev case dev-offcentre
+# First request of the validation harness, arm C (no method), dev case dev-offcentre
 # Captured at runLiveCase's callModel(request) (validation/harness.js), which validation/run.js binds to streamCopilotChat({ baseUrl, model, temperature, apiKey, session, ...request }).
 
 ## Request fields
 signal: "AbortSignal"
 toolChoice: "auto"
 temperature: (not in the request)
-tools: 10, in the order sent (each definition in full: harness/tools.arm-B.json, without read_skill)
+tools: 10, in the order sent (each definition in full: harness/tools.arm-C.json)
   1. read_run_data
   2. find_gr_peaks
   3. list_sites
@@ -18,7 +18,7 @@ tools: 10, in the order sent (each definition in full: harness/tools.arm-B.json,
   10. ask_user
 
 ## messages[0] · system
-(the system prompt, variant "tools-ask": system-prompt/tools-ask.txt, 8575 characters, sha256 e2130dda5ec38e52)
+(the system prompt, variant "tools-ask.method-off": system-prompt/tools-ask.method-off.txt, 5975 characters, sha256 3fd190eee9c05194)
 
 ## messages[1] · user
 (identical to first-request.arm-B.txt messages[1])

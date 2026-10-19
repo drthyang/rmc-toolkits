@@ -5,6 +5,7 @@ import { buildRunContext, seriesStats } from '../context/runContext';
 import { BOUNDARY_REACH_A, PEAK_SEARCH_MAX_A, extractPeaks, shellCatalogue } from '../context/shells';
 import { classifyConvergence } from '../watchdog/heuristics';
 import { oneOf } from './dataShape';
+import { methodCheck } from './method';
 
 // Copilot tools over the run data this module already receives as props
 // (plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites) — so
@@ -15,7 +16,8 @@ import { oneOf } from './dataShape';
 // (`cards(args)`), which breathe while it runs: a card's `kind` (a plot kind,
 // 'r_value', 'symmetry', 'model') and `file` tie it to the data. Each declares
 // the shape of its `data` (`dataShape`, dataShape.js): the paths the model
-// quotes by reference.
+// quotes by reference. Method advice in a description or a check is marked
+// (`method`, method.js), so the validation's arm C reads none.
 
 const roundSig = (value, digits = 3) => (
     Number.isFinite(value) && value !== 0 ? Number(value.toPrecision(digits)) : (Number.isFinite(value) ? value : null)
@@ -270,10 +272,12 @@ const grPeaksTool = (run, cardIds) => {
         name: 'find_gr_peaks',
         description: 'Analyse one partial g(r) (from the run\'s partial-PDF file): its peaks below r_max '
             + '(position, approximate FWHM) and its first coordination shell, which does not depend on r_max — the '
-            + 'window from onset to the first deep minimum (use first_shell.window_A for compute_bond_angles: it holds '
+            + 'window from onset to the first deep minimum (it holds '
             + 'the whole shell, split shells included), mean distance and spread from r²g(r), coordination numbers in '
             + 'both directions with their sensitivity to the cut, whether the shell is separated from the next, '
             + 'and whether the pair\'s hard minimum-distance constraint cuts the distribution.',
+        // The method advice (method.js), inside the window's parenthesis: sent with method 'full'.
+        method: [{ after: 'to the first deep minimum (', text: 'use first_shell.window_A for compute_bond_angles: ' }],
         parameters: {
             type: 'object',
             properties: {
@@ -364,38 +368,38 @@ const grPeaksTool = (run, cardIds) => {
                     const forward = shell.ideal != null || !Number.isFinite(shell.reverseCn);
                     const ratio = forward ? 1 : shell.reverseCn / shell.cn;
                     const [counted, around] = forward ? [b, a] : [a, b];
-                    checks.push({
-                        level: 'note',
-                        text: `One split shell across a deep trough: the peaks at ${inShell.join(' and ')} Å `
+                    // Which window to use is method (method.js): arm C's method 'off' sends the reading alone.
+                    checks.push(methodCheck('note',
+                        `One split shell across a deep trough: the peaks at ${inShell.join(' and ')} Å `
                             + `(${roundSig(shell.peaksInShell.at(-1) - shell.peaksInShell[0], 2)} Å apart) hold ${roundSig(shell.firstPeak.cn * ratio)} ${counted} per ${around} `
                             + `in the first peak alone (to ${roundSig(shell.firstPeak.window[1], 3)} Å) and ${roundSig(shell.cn * ratio)} together, an ideal `
                             + 'polyhedral count: first_shell.window_A holds both, the short and long bonds of one distorted polyhedron (e.g. '
-                            + 'Jahn–Teller). The first peak alone (first_peak_only) cuts the polyhedron; use it only if the user chooses it.'
-                    });
+                            + 'Jahn–Teller). The first peak alone (first_peak_only) cuts the polyhedron',
+                        { method: '; use it only if the user chooses it' },
+                        '.'));
                 }
                 if (!shell.separated) {
-                    checks.push({
-                        level: 'warn',
-                        text: `The first shell is not separated from the next: at its boundary (${roundSig(shell.window[1], 3)} Å) `
-                            + `g(r) is still ${Math.round(shell.troughRatio * 100)} % of the peak, so ${a}–${b} distances fill the gap `
-                            + 'between shells'
-                            + (Number.isFinite(shell.cn)
-                                ? ` and the coordination number depends on the cut (${roundSig(shell.cut.earlier.cn)}–${roundSig(shell.cut.later.cn)} `
-                                    + `for a cut 0.2 Å earlier or later). Ask whether the crystal has ${a}–${b} distances there.`
-                                : '.')
-                    });
+                    // What to ask about the gap is method (method.js): arm C's method 'off' sends the reading alone.
+                    const head = `The first shell is not separated from the next: at its boundary (${roundSig(shell.window[1], 3)} Å) `
+                        + `g(r) is still ${Math.round(shell.troughRatio * 100)} % of the peak, so ${a}–${b} distances fill the gap `
+                        + 'between shells';
+                    checks.push(Number.isFinite(shell.cn)
+                        ? methodCheck('warn',
+                            `${head} and the coordination number depends on the cut (${roundSig(shell.cut.earlier.cn)}–${roundSig(shell.cut.later.cn)} `
+                                + 'for a cut 0.2 Å earlier or later).',
+                            { method: ` Ask whether the crystal has ${a}–${b} distances there.` })
+                        : { level: 'warn', text: `${head}.` });
                 }
                 if (shell.peaksInShell.length > 1 && !shell.joined) {
                     const alone = Number.isFinite(shell.firstPeak?.cn) && Number.isFinite(shell.cn)
                         ? ` The first peak alone (first_peak_only, to ${roundSig(shell.firstPeak.window[1], 3)} Å) holds `
                             + `${roundSig(shell.firstPeak.cn)} ${b} per ${a} of the shell's ${roundSig(shell.cn)}.`
                         : '';
-                    checks.push({
-                        level: 'note',
-                        text: `The first shell holds ${shell.peaksInShell.length} peaks (${inShell.join(', ')} Å): `
-                            + 'a split shell, e.g. two bond lengths of one distorted polyhedron. Use first_shell.window_A, not the first peak alone.'
-                            + alone
-                    });
+                    checks.push(methodCheck('note',
+                        `The first shell holds ${shell.peaksInShell.length} peaks (${inShell.join(', ')} Å): `
+                            + 'a split shell, e.g. two bond lengths of one distorted polyhedron.',
+                        { method: ' Use first_shell.window_A, not the first peak alone.' },
+                        alone));
                 }
             } else if (shell) {
                 const reach = Math.max(PEAK_SEARCH_MAX_A, shell.peaks[0].r + BOUNDARY_REACH_A);
@@ -481,7 +485,9 @@ const fitTool = (plotFiles, cardIds) => {
         description: 'Where the model misses the measured data, for one fitted dataset: the R-factor (as the '
             + 'dashboard\'s Rwp) over consecutive ranges of r or Q, the share of the squared residual in each range, '
             + 'and the largest residual features (position, model above or below the data, size relative to the '
-            + 'data\'s rms). Use it for "where does the fit fail" and "is the misfit at short or long range"; run it once '
+            + 'data\'s rms).',
+        // The method advice (method.js): sent with method 'full', after the description.
+        method: 'Use it for "where does the fit fail" and "is the misfit at short or long range"; run it once '
             + 'per dataset (a G(r) and its F(Q) are separate entries).',
         parameters: {
             type: 'object',

@@ -16,6 +16,10 @@ export { describePointGroup, pointGroupFacts } from './context/pointGroups';
 export {
     cnMatches, countsCut, MODAL_COORDINATION_SHARE, shellCatalogue, UNBONDED_APEX_FRACTION
 } from './context/shells';
+// A check whose text holds method advice (copilot/method.js): the turn sends
+// it without the advice under method 'off', the validation's arm C
+// (copilotTools.js).
+export { methodCheck } from './copilot/method';
 // The lower group's tolerance, NOISE_FLOOR_MARGIN × the sampling noise floor
 // (copilotTools.js measure_symmetry_lowering; the Workbench's tolerance
 // question reads the same margin).
