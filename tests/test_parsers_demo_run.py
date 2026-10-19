@@ -14,6 +14,7 @@ the parsers under test.
 from __future__ import annotations
 
 import csv
+import json
 import math
 import os
 from pathlib import Path
@@ -247,6 +248,18 @@ class DemoRunApiTests(unittest.TestCase):
         self.assertLessEqual(payload["sampledAtoms"], 500)
         self.assertIsNone(payload["parseWarning"])
         self.assertEqual(payload["moves"]["accepted"], float(header_value("Number of moves accepted")[0]))
+
+    def test_structure_endpoint_keeps_the_rmc6f_species_order(self):
+        # On the wire, elementCounts and atomIndices list the species as the
+        # .rmc6f does (Ga Ta Se), not sorted (Ga Se Ta): the browser's
+        # structureFromRmc6f order, which the Copilot's partial-weight labels
+        # follow (Ta-Se in both runtimes). The JS side: flaskCopilotRun.test.jsx.
+        response = self.client.get("/api/structure", query_string={"dir": DEMO_REL})
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.get_data(as_text=True))
+        self.assertEqual(list(payload["elementCounts"]), ATOM_TYPES)
+        self.assertEqual(list(payload["atomIndices"]), ATOM_TYPES)
+        self.assertEqual(payload["elements"], sorted(ATOM_TYPES))
 
     def test_convert_frac_writes_inside_the_data_root(self):
         with tempfile.TemporaryDirectory(dir=ROOT) as tmpdir:
