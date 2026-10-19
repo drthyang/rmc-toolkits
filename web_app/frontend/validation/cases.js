@@ -943,7 +943,7 @@ export const TEST_CASES = [
     {
         id: 'test-two-features', kind: 'jahn_teller', judgment: true, situation: 'two_features',
         params: {
-            elements: ['Cs', 'Cr', 'Br'], a: 10.6, short: 2.53, long: 2.97, sigma: 0.055, supercell: [7, 7, 7],
+            elements: ['Rb', 'Cr', 'Br'], a: 10.6, short: 2.53, long: 2.97, sigma: 0.055, supercell: [7, 7, 7],
             offCentre: { axis: [0, 1, 0], delta: 0.11 }, seed: 211
         }
     },
@@ -961,7 +961,7 @@ export const TEST_CASES = [
     },
     {
         id: 'test-user-choice', kind: 'elongated_clusters', judgment: true, situation: 'user_choice',
-        params: { element: 'Re', anion: 'Te', a: 8.4, edge: 2.62, elongation: 0.48, sigma: 0.045, supercell: [7, 7, 7], seed: 241 }
+        params: { element: 'Re', anion: 'Te', a: 8.4, edge: 2.62, elongation: 0.36, sigma: 0.035, supercell: [7, 7, 7], seed: 241 }
     }
 ];
 

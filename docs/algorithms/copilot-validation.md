@@ -591,13 +591,13 @@ Approved by the manager on the user's delegation, 2026-10-19
 
 **Protocol 2026-10-19.11 (the judgment subset's held-out matches, plan item 1.6 ii).** Five
 judgment cases join `TEST_CASES`, one per dev judgment case, each with its situation, kind and
-option: test-two-features (two_features: Cs/Cr/Br Jahn–Teller octahedra, 4 × 2.53 + 2 × 2.97 Å,
+option: test-two-features (two_features: Rb/Cr/Br Jahn–Teller octahedra, 4 × 2.53 + 2 × 2.97 Å,
 the Cr also ±0.11 Å along [0 1 0], thermal 0.055 Å, a = 10.6 Å, 7³), test-marginal-above and
 test-marginal-below (marginal: one Ba/Hf/O order at q = (½, 0, ½), 0.0128 Å along [1 1 0], 10³;
 the amplitude puts the expected B power at 3σ after the family-wise correction over 21 points,
 E[P] = 15.97), test-two-readings (two_readings: Ge in eight <111> wells 0.23 Å off, Cs/Ge/Cl,
 a = 5.43 Å, 8³) and test-user-choice (user_choice: Re₆ octahedra, Te anion, edge 2.62 Å,
-elongation 0.48 Å, thermal 0.045 Å, a = 8.4 Å, 7³). A fresh author wrote them from
+elongation 0.36 Å, thermal 0.035 Å, a = 8.4 Å, 7³). A fresh author wrote them from
 `validation/judgment-spec.md` alone: no dev judgment parameter, dev record, arm pin, finding,
 transcript or PR description was opened, and no arm or model ran on them. The knobs were explored
 on scratch seeds 9001 and up only; each case seed is the first of its own sequence that a rule
@@ -614,9 +614,16 @@ fixed beforehand accepts, from the case's engine readings:
   ν = 2 (default) map 6.82σ, peak 0.38σ; ν = 3 peak 4.25σ exactly on <111>; peaks 2.60 and
   2.85 Å, first peak CN 3.02, shell 6.00.
 - **user_choice**, seeds 241, 242, …: the spec's four constraints. Seed 241 (first try): first
-  minimum 2.80 Å at 0.09 of the first peak; joined at CN 4.00 (peaks 2.63 and 2.98 Å); the
-  average edge 2.85 Å beyond the trough (the first peak alone, to 2.79 Å, holds CN 1.33); the
-  long edges empty from 3.25 Å, the nearest Re–Re between clusters 3.74 Å.
+  minimum 2.75 Å at 0.15 of the first peak; joined at CN 4.00 (peaks 2.62 and 2.89 Å); the
+  average edge 2.79 Å beyond the trough (the first peak alone, to 2.75 Å, holds CN 1.34, a cut
+  by the Workbench's CN margin); the long edges empty from 3.11 Å, the nearest Re–Re between
+  clusters 3.98 Å.
+- **The coincidence check.** The lead compared these values with the dev cases' without showing
+  them, and two coincided: test-two-features' A-site element (now Rb, for Cs: the same spectator
+  role, a 12-coordinate ion of similar size) and test-user-choice's elongation (now 0.36 Å, 25 %
+  below the first choice, 0.48 Å, with the thermal sd from 0.045 to 0.035 Å, so the
+  elongation-to-thermal ratio and the deep trough stay). Both rules were re-run unchanged and
+  took their first seeds again (211, 241); the numbers above are the new configurations'.
 
 `TEST_SET_SHA256` changes: results on the earlier test set are not comparable with this one.
 

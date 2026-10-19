@@ -25,8 +25,9 @@ const REPO = resolve(FRONTEND, '../..');
 // Change only with a dated note in docs/algorithms/copilot-validation.md:
 // results on the old test set are not comparable with the new one.
 // 2026-10-19 (protocol 2026-10-19.2): test-breathing recomposed.
-// 2026-10-19 (protocol 2026-10-19.11): five held-out judgment cases join the test set.
-const TEST_SET_SHA256 = 'b0932921ebc24172186057e93e7010641d3c53aca0d76d1b5ba93c95b5c391ad';
+// 2026-10-19 (protocol 2026-10-19.11): five held-out judgment cases join the test set
+// (two values then changed after the lead's coincidence check, before any run).
+const TEST_SET_SHA256 = '397dd6a2f73e1eea9ff14eca2d8500766743cdeb6daf829e565c1a6ae3d79d50';
 
 const filesUnder = (dir, keep) => readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
