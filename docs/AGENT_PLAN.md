@@ -318,7 +318,7 @@ The candidates of B and C, in this order. Each is one PR, stacked on the one bef
 | C | **Arm C's "method off" switch** in the turn module (1.8). Arm C's snapshot is checked for skill names and the method sentences. | M |
 | 3 | **The model port** (candidate 3): the retry temperature, `tool_choice: 'none'`, "tools unsupported" as a typed failure. | S |
 | 4 | **The verification module** (candidate 4). The prompt's evidence sentence is generated from its claim catalogue. | L |
-| 7 | **Golden fixtures** at the orientation and site seams (candidate 7), in parallel, cut from `main`. | S |
+| 7 | **Golden fixtures** at the orientation and site seams (candidate 7), in parallel, cut from `main`. Built: `orientation_fixture.json` and `pca_sites_fixture.json` from their generators, with staleness tests on both sides; the hand-copied twin pins are gone. | S |
 
 ### Phase 3 — Waiting for the user's approval batch
 

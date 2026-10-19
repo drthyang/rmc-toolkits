@@ -132,15 +132,8 @@ describe('recommendedFrequency', () => {
         expect(recommendedFrequency(100)).toBeLessThanOrEqual(recommendedFrequency(10000));
         expect(recommendedFrequency(0)).toBe(MIN_FREQUENCY);
     });
-
-    it('matches the Python engine at exact values', () => {
-        // Shared verbatim with tests/test_orientation.py: the largest nu with
-        // 12 * (10 nu^2 + 2) <= N — a floor, so the browser and server always
-        // pick the same tiling and never average fewer than 12 per cell.
-        expect(recommendedFrequency(774)).toBe(2);
-        expect(recommendedFrequency(300)).toBe(1);
-        expect(recommendedFrequency(12000)).toBe(9);
-    });
+    // The values both engines pick (the largest nu with 12 (10 nu^2 + 2) <= N)
+    // are checked against the Python golden in src/__tests__/orientationParity.test.js.
 });
 
 describe('orientationHistogram', () => {
