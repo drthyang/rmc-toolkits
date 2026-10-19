@@ -16,8 +16,8 @@ a dev case, no dev result and no arm score, and it must stay that way:
   situation, the user's choice, is a control on the score (below).
 - **Dev now, held out later.** The dev cases exist (`judgment: true`). Reported numbers need
   held-out matches, written by you without the dev results, joining the test set as a new pinned
-  version on the user's decision. (Done at protocol 2026-10-19.11: the five matches are in
-  `TEST_CASES`, and the dev cases are no longer `devOnly`.)
+  version on the user's decision. (Done at protocol 2026-10-19.11: the five matches are in the
+  test set, sealed since the holdout gate, and the dev cases are no longer `devOnly`.)
 
 ## What not to read
 
@@ -37,15 +37,17 @@ Read `validation/cases.js` for the generators: the kinds, their options and the 
   engines' own rules, never from a dev value.
 - **Seeds by a rule fixed before you look.** The rule depends only on your case's own draws or an
   engine statistic of your case, never on an arm's score. The precedent is protocol 2026-10-19.2's
-  seed rule (docs/algorithms/copilot-validation.md).
+  seed rule (docs/algorithms/copilot-validation.md; its numbers are sealed).
 - **Check the situation's property on your own configuration.** Use the engines and the partial
   g(r) directly. Do not score arm A, arm A+ or a model on your cases before they are frozen.
 - **Coincidences.** The lead compares your elements, directions and magnitudes with the dev cases'
   without showing them to you, and asks you to change any that coincide.
-- **Where they go.** `TEST_CASES` in `validation/cases.js`. `TEST_SET_SHA256` in
+- **Where they go.** The sealed test set: `TEST_CASES` in the held-out module that only
+  `validation/holdoutLoader.js` imports (docs/algorithms/copilot-validation.md, "The sealed test
+  set"), and the id in `TEST_CASE_IDS` (`validation/cases.js`). `TEST_SET_SHA256` in
   `validation/__tests__/split.test.js` changes, with a dated protocol note in
-  docs/algorithms/copilot-validation.md. The split test's judgment rules then pair each dev judgment
-  case with its match.
+  docs/algorithms/copilot-validation.md that states no value. The split test's judgment rules then
+  pair each dev judgment case with its match.
 
 ## The four situations
 

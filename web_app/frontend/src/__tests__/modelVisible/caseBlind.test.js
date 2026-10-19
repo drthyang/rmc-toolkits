@@ -11,8 +11,10 @@
 //   1. The run folder as the harness loads it (validation/runFolder.js loadRun,
 //      through the run module's in-process adapter src/openRunFolder.js): no
 //      case id in the CopilotRun's names, paths or view.
-//   2. The first request runLiveCase sends on every case, dev and test, arms B
-//      and C, captured at its model port: no case id, in any spelling, anywhere
+//   2. The first request runLiveCase sends on every case, dev and test (the
+//      sealed test cases where the loader may open them: CI's
+//      RMC_VALIDATION_HOLDOUT=1; skipped locally), arms B and C, captured at
+//      its model port: no case id, in any spelling, anywhere
 //      in it; no case kind (nor a case id without its split), in any spelling,
 //      in its run-specific parts — the context message, the question message
 //      past the fixed case question, the request's other fields, and every
@@ -31,7 +33,8 @@
 // failure names the case, the part and the token, never the content).
 
 import { beforeAll, describe, expect, it } from 'vitest';
-import { ALL_CASES, buildCase, DEV_CASES } from '../../../validation/cases';
+import { buildCase, DEV_CASES, TEST_CASE_IDS } from '../../../validation/cases';
+import { holdoutEnabled, loadTestCases } from '../../../validation/holdoutLoader';
 import { liveQuestion, runLiveCase } from '../../../validation/harness';
 import { loadRun, RUN_NAME } from '../../../validation/runFolder';
 import { loadSkills } from '../../../validation/run';
@@ -46,13 +49,17 @@ const words = (token) => token.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
 const spelling = (token) => new RegExp(words(token).join('[-_\\s]*'), 'i');
 const unique = (tokens) => [...new Map(tokens.map((token) => [words(token).join(' '), token])).values()];
 
-const IDS = ALL_CASES.map((item) => item.id);
+// Every case the suite may build: the dev set, and the sealed test set where
+// the loader may open it. The ids are public, so every id is looked for.
+const HOLDOUT = holdoutEnabled();
+const CASES = [...DEV_CASES, ...(HOLDOUT ? await loadTestCases() : [])];
+const IDS = [...DEV_CASES.map((item) => item.id), ...TEST_CASE_IDS];
 const ID_PATTERNS = IDS.map((id) => [id, spelling(id)]);
 // The kinds, and each id without its split where that is more than one word
 // ("cell-wrap"); a one-word stem is the kind itself or a word every context
 // may use ("chiral", as in a point group's facts).
 const KIND_TOKENS = unique([
-    ...ALL_CASES.map((item) => item.kind),
+    ...CASES.map((item) => item.kind),
     ...IDS.map((id) => id.replace(/^(dev|test)-/, '')).filter((stem) => words(stem).length > 1)
 ]);
 const KIND_PATTERNS = KIND_TOKENS.map((token) => [token, spelling(token)]);
@@ -88,11 +95,15 @@ describe('no case id or kind reaches the model (validation harness)', () => {
     const captured = new Map();
 
     beforeAll(async () => {
-        for (const item of ALL_CASES) {
+        for (const item of CASES) {
             const built = buildCase(item);
             captured.set(item.id, { built, B: await firstRequest(built, 'B'), C: await firstRequest(built, 'C') });
         }
     }, 120000);
+
+    it.skipIf(!HOLDOUT)('captures every held-out case too (CI)', () => {
+        expect(TEST_CASE_IDS.every((id) => captured.has(id))).toBe(true);
+    });
 
     it('loads every case as a run named RUN_NAME, with no case id in a name or path', async () => {
         const found = [];
