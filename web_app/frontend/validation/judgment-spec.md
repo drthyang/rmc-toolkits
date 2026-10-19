@@ -81,7 +81,9 @@ Read `validation/cases.js` for the generators: the kinds, their options and the 
   - an ordered antiphase displacement of the B cation at a zone-boundary q;
   - its amplitude below half the B thermal rms (the generator refuses more), so no single-site
     reading shows it.
-- **The truth.** `modulation` on B at q. No axis: no tool resolves it at this amplitude.
+- **The truth.** `modulation` on B at q. No axis: no single-site reading resolves it at this amplitude.
+  (Since protocol 2026-10-19.12 `analyze_modulations` gives an ordered point's polarisation, the
+  direction of the mode; the truth does not score it.)
 - **Two cases at one amplitude.** One seed realised on each side of the bar.
 - **What the score sees.** The verdict has no confidence field, so a claim in the VERDICT counts
   however hedged the prose is. A claim needs the element and q (within the scoring's wavevector
@@ -89,7 +91,7 @@ Read `validation/cases.js` for the generators: the kinds, their options and the 
   so a claim below the bar gets a finding beside its score. That tension is the point.
 - **Knobs.**
   - **The expected significance: 3σ.** Set it from the zone-boundary power after the family-wise
-    correction over every zone-boundary point and element tested (`zoneBoundarySigma`,
+    correction over every zone-boundary point of every element (`zoneBoundarySigma`,
     `workers/modulations.js`). Take one B site of n copies, thermal rms sigma per axis, amplitude
     delta along one axis. Along that axis the power is a noncentral χ² of one degree of freedom
     with non-centrality n·delta²/sigma². The two other axes are central. So

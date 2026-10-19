@@ -334,7 +334,7 @@ describe('where a finding stands, and validation batch 1', () => {
     it('decision records: one JSON file per record, read in id order, each validated by the findings schema', () => {
         expect(Object.keys(decisions())).toEqual([
             '2026-10-19-aplus-app-rules', '2026-10-19-engine-verdicts', '2026-10-19-judgment-dev-cases', '2026-10-19-list-sites-split',
-            '2026-10-19-shell-catalogue',
+            '2026-10-19-mode-polarisation', '2026-10-19-modulation-bar-and-family', '2026-10-19-shell-catalogue',
             '2026-10-19-shell-cut-rule', '2026-10-19-test-breathing-recomposed'
         ]);
         expect(existsSync(join(FRONTEND, 'validation/findings/decisions.jsonl'))).toBe(false);
@@ -405,6 +405,21 @@ describe('where a finding stands, and validation batch 1', () => {
             const [path, title] = test.split(' › ');
             expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
         });
+    });
+
+    it('decisions: the polarisation of an ordered mode (plan 4.3) and the modulation tool\'s bar and family (F2, F3), approved on the user\'s delegation, implemented with their known-answer tests', () => {
+        const polarisation = decisions()['2026-10-19-mode-polarisation'];
+        expect(polarisation).toMatchObject({ case: 'dev-zone-boundary', kind: 'missing-tool' });
+        const barAndFamily = decisions()['2026-10-19-modulation-bar-and-family'];
+        expect(barAndFamily).toMatchObject({ case: 'dev-weak-order-b', kind: 'bug' });
+        for (const decision of [polarisation, barAndFamily]) {
+            delegated(decision);
+            expect(decision.tests.length).toBeGreaterThan(0);
+            decision.tests.forEach((test) => {
+                const [path, title] = test.split(' › ');
+                expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+            });
+        }
     });
 
     it('decisions: one shell reading per pair (candidate 6): the first-peak window approved on the user\'s delegation and implemented; the cut rule only proposed', () => {

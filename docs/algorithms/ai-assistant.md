@@ -1317,7 +1317,7 @@ not answer as asked". A tool is offered only when its inputs exist.
 | `measure_symmetry_lowering(parent_tolerance_A = 0.2, tolerance_A = 1.25 × noise floor)` | the structure has a `basis` | `symmetryShifts` (`symmetryShift.js`): the parent group at `parent_tolerance_A` (`analyseSymmetry`), each orbit averaged over its operations (`averageOrbit`), each member's ideal position the nearest image of that average; a member's shift = its mean − its ideal position, the common part the least-squares origin leaves removed by the geometric median of all members' shifts (Weiszfeld: the parent on the majority of the atoms, the description that moves the fewest); the lower group by `describeSymmetry` at `tolerance_A` | the parent and lower groups (the lower with its point-group facts), the noise floor, up to 12 sites (largest first) with `shift_A`, `direction_uvw`, `nearest_low_index` (within 15°, `LOW_INDEX_CONE_DEG`), `se_A` (the mean's sampling error along the shift) and `above_noise_floor`; `facts.lowering` = `{parent, lower, shifted: [{element, shift_A, direction_uvw}]}` | ok: each element whose largest shift exceeds the noise floor ("Ta shifted 0.065 Å along [0 0 1] (3.7° off) from the Pm-3m positions … a coherent shift every copy shares"); note: the parent → lower change in inversion and polarity; ok: no site above the noise floor; note: the lower tolerance still gives the parent group; warn: not analysed; fail: no basis, or no parent operation (review L4: the shift had to be worked out by hand from the orbit positions) |
 | `compare_fit(dataset, n_ranges = 6)` | a fit file with a model and a measured column (`xpdf`, `npdf`, `xray_sq`, `neutron_sq`, `bragg`; repeated kinds keyed `npdf_2`, …) | `fitTool` in `runTools.js` (roles by label `/exp\|obs/` vs `/calc\|rmc\|fit/`, else column order — `rwpColumns`, duplicated) | the dataset's $R$ (Step 10) over its range; per equal-width range of r or Q: $R$ there and its share of $\sum (y^\mathrm{calc}-y^\mathrm{expt})^2$; the 5 largest local extrema of the 5-point mean residual (position, model − data, relative to the data's rms) | ok (the card's headline): the overall $R$ and where the misfit lives — one range holding ≥ 40 % of the squared residual (`MISFIT_CONCENTRATION`), else spread; note: another range's own $R$ ≥ 3× the dataset's (`RELATIVE_MISFIT_FACTOR`) — weak signal poorly fitted, e.g. high-Q F(Q); fail: < 10 points |
 | `analyze_clusters(element, r_min, r_max)` | a browser-loaded run with site/cell columns, or Flask mode | worker `clusters` / `/api/clusters` (Step 18) | the cluster kind (members, edges, count, templates; other sizes); the average cluster's sorted edges, spread, median edge sampling error and spread/SE; per statistic obs / null mean / z / change = obs/null − 1 — the shape rows (edge ladder, ladder width, shape rms; tetrahedra: E and T2 rms and T2 trigonality; the fractions of long / short gyration axes within 15° of <100>, <110>, <111>) against `shapeNull`, the size rows (breathing sd, mean edge) against independent atoms (Step 18; review L2); `split_member_sites`: the analysed kind's member sites whose PC1 is resolved and whose PC1 excess kurtosis is ≤ −0.5 (`SPLIT_SITE_KURTOSIS`: two equal wells δ = σ, the onset of bimodality) and ≤ −3√(24/n) (`SPLIT_SITE_SE`) — `isSplitSite`, the rule `list_sites` reports — from the engine's verdict (`splitMemberSites`: the engine reads its own member clouds; until 2026-10-19 the tool made a second `sites` request, and a failed one dropped the note silently); bonds outside the window, contacts between clusters per atom. `facts.cluster` = `{element, members, window, distorted, static, breathing, rigid, split, families}`, the verdict's answers, for the cluster answer check. Every check below is a finding of the engine's verdict said through `CLUSTER_SENTENCES` (Step 18, *The verdict*) | fail: extended network; fail: no clusters; warn: other sizes hold > 10 % of clusters; note: the average cluster is distorted (spread ≥ 5 SE, `STATIC_SPREAD_SE`) or regular; ok: dimers (one edge) — the shape is the bond length, read from the size row; ok: ladder width departs from the shape null (\|z\| ≥ 3 **and** \|change\| ≥ 5 %: more distorted — a correlated distortion — or less — rigid units, unless an axis family or the trigonality shows a pattern: then a distortion whose amplitude the null already holds), or matches it while the pattern does not (a correlated distortion held by the sites' own displacements), or matches it; note: breathing departs (same rule): more — collective breathing, a size fluctuation, not a shape distortion; less — stiffer bonds, the atoms move together; note: trigonality departs (\|z\| ≥ 3, \|Δ\| ≥ 0.02); note: an axis family enhanced (z ≥ 3, obs/null ≥ 1.1); note: split sites — at least half the member sites split: the null holds the amplitude, "no distortion" does not make the clusters regular; warn: > 5 % of bonds outside the window; warn: > 0.05 inter-cluster contacts per atom |
-| `analyze_modulations(element?)` | same | worker `modulations` / `/api/modulations` (Step 19) | per element: the zone-boundary points as `[q, ratio to the median, percentile, σ]` rows, the three strongest modes as `[q, ratio, percentile, σ]` (σ only at a general q); the supercell, wavevector count and untestable points; `facts.modulation` = `{elements, ordered: [{element, q}], general: [{element, q}]}`, the element verdicts' `decidedBy`. σ and every check below come from the engine's verdict, said through `MODULATION_SENTENCES` (Step 19, *The verdict*) | ok: ordered displacements at a zone-boundary point (ratio ≥ 3 and ≥ 3σ against independent displacements, corrected over the points tested); ok: no cell doubling (the most significant point named); ok: correlated displacements between cells at a general q — one of the strongest modes that is neither a zone-boundary point nor a long wave, with ratio ≥ 3 and ≥ 3σ against independent displacements: a complex Fourier sum, so an element's mean over m sites has ≥ 2m degrees of freedom (P ≥ χ²₂ₘ/2m, `generalModeSigma`), Šidák-corrected over the compared modes of every tested element — incommensurate or short-range order between cells, not a cell doubling (review L4); note: a long-wavelength wave dominates (≥ 5×, every \|q_i\| ≤ 0.25); note: untestable points (odd axes); fail: no displacements |
+| `analyze_modulations(element?)` | same | worker `modulations` / `/api/modulations` (Step 19) | per element: the zone-boundary points as `[q, ratio to the median, percentile, σ]` rows, the three strongest modes as `[q, ratio, percentile, σ]` (σ only at a general q); a ratio or σ below its bar never rounded onto it (F2: 2.96, not 3; `'<3'` nearer than six significant digits); each ordered point's `polarisation` row (`q`, `uvw` to two decimals, `share`, `nearest_low_index` within 15°, plan item 4.3); the supercell, wavevector count and untestable points; `facts.modulation` = `{elements, ordered: [{element, q}], general: [{element, q}]}`, the element verdicts' `decidedBy`. σ and every check below come from the engine's verdict, said through `MODULATION_SENTENCES` (Step 19, *The verdict*); its own result budget, 4,000 characters (`MODULATION_RESULT_BUDGET`) | ok: ordered displacements at a zone-boundary point (ratio ≥ 3 and ≥ 3σ against independent displacements, corrected over the points of every element, whichever the call names: F3), with its polarisation ("polarised along [0 0 1] (5.5° off; 100 % of the power at q)"); ok: no cell doubling (the most significant point named; "2.96σ after the correction: below the 3σ bar" where its usual rounding would read the bar); ok: correlated displacements between cells at a general q — one of the strongest modes that is neither a zone-boundary point nor a long wave, with ratio ≥ 3 and ≥ 3σ against independent displacements: a complex Fourier sum, so an element's mean over m sites has ≥ 2m degrees of freedom (P ≥ χ²₂ₘ/2m, `generalModeSigma`), Šidák-corrected over the compared modes of every element — incommensurate or short-range order between cells, not a cell doubling (review L4), with its polarisation; note: a long-wavelength wave dominates (≥ 5×, every \|q_i\| ≤ 0.25); note: untestable points (odd axes); fail: no displacements |
 
 **Show in \<page\>.** A tool may declare `page` and `pageParams(args)`. The loop computes the
 parameters from the validated arguments (null after an error), and the step's button hands them to
@@ -1813,20 +1813,54 @@ Counting both members of a pair, and the box-scale waves RMC leaves, pushed real
 2026-10-12 review's Ti order at (0, 0, ½), 55× the median, sat at the 98.6th percentile of all
 $\mathbf q$ under a stronger long wave and its partner; among the compared modes it is rank 1.
 
+**The polarisation of a mode** (plan item 4.3, 2026-10-19; `mode_polarisation` / `modePolarisation`).
+Every reported point also carries the direction the element's atoms move in that mode. The
+element's power tensor at $\mathbf q$ is the real part of its cross-spectral tensor, normalised as
+the power,
+
+$$T(\mathbf q) = \frac1m\sum_s \frac{\mathrm{Re}\left[\mathbf U_s(\mathbf q)\,\mathbf U_s(\mathbf q)^\dagger\right]}{n_s\,\mathrm{tr}\,C_s},\qquad \mathrm{tr}\,T(\mathbf q) = P(\mathbf q),$$
+
+summed over the element's $m$ sites that move (`element_spectrum` / `elementSpectrum`). The real
+part is the mode's mean-square displacement tensor: an elliptical mode $\mathbf a + i\mathbf b$
+moves along an ellipse with second moment $\mathbf a\mathbf a^T + \mathbf b\mathbf b^T$. The
+imaginary part is antisymmetric (the ellipse's circulation) and carries no axis, and
+$T(-\mathbf q) = T(\mathbf q)$. Each site's tensor is free of its own phase, so sites moving in
+antiphase add like sites in phase. `polarisation` = {`direction`: the leading eigenvector, a
+Cartesian unit vector; `uvw`: the same as a direct-lattice $[u\,v\,w] = M^{-T}\mathbf d$, largest
+component 1 (the form of `list_sites`' `pc1_uvw`, never a plane normal); `share`: $\lambda_1/\mathrm{tr}\,T$,
+1 for a linearly polarised mode and ⅓ when no direction is preferred}. An axis has no sign: both
+are given in the sense that makes the closest crystal axis acute (`crystalOrientationRows`' rule),
+the first of two axes whose $|\cos|$ lies within $10^{-9}$ (`AXIS_TIE_RTOL`); null without power.
+The share is not a significance: one site at a zone-boundary point has a real amplitude, a rank-1
+tensor, share 1, whatever the data (a standing wave is linear by construction). The tool shows the
+polarisation of ordered points only. Known answers: both sites of an element displaced 0.1 Å along
+the direct-lattice [1 0 1] of a monoclinic cell (β = 105°, where [1 0 1] is 14° from the Cartesian
+(1, 0, 1)), at q = (½, 0, 0), over 0.06 Å of noise in 128 cells, in antiphase with each other: the
+polarisation lies within 5° and the share above 0.95 (`POLARISATION_DEG`, `POLARISATION_SHARE`);
+over 60 seeds its scatter is the sampling error $\sigma/(\delta\sqrt{mn})$ rad per component (the
+mean squared angle within 25 % of twice its square, none beyond 10°). On dev-zone-boundary the Ti
+order is 5.5° from its planted axis (one site, 512 cells: 1.5° of error per component; the PC1 that
+arm A+ read before, an estimator of the same noise, 6.0°) and the decoy long wave 4.7° from its own.
+
 **The verdict** (the engine's since 2026-10-19, architecture candidate 5; `summarizeModulations`
 says it through `MODULATION_SENTENCES`). A zone-boundary point is ordered displacement when its
 ratio ≥ 3 (`MODULATION_RATIO`, the effect size) **and** its calibrated significance is ≥ 3σ
 (`MODULATION_SIGMA`, `zoneBoundarySigma`): for independent displacements a site's normalised power at a half-integer
 $\mathbf q$ (a real Fourier sum) is $\sum_c w_c\chi^2_1$ with $\sum_c w_c = 1$, so an element's
 mean over $m$ sites has at least $m$ degrees of freedom and $P \ge \chi^2_m/m$ is the heaviest
-tail any site anisotropy allows; the p-value is Šidák-corrected over every zone-boundary point and
-element tested, and each row carries it as a fourth entry. (Until 2026-10-14 the rule was "top 1 %
+tail any site anisotropy allows; the p-value is Šidák-corrected over every zone-boundary point of
+every element the configuration has (with displacements), whichever elements the call names, and
+each row carries it as a fourth entry. Asking about one element after seeing the data is selective
+inference, so the family never shrinks with the request (finding F3, 2026-10-19: until then it was
+the elements of the call, and naming one element of three took a point just below the bar over it:
+a weak Nb doubling at 2.98σ over the 21 points of Ga, Nb and Se read 3.30σ, "ordered", over Nb's
+own 7). (Until 2026-10-14 the rule was "top 1 %
 of the compared modes, or rank 1", with no correction over the 7 points × elements: the validation
 cases found "order" in 6 of 12 configurations without any, e.g. Ba at (½, 0, 0) under pure thermal
 motion.) Real RMC runs carry *less* zone-boundary power than independent cells (above), so the test
 is conservative there. At a general q (neither a zone-boundary point nor a long wave) the Fourier
 sum is complex: $P \ge \chi^2_{2m}/2m$, Šidák-corrected over the compared modes of every element
-tested (`generalModeSigma`, review L4). An element's strongest mode within 0.25 of the zone centre
+of the configuration (`generalModeSigma`, review L4). An element's strongest mode within 0.25 of the zone centre
 on every axis at ≥ 5× the median (`LONG_WAVE_RATIO`) is a long-wavelength (box-scale) wave, not a
 superstructure.
 
@@ -1847,20 +1881,32 @@ superstructure.
   `no_general_mode` when none of the five strongest modes is general; an element with no
   displacement gives `no_displacements`.
 - **The payload** carries `family` (the zone-boundary points and compared modes the corrections
-  counted: the elements tested in this call, as the tool counted them) and `rules`.
+  counted, and `elements`, the elements they belong to: every element with displacements, whatever
+  the call names; for a call without an element the sizes are what the tool counted before) and
+  `rules`.
 - **One long-wave predicate**, `is_long_wave` / `isLongWave`: every |q_i| ≤ 0.25 + 10⁻¹². It
   replaces the engine's compared-mode test and the tool's |q_i| ≤ 0.25. On a grid they never
   differ (k/N is ¼ exactly or at least 1/(4N) from it): the tests check every grid point up to
   N = 256 in both engines.
 
-The tool's checks say it: ok — each ordered zone-boundary point, or no cell doubling (the nearest
-miss of every element tested); ok — each element's first ordered general mode; note — a long
-wave dominates; note — untestable points. `tests/generate_modulations_fixture.py` writes the
-verdicts into `modulations_fixture.json` and refuses a case where a ratio or σ sits within 10⁻⁶
-of its bar. Known answers: a planted doubling, order under a stronger long wave, order at
-q = (3/8, 0, 0) on an 8-cell axis (alone, and under a stronger long wave at (1/8, 0, 0): both
-found), and independent displacements (nothing); on the dev cases the four no-order cases find
-none and dev-zone-boundary finds only its Ti at (0, 0, ½).
+The tool's checks say it: ok — each ordered zone-boundary point with its polarisation, or no cell
+doubling (the nearest miss of every element tested); ok — each element's first ordered general
+mode with its polarisation; note — a long wave dominates; note — untestable points. A ratio or σ
+below its bar (3, 3σ) is never printed rounded onto it (finding F2, 2026-10-19): where its usual
+rounding (two significant digits in a sentence and for a row's ratio, one decimal for a row's σ)
+reads at or above the bar, it is shown with the fewest significant digits that stay below it
+(2.96, not 3), and nearer than six digits as below the bar (`'<3'` in a row, "< 3σ" in a
+sentence); the no-order sentence then adds "below the 3σ bar" (that 2.98σ point read "3σ after
+the correction" beside "No order", and its row 3). A value at or above its bar rounds to at or
+above it, as before. `tests/generate_modulations_fixture.py` writes the
+verdicts and polarisations into `modulations_fixture.json` and refuses a case where a ratio or σ
+sits within 10⁻⁶ of its bar, where a polarisation's two largest eigenvalues lie within 10⁻⁶ of
+the trace, or where its sense is decided near the tie tolerance. Known answers: a planted doubling,
+order under a stronger long wave, order at q = (3/8, 0, 0) on an 8-cell axis (alone, and under a
+stronger long wave at (1/8, 0, 0): both found), independent displacements (nothing), the polarised
+monoclinic mode above, and (F3) a weak Nb doubling at 2.98σ over the 21 points of Ga, Nb and Se
+that stays below the bar with Nb named (its own 7 points gave 3.30σ); on the dev cases the four
+no-order cases find none and dev-zone-boundary finds only its Ti at (0, 0, ½).
 A planted doubling (Nb ± 0.1 Å along z in alternate cells, 6³ cells) gives 204× at (0,0,½), the
 strongest of 215 wavevectors. Both real runs: no zone-boundary point near the top (below the 85th
 percentile over all $\mathbf q$ when first measured; the Demo's highest is now the 78th percentile of
@@ -2082,6 +2128,7 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 | `maxEvidenceGates` | 2 | send-backs per turn | `agentLoop.js` | The evidence gate sends an answer back at most this often, once per rule (THY-18) |
 | `CLUSTER_CN_MAX` | 4.5 | neighbours | `context/shells.js` (`clusterElementsOf`; `evidence.js` re-exports it) | An element whose own first shell holds 0.5 to this many neighbours may form finite clusters: "no order" needs `analyze_clusters` on it, and arm A+ tries its clusters (one rule since candidate 8) |
 | `CLUSTER_RESULT_BUDGET` | 4 500 | characters | `copilotTools.js` | `analyze_clusters`' own result budget |
+| `MODULATION_RESULT_BUDGET` | 4 000 | characters | `copilotTools.js` | `analyze_modulations`' own result budget (three elements with an ordered point's polarisation run to ~2.9k with the checks) |
 | `SPLIT_SHELL_REACH_A`, `IDEAL_COORDINATION`, `CN_MATCH_TOLERANCE` | 0.5, [4, 6, 8, 12], 0.5 | Å; atoms; atoms | `context/shells.js` | A later peak within the reach joins a shell cut at a deep trough when the summed CN is an ideal count (review L1); two counts agree within `CN_MATCH_TOLERANCE` (`cnMatches`: the Workbench's named polyhedron, the answer checks, the octahedron/tetrahedron reading; `IDEAL_CN_TOLERANCE` until 2026-10-19) |
 | `SEPARATION_G_FRACTION` | 0.02 | of the first peak | `context/shells.js` | $\tilde g$ at the shell boundary above this: shells not separated; raw $g$ just above a closest-approach constraint above this: the constraint limits the pair (one constant since 2026-10-19, for `CONSTRAINT_PILEUP_FRACTION`, `SHELL_OVERLAP_FRACTION` and `PAIR_FLAG_FRACTION`) |
 | `MISFIT_CONCENTRATION`, `RELATIVE_MISFIT_FACTOR` | 0.4, 3 | share; × the dataset's R | `runTools.js` | `compare_fit`'s concentration and weak-signal notes |
@@ -2094,6 +2141,8 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 | `MODULATION_RATIO`, `MODULATION_SIGMA` | 3, 3σ | × median; family-wise σ (`zoneBoundarySigma`, `generalModeSigma`) | `modulations.py`, `workers/modulations.js` (`MODULATION_RULES`) | A zone-boundary point (or a general mode) is order at both or above |
 | `LONG_WAVE_Q`, `LONG_WAVE_TOL` | 0.25, 1e-12 | of the reciprocal axes | `modulations.py`, `workers/modulations.js` | A mode with every component within this (`is_long_wave` / `isLongWave`, the one predicate) is a long wave: left out of the compared modes, never tested as a general mode |
 | `LONG_WAVE_RATIO`, `SIGMA_MAX` | 5, 40 | × median; σ | `modulations.py`, `workers/modulations.js` | A strongest mode this strong and a long wave is a box-scale wave; σ = +∞ is reported as `SIGMA_MAX` (no finite double reaches it) |
+| `AXIS_TIE_RTOL` | 10⁻⁹ | relative | `modulations.py`, `workers/modulations.js` | A polarisation is given in the sense that makes the closest crystal axis acute; axes whose \|cos\| lies within this of the largest tie, and the first decides |
+| `BAR_DIGITS_MAX` | 6 | significant digits | `copilotTools.js` | A ratio or σ below its bar is shown with up to this many digits to stay below it, else as `'<3'` (F2) |
 | constraint margin | 0.05 | Å | `copilot/runTools.js` | First-peak low side within this of the closest-approach constraint: warn |
 | `temperature` (chat) | 0.2 (editable 0–2, step 0.1) | — | `settings.js`, `ConnectionSettings.jsx` | Sampling temperature |
 | `temperature` (watchdog) | 0 | — | `useWatchdog.js` | Fixed |

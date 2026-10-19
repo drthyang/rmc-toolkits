@@ -611,6 +611,12 @@ describe('Copilot summarizers', () => {
         const row = data.elements.find((entry) => entry.element === 'Nb').zone_boundary.find((cells) => cells[0] === '(½, ½, 0)');
         expect(row).toEqual(['(½, ½, 0)', 19, 99.5, 2.96]);
         expect(data.elements.every((entry) => !entry.polarisation)).toBe(true);
+        // The synthetic known answer (the modulations fixture's weak doubling, 2.98σ) read "3σ" too.
+        const weak = modulationsFixture.cases.find((entry) => entry.name.startsWith('weak doubling'));
+        const synthetic = summarizeModulations(displacementModulations(siteDisplacementsFromRmc6f(weak.text)));
+        expect(synthetic.checks[0].text).toBe('No order that doubles the cell: no zone-boundary point stands out of the diffuse background '
+            + '(the strongest, Nb at (0, 0, ½), is 6.4× the median, 2.98σ after the correction: below the 3σ bar).');
+        expect(synthetic.data.elements.find((entry) => entry.element === 'Nb').zone_boundary[0]).toEqual(['(0, 0, ½)', 6.4, 95.5, 2.98]);
         // A ratio just below its bar reads below it too: dev-thermal-null's Ti
         // at (½, 0, 0) is 2.9976× the median (it read 3).
         const thermal = await devTools('dev-thermal-null').analyze_modulations.run({});
