@@ -29,6 +29,54 @@ drafts of batch 1 wait in PR #71 for the user's review.
   snapshot of the prompt, the tool list and the descriptions (phase 1.7) shows any change in the
   diff.
 
+## Status (plan-status 1, 2026-10-19)
+
+**Scope.** On 2026-10-19 the user widened the work to the whole plan, through phase 6, and
+delegated approvals to the manager. Still the user's: skill text (#71, 5.2, 5.4, and 5.5's
+on-demand references), live model runs and API calls, and releases. Items approved under that
+delegation are marked *approved 2026-10-19* below. Each one keeps the guardrails: a known-answer
+test, arms A and A+ re-run on dev with every moved case reported, the snapshot diff shown in its
+PR, and a decision record in `validation/findings/decisions/` and here.
+
+**Merged so far:**
+
+| Item | PR | What |
+| --- | --- | --- |
+| 1.7 | #73 | snapshots of what the model sees |
+| 7 | #74 | generated goldens at the orientation and site seams |
+| a | #75 | the case-id leak fixed (protocol 2026-10-19.1) |
+| 1.5 | #76 | the holdout scan widened |
+| 3.3 | #77 | every live tool declares its `dataShape` |
+| 2, 1.3 | #78 | the run module; records keep their view |
+| — | #79 | test-breathing recomposed (protocol 2026-10-19.2) |
+| 5.1 | #80 | the skill lint |
+| 5.5 (test) | #81 | the 32k budget test |
+| 4.1 | #82 | `list_sites` shows the split (protocol 2026-10-19.3) |
+
+**Open:** #83 (3.5, the answer corpus) and #84 (1, the turn module; protocol 2026-10-19.4).
+**In progress:** RunPolicy and the context check (1.2 and Q3), #5 (the engine verdicts) and 4.6.
+
+**Decisions** (the manager, on the user's delegation, 2026-10-19):
+- **1.8:** arm C removes the whole method, through a structural switch in the turn module.
+- **4.4:** approved, provided it is calibrated on thermal-only seeds (the observed false-positive
+  rate at or below α), has a known-answer test on a planted spread, and uses dev cases only.
+- **5.4:** waits for the user's skill review. Arm B's descriptions keep their method advice until
+  the skill text carries it; arm C drops it through 1.8.
+- **Test-breathing:** recomposed, because its cluster was the skills' reference compound, which
+  `read_skill` serves to arm B. The user may reverse this (`decisions/2026-10-19-test-breathing-recomposed.json`).
+- **The context budget (Q3):** the guard, its estimate (1.4 characters per token for tool
+  messages), the 8,192-token reserve, the budgets and the prompt stay unchanged; refusing rather
+  than cutting is the behaviour wanted.
+  - The live runs load each LM Studio model with at least a 48k window. RunPolicy records the
+    minimum per server, the harness checks the loaded window before a run and refuses below it,
+    and the record stores the window (Ollama's num_ctx included).
+  - Whether the Mac can hold each model at 48k is checked at the live-run go/no-go.
+- **Process:**
+  - PRs add a changelog fragment in `docs/changes/unreleased/` instead of editing CHANGELOG.md
+    (folded into the changelog at phase 6).
+  - Plan edits land in plan-status PRs like this one.
+  - Decision records are one file each.
+
 ## What is wrong now
 
 ### A. The validation would partly measure the harness
@@ -191,12 +239,12 @@ user decided on 2026-10-19:
 | 3 | **Provider quirks behind the model port.** `streamCopilotChat` takes over the retry temperature, honours or enforces `tool_choice: 'none'`, and reports "tools unsupported" as a typed failure instead of a regex over error text. | Strong · mock | Start, fourth |
 | 4 | **One verification module: is this answer verified?** It owns the claim catalogue (phrasing, the analysis that backs a claim, the fact that contradicts it), reference filling, the facts schema, the gate's bookkeeping and the order the checks run in. The prompt's evidence sentence is generated from the catalogue. This replaces the side lists in `evidence.js:86-148`, `verdict.js:61` / `turnState.js:161` and `prompts/copilot.js:32-39`. | Strong · in-process | Start, fifth |
 | 7 | **Generated golden fixtures at the orientation and site seams.** The 3σ direction verdict and the split-site statistics are pinned by one generated fixture, not by twin hand-copied pins. | Strong · ports & adapters | Start, in parallel |
-| 5 | **The engines return their own verdicts** (clusters, modulations), with the row that decided each, so the tool only renders them. | Strong · ports & adapters | Waits **(approval)**: A+ results change, and the verdict becomes part of the library output |
-| 6 | **One shell reading per pair, per run** (find_gr_peaks, the clarifier, the context, the audit and A+), and a coordination reading in the triplets payload. | Strong · in-process | Waits **(approval)**: a context flag and the cut rule change |
-| 8 | **Arm A+ reads the app's rules** for the split site, the cluster elements and the symmetry floor (A+ uses the floor; the tool and the clarifier use 1.25 × the floor). | Worth exploring · in-process | Waits **(approval)**: the A+ baseline moves |
-| 9 | **One request contract for the worker and Flask adapters**: names, defaults, caps, normalisation, error modes, cancelling. | Worth exploring · ports & adapters | Waits |
-| 10 | **Turn policy: what ends a turn.** One owner for the counters, and one `done` shape. | Worth exploring · in-process | Waits |
-| 11 | **Tool transcript: what the model is told about a result.** One store for the loop and the UI. Result statuses (old 3.2) attach here. | Speculative · in-process | Waits |
+| 5 | **The engines return their own verdicts** (clusters, modulations), with the row that decided each, so the tool only renders them. | Strong · ports & adapters | Approved 2026-10-19 (manager, on the user's delegation): A+ results change, and the verdict becomes part of the library output |
+| 6 | **One shell reading per pair, per run** (find_gr_peaks, the clarifier, the context, the audit and A+), and a coordination reading in the triplets payload. | Strong · in-process | Approved 2026-10-19 (manager, on the user's delegation): a context flag and the cut rule change |
+| 8 | **Arm A+ reads the app's rules** for the split site, the cluster elements and the symmetry floor (A+ uses the floor; the tool and the clarifier use 1.25 × the floor). | Worth exploring · in-process | Approved 2026-10-19 (manager, on the user's delegation): the A+ baseline moves; the app's rule unless there is evidence it is wrong |
+| 9 | **One request contract for the worker and Flask adapters**: names, defaults, caps, normalisation, error modes, cancelling. | Worth exploring · ports & adapters | Approved 2026-10-19 (manager, on the user's delegation) |
+| 10 | **Turn policy: what ends a turn.** One owner for the counters, and one `done` shape. | Worth exploring · in-process | Approved 2026-10-19 (manager, on the user's delegation) |
+| 11 | **Tool transcript: what the model is told about a result.** One store for the loop and the UI. Result statuses (old 3.2) attach here. | Speculative · in-process | Approved 2026-10-19 (manager, on the user's delegation) |
 
 **Rejected by the deletion test:**
 
@@ -308,6 +356,17 @@ Beyond single contradictions:
     (`contextGuard.js:41`).
   - **The total.** Two skills read then come to about 27k of qwen3.8-27b's 32k: a third skill, or
     a long reasoning round, is refused by the context guard.
+  - **Measured (5.5's budget test, #81).** The guard counts tool messages (skills and analyses) at
+    1.4 characters per token, not 2.5, so the worst turn does not fit today:
+    - **The dock on the Demo:** prompt 4,762 + tool JSON 6,752 + context 2,213 + question 70 + the
+      two largest skills 7,814 + analyses at the 12k budget 8,724 = 30,333. With the 8,192
+      reserve that is 38,525 tokens, 5,757 over 32,768, or 1,661 over under LM Studio's
+      4,096-token rule.
+    - **Arm B on its largest dev case:** 26,889 + 8,192 = 35,081, 2,313 over, or 1,783 to spare
+      under LM Studio's rule.
+    - The numbers grew by 38 tokens with 4.1's description. The fix for the dock is on-demand
+      skill references, which is skill text and waits for the user. The live runs load LM Studio
+      models at ≥ 48k (Q3).
 - **No outline drops the gate numbers.** Unlike MATERIA, the Copilot never shrinks a skill to an
   outline: a read skill stays whole for the question. The risk runs the other way: kept whole, the
   skills crowd the window (above).
@@ -323,7 +382,7 @@ Beyond single contradictions:
 | 1.3 | **Context parity, stated.** The record says which context sections the run had (no PCA table, no run settings, the 0.2 Å card) and that it is one fresh question; the harness gets an option for a PCA-table context, as after a visit to the PCA page, for a dev check of its effect. **Built with the run module (Phase 2, PR 2):** `record.view`, `record.context`, `run.js live --pca-table`. | S |
 | 1.4 | **State lifecycle.** A Live Data save that changes the configuration starts a new conversation, as a new run does, or marks earlier answers as about the previous configuration; the Detected SG pick resets with the run. | S |
 | 1.5 | **Holdout scan widened** (done, 2026-10-19): test-case materials, formulas, magnitudes and directions (from `cases.js`) across `src`, `.claude/skills`, `rmc_toolkits` and `docs/` except the validation docs. The overlap with the skills' reference compound reaches arm B through `read_skill`: copilot-validation.md lists it as an open leak pending the user. Only test- or doc-only hits are allow-listed, as known risks. | S |
-| 1.6 | **An informative comparison with A+** **(approval)**. Dev set only. (i) The report gives feature-only scores, B against A+ per component, and every disagreement with the planted truth beside it, with no change to the case score. (ii) A "judgment" dev subset, designed and tried on dev only: cases where A+'s fixed joining rules are ambiguous or wrong — two features at once, a signal at 2.5–4σ, evidence that two tools read differently, a choice only the user can make — so the model has room to add. The test set gets matching cases only through a new, pinned test version authored without reference to the dev results, decided by the user. | M |
+| 1.6 | **An informative comparison with A+** *(approved 2026-10-19; the held-out judgment cases are written by a fresh author without the dev results)*. Dev set only. (i) The report gives feature-only scores, B against A+ per component, and every disagreement with the planted truth beside it, with no change to the case score. (ii) A "judgment" dev subset, designed and tried on dev only: cases where A+'s fixed joining rules are ambiguous or wrong — two features at once, a signal at 2.5–4σ, evidence that two tools read differently, a choice only the user can make — so the model has room to add. The test set gets matching cases only through a new, pinned test version authored without reference to the dev results, decided by the user. | M |
 | 1.7 | **Snapshots of what the model sees.** A test snapshots the system prompt (every variant), the tool list, every description and schema, the first request as the dock and the harness send it, and a sample of each tool's result text, so a refactor that changes them shows in the diff. Arm C's snapshot is checked for skill names. First of the started set. | S |
 | 1.8 | **What arm C ablates: decided 2026-10-19.** C removes the whole method: no skill names, stage lists, `EVIDENCE_RULES`, method sentences in `TOOL_RULES` or method advice in tool descriptions. It is a structural switch in the turn module, after 1 (B and C, item C). | M |
 
@@ -341,20 +400,20 @@ The candidates of B and C, in this order. Each is one PR, stacked on the one bef
 | 4 | **The verification module** (candidate 4). The prompt's evidence sentence is generated from its claim catalogue. | L |
 | 7 | **Golden fixtures** at the orientation and site seams (candidate 7), in parallel, cut from `main`. Built: `orientation_fixture.json` and `pca_sites_fixture.json` from their generators, with staleness tests on both sides; the hand-copied twin pins are gone. | S |
 
-### Phase 3 — Waiting for the user's approval batch
+### Phase 3 — Approved 2026-10-19 (manager, on the user's delegation)
 
 | PR | Change | Size |
 | --- | --- | --- |
-| 5 | **The engines return their own verdicts** (clusters, modulations) **(approval)**. | M |
-| 6 | **One shell reading per pair, per run** **(approval)**. Changes the numbers a question quotes (by < 0.05 atom), a context flag and the cut rule. | M |
-| 8 | **Arm A+ reads the app's rules** for the split site, the cluster elements and the symmetry floor **(approval)**. It covers old 2.3 and 2.4, which land with 5.3, since the rule and the skill change together. Arm A's rule is part of the frozen protocol and changes only with a dated note. | S |
+| 5 | **The engines return their own verdicts** (clusters, modulations) *(approved 2026-10-19)*. | M |
+| 6 | **One shell reading per pair, per run** *(approved 2026-10-19)*. Changes the numbers a question quotes (by < 0.05 atom), a context flag and the cut rule. | M |
+| 8 | **Arm A+ reads the app's rules** for the split site, the cluster elements and the symmetry floor *(approved 2026-10-19)*. It covers old 2.3 and 2.4, which land with 5.3, since the rule and the skill change together. Arm A's rule is part of the frozen protocol and changes only with a dated note. | S |
 | 9 | One request contract for the worker and Flask adapters. | M |
 | 10 | Turn policy: what ends a turn. | M |
 | 11 | Tool transcript; result statuses (old 3.2). | M |
-| 2.5 | **The page and the tool at the same settings** **(approval)**: the directions tool also reports at the page's ν and smoothing, or the page defaults to the engine's choice. Changes arm A's reading. | S |
+| 2.5 | **The page and the tool at the same settings** *(approved 2026-10-19)*: the directions tool also reports at the page's ν and smoothing, or the page defaults to the engine's choice. Changes arm A's reading. | S |
 | 2.6 | PCA subsamples identical in both runtimes (AGENTS.md next step 8). | M |
 | 3.3 | **Output-shape contracts** for every live tool: a schema of its `data` (the paths references name), checked on the demo and on each dev case. Before any tool output changes in phase 4. Built: each live tool's spec carries a `dataShape` (`llm/copilot/dataShape.js`, never sent to the model), and `toolDataShapes.test.js` checks every result on the demo and the dev cases against it, both ways (no undeclared key; every declared key returned by some call, the unreachable forms listed). | M |
-| 3.5 | A small corpus of real answers for the claim regexes of the checks and the gate. | S |
+| 3.5 | A small corpus of real answers for the claim regexes of the checks and the gate. **Built (#83):** `answerCorpus.test.js`, 9 real answers (3 verbatim, 1 transcribed, 5 quoted), one adapter, pins with judgements; 0 false alarms in 4 readings, 1 miss (a negative cluster conclusion is not read). The dev live runs' answers join it before the freeze (6.3). | S |
 
 ### Phase 4 — Tool science
 
@@ -363,10 +422,10 @@ change what A+ sweeps are noted.
 
 | PR | Change | Size |
 | --- | --- | --- |
-| 4.1 | **`list_sites` shows the split** **(approval)**: per-axis kurtosis on resolved axes, PC1 as [u v w], and the static displacement of a split site (√(rms₁² − rms⊥²) with its sampling error), so the model quotes it by reference. | S |
-| 4.2 | **The Jahn–Teller split by number** **(approval)**: `find_gr_peaks` returns the long − short bond of a joined shell and the share in each part. | S |
-| 4.3 | **The polarisation of an ordered mode** **(approval)**: `analyze_modulations` returns each ordered point's displacement direction (the mode's eigenvector over the element's sites). Changes A+ (it reads the tool, not PC1). | M |
-| 4.4 | **Diffuse order between cells** **(approval; new statistic)**: a calibrated test of excess power spread over many q (not one mode), against the same independent-displacement null, with a false-positive test over many seeds of thermal-only configurations. | L |
+| 4.1 | **`list_sites` shows the split** *(approved 2026-10-19)*: per-axis kurtosis on resolved axes, PC1 as [u v w], and the static displacement of a split site (√(rms₁² − rms⊥²) with its sampling error), so the model quotes it by reference. **Done (#82):** `kurtosis_axes`, `pc1_uvw`, `delta_A` ± `delta_se_A` (ai-assistant.md Step 20); one rule, `isSplitSite`; known answer over 5 × 1,000 seeds (95 % coverage 0.939–0.958; a prolate Gaussian site never called split); arms A/A+ unchanged; protocol 2026-10-19.3. | S |
+| 4.2 | **The Jahn–Teller split by number** *(approved 2026-10-19)*: `find_gr_peaks` returns the long − short bond of a joined shell and the share in each part. | S |
+| 4.3 | **The polarisation of an ordered mode** *(approved 2026-10-19)*: `analyze_modulations` returns each ordered point's displacement direction (the mode's eigenvector over the element's sites). Changes A+ (it reads the tool, not PC1). | M |
+| 4.4 | **Diffuse order between cells** *(approved 2026-10-19; new statistic, calibrated on thermal-only seeds, false-positive rate ≤ α)*: a calibrated test of excess power spread over many q (not one mode), against the same independent-displacement null, with a false-positive test over many seeds of thermal-only configurations. | L |
 | 4.5 | **The symmetry tools in Flask mode**: the basis (with its moments) from `/api/structure`, so `detect_symmetry` and `measure_symmetry_lowering` exist for server folders (AGENTS.md next step 4). | M |
 | 4.6 | **A fit-data dev case** for rmc-fit-assessment: a configuration with a synthetic fit and χ² history, so `assess_convergence` and `compare_fit` are exercised. Dev only. | M |
 
@@ -374,11 +433,11 @@ change what A+ sweeps are noted.
 
 | PR | Change | Size |
 | --- | --- | --- |
-| 5.1 | **Skill lint in CI.** Every tool a skill names exists; every gate number is bound to the constant of the module that decides it; every "*Firm rule in the app:*" names a check or refusal that exists. It lands with an allow-list of today's violations, which 5.2 to 5.4 empty. | M |
+| 5.1 | **Skill lint in CI.** Every tool a skill names exists; every gate number is bound to the constant of the module that decides it; every "*Firm rule in the app:*" names a check or refusal that exists. It lands with an allow-list of today's violations, which 5.2 to 5.4 empty. **Built (#80):** `src/__tests__/skillLint.test.js` (tables in `skillLint/tables.js`). The allow-list holds three entries, all in displacement-anisotropy: the 15° cone and the peak test (both fixed in #71's drafts) and the split site (5.3). #71 needs a lint update when it merges: 13 bindings, 4 firm-rule mappings and 4 no-gate entries. | M |
 | 5.2 | **(approval)** The user's review of PR #71 (batch 1's skill drafts and the new local-order draft). | — |
 | 5.3 | **(approval; each draft goes to the user before it merges)** The three disagreements left after #71 (split site, cluster elements, what "no order" needs), in the same PR as candidate 8 and the gate change. | S |
-| 5.4 | **(approval; each draft goes to the user before it merges)** Method out of the tool descriptions and the prompt for arm B too: a description says what a tool does; the window advice and the evidence sentence move to the skills. Arm C already drops them structurally (1.8). | M |
-| 5.5 | **(approval)** Size for a 32k window: a budget test (prompt + two skills + the turn's analyses + the reply reserve within 32k); long reference material moves to on-demand references. | S |
+| 5.4 | **(approval; each draft goes to the user before it merges)** Method out of the tool descriptions and the prompt for arm B too: a description says what a tool does; the window advice and the evidence sentence move to the skills. Arm C already drops them structurally (1.8). **Waits for the user's skill review** (manager, 2026-10-19): arm B keeps its method advice until the skill text carries it; arm C drops it through 1.8. | M |
+| 5.5 | Size for a 32k window: a budget test (prompt + two skills + the turn's analyses + the reply reserve within 32k); long reference material moves to on-demand references. **The budget test is built (#81):** `contextBudget.test.js`, with today's overflow pinned and the fit an expected failure. The on-demand references wait for the user's skill review. | S |
 | 5.6 | SKILL_INTERVIEWS brought up to date when #71 merges; the validation report says which skills are the user's method and which are drafts. | S |
 
 ### Phase 6 — Freeze and re-baseline
