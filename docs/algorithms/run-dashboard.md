@@ -3532,8 +3532,9 @@ its primitive cell (`4a`/`4b`). Pinned by `llm/__tests__/runContextWyckoff.test.
 
 The tolerance itself is held in `SymTolContext`
 ([`symTolContext.js`](../../web_app/frontend/src/symTolContext.js)), a `[value, setValue]` pair
-provided by [`App.jsx`](../../web_app/frontend/src/App.jsx) (`useState(0.2)`), so the selection persists
-when switching between the Dashboard and the KDE/3D page. `ModelSummary.jsx` falls back to its own
+provided by [`App.jsx`](../../web_app/frontend/src/App.jsx) (`useRunTolerance(runKey, 0.2)`), so the
+selection persists when switching between the Dashboard and the KDE/3D page and across a Live Data
+save or a Load of the same run; it returns to 0.2 Å when another run opens. `ModelSummary.jsx` falls back to its own
 local `useState(0.2)` if no provider is present.
 
 **Code**: `ModelSummary.jsx` → `brickStyle()`, `brickWidth()`, `downloadCif()`, the JSX for
@@ -3774,7 +3775,7 @@ Problems row.
 
 | Name | Where | Default | Units | Meaning |
 | --- | --- | --- | --- | --- |
-| `symTol` ($\tau$) | `App.jsx` `useState`, `ModelSummary.jsx` fallback, `Dashboard.jsx` fallback | `0.2` | Å (Cartesian) | atomic-position tolerance for accepting an operation |
+| `symTol` ($\tau$) | `App.jsx` `useRunTolerance` (reset per run), `ModelSummary.jsx` fallback, `Dashboard.jsx` fallback | `0.2` | Å (Cartesian) | atomic-position tolerance for accepting an operation |
 | `tol` | `spaceGroupAtTolerance()` | `0.2` | Å | same, function-level default |
 | `tol` | `findSpaceGroupOps()` | `0.1` | Å | never used from the app (callers always pass) |
 | `tolMax` | `toleranceLadder()` (called with `1.0`) | `1.0` | Å | loosest tolerance the ladder explores |

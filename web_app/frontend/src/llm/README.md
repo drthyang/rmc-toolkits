@@ -198,7 +198,10 @@ inputs on its page, stays the *user's* action.
       Stop, the question card (its ask-user port), the card-focus effects, which models cannot call
       tools (passed to the turn as `toolsEnabled: false`), and a new conversation when `runKey`
       changes. It hands each turn the conversation so far (`turnHistory`); the turn builds the
-      memory from it (a question without an answer is dropped). It describes the turn
+      memory from it (a question without an answer is dropped). Each question remembers the
+      `configKey` it was asked under: after a new configuration the history holds only the
+      questions asked under the current one, and `configurationBreaks` says where the dock draws
+      its divider. It describes the turn
       (`describeTurn`) for the composer's status line and the tool list.
     - `CopilotChat` is the dock (`components/dockLayout.js` holds its pure size rules): the rail,
       then the panel, and the resize handle. The panel mounts on first open, so nothing is fetched
@@ -290,8 +293,8 @@ event or record holds it), sent through `streamCopilotChat()`. The validation me
 `prepare`, so it is never sent). Provider quirks belong behind this port, not in the turn.
 
 **What stays in the adapters.** The dock: React state, Stop, the question card (its ask-user port),
-the card-focus effects (it maps events to focus), the unsupported-model memory and the `runKey`
-reset. The harness: the case's run (the run module), its compute-only tools, the simulated user,
+the card-focus effects (it maps events to focus), the unsupported-model memory, the `runKey`
+reset and the `configKey` history window. The harness: the case's run (the run module), its compute-only tools, the simulated user,
 the arm's skills, its port, and the record (every request as sent, the steps, the score; number
 provenance against `start.shown`).
 
@@ -678,6 +681,13 @@ describe the screen and declare none yet.
 - `params` is the tool's `pageParams(args)`, computed from the validated arguments. Without
   `pageParams`, the button reads **Open \<page\>** and `params` is null.
 - `runKey` names the open run; when it changes, the conversation restarts.
+- `configKey` (optional, null by default) names the configuration the run shows. When it changes
+  and `runKey` does not (a Live Data save brought a new `.rmc6f`), the conversation stays on
+  screen, a divider ends the earlier answers ("New configuration saved — earlier answers were about
+  the previous one"; after an answer still running, which was asked about the previous one), and
+  the next question is sent with only the questions asked under the current configuration as
+  memory: the first one after the change is sent as in a fresh conversation. A host that passes
+  none keeps one configuration per run.
 - `onOpenChange(open)` reports the dock opening and collapsing.
 - `cards` lists what the agent may point at: `{ id, page, title, about, kind?, file?, marks?, view3d?, sites? }`.
   Each card element carries `data-copilot-card="<id>"`. `kind` / `file` tie a card to the data the
@@ -838,7 +848,7 @@ This module is designed to be lifted into its own repository:
 
 - Run data and engine tools enter **only as props** to `CopilotChat` (`runName`, `plotFiles`,
   `rValueFile`, `structure`, `symmetry`, `runSettings`, `pcaSites`, `liveData`, `tools`, `pages`,
-  `onOpenPage`, `runKey`, `onOpenChange`, `cards`, `onMarks`, `onLayoutChange`, `className`,
+  `onOpenPage`, `runKey`, `configKey`, `onOpenChange`, `cards`, `onMarks`, `onLayoutChange`, `className`,
   `storageKey`, `skills`) and `WatchdogBadge` (`rValueFile`). The host renders `CopilotChat` once, as the
   last child of its app grid, and places it by its `data-mode`: a column right of the pages
   (`docked`) or a row under them (`sheet`). The page cards it may point at carry
