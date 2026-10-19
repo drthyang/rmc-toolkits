@@ -10,7 +10,7 @@ that went with it is [copilot-review.md](copilot-review.md).
 
 | Arm | What answers | Code |
 | --- | --- | --- |
-| **A** | The default Workbench, no agent: the Detected SG card (0.2 Å), the PCA Ellipsoid table, the Displacement Directions page (ν = 10, smoothing 2) and the partial g(r), read by fixed rules (`ARM_A_RULES`). The cluster and superstructure engines have no page, so A cannot use them | `armA.js` `runArmA` |
+| **A** | The default Workbench, no agent: the Detected SG card (0.2 Å), the PCA Ellipsoid table, the Displacement Directions page at its own defaults (the engine's resolution, its readouts from the raw histogram, since protocol 2026-10-19.16; [below](#the-displacement-directions-page-at-its-defaults)) and the partial g(r), read by fixed rules (`ARM_A_RULES`). The cluster and superstructure engines have no page, so A cannot use them | `armA.js` `runArmA` |
 | **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules; no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19), a modulation claim with the engine's polarisation as its direction (since protocol 2026-10-19.12). Where the app has a rule, A+ calls the app's function (`SWEEP_RULES`, since 2026-10-19: the split site, the cluster elements, the lower group's tolerance). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
 | **B** | The Copilot as the app assembles it: tools, skills, guardrails (refusals, the Workbench's window questions, answer checks) | `harness.js` |
 | **C** | B without the method ([below](#arm-c-the-copilot-without-the-method)): no skills (no `read_skill`, no skills index), no method rules in the prompt, no method advice in a tool's description or check; the tools, refusals, the Workbench's questions, the evidence gate and the answer checks still run. The ablation | `harness.js` |
@@ -20,6 +20,31 @@ Arm A's rules are a competent reading, not a straw man. A site is called split o
 ellipsoid is prolate (PC1/PC2 ≥ 1.3) **and** its PC1 kurtosis is clearly negative (≤ −0.5), so an
 anisotropic Gaussian is thermal motion. A split g(r) shell counts only when the average structure
 has no distances that far apart, and an off-centred centre explains its own split shell.
+
+### The Displacement Directions page at its defaults
+
+Decided 2026-10-19 (plan item 2.5; protocol 2026-10-19.16). Arm A reads a split site's direction
+map on the Displacement Directions page as the page shows it at its defaults, and takes those
+defaults from the page itself: `ARM_A_RULES.DIRECTION_SETTINGS` *is* the page's
+`DIRECTION_DEFAULTS` (`src/directionSettings.js`), and the request is the page's own readout
+request (`directionReadoutRequest`), so no number is copied into the protocol. Since this decision
+the page opens at Auto, the engine's recommended resolution (`recommendedFrequency`), and takes
+every readout (the peak, its direction and σ, the map test, the ± asymmetry, the Bingham
+anisotropy) from the raw histogram, at smoothing 0; the smoothing redraws the map only. That is
+exactly what `analyze_displacement_directions` computes when it is given no frequency, so arm A,
+A+ (which reads a split site's map through the same reading, `directionsOf`) and the Copilot read
+one tiling and one set of numbers; a known-answer test checks it site by site on a dev case
+(`validation/__tests__/directionsDefault.test.js`). Before it, the page opened at ν = 10 and read
+its numbers off the 2× smoothed map, whose peak cell, direction and σ follow the smoothing (the
+engines pick the peak cell on the smoothed map).
+
+What it changes in a reading: the reading records the resolution it read (`frequency`), and a peak
+that reaches 3σ on the engine's coarser tiling names the claim's direction where PC1 named it
+before. A tiling names a direction only to within its cell: below 504 copies Auto is ν = 1,
+twelve cells whose centres lie 31.7° from every cube axis, beyond the 15° direction tolerance.
+The moved dev records are re-recorded in `arm-a-dev.json` (the others as recorded) and pinned in
+`arms.test.js`; the tables under [Arm A results](#arm-a-results-no-model-2026-10-14-commit-b4fe09f)
+were recorded under the earlier default, and the test set's records move at its next scoring.
 
 The live arms leave out the view tools, which need a screen. The simulated user skips every
 question, so the model uses its stated default. The model is told nothing about the case: every

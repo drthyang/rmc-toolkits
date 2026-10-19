@@ -1359,8 +1359,10 @@ per click.
   hold exactly that request, through the same engine, so its numbers equal the step's.
 - `analyze_displacement_directions` with a `site_ref` → Displacement Directions
   `{referenceNumber, frequency}`, with frequency `'auto'` when the Copilot let the engine choose.
-  The page's smoothing, weight and frame are left as the user set them: the drawn enhancement can
-  differ (the Copilot's is unsmoothed), while the significance tests use raw counts. Element
+  The page's smoothing, weight and frame are left as the user set them: the drawn map can differ
+  (the Copilot's is unsmoothed), while every readout under it comes from the raw histogram. Since
+  plan item 2.5 the page also opens at Auto and reads its readouts at smoothing 0, so at its
+  defaults they equal the step's numbers (displacement-directions.md, view section Step 3). Element
   pooling has no page view, so that step only opens the page.
 - Other steps open their page without parameters.
 

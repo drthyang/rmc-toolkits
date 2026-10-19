@@ -205,7 +205,7 @@ $\langle b^2\rangle = \langle Z^2\rangle/\langle Z\rangle^2$.
 | $V$, $F_\triangle = 20\nu^2$, $E_\triangle = 30\nu^2$ | geodesic vertex / triangle / edge counts | count | §13 |
 | $\chi$ | **Euler characteristic** $V-E+F=2$ (§13 §4.2 only) | — | §13 |
 | $\mathbf c_m$ | cell centre of cell $m$ (a geodesic vertex), unit vector | — | §13, §14 |
-| $\Omega_m$ | exact solid angle of cell $m$ (spread $-36\%$ to $+18\%$ about $4\pi/C$ at the UI default $\nu=10$) | sr | §13, §14 |
+| $\Omega_m$ | exact solid angle of cell $m$ (spread $-36\%$ to $+18\%$ about $4\pi/C$ at $\nu=10$) | sr | §13, §14 |
 | $d_m \in \{5,6\}$ | degree (neighbour count) of cell $m$ | — | §13 |
 | $w_i$ | per-point histogram weight: $1$ (`count`), $a_i$ (`amplitude`), $a_i^2$ (`amplitude2`) | —, Å, Å² | §13 |
 | $M_m$ | weighted mass accumulated in cell $m$ (`mass`) | as $w$ | §13 |
