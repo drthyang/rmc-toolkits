@@ -19,7 +19,7 @@
 import { describeSymmetry, orbitLabel } from './symmetryModel';
 import { siteLabel } from './siteLabel';
 import { crystalOrientationRows, invert3, matVec3, transpose3, unitCellVectors } from './pcaCrystalFrame';
-import { cnMatches, countsCut, describePointGroup, pointGroupFacts } from './llm';
+import { cnMatches, countsCut, describePointGroup, lowerGroupTolerance, methodCheck, pointGroupFacts } from './llm';
 import { symmetryNoiseFloor } from './llm/context/runContext';
 import { symmetryShifts } from './symmetryShift';
 import { nearestLowIndex } from './viewer3d';
@@ -30,10 +30,6 @@ import { oneOf } from './llm/copilot/dataShape';
 // its summarizer builds — the paths the model quotes by reference — declared
 // beside that summarizer and carried on the tool's spec.
 const XYZ = ['number|null', 'number|null', 'number|null'];
-
-// A tolerance this factor above the sampling noise floor holds clearly above
-// it (the Workbench's tolerance question uses the same margin, clarify.js).
-export const NOISE_FLOOR_MARGIN = 1.25;
 
 const round = (value, digits = 3) => (
     Number.isFinite(value) ? (value === 0 ? 0 : Number(value.toPrecision(digits))) : null
@@ -364,13 +360,14 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
     // An element pooled over several sites can mix their local frames: each
     // vertex of a Ta4 tetrahedron sits on its own 3m axis, so a preference
     // every site shares in its own frame (along its own <111>) averages out.
+    // The advice (which analysis to run instead) is method: arm C's method
+    // 'off' sends the caveat alone (llm copilot/method.js).
     if (payload.referenceNumber == null && pooledSites > 1) {
-        checks.push({
-            level: 'note',
-            text: `Pooled over ${pooledSites} sites. Where their local axes differ (the four vertices of a tetrahedral cluster), `
+        checks.push(methodCheck('note',
+            `Pooled over ${pooledSites} sites. Where their local axes differ (the four vertices of a tetrahedral cluster), `
                 + 'a direction each site prefers in its own frame cancels here, so an isotropic pooled map is not evidence '
-                + 'against a per-site or cluster distortion. Test single sites (site_ref), or analyze_clusters for a cluster\'s shape.'
-        });
+                + 'against a per-site or cluster distortion.',
+            { method: ' Test single sites (site_ref), or analyze_clusters for a cluster\'s shape.' }));
     }
     // For the answer check: no "preferred direction" unless the peak test of
     // one of the question's analyses found it at ≥ 3σ. The map test alone is
@@ -578,12 +575,13 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
         }
     };
     const checks = [...parseWarningCheck(payload)];
+    // Where the window comes from is method (llm copilot/method.js): arm C's
+    // method 'off' sends the failure and the plain remedy.
     if (!total) {
-        checks.push({
-            level: 'fail',
-            text: 'No angles: no central atom has two neighbours in the window(s). Widen the window '
-                + '(find_gr_peaks gives the whole first shell, first_shell.window_A) or check the elements.'
-        });
+        checks.push(methodCheck('fail',
+            'No angles: no central atom has two neighbours in the window(s). Widen the window',
+            { method: ' (find_gr_peaks gives the whole first shell, first_shell.window_A)' },
+            ' or check the elements.'));
         return { data, checks };
     }
     let cutText = null;
@@ -611,11 +609,11 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
         // Refused: keep what shows the cut, never the angles.
         ['mean_deg', 'sd_deg', 'modes', 'histogram_10deg', 'histogram_10deg_sin_corrected'].forEach((key) => { delete data[key]; });
         data.refused = 'the window cuts the coordination shell, so its angles are not the polyhedron\'s and are not returned';
-        checks.push({
-            level: 'fail',
-            text: `Refused: ${cutText} Use the whole shell (find_gr_peaks' first_shell.window_A). If the user wants this window, `
-                + 'ask them (ask_user) and call again with window_confirmed: true.'
-        });
+        // Arm C's method 'off' still refuses; only the advice on which window goes.
+        checks.push(methodCheck('fail',
+            `Refused: ${cutText}`,
+            { method: ' Use the whole shell (find_gr_peaks\' first_shell.window_A).' },
+            ' If the user wants this window, ask them (ask_user) and call again with window_confirmed: true.'));
         return { data, checks, facts };
     }
     if (cutText) checks.push({ level: 'warn', text: `${cutText} Kept: the user chose this window; say that its angles are of a partial shell.` });
@@ -633,13 +631,14 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
     if (reference?.trans_above_135_deg) {
         // A band with no angles has no mean: say "none", never "null°".
         const meanOf = (band) => (band.mean_deg == null ? 'none' : `${band.mean_deg}°`);
-        checks.push({
-            level: 'note',
-            text: `Raw counts deplete angles near 180° (as sin θ): ${Math.round(reference.trans_above_135_deg.share * 100)} % of these angles `
+        // Which histogram to read the shape from is method (llm copilot/method.js):
+        // arm C's method 'off' sends the counts against the ideal octahedron alone.
+        checks.push(methodCheck('note',
+            `Raw counts deplete angles near 180° (as sin θ): ${Math.round(reference.trans_above_135_deg.share * 100)} % of these angles `
                 + `lie above 135° (mean ${meanOf(reference.trans_above_135_deg)}) and ${Math.round(reference.cis_below_135_deg.share * 100)} % `
                 + `below (mean ${meanOf(reference.cis_below_135_deg)}), against an ideal octahedron's 20 % trans at 180° and 80 % cis `
-                + 'at 90°. Read the shape from histogram_10deg_sin_corrected (1 = random directions), not from the raw modes.'
-        });
+                + 'at 90°.',
+            { method: ' Read the shape from histogram_10deg_sin_corrected (1 = random directions), not from the raw modes.' }));
     }
     return { data, checks, facts };
 };
@@ -724,17 +723,18 @@ const singleEdgeReading = ({ kind, pattern }) => ({
  * the tool's from before the rules moved into the engines (2026-10-19).
  */
 export const CLUSTER_SENTENCES = {
+    // Which window, and where to take it from, is method (llm
+    // copilot/method.js): arm C's method 'off' sends the fact and the plain remedy.
     'window.extendedNetwork': {
-        extended_network: ({ element, lo, hi }) => ({
-            level: 'fail',
-            text: `The ${lo}–${hi} Å window links the ${element} atoms into an extended network (chains or a 3-D net), `
-                + `not finite clusters: narrow it to the intra-cluster bond (find_gr_peaks: first_shell.window_A of ${element}-${element}).`
-        }),
-        no_clusters: ({ element, lo, hi }) => ({
-            level: 'fail',
-            text: `No two ${element} sites of the average structure lie ${lo}–${hi} Å apart: no clusters. `
-                + `Widen the window (find_gr_peaks gives the ${element}-${element} first shell).`
-        }),
+        extended_network: ({ element, lo, hi }) => methodCheck('fail',
+            `The ${lo}–${hi} Å window links the ${element} atoms into an extended network (chains or a 3-D net), `
+                + 'not finite clusters: narrow it',
+            { method: ` to the intra-cluster bond (find_gr_peaks: first_shell.window_A of ${element}-${element})` },
+            '.'),
+        no_clusters: ({ element, lo, hi }) => methodCheck('fail',
+            `No two ${element} sites of the average structure lie ${lo}–${hi} Å apart: no clusters. Widen the window`,
+            { method: ` (find_gr_peaks gives the ${element}-${element} first shell)` },
+            '.'),
         finite_clusters: null
     },
     'window.mixedSizes': {
@@ -825,14 +825,14 @@ export const CLUSTER_SENTENCES = {
         undefined_statistic: null
     },
     splitMemberSites: {
-        half_or_more_split: ({ verdict }) => ({
-            level: 'note',
-            text: `Split sites: ${verdict.splitMemberSites.sites.length} of the ${verdict.splitMemberSites.memberSites.length} member sites `
+        // What to read and run next is method: arm C's method 'off' sends the caveat alone.
+        half_or_more_split: ({ verdict }) => methodCheck('note',
+            `Split sites: ${verdict.splitMemberSites.sites.length} of the ${verdict.splitMemberSites.memberSites.length} member sites `
                 + `(${verdict.splitMemberSites.sites.join(', ')}) `
                 + 'have two positions (PC1 excess kurtosis ≤ −0.5). The null keeps each site\'s two positions, so it already holds the '
                 + 'distortion\'s amplitude: the edge spread cannot show it, and "no distortion" or "less distorted" does not make the '
-                + 'clusters regular. Read the pattern (axis families, trigonality), the partial g(r) shell (find_gr_peaks) and the bond angles.'
-        }),
+                + 'clusters regular.',
+            { method: ' Read the pattern (axis families, trigonality), the partial g(r) shell (find_gr_peaks) and the bond angles.' }),
         fewer_than_half_split: null,
         none_split: null,
         extended_network: null,
@@ -1209,11 +1209,12 @@ export const summarizeSymmetry = (described, tolerance) => {
     } else {
         checks.push({ level: 'ok', text: `${described.spaceGroup}${described.spaceGroupNumber ? ` (No. ${described.spaceGroupNumber})` : ''} holds at ${tolerance} Å.` });
     }
+    // Where to read inversion, chirality and polarity from is method (llm
+    // copilot/method.js): arm C's method 'off' sends the point group's facts alone.
     if (facts) {
-        checks.push({
-            level: 'note',
-            text: `Point group ${describePointGroup(described.pointGroup)}. Take inversion, chirality and polarity from this, not from memory.`
-        });
+        checks.push(methodCheck('note',
+            `Point group ${describePointGroup(described.pointGroup)}.`,
+            { method: ' Take inversion, chirality and polarity from this, not from memory.' }));
     }
     // For the answer check (llm/copilot/answerAudit.js): the group and what its
     // point group implies.
@@ -1381,8 +1382,9 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
             name: 'list_sites',
             description: 'List every reference site of the RMC configuration with its displacement statistics from a '
                 + 'PCA of its displacement cloud: U_iso (Å²), principal RMS amplitudes (Å), anisotropy, Mardia and '
-                + 'per-axis kurtosis, PC1 as [u v w], and a split site\'s static displacement (Å) with its sampling error. '
-                + 'Use it to find the most disordered, anisotropic or anharmonic sites (their `ref`).',
+                + 'per-axis kurtosis, PC1 as [u v w], and a split site\'s static displacement (Å) with its sampling error.',
+            // The method advice (llm copilot/method.js): sent with method 'full', after the description.
+            method: 'Use it to find the most disordered, anisotropic or anharmonic sites (their `ref`).',
             parameters: {
                 type: 'object',
                 properties: {
@@ -1443,7 +1445,9 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                 + 'B neighbours, A within [r12_min, r12_max] Å of B and C within [r23_min, r23_max] Å (default: the '
                 + 'A–B window). Returns the angle modes, mean ± sd, a 10° histogram, bond lengths and the B '
                 + 'coordination, and for about six or four neighbours the split against an ideal octahedron or '
-                + 'tetrahedron. Use the whole first coordination shell (find_gr_peaks\' first_shell.window_A): a window '
+                + 'tetrahedron.',
+            // The refusal itself stays in window_confirmed's own description.
+            method: 'Use the whole first coordination shell (find_gr_peaks\' first_shell.window_A): a window '
                 + 'that cuts the shell is put to the user first, and refused unless the user chose it (window_confirmed).',
             parameters: {
                 type: 'object',
@@ -1521,13 +1525,17 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
         tools.push({
             name: 'analyze_clusters',
             description: 'Shape of the finite clusters one element forms — the M4 tetrahedra of a lacunar spinel, '
-                + 'dimers, trimers — with bonds in [r_min, r_max] Å in the average structure (take the window from '
-                + 'find_gr_peaks: first_shell.window_A of that element pair). Every cluster in the configuration is '
-                + 'compared with a shuffle null in which each atom keeps its own site\'s displacements but takes them from '
+                + 'dimers, trimers — with bonds in [r_min, r_max] Å in the average structure. Every cluster in the '
+                + 'configuration is compared with a shuffle null in which each atom keeps its own site\'s displacements but takes them from '
                 + 'a random other cluster: is there a distortion beyond independent atoms, which edge pattern '
                 + '(tetrahedra: E/T2 modes, trigonal vs one edge), along which lattice axis (<100>/<110>/<111>), and is '
-                + 'the average cluster itself distorted. Use it for cluster or polyhedron distortion, Jahn–Teller, '
-                + 'dimerization or trimerization questions; single-site displacement directions cannot show these.',
+                + 'the average cluster itself distorted.',
+            // Where the window comes from (inside the first sentence), and which questions need the tool.
+            method: [
+                { after: 'in the average structure', text: ' (take the window from find_gr_peaks: first_shell.window_A of that element pair)' },
+                'Use it for cluster or polyhedron distortion, Jahn–Teller, '
+                    + 'dimerization or trimerization questions; single-site displacement directions cannot show these.'
+            ],
             parameters: {
                 type: 'object',
                 properties: {
@@ -1561,11 +1569,13 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
 
         tools.push({
             name: 'analyze_modulations',
-            description: 'Look for order that enlarges the unit cell — a superstructure the folded average structure and '
-                + 'detect_symmetry cannot show (cell doubling as in low-temperature phases, octahedral tilts, '
+            description: 'Look for order that enlarges the unit cell — a superstructure the folded average structure '
+                + 'cannot show (cell doubling as in low-temperature phases, octahedral tilts, '
                 + 'charge-density waves). Fourier-transforms every site\'s displacements over the supercell\'s cell grid and '
                 + 'compares the zone-boundary points (½,0,0)…(½,½,½) and the strongest modes with the configuration\'s own '
                 + 'diffuse background (ratio to the median power, percentile). Optionally one element.',
+            // Which other tool cannot show it.
+            method: [{ after: 'the folded average structure', text: ' and detect_symmetry' }],
             parameters: {
                 type: 'object',
                 properties: {
@@ -1585,8 +1595,8 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
             name: 'detect_symmetry',
             description: 'Run the space-group finder on the average structure (the folded reference sites) at a '
                 + 'position tolerance in Å, as the Detected SG card does: group, number (only when it is certain), '
-                + 'operations, and the Wyckoff orbits. Compare tolerances to see which symmetry the local '
-                + 'distortion breaks. Does not change the card.',
+                + 'operations, and the Wyckoff orbits. Does not change the card.',
+            method: [{ after: 'and the Wyckoff orbits.', text: ' Compare tolerances to see which symmetry the local distortion breaks.' }],
             parameters: {
                 type: 'object',
                 properties: {
@@ -1602,16 +1612,22 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
         });
 
         const floor = symmetryNoiseFloor(structure.basis);
-        // The lower group's default tolerance: just above the noise floor.
-        const lowerDefault = Number(((floor ?? 0.02) * NOISE_FLOOR_MARGIN).toPrecision(2));
+        // The lower group's default tolerance: NOISE_FLOOR_MARGIN × the noise
+        // floor, just above it (the one rule; arm A+ reads it too).
+        const lowerDefault = lowerGroupTolerance(structure.basis);
         tools.push({
             name: 'measure_symmetry_lowering',
             description: 'How far each average site sits from the position a higher-symmetry (parent) group puts it at: the '
                 + 'size and direction of a coherent shift every copy of a site shares (a polar off-centring of the average '
-                + 'structure), which the displacement analyses cannot show — each site\'s cloud is centred on its own mean. The '
-                + 'parent is the group at parent_tolerance_A (default 0.2 Å, the Detected SG card\'s); the lower group is the one '
+                + 'structure). The parent is the group at parent_tolerance_A (default 0.2 Å, the Detected SG card\'s); '
+                + 'the lower group is the one '
                 + `at tolerance_A (default ${lowerDefault} Å, just above the sampling noise floor). Each shift is in Å with its `
                 + 'crystal [u v w], measured with the parent on the majority of the atoms, against the noise floor.',
+            // Which analyses cannot show it, and why.
+            method: [{
+                after: '(a polar off-centring of the average structure)',
+                text: ', which the displacement analyses cannot show — each site\'s cloud is centred on its own mean'
+            }],
             parameters: {
                 type: 'object',
                 properties: {

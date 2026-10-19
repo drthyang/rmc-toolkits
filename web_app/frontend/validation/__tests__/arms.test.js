@@ -7,9 +7,10 @@
 // arm-A numbers come from the CLI (`arm-a --split test --final`), never here.
 
 import { describe, expect, it } from 'vitest';
+import { shellCatalogue } from '../../src/llm/context/shells';
 import { buildCase, DEV_CASES } from '../cases';
 import { loadRun } from '../runFolder';
-import { runArmA, runArmSweep } from '../armA';
+import { ARM_A_RULES, runArmA, runArmSweep } from '../armA';
 import { scoreVerdict } from '../scoring';
 
 const runBoth = async (item) => {
@@ -17,7 +18,7 @@ const runBoth = async (item) => {
     const run = loadRun(built, { ladder: false });
     const a = await runArmA(run);
     const sweep = await runArmSweep(run);
-    return { built, a, sweep, scoreA: scoreVerdict(built.truth, a.verdict), scoreSweep: scoreVerdict(built.truth, sweep.verdict) };
+    return { built, run, a, sweep, scoreA: scoreVerdict(built.truth, a.verdict), scoreSweep: scoreVerdict(built.truth, sweep.verdict) };
 };
 
 // [case, arm A score, arm A spurious claims, A+ score, A+ spurious claims]
@@ -26,6 +27,10 @@ const runBoth = async (item) => {
 // from 0.8333 to 1 (the shift is named); every other pin is unchanged.
 // Plan item 4.6: dev-fit-unconverged (dev only), scored on its
 // structure (no order, Fm-3m); its fit files change nothing the arms read.
+// Plan item 1.6 ii: the judgment subset (dev only), the last five; every pin
+// above them is unchanged.
+// Candidate 8 (2026-10-19, A+ reads the app's rules): no pin moved; only A+'s
+// readings (and dev-offcentre's δ, 0.201 → 0.202 Å) did, pinned below.
 const BAR = [
     ['dev-offcentre', 1, [], 1, []],
     ['dev-zone-boundary', 0.6667, ['off_centre Ti'], 1, []],
@@ -36,7 +41,12 @@ const BAR = [
     ['dev-symmetry-lowering', 0.3333, [], 1, []],
     ['dev-chirality-trap', 1, [], 1, []],
     ['dev-chiral', 1, [], 1, []],
-    ['dev-fit-unconverged', 1, [], 1, []]
+    ['dev-fit-unconverged', 1, [], 1, []],
+    ['dev-jt-off-centre', 0.8571, [], 0.8571, []],
+    ['dev-eight-site', 0.6667, ['jahn_teller Nb'], 0.6667, ['jahn_teller Nb']],
+    ['dev-octahedral-clusters', 0.8333, [], 1, []],
+    ['dev-weak-order-a', 0.8333, [], 1, []],
+    ['dev-weak-order-b', 0.8333, [], 0.8333, []]
 ];
 
 describe('the model-free arms on the dev cases (the bar)', () => {
@@ -82,4 +92,95 @@ describe('the model-free arms on the dev cases (the bar)', () => {
         expect(jt.sweep.readings.find((r) => r.page === 'analyze_clusters').value)
             .toMatchObject({ distorted: 'true (axis_family)', splitMemberSites: 'true (half_or_more_split)', rigid: 'false (split_sites)' });
     });
+
+    it('A+ reads the app\'s rules: the split site, the cluster elements, the lower group\'s tolerance (candidate 8, 2026-10-19)', async () => {
+        // The split site: isSplitSite, with list_sites' δ. On dev-jahn-teller
+        // two F sites (κ₁ −0.95 and −0.93 at 216 copies: 2.8 errors) are split
+        // by arm A's rule, not by the app's; the F claim (the largest δ) stays.
+        const jt = await runBoth(DEV_CASES.find((item) => item.id === 'dev-jahn-teller'));
+        const site = (arm, n) => arm.readings.find((r) => /^(PCA Ellipsoid|list_sites)$/.test(r.page) && r.what === `site ${n} F`);
+        for (const n of [5, 6]) {
+            expect(site(jt.a, n).reading).toMatch(/^split site along PC1/);
+            expect(site(jt.sweep, n)).toMatchObject({ page: 'list_sites', reading: 'not a split site' });
+            expect(site(jt.sweep, n).value.pc1_kurtosis_z).toBeGreaterThan(-3);
+        }
+        expect(site(jt.sweep, 3).value).toMatchObject({ delta_A: 0.16, delta_se_A: 0.0043, pc1_kurtosis_z: -4.43 });
+        expect(jt.sweep.verdict.features[0]).toEqual({ kind: 'off_centre', element: 'F', direction_uvw: [1, 0, -0.01], magnitude_A: 0.16 });
+        const offcentre = await runBoth(DEV_CASES.find((item) => item.id === 'dev-offcentre'));
+        expect(offcentre.sweep.verdict.features).toEqual([{ kind: 'off_centre', element: 'Nb', direction_uvw: [0.1, 0.06, -1], magnitude_A: 0.202 }]);
+        expect(offcentre.a.verdict.features[0].magnitude_A).toBe(0.201);
+        // The cluster elements: the gate's (CN 0.5–4.5); perovskite O (CN 8) no longer tried.
+        expect(offcentre.sweep.readings.filter((r) => r.page === 'analyze_clusters')).toEqual([]);
+        // The lower group: 1.25 × the noise floor (0.026 Å → 0.032 Å), the tool's default.
+        const lowering = await runBoth(DEV_CASES.find((item) => item.id === 'dev-symmetry-lowering'));
+        expect(lowering.sweep.readings[0]).toMatchObject({ page: 'detect_symmetry at 1.25 × the noise floor', what: 'space group at 0.032 Å', value: 'P4mm', noise_floor_A: 0.026 });
+        expect(lowering.sweep.readings.find((r) => r.page === 'measure_symmetry_lowering').reading).toContain('(the lower group P4mm at 0.032 Å)');
+    });
+
+    // The room a model has (plan 1.6 ii): on each judgment case, which of
+    // A+'s fixed rules misses or misreads the planted truth, read from its
+    // own readings, and that the engines hold the right answer.
+    it('the judgment subset: where A+\'s fixed joining rules fail, the readings show which rule', async () => {
+        const judged = (id) => runBoth(DEV_CASES.find((item) => item.id === id));
+        const found = (score) => score.features.map((feature) => `${feature.planted ?? feature.kind}:${feature.found}`);
+
+        // Two features: Ag is split, and by rule a split centre explains its
+        // own split shell, so the Jahn–Teller elongation is never claimed.
+        const two = await judged('dev-jt-off-centre');
+        expect(two.sweep.readings.find((r) => r.page === 'Dashboard partial g(r)').value.peaks_A).toHaveLength(2);
+        expect(two.sweep.verdict.features.some((feature) => feature.kind === 'jahn_teller')).toBe(false);
+        expect(found(two.scoreSweep)).toEqual(['jahn_teller:false', 'off_centre:true']);
+
+        // Two readings: the eight wells average to a round Nb ellipsoid, so
+        // no split site; the 3 + 3 shell it leaves unexplained becomes a
+        // Jahn–Teller claim. The direction map at a finer tiling has the
+        // <111> lobe that the default one does not resolve.
+        // (Since candidate 8 A+ reads list_sites' split rule: the round
+        // ellipsoid resolves no PC1, so no split site, as arm A's page reads it.)
+        const eight = await judged('dev-eight-site');
+        const nb = eight.sweep.readings.find((r) => r.page === 'list_sites' && r.what.endsWith('Nb'));
+        expect(nb.reading).toBe('not a split site');
+        expect(nb.value.pc1_resolved).toBe(false);
+        const nbPage = eight.a.readings.find((r) => r.page === 'PCA Ellipsoid' && r.what.endsWith('Nb'));
+        expect(nbPage.reading).toBe('thermal ellipsoid');
+        expect(nbPage.value.pc1_over_pc2).toBeLessThan(ARM_A_RULES.PROLATE_RATIO);
+        expect(found(eight.scoreSweep)).toEqual(['off_centre:false']);
+        const engine = (await eight.run).engine;
+        const coarse = await engine('orientation', { referenceNumber: 2 });
+        const fine = await engine('orientation', { referenceNumber: 2, frequency: 3 });
+        expect(coarse.peakSignificance).toBeLessThan(ARM_A_RULES.SIGMA);
+        expect(coarse.mapSignificance).toBeGreaterThan(ARM_A_RULES.SIGMA);
+        expect(fine.peakSignificance).toBeGreaterThan(ARM_A_RULES.SIGMA);
+        expect(fine.peakDirection.map((value) => Math.abs(value))).toEqual(fine.peakDirection.map(() => expect.closeTo(1 / Math.sqrt(3), 2)));
+
+        // A choice only the user can make, the one control: since the one
+        // shell reading (protocol 2026-10-19.8) A+ reads the Workbench's own
+        // joined W–W shell (CN 4, its default) and finds the distorted
+        // octahedra. The first peak alone, the window the Workbench asks
+        // about when a call cuts the shell, holds no cluster. The judgment
+        // (stating the default and what the other window gives) shows in the
+        // answer, not in the score.
+        const octahedra = await judged('dev-octahedral-clusters');
+        expect(found(octahedra.scoreSweep)).toEqual(['cluster_distortion:true']);
+        const run = await octahedra.run;
+        const shell = shellCatalogue(run.props).shell('W', 'W');
+        expect(shell.joined).toBe(true);
+        expect(shell.firstPeak.changesCn).toBe(true);
+        expect(octahedra.sweep.readings.find((r) => r.page === 'analyze_clusters').what)
+            .toBe(`W clusters in ${shell.window[0]}–${shell.window[1]} Å (engine verdict)`);
+        const cut = await run.engine('clusters', { element: 'W', rMin: shell.firstPeak.window[0], rMax: shell.firstPeak.window[1] });
+        expect(cut.verdict.window.extendedNetwork.because).toBe('no_clusters');
+
+        // A signal at the edge of significance: one weak order, a seed on
+        // each side of the fixed 3σ bar; A+ claims the one above only.
+        for (const [id, ordered] of [['dev-weak-order-a', true], ['dev-weak-order-b', false]]) {
+            const weak = await judged(id);
+            const payload = await (await weak.run).engine('modulations', {});
+            const point = payload.elements.find((entry) => entry.element === 'Nb').zoneBoundary.find((entry) => entry.q.join() === '0.5,0.5,0');
+            expect(point.sigma, id).toBeGreaterThanOrEqual(2.5);
+            expect(point.sigma, id).toBeLessThanOrEqual(4);
+            expect(point.ordered, id).toBe(ordered);
+            expect(found(weak.scoreSweep), id).toEqual([`modulation:${ordered}`]);
+        }
+    }, 120000);
 });

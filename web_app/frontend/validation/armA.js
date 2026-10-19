@@ -14,17 +14,21 @@
 // with its own thresholds and fixed rules joining them, no model. What arm B
 // adds over A+ is what the language model itself adds. The cluster and
 // modulation engines decide for themselves (their verdicts): A+ calls them
-// directly and maps their answers to claims.
+// directly and maps their answers to claims. Where the app has a rule, A+
+// reads it from where the app decides it (architecture candidate 8,
+// SWEEP_RULES below): the split site, the cluster elements and the lower
+// group's tolerance.
 //
 // Each reading is recorded with the value it rests on, so a misleading
 // result can be traced to the page that misled.
 
 import { pointGroupFacts } from '../src/llm/context/pointGroups';
-import { extractPeaks, shellCatalogue } from '../src/llm/context/shells';
-import { symmetryNoiseFloor } from '../src/llm/context/runContext';
+import { clusterElementsOf, extractPeaks, shellCatalogue } from '../src/llm/context/shells';
+import { lowerGroupTolerance, NOISE_FLOOR_MARGIN, symmetryNoiseFloor } from '../src/llm/context/runContext';
 import { describeSymmetry } from '../src/symmetryModel';
 import { unitCellVectors } from '../src/pcaCrystalFrame';
-import { cartesianToUvw } from '../src/copilotTools';
+import { cartesianToUvw, splitDisplacement } from '../src/copilotTools';
+import { isSplitSite, splitSiteEvidence } from '../src/workers/clusters';
 import { normalizeVerdict } from './verdict';
 
 // What the arms read of a case: the run as the Copilot is handed it
@@ -190,11 +194,74 @@ export const runArmA = async (copilotRun) => {
     return { arm: 'A', readings, verdict: normalizeVerdict({ features, ...symmetry.verdict }) };
 };
 
-/** Arm A+'s extra rules (the engine sweep), fixed before any run. */
+/**
+ * Arm A+'s rules (the engine sweep). Since architecture candidate 8
+ * (2026-10-19) every one is the app's, imported from the module that decides
+ * it, so A+ and the Copilot cannot read a run two ways:
+ *
+ *   split site      isSplitSite (workers/clusters.js: PC1 resolved, κ₁ ≤ −0.5
+ *                   and ≥ 3 sampling errors below 0), with list_sites' static
+ *                   displacement δ = √(rms1² − rms⊥²) (splitDisplacement);
+ *                   until then A+ used arm A's (PC1/PC2 ≥ 1.3, κ₁ ≤ −0.5).
+ *   cluster elements  clusterElementsOf (llm/context/shells.js): an element
+ *                   whose own first shell holds 0.5–4.5 neighbours, the
+ *                   evidence gate's rule; until then a same-element first
+ *                   shell peaking below 3.6 Å.
+ *   lower group     lowerGroupTolerance (llm/context/runContext.js):
+ *                   NOISE_FLOOR_MARGIN (1.25) × the sampling noise floor,
+ *                   measure_symmetry_lowering's default and the Workbench's
+ *                   tolerance question's margin; until then the floor itself.
+ *
+ * Arm A's rules (ARM_A_RULES) are the frozen protocol's and stay as they were.
+ * What remains A+'s own is only how it joins the engines: one claim per
+ * element, an ordered mode explains its element's split sites, an off-centred
+ * centre its own split shell, and a mode's polarisation is the PC1 of the
+ * element's most prolate site (PC1/PC2 ≥ ARM_A_RULES.PROLATE_RATIO).
+ *
+ * The table holds the app's functions themselves, and A+ calls them through
+ * it: a test checks they are the app's (one definition).
+ */
 export const SWEEP_RULES = Object.freeze({
-    // Same-element first shells shorter than this are tried as clusters.
-    CLUSTER_SHELL_MAX_A: 3.6
+    splitSite: isSplitSite,
+    staticDisplacement: splitDisplacement,
+    clusterElements: clusterElementsOf,
+    lowerGroupTolerance
 });
+
+/**
+ * A+'s split sites, by the app's rule: each site row of the 'sites' request
+ * read as list_sites reads it (isSplitSite, through its evidence record: κ₁,
+ * its z = κ₁/√(24/n), PC1 resolved), a split site's static displacement
+ * δ ± its sampling error as list_sites gives it (delta_A, delta_se_A), and
+ * per element the split site with the largest δ (one claim per element).
+ * `run` holds the engine and the structure (the cell for [u v w]).
+ */
+export const appSplitSites = async (run, readings) => {
+    const payload = await run.engine('sites');
+    const found = new Map();
+    for (const site of payload.sites || []) {
+        if (!site.rms || !site.axes) continue;
+        // The values the rule reads, for the record; the rule decides.
+        const evidence = splitSiteEvidence(site);
+        const split = SWEEP_RULES.splitSite(site) ? SWEEP_RULES.staticDisplacement(site) : null;
+        readings.push({
+            page: 'list_sites', what: `site ${site.referenceNumber} ${site.element}`,
+            value: {
+                rms_A: site.rms.map((r) => round(r)),
+                pc1_resolved: Boolean(site.axisResolved?.[0]),
+                pc1_excess_kurtosis: round(evidence.observed),
+                pc1_kurtosis_z: round(evidence.z),
+                pc1_uvw: uvwOf(run.structure, site.axes[0]),
+                ...(split ? { delta_A: round(split.delta), delta_se_A: round(split.se, 2) } : {})
+            },
+            reading: split ? `split site along PC1, static shift δ = ${round(split.delta)} ± ${round(split.se, 2)} Å` : 'not a split site'
+        });
+        if (!split) continue;
+        const current = found.get(site.element);
+        if (!current || split.delta > current.magnitude) found.set(site.element, { site, magnitude: split.delta });
+    }
+    return { payload, found };
+};
 
 // An engine Finding as the readings record it: "answer (because)".
 const said = (finding) => `${finding.answer} (${finding.because})`;
@@ -238,14 +305,16 @@ export const runArmSweep = async (copilotRun) => {
     const readings = [];
     // The run's engine tools, as the Copilot is offered them.
     const tools = Object.fromEntries(run.tools.map((tool) => [tool.name, tool]));
-    // Symmetry at the sampling noise floor: the local-symmetry skill's rule
-    // (a group change below the floor is noise).
+    // Symmetry at the lower group's tolerance, the app's: NOISE_FLOOR_MARGIN ×
+    // the sampling noise floor (a group change below the floor is noise, and
+    // a group counts only where it holds clearly above it).
     const floor = symmetryNoiseFloor(run.structure.basis);
-    const tolerance = Number((floor ?? ARM_A_RULES.CARD_TOLERANCE_A).toPrecision(2));
-    const symmetry = symmetryReading(describeSymmetry(run.structure, tolerance), tolerance, 'detect_symmetry at the noise floor');
+    const tolerance = SWEEP_RULES.lowerGroupTolerance(run.structure.basis);
+    const symmetry = symmetryReading(describeSymmetry(run.structure, tolerance), tolerance, `detect_symmetry at ${NOISE_FLOOR_MARGIN} × the noise floor`);
+    symmetry.reading.noise_floor_A = round(floor);
     readings.push(symmetry.reading);
 
-    const { payload: sites, found } = await splitSites(run, readings);
+    const { payload: sites, found } = await appSplitSites(run, readings);
     const features = [];
 
     // Superstructure: the modulation engine's verdict, a cell doubling (an
@@ -279,8 +348,9 @@ export const runArmSweep = async (copilotRun) => {
     }
 
     // A lowering of the average structure (batch 1, review L4): when the
-    // group at the noise floor is not the card's, the shift tool measures
-    // each element's coherent shift from the card's group, above the floor.
+    // group at the lower tolerance is not the card's, the shift tool measures
+    // each element's coherent shift from the card's group, above the floor
+    // (its lower group at the same tolerance, the tool's default).
     if (tools.measure_symmetry_lowering && symmetry.verdict.space_group
         && symmetry.verdict.space_group !== describeSymmetry(run.structure, ARM_A_RULES.CARD_TOLERANCE_A)?.spaceGroup) {
         const lowering = await tools.measure_symmetry_lowering.run({ parent_tolerance_A: ARM_A_RULES.CARD_TOLERANCE_A, tolerance_A: tolerance });
@@ -290,18 +360,17 @@ export const runArmSweep = async (copilotRun) => {
         }
     }
 
-    // Clusters: every element whose own first shell is short and closed, read
-    // by the cluster engine's verdict: distorted (the edge spread above the
-    // shape null, or a pattern: an axis family, a trigonal lean), breathing,
-    // rigid (never with split member sites, where the null mixes the sites'
-    // static choices). The shell and its window are the run's one shell
-    // reading (shells.js), the window find_gr_peaks gives the model.
+    // Clusters: every element whose own first shell holds 0.5–4.5 neighbours
+    // (the evidence gate's rule, clusterElementsOf), read by the cluster
+    // engine's verdict: distorted (the edge spread above the shape null, or a
+    // pattern: an axis family, a trigonal lean), breathing, rigid (never with
+    // split member sites, where the null mixes the sites' static choices). The
+    // shell and its window are the run's one shell reading (shells.js), the
+    // window find_gr_peaks gives the model.
     const CLUSTER_CLAIMS = [['distorted', 'cluster_distortion'], ['breathing', 'cluster_breathing'], ['rigid', 'rigid_cluster']];
     const catalogue = shellCatalogue({ plotFiles: run.plotFiles, structure: run.structure, runSettings: run.runSettings });
-    for (const shell of catalogue?.pairs || []) {
-        if (shell.centre !== shell.partner || !shell.window || shell.peaks[0].r > SWEEP_RULES.CLUSTER_SHELL_MAX_A) continue;
-        const element = shell.centre;
-        const { window } = shell;
+    for (const element of SWEEP_RULES.clusterElements(catalogue)) {
+        const { window } = catalogue.shell(element, element);
         const result = await run.engine('clusters', { element, rMin: window[0], rMax: window[1] });
         readings.push({ page: 'analyze_clusters', what: `${element} clusters in ${window[0]}–${window[1]} Å (engine verdict)`, ...clusterReading(result) });
         CLUSTER_CLAIMS.forEach(([finding, kind]) => {

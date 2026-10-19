@@ -81,8 +81,8 @@ describe('the turn\'s first request is the dock\'s and the harness\'s', () => {
         expect(render(first, { toolsFile: 'dock/tools.json' })).toBe(body(snapshot('dock/first-request.txt')));
     });
 
-    it('a harness-shaped spec (dev-offcentre): harness/first-request.arm-B.txt, arm-C.txt and tools.arm-B.json', async () => {
-        const firstRequest = async (skills) => {
+    it('a harness-shaped spec (dev-offcentre): harness/first-request.arm-B.txt, arm-C.txt and the tools of each', async () => {
+        const firstRequest = async (skills, method) => {
             const recorder = recordingModel();
             await run({
                 question: liveQuestion(built),
@@ -90,15 +90,18 @@ describe('the turn\'s first request is the dock\'s and the harness\'s', () => {
                 model: recorder.port,
                 tools: [...buildRunTools(caseRun.props, { cards: [] }), ...caseRun.tools],
                 askUser: skippingUser([]),
-                skills
+                skills,
+                config: { method }
             });
             return recorder.requests[0];
         };
-        const b = await firstRequest(loadSkills());
-        const c = await firstRequest(null);
+        // Arm B: the skills and the full method; arm C: neither (method 'off').
+        const b = await firstRequest(loadSkills(), 'full');
+        const c = await firstRequest(null, 'off');
         expect(jsonFile(b.tools)).toBe(snapshot('harness/tools.arm-B.json'));
         expect(render(b, { toolsFile: 'harness/tools.arm-B.json' })).toBe(body(snapshot('harness/first-request.arm-B.txt')));
-        expect(render(c, { toolsFile: 'harness/tools.arm-B.json, without read_skill', base: b, baseName: 'first-request.arm-B.txt' }))
+        expect(jsonFile(c.tools)).toBe(snapshot('harness/tools.arm-C.json'));
+        expect(render(c, { toolsFile: 'harness/tools.arm-C.json', base: b, baseName: 'first-request.arm-B.txt' }))
             .toBe(body(snapshot('harness/first-request.arm-C.txt')));
     });
 });

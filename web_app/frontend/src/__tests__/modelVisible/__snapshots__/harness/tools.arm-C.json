@@ -1,0 +1,292 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "read_run_data",
+      "description": "Read one section of the run summary in full (the context you were given is trimmed to fit). Sections: structure (cell lengths/angles of one unit cell, supercell, atom counts); symmetry (detected space group, tolerance ladder, Wyckoff orbits with displacement); pair_correlations (partial g(r) first peaks vs the average-structure neighbour distance); datasets (per-dataset Rwp).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "section": {
+            "type": "string",
+            "enum": ["structure", "symmetry", "pair_correlations", "datasets"],
+            "description": "Which section to read."
+          }
+        },
+        "required": ["section"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "find_gr_peaks",
+      "description": "Analyse one partial g(r) (from the run's partial-PDF file): its peaks below r_max (position, approximate FWHM) and its first coordination shell, which does not depend on r_max — the window from onset to the first deep minimum (it holds the whole shell, split shells included), mean distance and spread from r²g(r), coordination numbers in both directions with their sensitivity to the cut, whether the shell is separated from the next, and whether the pair's hard minimum-distance constraint cuts the distribution.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pair": {
+            "type": "string",
+            "enum": ["K-K", "K-Nb", "K-O", "Nb-Nb", "Nb-O", "O-O"],
+            "description": "Element pair, as labelled in the partials file."
+          },
+          "r_max": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 20,
+            "description": "List the peaks up to this r (Å). Default 6."
+          },
+          "max_peaks": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8,
+            "description": "Default 3."
+          }
+        },
+        "required": ["pair"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_sites",
+      "description": "List every reference site of the RMC configuration with its displacement statistics from a PCA of its displacement cloud: U_iso (Å²), principal RMS amplitudes (Å), anisotropy, Mardia and per-axis kurtosis, PC1 as [u v w], and a split site's static displacement (Å) with its sampling error.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "element": {
+            "type": "string",
+            "enum": ["K", "Nb", "O"],
+            "description": "Only the sites holding this element."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "analyze_displacement_directions",
+      "description": "Histogram the displacement directions of one site (site_ref, from list_sites) or of every atom of one element (element; \"all\" pools every atom) on the sphere, and test them: the peak direction (Cartesian and crystal [u v w]) with its calibrated significance, the whole-map test against isotropy, the +u/−u asymmetry, and the orientation-tensor anisotropy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_ref": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Reference site number."
+          },
+          "element": {
+            "type": "string",
+            "enum": ["K", "Nb", "O", "all"],
+            "description": "Pool every atom of this element instead of one site."
+          },
+          "frequency": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 24,
+            "description": "Sphere resolution (10ν²+2 cells). Default: chosen from the point count."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "compute_bond_angles",
+      "description": "Bond-angle distribution A–B–C with B the central atom (RMCProfile triplets): every pair of B neighbours, A within [r12_min, r12_max] Å of B and C within [r23_min, r23_max] Å (default: the A–B window). Returns the angle modes, mean ± sd, a 10° histogram, bond lengths and the B coordination, and for about six or four neighbours the split against an ideal octahedron or tetrahedron.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "end1": {
+            "type": "string",
+            "enum": ["K", "Nb", "O"],
+            "description": "Element A."
+          },
+          "apex": {
+            "type": "string",
+            "enum": ["K", "Nb", "O"],
+            "description": "Element B, the central atom."
+          },
+          "end2": {
+            "type": "string",
+            "enum": ["K", "Nb", "O"],
+            "description": "Element C."
+          },
+          "r12_min": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 15,
+            "description": "A–B window minimum (Å)."
+          },
+          "r12_max": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 15,
+            "description": "A–B window maximum (Å)."
+          },
+          "r23_min": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 15,
+            "description": "B–C window minimum (Å); give both or neither."
+          },
+          "r23_max": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 15,
+            "description": "B–C window maximum (Å)."
+          },
+          "bin_width": {
+            "type": "number",
+            "minimum": 0.05,
+            "maximum": 30,
+            "description": "Histogram bin (degrees). Default 1."
+          },
+          "window_confirmed": {
+            "type": "boolean",
+            "description": "true only when the user chose or typed this window (in the question, or through ask_user). A window that cuts the coordination shell is refused unless it is set."
+          }
+        },
+        "required": ["end1", "apex", "end2", "r12_min", "r12_max"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "analyze_clusters",
+      "description": "Shape of the finite clusters one element forms — the M4 tetrahedra of a lacunar spinel, dimers, trimers — with bonds in [r_min, r_max] Å in the average structure. Every cluster in the configuration is compared with a shuffle null in which each atom keeps its own site's displacements but takes them from a random other cluster: is there a distortion beyond independent atoms, which edge pattern (tetrahedra: E/T2 modes, trigonal vs one edge), along which lattice axis (<100>/<110>/<111>), and is the average cluster itself distorted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "element": {
+            "type": "string",
+            "enum": ["K", "Nb", "O"],
+            "description": "Element whose atoms form the clusters."
+          },
+          "r_min": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 8,
+            "description": "Bond window minimum (Å)."
+          },
+          "r_max": {
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 8,
+            "description": "Bond window maximum (Å)."
+          }
+        },
+        "required": ["element", "r_min", "r_max"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "analyze_modulations",
+      "description": "Look for order that enlarges the unit cell — a superstructure the folded average structure cannot show (cell doubling as in low-temperature phases, octahedral tilts, charge-density waves). Fourier-transforms every site's displacements over the supercell's cell grid and compares the zone-boundary points (½,0,0)…(½,½,½) and the strongest modes with the configuration's own diffuse background (ratio to the median power, percentile). Optionally one element.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "element": {
+            "type": "string",
+            "enum": ["K", "Nb", "O"],
+            "description": "Only this element (default: each element)."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "detect_symmetry",
+      "description": "Run the space-group finder on the average structure (the folded reference sites) at a position tolerance in Å, as the Detected SG card does: group, number (only when it is certain), operations, and the Wyckoff orbits. Does not change the card.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tolerance_A": {
+            "type": "number",
+            "minimum": 0.001,
+            "maximum": 1,
+            "description": "Position tolerance (Å); the card default is 0.2."
+          }
+        },
+        "required": ["tolerance_A"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "measure_symmetry_lowering",
+      "description": "How far each average site sits from the position a higher-symmetry (parent) group puts it at: the size and direction of a coherent shift every copy of a site shares (a polar off-centring of the average structure). The parent is the group at parent_tolerance_A (default 0.2 Å, the Detected SG card's); the lower group is the one at tolerance_A (default 0.053 Å, just above the sampling noise floor). Each shift is in Å with its crystal [u v w], measured with the parent on the majority of the atoms, against the noise floor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent_tolerance_A": {
+            "type": "number",
+            "minimum": 0.001,
+            "maximum": 1,
+            "description": "Tolerance of the parent group (Å). Default 0.2."
+          },
+          "tolerance_A": {
+            "type": "number",
+            "minimum": 0.001,
+            "maximum": 1,
+            "description": "Tolerance of the lower group (Å). Default 0.053."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "ask_user",
+      "description": "Ask the user ONE short clarifying question and wait for the answer. Only when the answer changes which analysis you run or its parameters (which coordination shell or r-window, which site or pair, which tolerance, which run or dataset) and neither the run context nor an analysis can settle it. Offer 2–4 short options, each with a one-line description (e.g. the window in Å), and your default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "One short question."
+          },
+          "options": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "description": "A short choice, a few words."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Optional: one line saying what it means, e.g. \"2.33–2.96 Å, both Ta–Se peaks\"."
+                }
+              },
+              "required": ["label"]
+            },
+            "description": "The choices, the most likely first."
+          },
+          "allow_other": {
+            "type": "boolean",
+            "description": "Let the user type another answer. Default true."
+          },
+          "default": {
+            "type": "string",
+            "description": "The label of the option you would pick yourself."
+          }
+        },
+        "required": ["question", "options"]
+      }
+    }
+  }
+]

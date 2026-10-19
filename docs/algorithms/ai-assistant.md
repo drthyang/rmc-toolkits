@@ -963,10 +963,18 @@ characters triggers every trim step in order, but no test asserts the budget is 
 
 1. `system`: `copilotSystemPrompt()` — the fixed `SYSTEM_PROMPT` from
    [`llm/prompts/system.js`](../../web_app/frontend/src/llm/prompts/system.js), then `TOOL_RULES`,
+   `REFERENCE_RULES`, `EVIDENCE_RULES`,
    `ASK_RULES` (when `ask_user` is offered), the skills index (when `read_skill` is: each skill's name
    and description), `VIEW_RULES` (with the view tools; else the compute-only sentence) and the
    `OUTCOME_RULE` (Step 17). Without tools it is `COPILOT_PROMPT_NO_TOOLS` (`SYSTEM_PROMPT` and the
    Outcome rule). There is no run data in it, but it carries hard numeric interpretation rules (below).
+   With the turn's method `'off'` (the validation's arm C, plan item 1.8;
+   [`llm/copilot/method.js`](../../web_app/frontend/src/llm/copilot/method.js)) it holds no
+   `EVIDENCE_RULES` and no skills index, `TOOL_RULES` and `ASK_RULES` lose their method sentences
+   (`METHOD_SENTENCES`), and `SYSTEM_PROMPT`'s ground rules their inference parts (`GROUND_RULES`
+   in `system.js`, each part a definition, an inference or conduct; the tool-free prompt too); the
+   tools' descriptions and checks lose their method advice
+   ([copilot-validation.md](copilot-validation.md#arm-c-the-copilot-without-the-method)).
 2. `user` — `"Context for this RMC modeling run:"` followed by ```` ```json … ``` ```` containing
    `contextToJson(context)`. The fence exists so the model can distinguish data from instructions.
 3. `assistant` — a fixed one-line acknowledgement.
@@ -1437,7 +1445,7 @@ of x Å, "(coherent)"; not "coherent scattering") —
 order, thermal motion only, nothing beyond the average structure; an empty `"features": []`;
 not the modulation tool's own "no order that doubles the cell") — `analyze_modulations`, a
 directions map with `site_ref`, and `analyze_clusters` for every element of the clarifier's shell
-catalog whose own first shell holds 0.5–4.5 neighbours (`CLUSTER_CN_MAX`). Every rule but "no
+catalog whose own first shell holds 0.5–4.5 neighbours (`CLUSTER_CN_MAX`, `clusterElementsOf` in `context/shells.js`). Every rule but "no
 order" reads only sentences about this run: naming an element of the run (as a symbol not followed
 by a lower-case letter, so Ti in TiO₆ but not in "Tiny") or the run itself (this / the run,
 configuration, structure, model, box, supercell, sample, compound, crystal, material, system; the
@@ -1506,7 +1514,7 @@ prism 6, square planar 4, cuboctahedron 12), a length or tolerance in Å, and a 
   A directions question with one element and no site number → one site per orbit or all pooled,
   when the element has ≥ 2 sites and an orbit whose site symmetry is not cubic (23, m-3, 432,
   -43m, m-3m). A space-group question with no length in Å → which group, when ≥ 2 ladder rungs
-  reach ≥ 1.25× the noise floor (`NOISE_MARGIN`).
+  reach ≥ 1.25× the noise floor (`NOISE_FLOOR_MARGIN`, `context/runContext.js`).
 - `beforeCall(tool, args, { questionText, session })`, for a tool with `shellWindows(args)`: a
   window overlapping its first shell whose CN is below the whole shell's by the margin
   (`window().cnMargin.cut`) is asked about (whole shell, or keep), unless both its bounds appear in the question (or in an answer to an
@@ -2054,7 +2062,7 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 | `maxQuestions` (`MAX_QUESTIONS`) | 2 | questions | `copilot/askUser.js`, `copilot/agentLoop.js` | `ask_user` calls per question (one per round), the Workbench's included |
 | `CN_CHANGE_ABS`, `CN_CHANGE_REL` | 0.5, 0.15 | atoms, of the shell's CN | `context/shells.js` (`cnChanges`) | A window changes the answer when its CN differs from the whole shell's by at least the larger: the Workbench's CN-margin reading of a cut (`cnMarginCut`) |
 | `BONDED_REACH` | 1.4 | × the nearest shell's start | `copilot/clarify.js` | Partners offered for "around <element>" |
-| `NOISE_MARGIN` | 1.25 | × the noise floor | `copilot/clarify.js` | A ladder group must hold to this to make the tolerance a question |
+| `NOISE_FLOOR_MARGIN` | 1.25 | × the noise floor | `context/runContext.js` (`lowerGroupTolerance`) | A ladder group must hold to this to make the tolerance a question (`copilot/clarify.js`); the lower group's tolerance, `measure_symmetry_lowering`'s default and arm A+'s group (one constant since candidate 8; `NOISE_MARGIN` and the tool's own copy until 2026-10-19) |
 | `SKILL_RESULT_BUDGET` | 9 000 | characters | `copilot/skills.js` | `read_skill`'s own result budget (kept, never compacted) |
 | `POLYHEDRON_SPLIT_DEG` | 135 | ° | `copilotTools.js` | Splits cis from trans for a whole shell of 6 ± 0.5 neighbours (demo TaSe₆: 80 % at a mean 89°, 20 % at 158.8°) |
 | `MIN_OPTIONS`, `MAX_OPTIONS` | 2, 4 | options | `copilot/askUser.js` | Choices a question offers |
@@ -2072,7 +2080,7 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 | `SHELL_ONSET_FRACTION`, `SHELL_EMPTY_FRACTION` | 0.01, 0.001 | of the first peak | `context/shells.js` | Shell onset; a tail below this closes the shell |
 | `PEAK_SEARCH_MAX_A`, `BOUNDARY_REACH_A`, `CUT_SHIFT_A` | 8, 3, 0.2 | Å | `context/shells.js` | Peaks below 8 Å; the minimum closing the shell sought to max(8, r₁ + 3); the shell's top moved this far for the cut sensitivity |
 | `maxEvidenceGates` | 2 | send-backs per turn | `agentLoop.js` | The evidence gate sends an answer back at most this often, once per rule (THY-18) |
-| `CLUSTER_CN_MAX` | 4.5 | neighbours | `evidence.js` | An element whose own first shell holds at most this many may form finite clusters: "no order" needs `analyze_clusters` on it |
+| `CLUSTER_CN_MAX` | 4.5 | neighbours | `context/shells.js` (`clusterElementsOf`; `evidence.js` re-exports it) | An element whose own first shell holds 0.5 to this many neighbours may form finite clusters: "no order" needs `analyze_clusters` on it, and arm A+ tries its clusters (one rule since candidate 8) |
 | `CLUSTER_RESULT_BUDGET` | 4 500 | characters | `copilotTools.js` | `analyze_clusters`' own result budget |
 | `SPLIT_SHELL_REACH_A`, `IDEAL_COORDINATION`, `CN_MATCH_TOLERANCE` | 0.5, [4, 6, 8, 12], 0.5 | Å; atoms; atoms | `context/shells.js` | A later peak within the reach joins a shell cut at a deep trough when the summed CN is an ideal count (review L1); two counts agree within `CN_MATCH_TOLERANCE` (`cnMatches`: the Workbench's named polyhedron, the answer checks, the octahedron/tetrahedron reading; `IDEAL_CN_TOLERANCE` until 2026-10-19) |
 | `SEPARATION_G_FRACTION` | 0.02 | of the first peak | `context/shells.js` | $\tilde g$ at the shell boundary above this: shells not separated; raw $g$ just above a closest-approach constraint above this: the constraint limits the pair (one constant since 2026-10-19, for `CONSTRAINT_PILEUP_FRACTION`, `SHELL_OVERLAP_FRACTION` and `PAIR_FLAG_FRACTION`) |

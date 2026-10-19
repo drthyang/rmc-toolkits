@@ -42,6 +42,30 @@ describe('holdout tokens', () => {
     it('every kind of case has its reader', () => {
         expect(() => holdoutTokens({ id: 'x', kind: 'nope', params: {} }, [])).toThrow(/no tokens for case kind 'nope'/);
     });
+
+    it('a judgment dev case (plan 1.6 ii) never removes a token: it is an option of the kind, not its physics', () => {
+        const names = (tokens) => tokens.map((token) => `${token.kind}:${token.name}`).sort();
+        // The test case's own delta, axis and lattice parameter, in a judgment dev case.
+        const judged = { ...OFFCENTRE_DEV, id: 'dev-made-up-judged', judgment: true, params: { ...OFFCENTRE.params, elements: ['La', 'Al', 'N'] } };
+        expect(names(tokensOf(OFFCENTRE, [judged]))).toEqual(['composition:elements', 'direction:axis', 'id:id', 'magnitude:a', 'magnitude:delta']);
+        expect(tokensOf(OFFCENTRE, [OFFCENTRE_DEV, judged])).toEqual(tokensOf(OFFCENTRE, [OFFCENTRE_DEV]));
+        // Nor does its structure word make a test case's word ordinary.
+        const sites = (structure, extra = {}) => ({ id: 'x', kind: 'sites_only', ...extra, params: { structure, a: 6, sites: [{ el: 'Eu' }, { el: 'Hf' }] } });
+        expect(tokensOf(sites('spinel EuHf2'), [sites('spinel HfN', { judgment: true })]).filter((token) => token.kind === 'structure')).toHaveLength(1);
+    });
+
+    it('the judgment subset\'s options and its own kind have their readers', () => {
+        const names = (tokens) => tokens.filter((token) => token.kind !== 'id').map((token) => `${token.kind}:${token.name}`).sort();
+        const weak = { id: 'test-made-up-weak', kind: 'zone_boundary', params: { elements: ['Eu', 'Hf', 'N'], a: 4.44, axis: [1, 1, 2], q: [0.5, 0.5, 0.5], delta: 0.017, decoy: null, weak: true } };
+        expect(names(tokensOf(weak, []))).toEqual(['composition:elements', 'direction:axis', 'magnitude:a', 'magnitude:delta', 'wavevector:q']);
+        const jt = { id: 'test-made-up-jt', kind: 'jahn_teller', params: { elements: ['Eu', 'Hf', 'N'], a: 9.1, short: 1.71, long: 2.07, offCentre: { axis: [1, 1, 2], delta: 0.13 } } };
+        expect(names(tokensOf(jt, []))).toEqual(expect.arrayContaining(['direction:offCentre.axis', 'magnitude:offCentre.delta', 'magnitude:short']));
+        const octahedra = { id: 'test-made-up-octahedra', kind: 'elongated_clusters', params: { element: 'Hf', anion: 'N', a: 9.1, edge: 2.71, elongation: 0.37 } };
+        const tokens = tokensOf(octahedra, []);
+        expect(names(tokens)).toEqual(['cluster:cluster', 'composition:elements', 'magnitude:a', 'magnitude:edge', 'magnitude:elongation', 'magnitude:long edge']);
+        // The long edge is √(r0² + (r0 + elongation)²), r0 = edge/√2: 2.98 Å here.
+        expect(kindsFound('Hf₆ octahedra, edges 2.71 and 2.98 Å around Hf', tokens).sort()).toEqual(['cluster:cluster', 'magnitude:edge', 'magnitude:long edge']);
+    });
 });
 
 describe('the holdout scanner', () => {
