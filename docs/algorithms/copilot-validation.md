@@ -90,6 +90,13 @@ snapshot files pass unchanged).
   the pattern …, the partial g(r) shell (find_gr_peaks) and the bond angles"; `find_gr_peaks`' two
   split-shell notes lose "Use first_shell.window_A, not the first peak alone" and "use it only if the
   user chooses it".
+- **The evidence gate** runs and checks the same rules (decided by the manager on the user's
+  delegation, 2026-10-19), but its send-back names no analysis and no tool: "… Your answer concludes
+  "no order beyond thermal motion", but this conclusion needs its evidence from an analysis run in
+  this question. Answer from the analysis's result (quote its numbers by reference). If none can
+  run, say so in the answer instead of concluding." (arm B's names the analyses missing). The record
+  keeps the rule and the missing analyses for the reviewer (`gates`), and the end-of-turn finding
+  names them too; the model reads neither (`harness/gate-send-back.arm-B.txt`, `.arm-C.txt`).
 
 The other texts the model can receive name no analysis as method and are the same in both arms:
 the Workbench's questions and their notes, the view rules (never offered in the live arms), the
@@ -512,8 +519,9 @@ refused unless the user chose them — which the Workbench's question already as
 method sentence of `TOOL_RULES` or `ASK_RULES`, no method advice in a tool description or a check.
 What arm C is sent changes: on `dev-offcentre` its system prompt is the `tools-ask.method-off`
 variant (7,651 characters; the full method's `tools-ask` is 8,575), its tool descriptions are
-`harness/tools.arm-C.json`, and a check that carried advice reaches it without
-(`tool-results/*.method-off.json`). Arm B, the dock and arms A, A+ and D are unchanged: every
+`harness/tools.arm-C.json`, a check that carried advice reaches it without
+(`tool-results/*.method-off.json`), and the evidence gate's send-back names no analysis
+(`harness/gate-send-back.arm-C.txt`). Arm B, the dock and arms A, A+ and D are unchanged: every
 other snapshot file passes as it was. No arm C run exists under an earlier protocol. The number
 follows .8 and the .9 an open PR holds. Each record keeps the method its run followed (`method`).
 
@@ -927,7 +935,9 @@ folder, with no model and no network:
   `dev-offcentre`, captured at its model port (the files' header still calls it `callModel`, its
   name before the turn module); a test also checks arm C's request for every skill name, the
   skills' step headings, the prompt's method sentences, `EVIDENCE_RULES` and every piece of tool
-  advice;
+  advice; `harness/gate-send-back.arm-B.txt` and `.arm-C.txt`: the evidence gate's send-back on
+  the same case (a first answer that concludes "no order" with no analysis run), the message each
+  arm's model receives, beside the rule and the missing analyses the record keeps;
 - `tool-results/<tool>.json`: one result of every run tool and engine tool on the Demo, plus an
   `ask_user` answer, a `read_skill` and a window that cuts the Ta–Se shell, as the `tool` message
   the agent loop appends (budget applied, checks, `ref`, note); `*.method-off.json`: the two whose

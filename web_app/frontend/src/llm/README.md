@@ -539,7 +539,12 @@ Three rules keep an answer tied to what the engines computed in that question.
   negated, hypothetical or asked), and only in a sentence about this run: one that names an
   element of the run (Ti, Mo₃, TaSe₆) or the run itself (this structure, the clusters, site 3) — a
   definition ("A superstructure is order that enlarges the cell") needs no analysis; "no order" is
-  always about the run. The gate never asks for a tool the turn does not offer.
+  always about the run. The gate never asks for a tool the turn does not offer. Under the turn's
+  method `'off'` (the validation's arm C, *The turn*) it checks the same rules, but its send-back
+  names no analysis and no tool, since which analysis a conclusion needs is the method: "Your answer
+  concludes … , but this conclusion needs its evidence from an analysis run in this question. …"
+  (`OFF_NUDGE`). The gate event's notice and the end-of-turn finding, which the model never reads,
+  still name the missing analyses.
 - **Numbers by reference** (`copilot/references.js`). Every tool message carries a `ref` (r1,
   r2, … in the order of the turn); the model writes `{{r2.peak.significance_sigma}}` — the ref, then
   the path in the data it was shown, array items by index (`{{r3.sites.0.shift_A}}`) — or

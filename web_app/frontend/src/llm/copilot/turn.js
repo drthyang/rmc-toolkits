@@ -51,7 +51,8 @@
 // tool as offered (toolAsSent: its description with its `method` advice
 // with 'full', without it with 'off', and with 'off' its checks without
 // their advice). With 'full' every request is byte for byte what it was
-// before the switch.
+// before the switch. The evidence gate checks under both; with 'off' its
+// send-back names no analysis (loopChecks, evidence.js).
 //
 // Invariants:
 //   - ask_user is offered only with an askUser port and tools on; read_skill
@@ -245,7 +246,9 @@ const loopChecks = (plan, { run, askUser }) => {
         evidence: buildEvidenceGate({
             catalog: clarifier.catalog,
             offered: plan.offered.tools.map((tool) => tool.name),
-            elements: Object.keys(plan.context.structure?.elements || {})
+            elements: Object.keys(plan.context.structure?.elements || {}),
+            // Under method 'off' its send-back names no analysis (evidence.js).
+            method: plan.method
         }),
         auditContext: contextAuditFacts(plan.context, pointGroupFacts),
         referenceContext: plan.shown

@@ -118,3 +118,56 @@ describe(`the harness's first request (${CASE})`, () => {
         expect(c.messages.slice(1)).toEqual(b.messages.slice(1));
     });
 });
+
+// The evidence gate's send-back (THY-18), as the model receives it: the first
+// answer concludes "no order" with no analysis run, and the next request ends
+// with the gate's message. Under arm C's method 'off' the gate checks the same
+// rule but its words name no analysis and no tool.
+//
+//   harness/gate-send-back.arm-B.txt   the message, naming the analyses missing
+//   harness/gate-send-back.arm-C.txt   the message, naming none
+describe(`the evidence gate's send-back in the harness (${CASE})`, () => {
+    const sendBack = async (arm) => {
+        const model = recordingModel([
+            { text: 'There is no local order beyond thermal motion.\n\nOutcome: thermal motion only.' },
+            { text: 'Recorded.\n\nOutcome: a recorded request.' }
+        ]);
+        const record = await runLiveCase({
+            built: buildCase(DEV_CASES.find((item) => item.id === CASE)), arm, model: MODEL,
+            port: model.port, skills: arm === 'B' ? loadSkills() : null
+        });
+        expect(record.error).toBeNull();
+        expect(record.requests.map((request) => request.why)).toEqual(['first', 'gate']);
+        return { record, request: model.requests[1] };
+    };
+    const render = ({ record, request }, arm, label) => {
+        const [gate] = record.gates;
+        const message = request.messages.at(-1);
+        return [
+            `# The evidence gate's send-back in the validation harness, arm ${arm} (${label}), dev case ${CASE}`,
+            '# The first answer concludes "no order beyond thermal motion" with no analysis run: the gate sends it back.',
+            '',
+            '## The gate, as recorded (the model never reads the record)',
+            `id: ${gate.id}`,
+            `missing: ${JSON.stringify(gate.missing)}`,
+            '',
+            `## The request it makes (why: gate), its last message · messages[${request.messages.length - 1}] · ${message.role}`,
+            message.content,
+            ''
+        ].join('\n');
+    };
+
+    it('arm B names the analyses missing; arm C, the same gate, names none', async () => {
+        const [b, c] = [await sendBack('B'), await sendBack('C')];
+        // The same rule and the same missing analyses, for the record.
+        expect(c.record.gates.map(({ id, missing }) => ({ id, missing }))).toEqual(b.record.gates.map(({ id, missing }) => ({ id, missing })));
+        expect(c.record.gates[0].id).toBe('no-order');
+        const tools = /\b(?:find_gr_peaks|list_sites|analyze_[a-z_]+|compute_bond_angles|detect_symmetry|measure_symmetry_lowering|compare_fit|read_run_data|assess_convergence|ask_user|read_skill)\b/;
+        expect(b.request.messages.at(-1).content).toMatch(tools);
+        expect(c.request.messages.at(-1).content).not.toMatch(tools);
+        // Everything before the send-back is the arm's own first request and the withdrawn answer.
+        expect(c.request.messages.at(-2)).toEqual(b.request.messages.at(-2));
+        await expect(render(b, 'B', 'skills')).toMatchFileSnapshot('__snapshots__/harness/gate-send-back.arm-B.txt');
+        await expect(render(c, 'C', 'no method')).toMatchFileSnapshot('__snapshots__/harness/gate-send-back.arm-C.txt');
+    });
+});

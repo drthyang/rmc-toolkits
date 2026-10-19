@@ -101,7 +101,8 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // first_shell.first_peak_only, and its shell no longer depends on r_max);
 // 2026-10-19.10: arm C follows no method (the turn's method 'off', plan item
 // 1.8) — no EVIDENCE_RULES, no method sentence in TOOL_RULES or ASK_RULES, no
-// method advice in a tool description or a check; arm B unchanged.
+// method advice in a tool description or a check, and an evidence-gate
+// send-back that names no analysis; arm B unchanged.
 export const PROTOCOL_VERSION = '2026-10-19.10';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one

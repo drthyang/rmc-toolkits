@@ -499,6 +499,26 @@ describe('the method: full (the Copilot as it ships) and off (arm C)', () => {
         expect(JSON.stringify(requests[1].sent.messages)).not.toContain('Run another analysis');
     });
 
+    it('the evidence gate sends a conclusion back under either method; with off its words name no analysis', async () => {
+        for (const method of TURN_METHODS) {
+            const { port, requests } = scriptedPort([
+                { text: 'Ti forms a superstructure.\nOutcome: sure.' },
+                answer('No conclusion about order between cells.')
+            ]);
+            const events = await collect(runTurn(spec({ tools: [modulations()], model: port, config: { method } })));
+            expect(events.find((event) => event.type === 'gate')).toMatchObject({ id: 'order-between-cells', missing: ['analyze_modulations'] });
+            expect(requests[1].sent.messages.at(-1).role).toBe('user');
+            const nudge = requests[1].sent.messages.at(-1).content;
+            expect(nudge.startsWith('(From the app, not the user.) Your answer concludes order between cells, but ')).toBe(true);
+            if (method === 'off') {
+                expect(nudge).toContain('this conclusion needs its evidence from an analysis run in this question');
+                expect(nudge).not.toContain('analyze_modulations');
+            } else {
+                expect(nudge).toContain('this question has not run analyze_modulations. Run it');
+            }
+        }
+    });
+
     it('with tools off, the no-tools prompt under either method: it holds no method', async () => {
         for (const method of TURN_METHODS) {
             const { sent } = await firstRequest({ tools: [advised()], skills: SKILLS, config: { toolsEnabled: false, method } });

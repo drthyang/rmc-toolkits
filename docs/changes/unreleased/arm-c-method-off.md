@@ -24,3 +24,8 @@
   dock's and arm B's snapshots and the budget pins pass unchanged. A test checks arm C's first request
   for every skill name, the skills' step headings, the method sentences, `EVIDENCE_RULES` and every
   piece of tool advice. Arms A, A+ and D are unaffected.
+- The evidence gate checks the same rules under method `'off'`, but its send-back names no analysis
+  and no tool: "… but this conclusion needs its evidence from an analysis run in this question. …"
+  (`OFF_NUDGE`, decided by the manager on the user's delegation, 2026-10-19); arm B's wording is
+  unchanged. The gate's notice and finding (the step card, the record) still name the analyses.
+  Snapshots: `harness/gate-send-back.arm-B.txt` and `.arm-C.txt`.
