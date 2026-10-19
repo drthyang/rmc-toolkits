@@ -136,6 +136,8 @@ const Dashboard = ({
     }, [directory]);
 
     const loadServerDashboard = useCallback(async ({ silent = false, loadedFiles: knownFiles = null } = {}) => {
+        // A (non-silent) load of a folder: a structure still in flight is the folder's before.
+        if (!silent) structureRequestRef.current += 1;
         if (!silent) setLoading(true);
         setError(null);
         try {

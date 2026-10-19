@@ -23,9 +23,12 @@ import fixture from '../../__tests__/fixtures/structure_basis_fixture.json';
 const state = vi.hoisted(() => ({
     structure: null,
     calls: { files: 0, metadata: 0, structure: 0 },
-    // Set: each /api/structure call waits for its resolver in `pending`.
+    // Set: each /api/structure call waits for its resolver in `pending`
+    // (each /api/files call in `pendingFiles` with `deferFiles`).
     defer: false,
     pending: [],
+    deferFiles: false,
+    pendingFiles: [],
     downloads: [],
 }));
 
@@ -34,7 +37,7 @@ vi.mock('axios', () => ({
         get: vi.fn(async (url) => {
             if (url.endsWith('/api/files')) {
                 state.calls.files += 1;
-                return {
+                const listing = {
                     data: {
                         files: [
                             { name: 'GTS_250K.rmc6f', path: '/runs/a/GTS_250K.rmc6f', type: 'file', plotKind: null },
@@ -42,6 +45,8 @@ vi.mock('axios', () => ({
                         ],
                     },
                 };
+                if (state.deferFiles) return new Promise((done) => state.pendingFiles.push(() => done(listing)));
+                return listing;
             }
             if (url.endsWith('/api/plot/metadata')) {
                 state.calls.metadata += 1;
@@ -98,6 +103,8 @@ describe('Dashboard: a server folder\'s structure', () => {
         state.calls = { files: 0, metadata: 0, structure: 0 };
         state.defer = false;
         state.pending = [];
+        state.deferFiles = false;
+        state.pendingFiles = [];
         state.downloads = [];
         published = null;
         container = document.createElement('div');
@@ -184,6 +191,28 @@ describe('Dashboard: a server folder\'s structure', () => {
         expect(card()).toBeNull();
         // The older request answers last: dropped.
         await act(async () => { older(serverStructure); });
+        await flush();
+        expect(card()).toBeNull();
+        expect(published.structure).toBe(withoutBasis);
+    });
+
+    it('drops the previous folder\'s structure once another folder starts loading', async () => {
+        await render({ dataEpoch: 0 });
+        state.defer = true;
+        await render({ dataEpoch: 1 });
+        const [previousFolder] = state.pending;
+        // Another folder: its listing is still on its way when the previous
+        // folder's re-read answers -- that answer is dropped.
+        state.deferFiles = true;
+        await render({ dataEpoch: 1, directory: '/runs/b' });
+        await act(async () => { previousFolder(withoutBasis); });
+        await flush();
+        expect(headline()).toMatch(/^F-43m/);
+
+        await act(async () => { state.pendingFiles[0](); });
+        await flush();
+        expect(state.pending).toHaveLength(2);
+        await act(async () => { state.pending[1](withoutBasis); });
         await flush();
         expect(card()).toBeNull();
         expect(published.structure).toBe(withoutBasis);
