@@ -832,11 +832,14 @@ that carry no per-atom cell index.
 subsampled (`sampledAtoms`). The element rows and totals a user reads off the card are therefore
 exact even though the plotted cloud is a sample.
 
-**The field only static mode produces.** The Flask `/api/structure` response contains **no `basis`**:
-one representative site per `reference_number`, built from per-axis **circular means** of the
-within-cell fraction, with a per-site rms displacement `dispA` in Å (the Cartesian rms through the full
-cell metric). The derivation is documented in the **Model summary and the Detected SG symmetry
-finder** section; it is not repeated here.
+**The average-structure basis, from both runtimes.** `basis`: one representative site per
+`reference_number`, built from per-axis **circular means** of the within-cell fraction, with its
+moments (`mean`, `covFrac`, `count`, `elementCounts`) and a per-site rms displacement `dispA` in Å (the
+Cartesian rms through the full cell metric). The browser computes it in `structureFromRmc6f()`; Flask
+returns the same rows from `rmc_toolkits/structure_basis.py` (since plan item 4.5; before, the Flask
+response had none and the Detected SG card was static-mode only). The derivation and the parity are
+documented in the **Model summary and the Detected SG symmetry finder** section (Part A, Step 5); they
+are not repeated here.
 
 **Fields both runtimes produce.**
 
@@ -924,7 +927,13 @@ so any added, removed, resized, or re-timestamped file changes it. `WATCH_INTERV
 signature differs from `signatureRef.current`, call `loadServerDashboard({silent: true})`, which
 re-fetches `/api/plot/metadata` for every plot file and `/api/structure`. `pollInFlightRef` blocks
 overlapping polls. `silent: true` suppresses the loading spinner and preserves the user's
-hidden-chart selection. Freshness is `st_mtime` (seconds, float) plus byte size.
+hidden-chart selection. Freshness is `st_mtime` (seconds, float) plus byte size. The structure alone
+is also re-read (`loadServerStructure({silent: true})`) when App's configuration epoch moves — the
+`dataEpoch` prop, bumped when the `.rmc6f` entries of `/api/files` change, on a Load of the same folder
+too ([notation.md](notation.md) §3c) — so the Model information card, the Detected SG card and the
+basis the Copilot's symmetry tools read follow the configuration the analysis pages read even with
+Live Data off. Every structure request is numbered and only the latest one's answer is applied
+(a poll and an epoch re-read in flight together, or a request for the folder open before).
 
 **Static mode** (`App.jsx`, the `fsAccess && watchFiles` effect): every 3 s,
 `buildLocalRunFromHandle(dirHandleRef.current)` re-walks the picked directory handle recursively.
@@ -2487,11 +2496,15 @@ issue `GET /api/structure`, and the endpoint
 ([`web_app/backend/app.py`](../../web_app/backend/app.py) → `structure()`) returns
 `latticeVectors`, `supercell`, `elementCounts`, `atomIndices`, `totalAtoms` and sampled `points`
 produced by the Python parsers; only the *derived* quantities (edge lengths, angles) are computed in
-JS on that path. It also carries the header's move counters (`moves`, Step 2b) and the atom-line
-`parseReport` / `parseWarning` (Step 2). The response carries **no `basis` field**, so in Flask mode the *Detected SG* card
-is suppressed entirely (`describeSymmetry` returns `null` without a basis). The symmetry analysis
-exists only on the browser-parsed path (`browserData.structureFromRmc6f`), which is used in static
-mode and whenever a local run folder is selected.
+JS on that path. It also carries the header's move counters (`moves`, Step 2b), the atom-line
+`parseReport` / `parseWarning` (Step 2) and, since plan item 4.5, the **average-structure basis**
+`basis` (Step 5), computed by [`rmc_toolkits/structure_basis.py`](../../rmc_toolkits/structure_basis.py)
+from the same read, row for row what `browserData.structureFromRmc6f` gives a browser-loaded run. So
+the *Detected SG* card, its CIF export and the AI Copilot's `detect_symmetry` /
+`measure_symmetry_lowering` exist for a server folder too: the finder itself still runs only in the
+browser, but its input comes from either runtime. Through 0.7.0 the response had no `basis` and the
+card was suppressed in Flask mode (`describeSymmetry` returns `null` without a basis — as it still does for
+a coords-only file, whose basis is empty).
 
 #### Notation and units
 
@@ -2845,6 +2858,24 @@ reference-number column alone — has two visible consequences:
    a single pure species, and the element-equality matching of Step 9 (property 2) treats it as such.
 
 **Code**: `browserData.js` → `structureFromRmc6f()`, the `rnAcc` accumulator and the `basis` map.
+
+**Python counterpart** (Flask mode): [`rmc_toolkits/structure_basis.py`](../../rmc_toolkits/structure_basis.py)
+→ `structure_basis(atoms, lattice_vectors, supercell)` (and `read_structure_basis(path)`), which
+`/api/structure` returns as `basis` from the same parse as the rest of its payload. It takes the
+browser's floating-point steps in the browser's order — the same fold
+$((x_i N_i) \bmod 1 + 1) \bmod 1$ with C's `fmod`, the per-site sums in file order (`np.bincount`),
+`Math.round`'s rule for the wrap ($\operatorname{round}$ sends a tie towards $+\infty$:
+`_round_half_up`, since `np.round` sends it to the even neighbour), the same products and sums for
+$\Delta\mathbf r$, `mean` and `covFrac`, and the first atom's species for `el` — so the two runtimes
+differ only where their `cos`/`sin`/`atan2` do: on the demo run by at most $2.3\times10^{-16}$ in
+`frac`, $8\times10^{-17}$ Å in `dispA` and $1.3\times10^{-19}$ in `covFrac`. The golden
+`structure_basis_fixture.json` (`tests/generate_structure_basis_fixture.py`: the demo run, a synthetic
+oblique-cell configuration with an edge-straddling, a mixed, a split, a correlated, a still and a
+one-copy site plus coords-only atoms, and a coords-only file) holds `structureFromRmc6f` to it at
+$10^{-12}$ (`structureBasisParity.test.js`), and the server's demo basis gives the browser's ladder,
+orbits and CIF byte for byte; `tests/test_structure_basis_fixture.py` keeps the golden current. A
+basis holding NaN or Infinity (a coordinate so large that $x_i N_i$ overflows) is a computed result,
+so the route refuses it with a 400 (`_require_finite_basis`) instead of nulling it like a data point.
 
 #### What Model information does *not* compute
 
@@ -3551,7 +3582,8 @@ AI assistant, gated on `wantAssistantData` so it stays idle until the assistant 
 The two parts run in **different places**. Parsing and the average-structure basis (Steps 1–5,
 `structureFromRmc6f`) run inside [`workers/localStructureWorker.js`](../../web_app/frontend/src/workers/localStructureWorker.js),
 a Web Worker, in browser-local mode — so the $O(N_\mathrm{atoms})$ pass is off the main thread (in
-Flask mode the equivalent work happens server-side in Python). The **symmetry finder** (Steps 6–14,
+Flask mode the equivalent work happens server-side in Python: the parsers and
+`structure_basis.py`, about 10 % of the parse's time on the demo run). The **symmetry finder** (Steps 6–14,
 `describeSymmetry` / `toleranceLadder`) is the part that runs **synchronously on the main thread**
 inside `useMemo`, unlike the KDE and PCA-KDE paths, which use Web Workers.
 
@@ -3879,9 +3911,12 @@ Problems row.
 - **Orbits and site symmetries are evaluated at a looser radius than the group.** `siteOrbits` is
   called with the raw $\tau$, not with the `maxResidual` at which the group was accepted (Step 14).
 - **No cell volume, no number density** is reported by this page (see the note after Step 5).
-- **Flask/server-directory mode has no Detected SG card** — `/api/structure` returns no basis. Its
-  parser is no longer the difference: since 0.6.0 both runtimes share one atom-line grammar, read
-  coords-only lines, and capitalize element tokens the same way (Step 2).
+- **A server folder and a picked folder give the same card.** Through 0.7.0 Flask/server-directory
+  mode had no Detected SG card, because `/api/structure` returned no basis; it now returns the basis
+  `structure_basis.py` computes, the browser's rows to round-off (Step 5), and the server's demo basis
+  gives the browser's ladder, orbits and CIF byte for byte. The finder still runs in the browser in
+  both. Since 0.6.0 both runtimes also share one atom-line grammar, read coords-only lines and
+  capitalize element tokens the same way (Step 2).
 - **What the tests pin.** `symmetry.test.js` recovers all 230 fixture groups (built from ITA
   generators) from their atoms, names rocksalt, perovskite, diamond, hcp and an I4/mcm perovskite,
   and checks the point-group and space-group tables; `symmetrySettings.test.js` names the 230

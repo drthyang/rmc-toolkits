@@ -21,7 +21,8 @@
 //     files:         as the Dashboard holds them (plotKind from
 //                    detectPlotKind; plotData or parseError once parsed)
 //     structure:     the parsed .rmc6f (structureFromRmc6f, maxPoints 100),
-//                    or Flask's /api/structure, or null
+//                    or Flask's /api/structure (the same fields, the
+//                    average-structure basis included), or null
 //     structurePath: the .rmc6f the Model card describes (picks the χ² logs)
 //     settings:      the parsed <stem>.dat, or null (always null in Flask mode)
 //     engine:        (kind, params, { signal }) => Promise<payload>, or null
@@ -100,8 +101,8 @@ export const runLadder = (structure, ladder) => (
 
 /**
  * The Detected SG card at the view's tolerance, with that tolerance and the
- * ladder; null with no structure, no basis (Flask mode, a coords-only .rmc6f,
- * before load) or no result.
+ * ladder; null with no structure, no basis (a coords-only .rmc6f, a server
+ * before /api/structure sent one, before load) or no result.
  */
 export const runSymmetry = (structure, toleranceA, ladder) => {
     if (!structure?.basis?.length) return null;

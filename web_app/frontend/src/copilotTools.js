@@ -1459,8 +1459,10 @@ const elementProperty = (elements, description) => (
  * The analysis tools for one run. `request(kind, params, { signal })` runs an
  * engine request (worker or Flask) and stops when `signal` aborts; null means
  * no engine is reachable (the static build with no run). `structure` is the
- * Dashboard's parsed structure; its `basis` (browser-loaded runs only) enables
- * detect_symmetry. Model arguments reach the engines only through the explicit
+ * Dashboard's parsed structure; its average-structure `basis` (a browser-loaded
+ * run's structureFromRmc6f, or a server folder's /api/structure; none for a
+ * coords-only file) enables detect_symmetry and measure_symmetry_lowering.
+ * Model arguments reach the engines only through the explicit
  * mapping in each run(), never by spreading.
  */
 export const buildCopilotTools = ({ request, structure, elements = [] }) => {
