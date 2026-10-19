@@ -127,6 +127,12 @@ drafts of batch 1 wait in PR #71 for the user's review.
     [copilot-validation.md](algorithms/copilot-validation.md#the-holdout-scan). PR #71's skill
     drafts carry the same leak and nothing else. This plan is scanned too, so it points at the
     leak without naming it.
+  - **Resolved (2026-10-19, protocol 2026-10-19.2):** the test breathing case was recomposed, not
+    the skill: a composition a fresh author chose without dev results, named by no skill (main or
+    PR #71's drafts) or snapshot, its seed from a rule fixed before looking. The open-leak list is
+    empty; arm A / A+ test scores are unchanged. Approved by the manager on the user's delegation;
+    the user may reverse it ([copilot-validation.md](algorithms/copilot-validation.md), Protocol
+    2026-10-19.2).
 
 ### The A+ ceiling: what the validation can still measure
 

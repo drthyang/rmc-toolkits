@@ -24,7 +24,8 @@ const REPO = resolve(FRONTEND, '../..');
 // sha256 of every test case as built (configuration, partial g(r), truth).
 // Change only with a dated note in docs/algorithms/copilot-validation.md:
 // results on the old test set are not comparable with the new one.
-const TEST_SET_SHA256 = '56dff6c3ad2ae830e7ba1e57bf05fa9bb840eeefc08652f21cd3f09c761b6327';
+// 2026-10-19 (protocol 2026-10-19.2): test-breathing recomposed.
+const TEST_SET_SHA256 = '18de4a64126a7f10984fe21a97025b2199c170efb265fbe5c099d56239cf4d3c';
 
 const filesUnder = (dir, keep) => readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
@@ -64,8 +65,7 @@ describe('the dev / test split', () => {
 // skill file, the Python package, docs/ and the top-level docs. Not scanned:
 // the validation itself (web_app/frontend/validation/**, which must name its
 // cases) and copilot-validation.md, whose Cases table names every test case.
-// docs/AGENT_PLAN.md is scanned: it points at the overlap below without
-// naming it.
+// docs/AGENT_PLAN.md is scanned.
 const NOT_SCANNED = new Set(['docs/algorithms/copilot-validation.md']);
 const scannedFiles = () => [
     ...filesUnder(join(FRONTEND, 'src'), (path) => /\.(js|jsx|md)$/.test(path) || path.includes('__snapshots__')),
@@ -87,24 +87,10 @@ const scannedFiles = () => [
 // snapshot of what the model sees, and no app module can import it (checked
 // below). copilot-validation.md lists these as known risks.
 const HOLDOUT_ALLOWED = [
-    // FOUND 2026-10-19, reviewed: the skills' reference compound's cluster
-    // (the test breathing case's cluster) in text no model reads.
-    {
-        file: 'web_app/frontend/src/llm/README.md', case: 'test-breathing', kind: 'cluster', count: 1,
-        reason: 'doc-only: the module README (the real-model check\'s 5 K question); no app module imports it, read_skill bundles only .claude/skills'
-    },
-    {
-        file: 'web_app/frontend/src/workers/__tests__/triplets.test.js', case: 'test-breathing', kind: 'cluster', count: 1,
-        reason: 'test-only: a synthetic cluster in a bond-angle engine test; no app module imports it'
-    },
-    {
-        file: 'docs/algorithms/ai-assistant.md', case: 'test-breathing', kind: 'cluster', count: 2,
-        reason: 'doc-only: the cluster engine\'s synthetic checks; docs/ is never bundled'
-    },
-    {
-        file: 'docs/algorithms/bond-geometry.md', case: 'test-breathing', kind: 'cluster', count: 1,
-        reason: 'doc-only: among the bond-angle engine\'s test geometries; docs/ is never bundled'
-    },
+    // The four 2026-10-19 entries for the test breathing case's old cluster
+    // (the skills' reference compound's) left with protocol 2026-10-19.2: the
+    // case was recomposed and nothing names its new cluster.
+    //
     // FOUND 2026-10-19, reviewed: a real-compound fixture of the symmetry
     // finder (an orthorhombic Pnma perovskite) whose composition is the test
     // symmetry-lowering case's, unrelated to the planted shift. Imported only by
@@ -120,12 +106,12 @@ const HOLDOUT_ALLOWED = [
 // allowed hits: printed on every run, pinned line by line so a change shows,
 // and left for the user, whose text the skills are. The scan still fails on
 // any hit in neither list. copilot-validation.md lists them as open leaks.
-const LEAK_STATUS = 'reaches arm B via read_skill; awaiting the user\'s decision (skill text is the user\'s)';
-const HOLDOUT_LEAKS_PENDING_USER = [9, 31, 32].map((line) => ({
-    // The skills' reference compound has the test breathing case's cluster,
-    // and this reference file describes its published distortion.
-    file: '.claude/skills/coordination-shells/lacunar-spinel-shells.md', line, case: 'test-breathing', kind: 'cluster', count: 1, status: LEAK_STATUS
-}));
+// An entry is { file, line, case, kind, count, status }, the status saying
+// how the text reaches the model and that it awaits the user's decision.
+// Empty since protocol 2026-10-19.2: the three lines of
+// coordination-shells/lacunar-spinel-shells.md named the test breathing
+// case's old cluster, and the case was recomposed instead of the skill.
+const HOLDOUT_LEAKS_PENDING_USER = [];
 
 // Every file the model can read: the skill files copilotSkills.js bundles
 // for the prompt and read_skill, anything under .claude/skills, and the
@@ -281,6 +267,24 @@ describe('where a finding stands, and validation batch 1', () => {
         expect(tools.map((finding) => finding.kind).sort()).toEqual(['bug', 'bug', 'bug', 'missing-tool', 'missing-tool', 'orchestration']);
         for (const label of ['L1', 'L2', 'L3', 'L4', 'L5']) {
             expect(tools.some((finding) => finding.evidence.includes(label)), label).toBe(true);
+        }
+    });
+
+    // Decisions on the validation itself, in the same form. The schema's
+    // approval is the user's; a decision taken on the user's delegation says
+    // so in its evidence and proposed fix.
+    it('decisions: the recomposed test breathing case, approved on the user\'s delegation and implemented with its commit', () => {
+        const results = parseFindings(readFileSync(join(FRONTEND, 'validation/findings/decisions.jsonl'), 'utf8'));
+        results.forEach((result) => expect(result.errors, `line ${result.line}`).toEqual([]));
+        const findings = results.map((result) => result.finding);
+        expect(findings).toHaveLength(1);
+        const [recomposed] = findings;
+        expect(recomposed).toMatchObject({
+            case: 'test-breathing', kind: 'bug', status: 'implemented', needs_user_approval: true,
+            approval: { by: 'user', date: '2026-10-19', batch: 2 }
+        });
+        for (const field of ['evidence', 'proposed_fix']) {
+            expect(recomposed[field], field).toMatch(/approved by the manager on the user's delegation, 2026-10-19/i);
         }
     });
 });

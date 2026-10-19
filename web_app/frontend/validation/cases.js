@@ -506,7 +506,7 @@ export const TEST_CASES = [
         id: 'test-zone-boundary', kind: 'zone_boundary',
         params: { elements: ['Ca', 'Zr', 'O'], a: 4.1, supercell: [8, 8, 8], q: [0.5, 0.5, 0.5], axis: [1, 0, 0], delta: 0.09, decoy: { axis: [0, 0, 1], q: [0, 0.125, 0], amp: 0.12 }, seed: 202 }
     },
-    { id: 'test-breathing', kind: 'breathing', params: { shape: 'tetrahedron', element: 'Nb', anion: 'Se', a: 7.4, edge: 2.95, breathe: 0.035, sigma: 0.05, supercell: [8, 8, 8], seed: 203 } },
+    { id: 'test-breathing', kind: 'breathing', params: { shape: 'tetrahedron', element: 'Fe', anion: 'Cl', a: 6.90, edge: 2.75, breathe: 0.035, sigma: 0.05, supercell: [8, 8, 8], seed: 732 } },
     { id: 'test-jahn-teller', kind: 'jahn_teller', params: { elements: ['Rb', 'Mn', 'Cl'], a: 9.5, short: 2.48, long: 2.85, sigma: 0.06, supercell: [6, 6, 6], seed: 204 } },
     { id: 'test-cell-wrap', kind: 'rigid_dimer', params: { element: 'Ti', a: 5.2, axis: 2, bond: 2.29, sigmaCommon: 0.07, sigmaOwn: 0.012, supercell: [8, 8, 8], seed: 205 } },
     { id: 'test-thermal-null', kind: 'thermal_null', params: { elements: ['Pb', 'Ti', 'O'], a: 3.97, supercell: [8, 8, 8], seed: 206 } },
