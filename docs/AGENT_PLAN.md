@@ -54,7 +54,11 @@ drafts of batch 1 wait in PR #71 for the user's review.
   message (`src/llm/context/runContext.js:422`, `src/llm/prompts/copilot.js:109,163`). So every
   arm B and C run is told which kind of case it is ("dev-zone-boundary"). `harness.js:13-14`
   promises the opposite, and the holdout scan reads only source text, so it cannot see this.
-  Fixed first (B and C, item a).
+  Fixed first (B and C, item a). **Fixed (protocol 2026-10-19.1):** every case is loaded as one
+  run, `rmc_run`, with files `rmc_run.rmc6f` and `rmc_run_PDFpartials.csv` (`runFolder.js`
+  `RUN_NAME`, `RUN_FILES`), and `run.js write` names the run folder the same way.
+  `src/__tests__/modelVisible/caseBlind.test.js` checks the first request of every case (dev and
+  test, arms B and C) and every tool's results on the dev cases for the case id and kind.
 - **The warmer retry is lost in the harness.** After a looping reply the loop asks again with
   `antiRepeat` (`src/llm/copilot/agentLoop.js:374`).
   - **The app** raises the temperature to at least 0.6 for that request (`useCopilot.js:48,148-151`).
@@ -163,7 +167,7 @@ user decided on 2026-10-19:
 
 | # | Deepening | Strength · dependency | Decision |
 | --- | --- | --- | --- |
-| a | **The case-id leak** (a bug, not a deepening). The harness names the run after the case id (`validation/runFolder.js:30`), which reaches the model as `context.run` in the first message (`src/llm/context/runContext.js:422`). Every arm B and C run is told its case kind. | — | Start, first |
+| a | **The case-id leak** (a bug, not a deepening). The harness names the run after the case id (`validation/runFolder.js:30`), which reaches the model as `context.run` in the first message (`src/llm/context/runContext.js:422`). Every arm B and C run is told its case kind. | — | Start, first: **fixed** (protocol 2026-10-19.1) |
 | 2 | **The run as the Copilot sees it.** One module turns a run's files and the view state into the Copilot's run. Today App, Dashboard and useAssistant each hold a piece, and the harness copies them (`runFolder.js:15-38`). The browser and the harness become its two adapters. | Strong · local-substitutable | Start, second |
 | 1 | **The turn.** One module runs one question. Today `useCopilot.js:126,137-181` and `harness.js:75-132` each assemble the turn, and they have drifted apart: the harness loses the warmer retry, the no-tools prompt and the tools-on rule, and the gate setup is copied in both. The dock and the harness become its two adapters, and the module emits each request as it was sent. | Strong · mock (model port) | Start, third |
 | C | **Arm C's "method off" switch** in the turn module (1.8). | — | Start, after 1 |
@@ -312,7 +316,7 @@ The candidates of B and C, in this order. Each is one PR, stacked on the one bef
 
 | PR | Change | Size |
 | --- | --- | --- |
-| a | **The case-id leak.** The harness gives the run a neutral name; a test asserts that no case id or kind reaches the model. The model-visible snapshot changes by the run name only. | S |
+| a | **The case-id leak.** The harness gives the run a neutral name; a test asserts that no case id or kind reaches the model. The model-visible snapshot changes by the run name only. **(this PR:** `rmc_run`, `caseBlind.test.js`, protocol 2026-10-19.1**)** | S |
 | 2 | **The run module** (candidate 2). The browser and the harness are its two adapters; the harness records the view state it chose. | M |
 | 1 | **The turn module** (candidate 1). The dock and the harness are its two adapters; it emits each request as sent. | L |
 | C | **Arm C's "method off" switch** in the turn module (1.8). Arm C's snapshot is checked for skill names and the method sentences. | M |
