@@ -7,9 +7,10 @@
 // arm-A numbers come from the CLI (`arm-a --split test --final`), never here.
 
 import { describe, expect, it } from 'vitest';
+import { elementDensity, firstShell } from '../../src/llm/context/pairCorrelations';
 import { buildCase, DEV_CASES } from '../cases';
 import { loadRun } from '../runFolder';
-import { runArmA, runArmSweep } from '../armA';
+import { ARM_A_RULES, runArmA, runArmSweep } from '../armA';
 import { scoreVerdict } from '../scoring';
 
 const runBoth = async (item) => {
@@ -17,7 +18,7 @@ const runBoth = async (item) => {
     const run = loadRun(built, { ladder: false });
     const a = await runArmA(run);
     const sweep = await runArmSweep(run);
-    return { built, a, sweep, scoreA: scoreVerdict(built.truth, a.verdict), scoreSweep: scoreVerdict(built.truth, sweep.verdict) };
+    return { built, run, a, sweep, scoreA: scoreVerdict(built.truth, a.verdict), scoreSweep: scoreVerdict(built.truth, sweep.verdict) };
 };
 
 // [case, arm A score, arm A spurious claims, A+ score, A+ spurious claims]
@@ -26,6 +27,8 @@ const runBoth = async (item) => {
 // from 0.8333 to 1 (the shift is named); every other pin is unchanged.
 // Plan item 4.6: dev-fit-unconverged (dev only), scored on its
 // structure (no order, Fm-3m); its fit files change nothing the arms read.
+// Plan item 1.6 ii: the judgment subset (dev only), the last five; every pin
+// above them is unchanged.
 const BAR = [
     ['dev-offcentre', 1, [], 1, []],
     ['dev-zone-boundary', 0.6667, ['off_centre Ti'], 1, []],
@@ -36,7 +39,12 @@ const BAR = [
     ['dev-symmetry-lowering', 0.3333, [], 1, []],
     ['dev-chirality-trap', 1, [], 1, []],
     ['dev-chiral', 1, [], 1, []],
-    ['dev-fit-unconverged', 1, [], 1, []]
+    ['dev-fit-unconverged', 1, [], 1, []],
+    ['dev-jt-off-centre', 0.8571, [], 0.8571, []],
+    ['dev-eight-site', 0.6667, ['jahn_teller Nb'], 0.6667, ['jahn_teller Nb']],
+    ['dev-octahedral-clusters', 0.8333, [], 0.8333, []],
+    ['dev-weak-order-a', 0.8333, [], 1, []],
+    ['dev-weak-order-b', 0.8333, [], 0.8333, []]
 ];
 
 describe('the model-free arms on the dev cases (the bar)', () => {
@@ -82,4 +90,60 @@ describe('the model-free arms on the dev cases (the bar)', () => {
         expect(jt.sweep.readings.find((r) => r.page === 'analyze_clusters').value)
             .toMatchObject({ distorted: 'true (axis_family)', splitMemberSites: 'true (half_or_more_split)', rigid: 'false (split_sites)' });
     });
+
+    // The room a model has (plan 1.6 ii): on each judgment case, which of
+    // A+'s fixed rules misses or misreads the planted truth, read from its
+    // own readings, and that the engines hold the right answer.
+    it('the judgment subset: where A+\'s fixed joining rules fail, the readings show which rule', async () => {
+        const judged = (id) => runBoth(DEV_CASES.find((item) => item.id === id));
+        const found = (score) => score.features.map((feature) => `${feature.planted ?? feature.kind}:${feature.found}`);
+
+        // Two features: Ag is split, and by rule a split centre explains its
+        // own split shell, so the Jahn–Teller elongation is never claimed.
+        const two = await judged('dev-jt-off-centre');
+        expect(two.sweep.readings.find((r) => r.page === 'Dashboard partial g(r)').value.peaks_A).toHaveLength(2);
+        expect(two.sweep.verdict.features.some((feature) => feature.kind === 'jahn_teller')).toBe(false);
+        expect(found(two.scoreSweep)).toEqual(['jahn_teller:false', 'off_centre:true']);
+
+        // Two readings: the eight wells average to a round Nb ellipsoid, so
+        // no split site; the 3 + 3 shell it leaves unexplained becomes a
+        // Jahn–Teller claim. The direction map at a finer tiling has the
+        // <111> lobe that the default one does not resolve.
+        const eight = await judged('dev-eight-site');
+        const nb = eight.sweep.readings.find((r) => r.page === 'PCA Ellipsoid' && r.what.endsWith('Nb'));
+        expect(nb.reading).toBe('thermal ellipsoid');
+        expect(nb.value.pc1_over_pc2).toBeLessThan(ARM_A_RULES.PROLATE_RATIO);
+        expect(found(eight.scoreSweep)).toEqual(['off_centre:false']);
+        const engine = (await eight.run).engine;
+        const coarse = await engine('orientation', { referenceNumber: 2 });
+        const fine = await engine('orientation', { referenceNumber: 2, frequency: 3 });
+        expect(coarse.peakSignificance).toBeLessThan(ARM_A_RULES.SIGMA);
+        expect(coarse.mapSignificance).toBeGreaterThan(ARM_A_RULES.SIGMA);
+        expect(fine.peakSignificance).toBeGreaterThan(ARM_A_RULES.SIGMA);
+        expect(fine.peakDirection.map((value) => Math.abs(value))).toEqual(fine.peakDirection.map(() => expect.closeTo(1 / Math.sqrt(3), 2)));
+
+        // A choice only the user can make: A+ cuts the W–W shell at its first
+        // trough, where no edge of the average octahedron lies; the whole
+        // shell, as the Workbench joins it (CN 4), holds the distorted octahedra.
+        const octahedra = await judged('dev-octahedral-clusters');
+        expect(octahedra.sweep.readings.find((r) => r.page === 'analyze_clusters').reading).toBe('no clusters: no_clusters');
+        const run = await octahedra.run;
+        const ww = run.props.plotFiles.find((file) => file.plotKind === 'pdf_partials').plotData.series.find((s) => s.label.trim() === 'W-W');
+        const density = elementDensity(run.props.structure, 'W');
+        const shell = firstShell(ww.x, ww.y, { partnerDensity: density, centreDensity: density });
+        expect(shell.split).toBeTruthy();
+        expect((await run.engine('clusters', { element: 'W', rMin: shell.onsetR, rMax: shell.boundaryR })).verdict.distorted.answer).toBe(true);
+
+        // A signal at the edge of significance: one weak order, a seed on
+        // each side of the fixed 3σ bar; A+ claims the one above only.
+        for (const [id, ordered] of [['dev-weak-order-a', true], ['dev-weak-order-b', false]]) {
+            const weak = await judged(id);
+            const payload = await (await weak.run).engine('modulations', {});
+            const point = payload.elements.find((entry) => entry.element === 'Nb').zoneBoundary.find((entry) => entry.q.join() === '0.5,0.5,0');
+            expect(point.sigma, id).toBeGreaterThanOrEqual(2.5);
+            expect(point.sigma, id).toBeLessThanOrEqual(4);
+            expect(point.ordered, id).toBe(ordered);
+            expect(found(weak.scoreSweep), id).toEqual([`modulation:${ordered}`]);
+        }
+    }, 120000);
 });

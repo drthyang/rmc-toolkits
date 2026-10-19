@@ -50,6 +50,47 @@ export const aggregate = (records) => {
 const distinct = (values) => [...new Set(values)];
 const tokens = (count) => Math.round(count).toLocaleString('en-US');
 
+// The judgment subset's situations in the report's order (cases.js
+// JUDGMENT_SITUATIONS), with their column headings.
+const SITUATION_COLUMNS = Object.freeze([
+    ['two_features', 'Two features'],
+    ['marginal', 'At the edge of significance'],
+    ['two_readings', 'Two tools read differently'],
+    ['user_choice', 'The user\'s choice']
+]);
+
+/**
+ * The judgment subset of one split (plan item 1.6 ii): each column's mean
+ * score over the cases of each situation, over the whole subset and over the
+ * rest of the split, every run counted (a failed run scores 0), with the
+ * number of cases. A case is a judgment case when its record's truth says so
+ * (`truth.judgment.situation`, cases.js buildCase). Lines of Markdown; none
+ * when the split has no judgment case.
+ */
+export const renderJudgment = (cells) => {
+    const situationOf = (cell) => cell.runs.find((run) => run.truth?.judgment)?.truth.judgment.situation ?? null;
+    if (!cells.some(situationOf)) return [];
+    const columns = distinct(cells.map((cell) => cell.column)).sort();
+    const summary = (mine) => {
+        const scores = mine.flatMap((cell) => cell.runs.map((run) => run.score?.score ?? 0));
+        return mine.length ? `${fmt(mean(scores))} (${mine.length})` : '–';
+    };
+    const lines = [
+        '**The judgment subset** (plan item 1.6 ii, dev only until its held-out version): cases where A+\'s fixed joining rules are '
+            + 'ambiguous or wrong, so a model has room to add. Mean score (cases), every run counted:', '',
+        `| Column | ${SITUATION_COLUMNS.map(([, heading]) => heading).join(' | ')} | Judgment subset | The rest |`,
+        `| --- | ${SITUATION_COLUMNS.map(() => '---').join(' | ')} | --- | --- |`
+    ];
+    columns.forEach((column) => {
+        const mine = cells.filter((cell) => cell.column === column);
+        const cellsOf = (situation) => mine.filter((cell) => situationOf(cell) === situation);
+        lines.push(`| ${column} | ${SITUATION_COLUMNS.map(([situation]) => summary(cellsOf(situation))).join(' | ')} | `
+            + `${summary(mine.filter(situationOf))} | ${summary(mine.filter((cell) => !situationOf(cell)))} |`);
+    });
+    lines.push('');
+    return lines;
+};
+
 // What no run policy sets: each server's or model's own, the same request or not.
 export const NOT_IN_THE_POLICY = Object.freeze([
     'sampling beyond the temperature (top_p, top_k, min_p, the repetition penalty): each server\'s or model\'s defaults, never sent',
@@ -158,6 +199,7 @@ export const renderReport = (records, { title = 'Copilot validation runs' } = {}
                 + `${mine.reduce((sum, cell) => sum + cell.unsourced, 0)}/${mine.reduce((sum, cell) => sum + cell.numbers, 0)} |`);
         });
         lines.push('');
+        renderJudgment(inSplit).forEach((line) => lines.push(line));
         lines.push('| Column | Evidence gate: send-backs / runs still missing evidence | Numbers by reference: filled / unknown | Computed verdict: earned / over / under / held |');
         lines.push('| --- | --- | --- | --- |');
         columns.forEach((column) => {

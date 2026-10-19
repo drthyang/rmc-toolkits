@@ -87,8 +87,12 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // 2026-10-19.7: the model port — an Ollama run's final request carries no
 // tools (tool_choice 'none' enforced; the native API has none), each request
 // as sent keeps the context guard's plan, and a request the guard refuses is
-// not recorded as sent).
-export const PROTOCOL_VERSION = '2026-10-19.7';
+// not recorded as sent;
+// 2026-10-19.9: the judgment subset joins the dev set (plan item 1.6 ii:
+// cases where A+'s fixed joining rules are ambiguous or wrong; dev only until
+// a fresh author writes their held-out matches), so a dev batch now holds
+// them, and its means are not an earlier batch's).
+export const PROTOCOL_VERSION = '2026-10-19.9';
 
 export const ARMS = Object.freeze({
     B: { skills: true, label: 'Copilot with skills and guardrails' },
