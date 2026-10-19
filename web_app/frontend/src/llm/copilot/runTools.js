@@ -268,22 +268,22 @@ const grPeaksTool = (run, cardIds) => {
     const catalogue = shellCatalogue(run);
     return {
         name: 'find_gr_peaks',
-        description: 'Analyse one partial g(r) (from the run\'s partial-PDF file) below r_max: the peaks '
-            + '(position, approximate FWHM) and the first coordination shell — its window from onset to the '
-            + 'first deep minimum (use first_shell.window_A for compute_bond_angles: it holds the whole shell, '
-            + 'split shells included), mean distance and spread from r²g(r), coordination numbers in both '
-            + 'directions with their sensitivity to the cut, whether the shell is separated from the next, '
+        description: 'Analyse one partial g(r) (from the run\'s partial-PDF file): its peaks below r_max '
+            + '(position, approximate FWHM) and its first coordination shell, which does not depend on r_max — the '
+            + 'window from onset to the first deep minimum (use first_shell.window_A for compute_bond_angles: it holds '
+            + 'the whole shell, split shells included), mean distance and spread from r²g(r), coordination numbers in '
+            + 'both directions with their sensitivity to the cut, whether the shell is separated from the next, '
             + 'and whether the pair\'s hard minimum-distance constraint cuts the distribution.',
         parameters: {
             type: 'object',
             properties: {
                 pair: { type: 'string', enum: labels, description: 'Element pair, as labelled in the partials file.' },
-                r_max: { type: 'number', minimum: 1, maximum: 20, description: 'Search up to this r (Å). Default 6.' },
+                r_max: { type: 'number', minimum: 1, maximum: 20, description: 'List the peaks up to this r (Å). Default 6.' },
                 max_peaks: { type: 'integer', minimum: 1, maximum: 8, description: 'Default 3.' }
             },
             required: ['pair']
         },
-        // No peak: pair, r_max_A and peaks_A [] only. The cn keys name the
+        // No peak below r_max and no shell: pair, r_max_A and peaks_A [] only. The cn keys name the
         // count each way, <partner>_per_<centre> (Se_per_Ta). The first peak
         // alone (first_peak_only) only for a shell of two or more resolved
         // peaks; its cn only with the cell.

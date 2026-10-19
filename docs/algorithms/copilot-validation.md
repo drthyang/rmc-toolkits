@@ -404,8 +404,8 @@ integrated their own way. What the model sees changes:
 2. **`find_gr_peaks`:** `first_peak_window_A` leaves; the first peak is `first_shell.first_peak_only`
    (window, CN, trough) for every shell of two or more resolved peaks, and the split-shell note
    gives its CN; the shell no longer depends on `r_max` (a pair whose first peak lies above it gets
-   a note and the shell, where it got "no peak"); the constraint warning loses its FWHM clause
-   (nothing moved on the Demo or the dev cases).
+   a note and the shell, where it got "no peak"), and the tool's description says so; the
+   constraint warning loses its FWHM clause (nothing moved on the Demo or the dev cases).
 3. **The context's `pair_correlations`:** peaks below 8 Å (the Demo's Ga–Ga 7.33 Å, Ga–Ta's second
    peak), `first_peak_to_A` / `first_peak_cn` for every shell of two or more resolved peaks (the
    Demo's Ta–Se and Se–Se, dev-offcentre's K–Nb and Nb–O), and each CN integrated over exactly the
@@ -414,10 +414,11 @@ integrated their own way. What the model sees changes:
 4. **The Workbench's "First peak only"** on the Demo: 2.21–2.65 Å, CN 3.2 (was 2.33–2.71 Å, 3.9).
 
 The snapshots moved where expected: `find_gr_peaks.json`, `dock/first-request.txt` and
-`harness/first-request.arm-B.txt` (the context); the `compute_bond_angles` snapshots did not (the
-cut rule is unchanged; only its no-angles advice now points at `first_shell.window_A`). The dock's
-worst turn grows by 74 tokens (38,636 needed, 10,516 to spare at 48k; `contextBudget.test.js`);
-arm B's worst (dev-fit-unconverged) is unchanged. Live runs under earlier protocols are not
+`harness/first-request.arm-B.txt` (the context), and the two `tools` files (the description); the
+`compute_bond_angles` snapshots did not (the cut rule is unchanged; only its no-angles advice now
+points at `first_shell.window_A`). The dock's worst turn grows by 90 tokens (the context +73, the
+description +16: 38,652 needed, 10,500 to spare at 48k; `contextBudget.test.js`), arm B's worst
+(dev-fit-unconverged) by 16 (35,922 needed, 13,230 to spare). Live runs under earlier protocols are not
 comparable on shell, coordination or bond-angle questions. **Arms A and A+ on dev:** every score
 and claim unchanged; three A+ records move, only in the window their cluster reading names, whose
 low end is now the catalogue's (onset − one grid step, 0.01 Å) — dev-breathing Mo 2.40 → 2.39,
@@ -691,9 +692,9 @@ each model a window that holds the worst turn (`MIN_CONTEXT_TOKENS`):
 | Cloud | None | The provider; never probed |
 
 48k holds the worst realistic turn of the dock and of arm B (two skills read whole, a full round of
-analyses, the 8,192-token reply reserve; `src/__tests__/contextBudget.test.js`), with 10,516 and
-13,246 tokens to spare (arm B's worst is dev-fit-unconverged since protocol 2026-10-19.6; the dock's
-grew by 74 tokens with protocol 2026-10-19.8).
+analyses, the 8,192-token reply reserve; `src/__tests__/contextBudget.test.js`), with 10,500 and
+13,230 tokens to spare (arm B's worst is dev-fit-unconverged since protocol 2026-10-19.6; protocol
+2026-10-19.8 added 90 tokens to the dock's and 16 to arm B's).
 
 **The pre-run check.** `run.js live` calls `preflight` before every run. It reads the model's
 server the way the guard does: `detectServer`, then LM Studio's `GET /api/v0/models`
@@ -716,8 +717,8 @@ request at LM Studio's default), the record, the transcript and the report carry
 
 **The dock at 32k.** The decision fixes the validation, not the dock. A user who loads
 qwen3.8-27b in LM Studio at 32k can have the worst two-skill turn refused. The budget test pins the
-dock's worst turn 1,772 tokens over by LM Studio's rule (5,868 by `planContext`'s), and arm B's
-3,138 over by `planContext`'s. The fix is on-demand skill references (plan item 5.5, second half):
+dock's worst turn 1,788 tokens over by LM Studio's rule (5,884 by `planContext`'s), and arm B's
+3,154 over by `planContext`'s. The fix is on-demand skill references (plan item 5.5, second half):
 the skills' long reference material leaves what `read_skill` returns whole. That is skill text, so
 it waits for the user.
 

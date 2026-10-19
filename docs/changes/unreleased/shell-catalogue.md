@@ -19,8 +19,9 @@
   delegation, 2026-10-19.
 - `find_gr_peaks`: `first_peak_window_A` leaves; `first_shell.first_peak_only` (window, CN, trough)
   for every shell of two or more resolved peaks, its CN in the split-shell note; the shell no longer
-  depends on `r_max` (a first peak above it gets a note and the shell, no longer "no peak"). The
-  context adds `first_peak_to_A` / `first_peak_cn` for the same shells and lists peaks to 8 Å.
+  depends on `r_max` (a first peak above it gets a note and the shell, no longer "no peak"), as its
+  description now says. The context adds `first_peak_to_A` / `first_peak_cn` for the same shells and
+  lists peaks to 8 Å.
 - The window-cut rule is unchanged: the Workbench asks on the CN margin, `compute_bond_angles` refuses
   on the coordination counts (60 % modal share, more than half unbonded; the Demo's 47 % text
   verbatim). Both readings live in the module; `validation/run.js shell-cuts` tabulates them on the
@@ -32,6 +33,7 @@
 - The skill lint gains a value check (Demo values a skill quotes, against the tool): the four places
   the coordination-shells skill quotes the old first peak are allow-listed with both values until the
   user's skill review, a precondition for the freeze. What the model sees moves (`find_gr_peaks`, the
-  context); the `compute_bond_angles` snapshots do not; the dock's worst turn grows by 74 tokens.
+  context, the tool's description); the `compute_bond_angles` snapshots do not; the dock's worst
+  turn grows by 90 tokens, arm B's by 16.
   Arms A and A+ on dev: scores and claims unchanged, three A+ cluster windows 0.01 Å lower at their
   start (re-recorded).

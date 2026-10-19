@@ -91,48 +91,50 @@ const TWO_LARGEST_SKILLS_TODAY = Object.freeze([
     { name: 'local-symmetry', chars: 5189, tokens: 3715 }
 ]);
 
-// The context block grew by 73 tokens with candidate #6 (2026-10-19): the
-// Demo's pair_correlations read the one shell reading (shells.js) — peaks
-// below 8 Å (Ga–Ga's 7.33 Å, Ga–Ta's 6.43 Å) and the first peak alone of the
-// Ta–Se and Se–Se shells (first_peak_to_A, first_peak_cn).
+// Candidate #6 (2026-10-19) added 90 tokens: the Demo's pair_correlations
+// read the one shell reading (shells.js; the context block +73) — peaks below
+// 8 Å (Ga–Ga's 7.33 Å, Ga–Ta's 6.43 Å) and the first peak alone of the Ta–Se
+// and Se–Se shells (first_peak_to_A, first_peak_cn) — and find_gr_peaks'
+// description says its shell does not depend on r_max (the tools +16).
 const DOCK_WORST_TURN_TODAY = Object.freeze({
     systemPrompt: 4762,
-    toolJson: 6790,
+    toolJson: 6806,
     contextBlock: 2286,
     question: 70,
     skills: 7814,
     analyses: 8724,
     replyReserve: 8192,
-    firstRequest: 13906,
-    prompt: 30444,
-    needed: 38636,
-    headroom: -5868,
-    lmStudioHeadroom: -1772
+    firstRequest: 13922,
+    prompt: 30460,
+    needed: 38652,
+    headroom: -5884,
+    lmStudioHeadroom: -1788
 });
 // By how much the dock's worst turn overflows the window today.
-const DOCK_OVERFLOW_TOKENS_TODAY = 5868;
+const DOCK_OVERFLOW_TOKENS_TODAY = 5884;
 
 // Arm B's first request on each dev case is 9.7k–11.2k tokens; the largest,
 // since plan item 4.6, is the fit-data case: its fit tools (assess_convergence,
 // compare_fit) and its sampling, datasets, weights and convergence sections
 // (before it, dev-symmetry-lowering: 10,391 tokens, 35,119 needed, 2,351 over).
 const ARM_B_LARGEST_DEV_CASE = 'dev-fit-unconverged';
+// find_gr_peaks' description (candidate #6) added 16 tokens to its tools.
 const ARM_B_WORST_TURN_TODAY = Object.freeze({
     systemPrompt: 4422,
-    toolJson: 4572,
+    toolJson: 4588,
     contextBlock: 1574,
     question: 610,
     skills: 7814,
     analyses: 8723,
     replyReserve: 8192,
-    firstRequest: 11178,
-    prompt: 27714,
-    needed: 35906,
-    headroom: -3138,
-    lmStudioHeadroom: 958
+    firstRequest: 11194,
+    prompt: 27730,
+    needed: 35922,
+    headroom: -3154,
+    lmStudioHeadroom: 942
 });
 // By how much arm B's worst turn (largest dev case) overflows the window today.
-const ARM_B_OVERFLOW_TOKENS_TODAY = 3138;
+const ARM_B_OVERFLOW_TOKENS_TODAY = 3154;
 
 // --- the turn ------------------------------------------------------------------------
 
@@ -341,7 +343,7 @@ describe('the worst realistic turn in a 32,768-token window (plan 5.5)', () => {
     // The run policy's minimum for an LM Studio model (48k) holds both worst
     // turns with the full reply reserve, under both of the guard's rules
     // (planContext's, and LM Studio's prompt + LMSTUDIO_REPLY_MIN_TOKENS):
-    // the dock's with 10,516 tokens to spare, arm B's (dev-fit-unconverged since 4.6) with 13,246.
+    // the dock's with 10,500 tokens to spare, arm B's (dev-fit-unconverged since 4.6) with 13,230.
     it('fits both worst turns in the live runs\' LM Studio minimum (48k, validation/runPolicy.js)', () => {
         const window = MIN_CONTEXT_TOKENS.lmstudio;
         expect(window).toBe(49152);
@@ -351,6 +353,6 @@ describe('the worst realistic turn in a 32,768-token window (plan 5.5)', () => {
             expect(plan.needed).toBe(turn.numbers.needed);
             expect(turn.numbers.prompt + LMSTUDIO_REPLY_MIN_TOKENS).toBeLessThanOrEqual(window);
         }
-        expect([window - dockTurn.numbers.needed, window - armBTurn.numbers.needed]).toEqual([10516, 13246]);
+        expect([window - dockTurn.numbers.needed, window - armBTurn.numbers.needed]).toEqual([10500, 13230]);
     });
 });
