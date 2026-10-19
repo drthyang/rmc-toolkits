@@ -29,7 +29,7 @@ drafts of batch 1 wait in PR #71 for the user's review.
   snapshot of the prompt, the tool list and the descriptions (phase 1.7) shows any change in the
   diff.
 
-## Status (plan-status 3, 2026-10-19)
+## Status (plan-status 4, 2026-10-19)
 
 **Scope.** On 2026-10-19 the user widened the work to the whole plan, through phase 6, and
 delegated approvals to the manager. Still the user's: skill text (#71, 5.2, 5.4, and 5.5's
@@ -74,23 +74,33 @@ PR, and a decision record in `validation/findings/decisions/` and here.
 | 4.3, F2, F3 | #102 | each ordered mode's polarisation; no value rounded onto its bar; one Šidák family over every element (protocol 2026-10-19.12) |
 | 10 | #103 | one turn policy decides what ends a turn |
 | — | #104 | the held-out test set sealed behind one loader; no held-out value in any doc; the scan covers docs, decisions and fragments |
+| — | #105 | plan status 3 |
+| F5 | #106 | a split M₃/M₄ cluster shell does not join: a known limit, with its evidence |
+| 11 | #107 | result statuses on the tool contract, the event stream as the transcript; "asked before" and provenance read only what was shown or told (protocol 2026-10-19.13) |
+| 4.5 | #108 | the structure's basis from `/api/structure`: the Detected SG card, the CIF and the symmetry tools for server folders |
+| 4.2 | #109 | a joined shell's split by number: long − short ± its sampling error and each part's share (protocol 2026-10-19.15) |
+| 2.5 | #110 | the Displacement Directions page at the engine's resolution, its readouts from raw counts; a peak direction reported ± its cell's radius (protocol 2026-10-19.17) |
+| — | #111 | Flask mode: the Copilot gets the plot data (the same 11 analyses and context as the browser path) |
+| 4.4, F1 | #112 | an independent-cell null for the modulation tests; a test for diffuse order between cells (protocol 2026-10-19.16) |
+| 6 (cut rule) | #113 | one window-cut rule, the g(r) CN margin (approved by the user; protocol 2026-10-19.18) |
 
 **In progress:**
-- 11, the tool transcript: each result's status on the tool contract, and the event stream as the
-  transcript; with the stricter "asked before" and provenance readings (protocol 2026-10-19.13);
-- 4.5, the symmetry tools in Flask mode.
+- the marginal judgment situation re-set for the corrected null: the dev pair (#115, protocol
+  2026-10-19.19) and the held-out pair, re-chosen by a fresh blind author from the updated spec (#116,
+  protocol 2026-10-19.20);
+- #71 (the batch-1 skill drafts, brought up to date with main) and #114 (the skill fact sync,
+  stacked on it), both waiting for the user's review.
 
-**Then:** 4.4 (with F1), 4.2 and 2.5, each by a fresh builder that has seen no held-out value; then
-phase 6.
+**Then:** phase 6. The browser check of what jsdom can't cover (its first pass found the Flask-mode
+Copilot without plot data, fixed in #111); the changelog fold; the freeze: arms A and A+ on dev
+and test with `--final` from a clean tree, and the frozen commit recorded (no tag; tags are the
+user's); the report.
 
 **Waiting for the user (preconditions for the freeze):**
-- the skill review. #71 (5.2), and the skill-lint mismatches #94 lists: the coordination-shells
-  skill quotes the Ta–Se first peak as 3.9 over 2.33–2.71 Å, where the tool now reads 3.25 over
-  2.21–2.65 Å;
-- #6's window-cut rule: today's 60 % modal share against the CN margin (the table in #94);
+- the skill review: #71 and the fact sync #114 (the user decided on 2026-10-19 to fix the skills'
+  facts now and hold the interviews after v1). After #114 the skill lint holds no fact entry; its one
+  judgment entry and the interview items wait for the interviews;
 - 5.4 and 5.5's on-demand references, which are skill text;
-- F5, the shell join that needs an ideal CN: the evidence table (accepting CN 2 and 3 joins one dev
-  shell, a dimer with its next neighbour, which is not the cluster's edge, and moves one A+ score);
 - whether a tool's own refusal (a bond-angle window that cuts the shell) should still count as the
   analysis behind a coordination claim (#11's drift item A5).
 
@@ -103,11 +113,13 @@ phase 6.
   - The first-peak window moves to the inter-peak minimum (approved). r ± FWHM overcounts into the
     second peak: on a constructed 3+3 split the minimum gives 3.03 and r ± FWHM 3.4–4.0, and the
     Demo's Ta–Se reads 3.25, not 3.86.
-  - The window-cut rule stays at the 60 % modal share. That is the user's interview item, and the
-    CN-margin alternative goes to the user with its dev evidence.
+  - The window-cut rule: the user approved the CN margin on 2026-10-19 (#113), one rule for the
+    Workbench's question and the tool's refusal; the coordination counts decide only where no shell
+    can be compared.
 - **Findings F1–F5** (from building the judgment cases): F1, the modulation null for sites that share
   a cell-level variable, is fixed in 4.4 and calibrated at or below α; F2 and F3 are done (#102); F4
-  did not reproduce (#99); F5 stays a known limit, with its evidence for the user.
+  did not reproduce (#99); F5: the shell join is left as it is (accepting CN 2 and 3 helps no case
+  and breaks one), a documented known limit (#106).
 - **The sealed test set (#104):** the test definitions load only through one loader, on the final
   path and in CI. No doc, decision record, fragment or changelog states a held-out value. Builders
   read only the working tree: no history (log -p, show, blame, diff) of the validation docs,
@@ -117,7 +129,21 @@ phase 6.
   only what the model was told. No evidence never counts. The freeze report shows any test-split
   number they move beside the old reading.
 - **4.4:** approved, provided it is calibrated on thermal-only seeds (the observed false-positive
-  rate at or below α), has a known-answer test on a planted spread, and uses dev cases only.
+  rate at or below α), has a known-answer test on a planted spread, and uses dev cases only. Built
+  (#112): at or below α on 1,000 fresh configurations of every dev kind, shared-variable kinds
+  included.
+- **2.5 (#110):** the page defaults to the engine's resolution. The direction resolution is a
+  measurement limit: a peak direction is reported ± its cell's circumscribed radius, and above the
+  15° tolerance as not resolved finer. Arm A reads the default page as a user would; arm A+ prefers
+  PC1 where the peak cell is wider than 15°.
+- **The marginal situation:** F1's calibrated null raised the test's power, so the dev and held-out
+  marginal pairs were re-set (#115, #116) from the spec's rewritten knob; the held-out pair by a fresh
+  blind author, its blindness checked from its tool log. The user may reverse it before the freeze.
+- **The user's pre-freeze decisions (2026-10-19):** the skills' facts fixed now, the interviews after
+  v1 (#71, #114); the window-cut rule on the CN margin (#113); the live runs approved for after the
+  freeze — local models first, then Sonnet 5.5 within the $40 cap, one heavy model at a time at 48k
+  or more, synthetic cases only, with streaming and the divider after a configuration change the
+  first things to watch.
 - **5.4:** waits for the user's skill review. Arm B's descriptions keep their method advice until
   the skill text carries it; arm C drops it through 1.8.
 - **The held-out breathing case:** recomposed, because its cluster was the skills' reference compound,
@@ -467,12 +493,12 @@ The candidates of B and C, in this order. Each is one PR, stacked on the one bef
 | PR | Change | Size |
 | --- | --- | --- |
 | 5 | **Done (#89).** **The engines return their own verdicts** (clusters, modulations) *(approved 2026-10-19)*. | M |
-| 6 | **Done (#94; the cut rule waits for the user).** **One shell reading per pair, per run** *(approved 2026-10-19)*. Changes the numbers a question quotes (by < 0.05 atom), a context flag and the cut rule. | M |
+| 6 | **Done (#94; the cut rule #113, approved by the user).** **One shell reading per pair, per run** *(approved 2026-10-19)*. Changes the numbers a question quotes (by < 0.05 atom), a context flag and the cut rule. | M |
 | 8 | **Done (#99).** **Arm A+ reads the app's rules** for the split site, the cluster elements and the symmetry floor *(approved 2026-10-19)*. It covers old 2.3 and 2.4, which land with 5.3, since the rule and the skill change together. Arm A's rule is part of the frozen protocol and changes only with a dated note. | S |
 | 9 | **Done (#92).** One request contract for the worker and Flask adapters: one fixture checked against every adapter. | M |
 | 10 | **Done (#103).** Turn policy: what ends a turn. One owner for the counters and one `done` shape. | M |
-| 11 | Tool transcript; result statuses (old 3.2). | M |
-| 2.5 | **The page and the tool at the same settings** *(approved 2026-10-19)*: the directions tool also reports at the page's ν and smoothing, or the page defaults to the engine's choice. Changes arm A's reading. | S |
+| 11 | **Done (#107).** Tool transcript; result statuses (old 3.2). | M |
+| 2.5 | **Done (#110).** **The page and the tool at the same settings** *(approved 2026-10-19)*: the directions tool also reports at the page's ν and smoothing, or the page defaults to the engine's choice. Changes arm A's reading. | S |
 | 2.6 | **Done (#96).** PCA subsamples identical in both runtimes (AGENTS.md next step 8). | M |
 | 3.3 | **Done (#77).** **Output-shape contracts** for every live tool: a schema of its `data` (the paths references name), checked on the demo and on each dev case. Before any tool output changes in phase 4. Built: each live tool's spec carries a `dataShape` (`llm/copilot/dataShape.js`, never sent to the model), and `toolDataShapes.test.js` checks every result on the demo and the dev cases against it, both ways (no undeclared key; every declared key returned by some call, the unreachable forms listed). | M |
 | 3.5 | A small corpus of real answers for the claim regexes of the checks and the gate. **Built (#83):** `answerCorpus.test.js`, 9 real answers (3 verbatim, 1 transcribed, 5 quoted), one adapter, pins with judgements; 0 false alarms in 4 readings, 1 miss (a negative cluster conclusion is not read). The dev live runs' answers join it before the freeze (6.3). | S |
@@ -485,10 +511,10 @@ change what A+ sweeps are noted.
 | PR | Change | Size |
 | --- | --- | --- |
 | 4.1 | **`list_sites` shows the split** *(approved 2026-10-19)*: per-axis kurtosis on resolved axes, PC1 as [u v w], and the static displacement of a split site (√(rms₁² − rms⊥²) with its sampling error), so the model quotes it by reference. **Done (#82):** `kurtosis_axes`, `pc1_uvw`, `delta_A` ± `delta_se_A` (ai-assistant.md Step 20); one rule, `isSplitSite`; known answer over 5 × 1,000 seeds (95 % coverage 0.939–0.958; a prolate Gaussian site never called split); arms A/A+ unchanged; protocol 2026-10-19.3. | S |
-| 4.2 | **The Jahn–Teller split by number** *(approved 2026-10-19)*: `find_gr_peaks` returns the long − short bond of a joined shell and the share in each part. | S |
+| 4.2 | **Done (#109).** **The Jahn–Teller split by number** *(approved 2026-10-19)*: `find_gr_peaks` returns the long − short bond of a joined shell and the share in each part. | S |
 | 4.3 | **Done (#102).** **The polarisation of an ordered mode** *(approved 2026-10-19)*: `analyze_modulations` returns each ordered point's displacement direction (the mode's eigenvector over the element's sites). Changes A+ (it reads the tool, not PC1). | M |
-| 4.4 | **Diffuse order between cells** *(approved 2026-10-19; new statistic, calibrated on thermal-only seeds, false-positive rate ≤ α)*: a calibrated test of excess power spread over many q (not one mode), against the same independent-displacement null, with a false-positive test over many seeds of thermal-only configurations. | L |
-| 4.5 | **The symmetry tools in Flask mode**: the basis (with its moments) from `/api/structure`, so `detect_symmetry` and `measure_symmetry_lowering` exist for server folders (AGENTS.md next step 4). | M |
+| 4.4 | **Done (#112).** **Diffuse order between cells** *(approved 2026-10-19; new statistic, calibrated on thermal-only seeds, false-positive rate ≤ α)*: a calibrated test of excess power spread over many q (not one mode), against the same independent-displacement null, with a false-positive test over many seeds of thermal-only configurations. | L |
+| 4.5 | **Done (#108).** **The symmetry tools in Flask mode**: the basis (with its moments) from `/api/structure`, so `detect_symmetry` and `measure_symmetry_lowering` exist for server folders (AGENTS.md next step 4). | M |
 | 4.6 | **Done (#87).** **A fit-data dev case** for rmc-fit-assessment: a configuration with a synthetic fit and χ² history, so `assess_convergence` and `compare_fit` are exercised. Dev only. | M |
 
 ### Phase 5 — Skills
