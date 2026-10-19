@@ -19,13 +19,14 @@ import API_BASE_URL from './api';
 import {
   buildLocalRun,
   buildLocalRunFromHandle,
+  configurationSignature,
   fileSignature,
   isStaticMode,
   loadDemoRun,
   supportsFileSystemAccess,
   WATCH_INTERVAL_MS,
 } from './browserData';
-import { SymTolContext } from './symTolContext';
+import { SymTolContext, useRunTolerance } from './symTolContext';
 import {
   IconButton, IssueScope, IssueStoreProvider, IssueWatcher, PageIssues, Segmented, SegmentedButton
 } from './ui';
@@ -82,9 +83,6 @@ function App() {
   // the same folder again re-check its .rmc6f (with Live Data off, the only
   // way short of a browser reload).
   const [loadRequest, setLoadRequest] = useState(0);
-  // Shared "Detected SG" tolerance, so the ladder selection persists across
-  // pages; it starts at the card's default (copilotRun.js DEFAULT_VIEW).
-  const symTolState = useState(DEFAULT_VIEW.toleranceA);
   const directoryInputRef = useRef(null);
   const dirHandleRef = useRef(null);
   const lastSignatureRef = useRef('');
@@ -94,9 +92,26 @@ function App() {
   const headerRef = useRef(null);
   const staticMode = isStaticMode();
   const fsAccess = staticMode && supportsFileSystemAccess();
-  // The open run's identity: another run clears its one-off problems and
-  // starts the AI Copilot on a new conversation.
+  // The open run's identity: another run clears its one-off problems, starts
+  // the AI Copilot on a new conversation and resets the Detected SG pick.
   const runKey = `${currentDirectory}|${localRun?.runId ?? ''}`;
+  // The configuration the open run shows, for the AI Copilot: a Live Data
+  // save (or a Load of the same folder) that brings a new .rmc6f changes it,
+  // not the run. In Flask mode it is configEpoch, bumped on exactly that; for
+  // a browser-loaded run, its .rmc6f files' signature (static-mode Live Data
+  // replaces localRun, keeping its runId, when the picked folder changes).
+  // The Copilot keeps the conversation on screen but marks its earlier
+  // answers as about the previous configuration, and stops sending them to
+  // the model as memory.
+  const localConfiguration = useMemo(
+    () => (localRun ? configurationSignature(localRun.files) : null),
+    [localRun]
+  );
+  const configKey = localRun ? `local|${localConfiguration}` : `epoch|${configEpoch}`;
+  // Shared "Detected SG" tolerance, so the ladder selection persists across
+  // pages and Live Data saves; it starts at the card's default (copilotRun.js
+  // DEFAULT_VIEW) and returns to it when another run opens (runKey).
+  const symTolState = useRunTolerance(runKey, DEFAULT_VIEW.toleranceA);
   // The run as the AI Copilot sees it (copilotRun.js, through its browser
   // adapter useCopilotRun.js): CopilotChat's eight run props, and the
   // analyses it may run, which compute through the same engines as the pages
@@ -267,10 +282,7 @@ function App() {
           params: { dir: currentDirectory || '.' }
         });
         if (cancelled) return;
-        const structureFiles = (response.data.files || []).filter(
-          (file) => file.type === 'file' && /\.rmc6f$/i.test(file.name)
-        );
-        const signature = fileSignature(structureFiles);
+        const signature = configurationSignature(response.data.files);
         const known = configSignatureRef.current;
         if (known.directory === currentDirectory && known.signature !== null && known.signature !== signature) {
           setConfigEpoch((epoch) => epoch + 1);
@@ -736,6 +748,7 @@ function App() {
         pages={COPILOT_PAGES}
         onOpenPage={handleCopilotOpenPage}
         runKey={runKey}
+        configKey={configKey}
         onOpenChange={(open) => { if (open) setCopilotOpened(true); }}
         cards={copilotCards}
         onMarks={setCopilotMarks}

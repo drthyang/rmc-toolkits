@@ -351,11 +351,13 @@ stem matches the `.rmc6f` — `KEY :: value` lines with `>`-prefixed sub-lines. 
 **static mode only**.
 
 **`tol` is a live, user-set control — not a fixed default.** It comes from `SymTolContext`
-([`symTolContext.js`](../../web_app/frontend/src/symTolContext.js)), a `useState(0.2)` pair created in
-`App.jsx` and shared with the "Detected SG" panel of
+([`symTolContext.js`](../../web_app/frontend/src/symTolContext.js)), a `[value, setValue]` pair created in
+`App.jsx` (`useRunTolerance(runKey, DEFAULT_VIEW.toleranceA)`, 0.2 Å) and shared with the "Detected SG" panel of
 [`ModelSummary.jsx`](../../web_app/frontend/src/components/ModelSummary.jsx), where clicking a rung of the
 *Space group vs. tolerance* ladder sets `symTol` to that rung's midpoint. **0.2 Å is only the initial
-value.** Every field of this block — `space_group`, `point_group`, `n_ops`, `max_residual_A`, and the
+value** of each run: the pick is kept across page switches, Live Data saves and Loads of the same
+run, and returns to 0.2 Å when another run opens (`runKey`), so one run's pick never sets the next
+run's context. Every field of this block — `space_group`, `point_group`, `n_ops`, `max_residual_A`, and the
 entire Wyckoff-orbit partition that decides which sites exist and how `mean_disp_A` is averaged — is
 recomputed at whatever tolerance is currently set. Only `tolerance_A` records which one was used. Two
 chat sessions on the same run can therefore legitimately receive different space groups and different
@@ -926,6 +928,15 @@ compacted to its sentences with numbers and its Outcome line.
 - A question whose turn produced no answer (an empty or failed reply) is dropped together with it, so
   memory never holds two user messages in a row.
 - A stopped turn keeps its partial text, marked "(Interrupted before the answer was finished.)".
+- **A new configuration of the same run** (`configKey`: a Live Data save, or a Load of the same
+  folder, that brings a new `.rmc6f`; notation.md §3c) is not a new run, so the conversation stays
+  on screen. Each question remembers the configuration it was asked under; the dock draws a divider
+  where that changes (*New configuration saved — earlier answers were about the previous one*,
+  `configurationBreaks`), and `turnHistory` sends only the questions asked under the current
+  configuration since the last change. The first question after a save is therefore sent with no
+  memory, exactly as a fresh conversation's first request, and the model never reads an answer about
+  the previous configuration as current. An answer still running at the save was asked about the
+  previous configuration (its run was captured then): the divider follows it.
 
 The full context is **re-sent with every request**, which is why old turns can be dropped cheaply.
 The request body is `{model, messages, temperature, stream: true}`, plus `tools` and `tool_choice`
@@ -1218,7 +1229,9 @@ What the loop guarantees:
 - **One run per conversation.** The tools and the context are captured when the question is asked.
   Opening another run (`runKey` = directory + run id) stops the turn and starts a new
   conversation. In Flask mode a Live Data save mid-question is *not* a new run: a later analysis in
-  that question reads the newer `.rmc6f`.
+  that question reads the newer `.rmc6f`. A save between questions is a new configuration
+  (`configKey`): the conversation stays, a divider ends it, and the earlier answers are no longer
+  sent as memory (*What "memory" contains*, Step 13).
 
 **The analyses.** Each tool returns `{data, checks}`: a summary built for the model, and verdicts
 computed from the full engine result. A check is `ok`, `note`, `warn` or `fail`; `fail` means "does

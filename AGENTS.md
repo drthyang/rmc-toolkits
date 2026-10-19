@@ -60,8 +60,8 @@ web_app/frontend/validation/     the Copilot validation (no app code imports it;
 
 web_app/frontend/src/
   main.jsx                       React entry point (mounts App)
-  App.jsx                        shell, run-folder selection, page nav (Auto StoG hidden: `SHOW_AUTO_STOG = false`; Dashboard, Atomic Density, Bond Geometry, PCA Ellipsoid, Displacement Directions), Live Data (`configEpoch` → the analysis pages' `dataEpoch` prop); the AI Copilot dock (`CopilotChat`, rendered once as the app grid's last child, `.app-copilot`: a column right of the pages or a sheet row under them) with its run (`useCopilotRun`: the eight run props passed whole, and the engine tools; the view is the shared tolerance, the PCA table and Live Data) and the view tools (`buildViewTools`), its card catalog (`buildCopilotCards`, `COPILOT_PAGES`), the plot marks it hands back (`copilotMarks` → Dashboard `cardMarks`), `runKey` (the open run's identity) and the page-request channel (`pageRequest` → the Bond Geometry / Displacement Directions pages' `request` prop, for a step's "Show in <page>")
-  symTolContext.js               shared Detected-SG tolerance ([symTol, setSymTol]) so the ladder pick survives page switches
+  App.jsx                        shell, run-folder selection, page nav (Auto StoG hidden: `SHOW_AUTO_STOG = false`; Dashboard, Atomic Density, Bond Geometry, PCA Ellipsoid, Displacement Directions), Live Data (`configEpoch` → the analysis pages' `dataEpoch` prop); the AI Copilot dock (`CopilotChat`, rendered once as the app grid's last child, `.app-copilot`: a column right of the pages or a sheet row under them) with its run (`useCopilotRun`: the eight run props passed whole, and the engine tools; the view is the shared tolerance, the PCA table and Live Data) and the view tools (`buildViewTools`), its card catalog (`buildCopilotCards`, `COPILOT_PAGES`), the plot marks it hands back (`copilotMarks` → Dashboard `cardMarks`), `runKey` (the open run's identity), `configKey` (its configuration: `configEpoch`, or a browser-loaded run's `.rmc6f` signature) and the page-request channel (`pageRequest` → the Bond Geometry / Displacement Directions pages' `request` prop, for a step's "Show in <page>")
+  symTolContext.js               shared Detected-SG tolerance ([symTol, setSymTol]) so the ladder pick survives page switches and Live Data saves; `useRunTolerance(runKey, initial)` puts it back at the card's default when another run opens
   browserData.js                 static-mode local file parsing + run assembly (makeRunFromEntries; chooseStructureFile mirrors parsers.find_run_configuration, code-point tie-breaks); the Dashboard's plot files, one source for the screen and the Copilot's run module: `dashboardPlotFiles` (isDashboardPlotFile + compareDashboardPlotFiles), `chartedRValueFile` (the visible logs' χ² history), `parseDashboardPlotFile`, `DASHBOARD_MAX_POINTS` (100)
   rmc6f.js                       shared .rmc6f atom-line grammar + parse report (classifyAtomLine, parseRmc6fAtoms, readRmc6fCellVectors) — mirror of parsers.py; keep in sync
   plotDomain.js                  one-pass axis domains, null-tolerant hover search (nearestFiniteIndex), plot payload checks
@@ -107,7 +107,7 @@ web_app/frontend/src/
     prompts/                     shared system prompt, the Copilot prompt + message builder (copilot.js: copilotSystemPrompt, buildCopilotMessages, HISTORY_MESSAGES = 8 memory messages), watchdog message builders (templates.js)
     watchdog/                    convergence heuristics (source of truth) + LLM-narrated badge hook
     useAssistant.js              shared hook: settings, connection probe/auto-connect, run context
-    useCopilot.js                the dock's adapter of the turn module: React state (turns, the live turn, the error), Stop, the question card (the ask-user port), the focus effects, the tools-unsupported models (passed to the turn as toolsEnabled), the history it hands the turn (turnHistory), the runKey reset; describeTurn for the composer's status line and tool list
+    useCopilot.js                the dock's adapter of the turn module: React state (turns, the live turn, the error), Stop, the question card (the ask-user port), the focus effects, the tools-unsupported models (passed to the turn as toolsEnabled), the history it hands the turn (turnHistory: only the questions asked under the current configKey), the configuration dividers (configurationBreaks), the runKey reset; describeTurn for the composer's status line and tool list
     focus/                       the card-focus controller (focus.js: data-copilot-focus primary/secondary/running/preview on the host's [data-copilot-card], page switch + wait + scroll, cleared by a click outside the dock, a new question or a collapse) and card references in answers (cardRefs.js: `[label](card:<id>)`, `[[id]]`)
     components/                  CopilotChat (the dock: docked side panel ≥ 1080 × 541 (laptops, monitors, landscape tablets), else a bottom sheet; resizable, collapses to a rail with an unread dot, state in `rmc-llm-dock-v1`; dockLayout.js its pure size rules; owns the focus controller; Esc collapses) + connection bar, settings drawer (analyses switch), CopilotView (Thinking panel, ToolStep cards with Show in <page>, card chips, Outcome chip, live region), MarkdownMessage, WatchdogBadge
   ui/                            the UI kit — every shared look: ui.css (ui- classes, loaded once from main.jsx right after index.css) + thin components (Page, Card/CardHeader, ControlsBar/Control/Switch, Segmented, Pill/ToolButton/IconButton/PrimaryButton, Chip, StatRail/Stat/StatCard, Banner/Hint/EmptyState, InfoBadge, SaveMenu, the Problems section: Issues.jsx + issueStore.js); see ui/README.md
@@ -393,7 +393,15 @@ web_app/frontend/src/
   `requestPca` and site table, the structure and partials requests), so a page never mixes two
   configurations and keeps the picks that still apply; Bond Geometry drops its computed
   distribution (never recomputed unasked). The pages are not remounted (docs/algorithms/notation.md
-  §3c).
+  §3c). The AI Copilot gets the configuration as `configKey` (`configEpoch` here; for a
+  browser-loaded run, static-mode Live Data included, its `.rmc6f` files' signature,
+  `configurationSignature`): a new one is not a new run, so the conversation stays on screen, but a
+  divider ends the earlier answers ("New configuration saved — earlier answers were about the
+  previous one") and the next question's history holds only the questions asked under the current
+  configuration — the model never reads an answer about the previous one as current. The Detected
+  SG pick (`useRunTolerance`) survives a save or a Load of the same run and returns to
+  `DEFAULT_VIEW.toleranceA` when another run opens (`runKey`), so one run's pick never sets the
+  next run's card or Copilot context (`__tests__/appStateLifecycle.test.jsx`).
 - **A brick's CIF is averaged, not idealized** (`averageStructure.js`, docs: run-dashboard.md Part C).
   It is computed at the brick's lower edge (`brickTolerance` = `from` + 1e-6 Å, never the midpoint
   the click selects, which would merge merely-close sites), from the per-site `mean` / `covFrac` /
@@ -482,7 +490,8 @@ web_app/frontend/src/
   passes them as the `tools` prop of `CopilotChat` (the dock the host renders once, beside its
   pages), with `pages`/`onOpenPage(key, params)` for a step's Show in / Open button (`params` =
   the tool's optional `pageParams(args)`; a view tool's page switch passes null), `runKey` (a new
-  run restarts the conversation), `onOpenChange`, `cards`, `onMarks`, `onLayoutChange` and `skills`
+  run restarts the conversation), `configKey` (a new configuration of the run ends the earlier
+  answers with a divider and keeps them out of the model's memory), `onOpenChange`, `cards`, `onMarks`, `onLayoutChange` and `skills`
   (the host's bundled `.claude/skills`, `copilotSkills.js`).
   Inside the module one question is one turn of `llm/copilot/turn.js` (runTurn): it takes the run
   props, a model port (`llm/provider/model.js`), the tools (never `ask_user` or `read_skill`, which

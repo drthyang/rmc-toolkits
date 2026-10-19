@@ -17,6 +17,16 @@ import { providerModel } from './provider/model';
 // starts a new conversation, so answers about one run never travel as memory
 // into another.
 //
+// A new configuration of the same run (`configKey`: a Live Data save brought
+// a new .rmc6f) keeps the conversation on screen, but its answers were about
+// the previous configuration: each question remembers the configuration it
+// was asked under, the dock draws a divider where that changes
+// (configurationBreaks), and a turn's history holds only the questions asked
+// under the current configuration (turnHistory), so the model never reads an
+// answer about the previous one as current. A turn running at the save was
+// asked about the previous configuration (its run was captured then): the
+// divider follows its answer.
+//
 // `focus` (the dock's card-focus controller, focus/focus.js) is handed to the
 // tools' run() for the view tools; a new question clears the last answer's
 // highlight, and the cards of a running analysis breathe until it ends.
@@ -47,21 +57,50 @@ const EMPTY_DESCRIPTION = Object.freeze({
     skillsError: null
 });
 
+// The configuration a question was asked under (null: the host names none).
+const askedUnder = (turn) => turn.configKey ?? null;
+
+/**
+ * Where the conversation crosses a new configuration of its run: `before`,
+ * the indices of the questions asked under another configuration than the
+ * question before them, and `after`, whether the last question was asked
+ * under another configuration than `configKey`, the current one. The dock
+ * draws a divider before each of `before`, and at the end when `after`.
+ */
+export const configurationBreaks = (turns, configKey = null) => {
+    const before = [];
+    let previous;
+    turns.forEach((turn, index) => {
+        if (turn.role !== 'user') return;
+        const key = askedUnder(turn);
+        if (previous !== undefined && key !== previous) before.push(index);
+        previous = key;
+    });
+    return { before, after: previous !== undefined && previous !== configKey };
+};
+
 /**
  * The conversation's earlier questions as the turn's history: each question
  * with the text of the assistant turn that followed it ('' when none did: a
  * turn that failed before any output is not kept). The turn drops the
- * unanswered ones and compacts long answers.
+ * unanswered ones and compacts long answers. Only the questions asked under
+ * `configKey`, the current configuration, since the last change count: an
+ * answer about a previous configuration is never sent as memory.
  */
-export const turnHistory = (turns) => turns.flatMap((turn, index) => {
-    if (turn.role !== 'user') return [];
-    const reply = turns[index + 1];
-    return [{ question: turn.content, answer: reply?.role === 'assistant' ? reply.text || '' : '' }];
-});
+export const turnHistory = (turns, configKey = null) => {
+    const { before, after } = configurationBreaks(turns, configKey);
+    if (after) return [];
+    const current = turns.slice(before.at(-1) ?? 0);
+    return current.flatMap((turn, index) => {
+        if (turn.role !== 'user') return [];
+        const reply = current[index + 1];
+        return [{ question: turn.content, answer: reply?.role === 'assistant' ? reply.text || '' : '' }];
+    });
+};
 
 export const useCopilot = ({
-    settings, run, tools, toolsEnabled = true, runKey = null, focus = null, onTurnEnd = null, onQuestion = null,
-    skills = null
+    settings, run, tools, toolsEnabled = true, runKey = null, configKey = null, focus = null, onTurnEnd = null,
+    onQuestion = null, skills = null
 }) => {
     const [turns, setTurns] = useState([]);
     const [live, setLive] = useState(null);
@@ -143,7 +182,7 @@ export const useCopilot = ({
         focus?.clear('question');
         const model = settings.model;
 
-        setTurns((current) => [...current, { role: 'user', content: text }]);
+        setTurns((current) => [...current, { role: 'user', content: text, configKey }]);
         let turn = newAssistantTurn(now());
         setLive(turn);
         try {
@@ -154,8 +193,9 @@ export const useCopilot = ({
                 tools,
                 askUser,
                 skills,
-                // Earlier turns travel as their question and final answer only.
-                history: turnHistory(turns),
+                // Earlier turns travel as their question and final answer
+                // only, and only those about the current configuration.
+                history: turnHistory(turns, configKey),
                 signal: controller.signal,
                 clock: CLOCK,
                 toolContext: focus ? { focus } : null,
@@ -194,7 +234,7 @@ export const useCopilot = ({
             }
             setLive(null);
         }
-    }, [turns, run, tools, toolsEnabled, unsupported, focus, askUser, skills, settings]);
+    }, [turns, configKey, run, tools, toolsEnabled, unsupported, focus, askUser, skills, settings]);
 
     const clear = useCallback(() => {
         generationRef.current += 1;
@@ -212,8 +252,12 @@ export const useCopilot = ({
         clear();
     }, [runKey, clear]);
 
+    // Where the conversation crosses a new configuration (the dock's dividers).
+    const breaks = useMemo(() => configurationBreaks(turns, configKey), [turns, configKey]);
+
     return {
         turns,
+        breaks,
         live,
         busy: Boolean(live),
         error: error ?? description.setupError ?? null,
