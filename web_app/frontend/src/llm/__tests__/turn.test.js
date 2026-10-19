@@ -14,7 +14,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ASK_USER, buildAskUserTool } from '../copilot/askUser';
 import { READ_SKILL, buildReadSkillTool } from '../copilot/skills';
 import { MEMORY_ANSWER_CHARS, TURN_METHODS, describeTurn, runTurn } from '../copilot/turn';
-import { turnHistory } from '../useCopilot';
+import { configurationBreaks, turnHistory } from '../useCopilot';
 import {
     ASK_RULES, COPILOT_PROMPT, COPILOT_PROMPT_NO_TOOLS, COPILOT_PROMPT_VIEW, HISTORY_MESSAGES, copilotSystemPrompt
 } from '../prompts/copilot';
@@ -464,6 +464,48 @@ describe('the history window', () => {
             { role: 'user', content: 'q4' },
             { role: 'assistant', content: 'a4' }
         ]);
+    });
+
+    it('drops the answers about an earlier configuration of the run (configKey, a Live Data save)', async () => {
+        const turns = [
+            { role: 'user', content: 'q1', configKey: 'epoch|0' },
+            { role: 'assistant', text: 'a1' },
+            { role: 'user', content: 'q2', configKey: 'epoch|0' },
+            { role: 'assistant', text: 'a2' },
+            { role: 'user', content: 'q3', configKey: 'epoch|1' },
+            { role: 'assistant', text: 'a3' }
+        ];
+        // The questions asked under the current configuration, and only them.
+        expect(turnHistory(turns, 'epoch|1')).toEqual([{ question: 'q3', answer: 'a3' }]);
+        expect(turnHistory(turns.slice(0, 4), 'epoch|0')).toEqual([
+            { question: 'q1', answer: 'a1' },
+            { question: 'q2', answer: 'a2' }
+        ]);
+        // A new configuration before any question about it: no memory, so the
+        // first request after the save is a fresh conversation's.
+        expect(turnHistory(turns, 'epoch|2')).toEqual([]);
+        expect(await firstMessages(turnHistory(turns, 'epoch|2'))).toEqual(await firstMessages([]));
+        // A configuration seen before is still a new one: only the questions
+        // since the last change count.
+        expect(turnHistory([...turns, { role: 'user', content: 'q4', configKey: 'epoch|0' }, { role: 'assistant', text: 'a4' }], 'epoch|0'))
+            .toEqual([{ question: 'q4', answer: 'a4' }]);
+        expect(turnHistory(turns, 'epoch|0')).toEqual([]);
+    });
+
+    it('marks where the conversation crosses a new configuration (configurationBreaks)', () => {
+        expect(configurationBreaks([], 'c1')).toEqual({ before: [], after: false });
+        // No host key: one configuration throughout, as before configKey.
+        expect(configurationBreaks([{ role: 'user', content: 'q' }, { role: 'assistant', text: 'a' }]))
+            .toEqual({ before: [], after: false });
+        const turns = [
+            { role: 'user', content: 'q1', configKey: 'c1' },
+            { role: 'assistant', text: 'a1' },
+            { role: 'user', content: 'q2 (failed: no assistant turn)', configKey: 'c1' },
+            { role: 'user', content: 'q3', configKey: 'c2' },
+            { role: 'assistant', text: 'a3' }
+        ];
+        expect(configurationBreaks(turns, 'c2')).toEqual({ before: [3], after: false });
+        expect(configurationBreaks(turns, 'c3')).toEqual({ before: [3], after: true });
     });
 
     it('compacts a long answer to its sentences with numbers and its verdict', async () => {
