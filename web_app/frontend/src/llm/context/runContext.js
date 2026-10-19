@@ -136,6 +136,27 @@ export const symmetryNoiseFloor = (basis) => {
     return worst > 0 ? 3 * Math.SQRT2 * worst : null;
 };
 
+// A tolerance this factor above the sampling noise floor holds clearly above
+// it, not only up to it: the lower group's tolerance (lowerGroupTolerance:
+// measure_symmetry_lowering's default, arm A+'s group) and the Workbench's
+// tolerance question, which counts a ladder group only when it holds to this
+// factor of the floor (clarify.js). One constant since architecture
+// candidate 8.
+export const NOISE_FLOOR_MARGIN = 1.25;
+// The floor the lower group's tolerance assumes for a basis without counts
+// and displacements (Å).
+const FLOOR_WITHOUT_COUNTS_A = 0.02;
+
+/**
+ * The lower group's tolerance (Å, two significant digits): NOISE_FLOOR_MARGIN
+ * times the sampling noise floor (symmetryNoiseFloor), or times 0.02 Å for a
+ * basis without counts. measure_symmetry_lowering's default `tolerance_A`,
+ * and the tolerance arm A+ reads the space group at.
+ */
+export const lowerGroupTolerance = (basis) => Number(
+    ((symmetryNoiseFloor(basis) ?? FLOOR_WITHOUT_COUNTS_A) * NOISE_FLOOR_MARGIN).toPrecision(2)
+);
+
 // The detected-symmetry block: space group, the tolerance ladder (distortion
 // magnitude + symmetry character), and the Wyckoff orbits with per-orbit rms
 // displacement aggregated from structure.basis[].dispA — sorted largest first

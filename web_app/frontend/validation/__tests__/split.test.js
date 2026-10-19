@@ -333,7 +333,8 @@ describe('where a finding stands, and validation batch 1', () => {
 
     it('decision records: one JSON file per record, read in id order, each validated by the findings schema', () => {
         expect(Object.keys(decisions())).toEqual([
-            '2026-10-19-engine-verdicts', '2026-10-19-judgment-dev-cases', '2026-10-19-list-sites-split', '2026-10-19-shell-catalogue',
+            '2026-10-19-aplus-app-rules', '2026-10-19-engine-verdicts', '2026-10-19-judgment-dev-cases', '2026-10-19-list-sites-split',
+            '2026-10-19-shell-catalogue',
             '2026-10-19-shell-cut-rule', '2026-10-19-test-breathing-recomposed'
         ]);
         expect(existsSync(join(FRONTEND, 'validation/findings/decisions.jsonl'))).toBe(false);
@@ -390,6 +391,17 @@ describe('where a finding stands, and validation batch 1', () => {
         // Every test it names exists, by its title as written in the source.
         expect(split.tests.length).toBeGreaterThan(0);
         split.tests.forEach((test) => {
+            const [path, title] = test.split(' › ');
+            expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+        });
+    });
+
+    it('decisions: arm A+ reads the app\'s rules (candidate 8), approved on the user\'s delegation, implemented with its known-answer tests', () => {
+        const rules = decisions()['2026-10-19-aplus-app-rules'];
+        expect(rules).toMatchObject({ case: 'dev-jahn-teller', kind: 'bug' });
+        delegated(rules);
+        expect(rules.tests.length).toBeGreaterThan(0);
+        rules.tests.forEach((test) => {
             const [path, title] = test.split(' › ');
             expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
         });

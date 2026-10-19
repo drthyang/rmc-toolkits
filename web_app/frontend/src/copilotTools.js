@@ -19,7 +19,7 @@
 import { describeSymmetry, orbitLabel } from './symmetryModel';
 import { siteLabel } from './siteLabel';
 import { crystalOrientationRows, invert3, matVec3, transpose3, unitCellVectors } from './pcaCrystalFrame';
-import { cnMatches, countsCut, describePointGroup, methodCheck, pointGroupFacts } from './llm';
+import { cnMatches, countsCut, describePointGroup, lowerGroupTolerance, methodCheck, pointGroupFacts } from './llm';
 import { symmetryNoiseFloor } from './llm/context/runContext';
 import { symmetryShifts } from './symmetryShift';
 import { nearestLowIndex } from './viewer3d';
@@ -30,10 +30,6 @@ import { oneOf } from './llm/copilot/dataShape';
 // its summarizer builds — the paths the model quotes by reference — declared
 // beside that summarizer and carried on the tool's spec.
 const XYZ = ['number|null', 'number|null', 'number|null'];
-
-// A tolerance this factor above the sampling noise floor holds clearly above
-// it (the Workbench's tolerance question uses the same margin, clarify.js).
-export const NOISE_FLOOR_MARGIN = 1.25;
 
 const round = (value, digits = 3) => (
     Number.isFinite(value) ? (value === 0 ? 0 : Number(value.toPrecision(digits))) : null
@@ -1616,8 +1612,9 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
         });
 
         const floor = symmetryNoiseFloor(structure.basis);
-        // The lower group's default tolerance: just above the noise floor.
-        const lowerDefault = Number(((floor ?? 0.02) * NOISE_FLOOR_MARGIN).toPrecision(2));
+        // The lower group's default tolerance: NOISE_FLOOR_MARGIN × the noise
+        // floor, just above it (the one rule; arm A+ reads it too).
+        const lowerDefault = lowerGroupTolerance(structure.basis);
         tools.push({
             name: 'measure_symmetry_lowering',
             description: 'How far each average site sits from the position a higher-symmetry (parent) group puts it at: the '

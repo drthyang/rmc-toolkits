@@ -20,3 +20,7 @@ export {
 // it without the advice under method 'off', the validation's arm C
 // (copilotTools.js).
 export { methodCheck } from './copilot/method';
+// The lower group's tolerance, NOISE_FLOOR_MARGIN × the sampling noise floor
+// (copilotTools.js measure_symmetry_lowering; the Workbench's tolerance
+// question reads the same margin).
+export { lowerGroupTolerance, NOISE_FLOOR_MARGIN } from './context/runContext';
