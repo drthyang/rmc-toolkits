@@ -27,7 +27,7 @@ import { renderReport } from '../report';
 import { liveRun } from '../run';
 import { MODELS, resolveModel } from '../models';
 import {
-    buildRunPolicy, CONTEXT_GUARD, FINAL_ROUND_FORMS, MIN_CONTEXT_TOKENS, noteWindowAfter, preflight, RunPolicyError
+    buildRunPolicy, CONTEXT_GUARD, FINAL_ROUND_FORMS, MIN_CONTEXT_TOKENS, noteWindowAfter, preflight, RunPolicyError, TURN_LIMITS
 } from '../runPolicy';
 import { renderTranscript } from '../transcript';
 
@@ -143,7 +143,10 @@ describe('the policy\'s constants', () => {
 
     it('a policy keeps the limits as run, the temperature and its warmer floor; an API model its spend cap', () => {
         const policy = buildRunPolicy({ model: qwen(), limits: { maxRounds: 3 } });
-        expect(policy.limits).toEqual({ ...DEFAULT_LIMITS, maxRounds: 3 });
+        expect(policy.limits).toEqual({ ...TURN_LIMITS, maxRounds: 3 });
+        // The evidence gate's send-backs are the verification's, stated beside the loop's budgets as before.
+        expect(TURN_LIMITS).toEqual({ ...DEFAULT_LIMITS, maxEvidenceGates: 2 });
+        expect(Object.keys(TURN_LIMITS).at(-1)).toBe('maxEvidenceGates');
         expect(policy.temperature).toEqual({ base: 0.2, warmer_retry_min: ANTI_REPEAT_TEMPERATURE });
         expect(policy.server).toEqual({ kind: null, expected: 'lmstudio', version: null, base_url: 'http://localhost:1234/v1' });
         expect(policy.history).toEqual({ earlier_turns: 0, reasoning_resent: false });
@@ -234,7 +237,7 @@ describe('a live run under the policy (run.js liveRun, fake servers)', () => {
         expect(record.policy).toMatchObject({
             server: { kind: 'lmstudio', expected: 'lmstudio', version: null, base_url: 'http://localhost:1234/v1' },
             temperature: { base: 0.2, warmer_retry_min: 0.6 },
-            limits: DEFAULT_LIMITS,
+            limits: TURN_LIMITS,
             context: { min_tokens: 49152, loaded_tokens: 49152, loaded_tokens_after: 49152, model_max_tokens: null, num_ctx_used: [] },
             reply_cap: { sent: null },
             final_round: FINAL_ROUND_FORMS.lmstudio,

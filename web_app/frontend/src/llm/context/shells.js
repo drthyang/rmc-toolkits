@@ -5,9 +5,10 @@
 // coordination shell of every element pair in the run's partial-PDF file is
 // read here once, and every reader takes it from here: the run context's
 // pair_correlations (pairCorrelations.js), find_gr_peaks (runTools.js), the
-// Workbench's window questions (clarify.js), the evidence gate (evidence.js),
-// the answer checks (answerAudit.js: cnMatches), compute_bond_angles' window
-// refusal (copilotTools.js: countsCut) and arm A+ (validation/armA.js).
+// Workbench's window questions (clarify.js), the verification
+// (copilot/verification/: the evidence gate's finite clusters,
+// clusterElementsOf; the answer checks, cnMatches), compute_bond_angles'
+// window refusal (copilotTools.js: countsCut) and arm A+ (validation/armA.js).
 // Before, five readers each searched their own r range, rounded their own way
 // and integrated the coordination number their own way, and one shell could
 // read three ways (the Demo's Ta–Se first peak: 3.9 Se per Ta in one, 3.86 in
@@ -103,6 +104,11 @@ export const UNBONDED_APEX_FRACTION = 0.5;
 // count — the coordination is spread, as when the window edge cuts through a
 // shell (Demo Se–Ta–Se at 2.3–2.7 Å: 47 %; whole shells there: 83–96 %).
 export const MODAL_COORDINATION_SHARE = 0.6;
+// An element whose own first shell holds at most this many neighbours may
+// form finite clusters (a dimer 1, a trimer 2, a tetrahedron 3, an octahedron
+// 4 per member): "no order" needs analyze_clusters on it (clusterElementsOf,
+// the verification's claim catalogue).
+export const CLUSTER_CN_MAX = 4.5;
 // Windows are rounded to this many decimals (0.01 Å, the grid).
 const WINDOW_DECIMALS = 2;
 // A caller's window covers a shell edge within half a rounding unit of it.
@@ -115,6 +121,19 @@ export const cnMatches = (cn, count) => Number.isFinite(cn) && Number.isFinite(c
 
 /** Whether a coordination number is an ideal polyhedral count (IDEAL_COORDINATION) by cnMatches. */
 export const isIdealCoordination = (cn) => IDEAL_COORDINATION.some((count) => cnMatches(cn, count));
+
+/**
+ * The elements of a shell catalogue whose own first shell is a finite
+ * cluster's: its CN (`shell(element, element).cn`, as the context and
+ * find_gr_peaks report it) from CN_MATCH_TOLERANCE to CLUSTER_CN_MAX, in the
+ * catalogue's order. [] without a catalogue.
+ */
+export const clusterElementsOf = (catalogue) => (catalogue
+    ? catalogue.elements.filter((element) => {
+        const cn = catalogue.shell(element, element)?.cn;
+        return Number.isFinite(cn) && cn >= CN_MATCH_TOLERANCE && cn <= CLUSTER_CN_MAX;
+    })
+    : []);
 
 /** The Workbench's CN margin: |cn − reference| ≥ max(CN_CHANGE_ABS, CN_CHANGE_REL · reference). */
 export const cnChanges = (cn, reference) => Number.isFinite(cn) && Number.isFinite(reference)

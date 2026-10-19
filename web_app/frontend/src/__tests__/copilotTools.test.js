@@ -17,8 +17,8 @@ import clustersFixture from './fixtures/clusters_fixture.json';
 import { CLUSTER_BECAUSE, clusterDistortion } from '../workers/clusters';
 import { MODULATION_BECAUSE, SIGMA_MAX } from '../workers/modulations';
 import { coordinationSummaryOf } from '../workers/triplets';
-import { auditAnswer } from '../llm/copilot/answerAudit';
 import { checkText, toolDescription } from '../llm/copilot/method';
+import { createVerification } from '../llm/copilot/verification';
 import { ALL_CASES, buildCase, buildConfiguration } from '../../validation/cases';
 import {
     CLUSTER_SENTENCES,
@@ -469,7 +469,10 @@ describe('Copilot summarizers', () => {
         expect(facts.direction).toMatchObject({ subject: 'site 3', significant: false, anisotropic: true });
         expect(checks.find((check) => /anisotropic/.test(check.text)).text)
             .toMatch(/^The displacements are anisotropic: the map departs from isotropy at 7\.\d+σ\. Thermal ellipsoids pass this test too: it is not a preferred direction/);
-        const [finding] = auditAnswer('Site 3 has a preferred displacement direction along [1 0 0].', { facts: [facts] });
+        // The answer check on it (the verification: the step recorded with its facts, then the answer judged).
+        const verification = createVerification({ offered: [] });
+        verification.record({ name: 'analyze_displacement_directions', args: { site_ref: 3 }, status: 'ok', error: null, executed: true, facts }, () => ({ data: null }));
+        const [finding] = verification.judge('Site 3 has a preferred displacement direction along [1 0 0].').done.audit;
         expect(finding.rule).toBe('direction');
         expect(finding.text).toMatch(/found a peak at ≥ 3σ \(site 3: peak 2\.\d+σ, map 7\.\d+σ\)\. A significant map test is anisotropy/);
         // A significant peak still counts, with or without the map.

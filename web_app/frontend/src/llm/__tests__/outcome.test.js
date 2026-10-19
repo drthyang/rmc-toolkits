@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { describe, expect, it } from 'vitest';
-import { parseOutcome } from '../copilot/outcome';
+import { parseOutcome } from '../copilot/verification/outcome';
 
 describe('parseOutcome', () => {
     it('splits a plain verdict line from the body', () => {

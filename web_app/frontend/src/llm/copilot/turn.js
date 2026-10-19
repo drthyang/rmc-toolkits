@@ -12,9 +12,9 @@
 // between them: the run context and the context as the model reads it, the
 // tools offered (the caller's, then ask_user, then read_skill), the system
 // prompt for those tools, the history window, the Workbench's own questions
-// (clarify.js), the evidence gate (evidence.js), the answer checks' context
-// facts (answerAudit.js), the context for {{ctx.…}} references, the loop
-// (agentLoop.js) with its model calls through the model port
+// (clarify.js), the verification (verification/: the evidence gate, the
+// checks on the answer, numbers by reference and the computed Outcome), the
+// loop (agentLoop.js) with its model calls through the model port
 // (provider/model.js), and one terminal event that says how the turn ended.
 // The dock and the harness are its two adapters; neither builds any of this.
 // The module keeps no state between calls: the caller passes the history, the
@@ -41,7 +41,12 @@
 //   clock         { now() } in ms (Date.now by default): turn time and `at`
 //   toolContext   more context for a tool's run() beside its signal and
 //                 askUser (the dock's card-focus controller)
-//   config        { toolsEnabled = true, method = 'full', limits = {} }
+//   config        { toolsEnabled = true, method = 'full', limits = {}, phrasings = null }:
+//                 limits are the loop's budgets, and `maxEvidenceGates`, when
+//                 set, the verification's send-backs per turn (a run policy
+//                 states it); phrasings are claim phrasings the verification
+//                 reads beside its own ({ [claim id]: { asserted, literal } }:
+//                 the validation harness's verdict words)
 //
 // The method (method.js): 'full' is the Copilot as it ships; 'off' (the
 // validation's arm C) sends none of the method. One pure function, planTurn,
@@ -52,7 +57,7 @@
 // with 'full', without it with 'off', and with 'off' its checks without
 // their advice). With 'full' every request is byte for byte what it was
 // before the switch. The evidence gate checks under both; with 'off' its
-// send-back names no analysis (loopChecks, evidence.js).
+// send-back names no analysis (the verification's method, claims.js).
 //
 // Invariants:
 //   - ask_user is offered only with an askUser port and tools on; read_skill
@@ -85,21 +90,20 @@
 // tools_unsupported at most once, before any tool step, followed by a new
 // round and request under the no-tools prompt.
 //
-// Seams for the next pieces: the verification module replaces the four
-// checks loopChecks builds; provider quirks stay behind the model port.
+// Seams: the verification is one object the turn builds (turnChecks) and
+// the loop records and judges with; provider quirks stay behind the model
+// port.
 
 import { runCopilotTurn } from './agentLoop';
-import { contextAuditFacts } from './answerAudit';
 import { ASK_USER, buildAskUserTool } from './askUser';
 import { buildClarifier } from './clarify';
-import { buildEvidenceGate } from './evidence';
 import { TURN_METHODS, toolAsSent, toolDescription } from './method';
 import { compactAnswer, explainModelError } from './robustness';
 import { READ_SKILL, buildReadSkillTool, parseSkillFiles, skillIndex } from './skills';
 import { usableTools } from './tools';
-import { pointGroupFacts } from '../context/pointGroups';
+import { createVerification, shownContext } from './verification';
 import { buildRunContext } from '../context/runContext';
-import { buildCopilotMessages, COPILOT_PROMPT_NO_TOOLS, shownContext } from '../prompts/copilot';
+import { buildCopilotMessages, COPILOT_PROMPT_NO_TOOLS } from '../prompts/copilot';
 import { asModelPort } from '../provider/model';
 
 // The longest earlier answer re-sent whole as memory.
@@ -143,13 +147,15 @@ const readSpec = (spec, { running }) => {
     if (!clock || typeof clock.now !== 'function') invalid('clock must have now()');
     if (toolContext != null && !isObject(toolContext)) invalid('toolContext must be an object or null');
     if (!isObject(config)) invalid('config must be an object');
-    const { toolsEnabled = true, method = 'full', limits = {} } = config;
+    const { toolsEnabled = true, method = 'full', limits = {}, phrasings = null } = config;
     if (typeof toolsEnabled !== 'boolean') invalid('config.toolsEnabled must be a boolean');
     if (!TURN_METHODS.includes(method)) invalid(`config.method must be one of ${TURN_METHODS.join(', ')}`);
     if (!isObject(limits)) invalid('config.limits must be an object');
+    // Its rows and patterns are the verification's to check (createVerification).
+    if (phrasings != null && !isObject(phrasings)) invalid('config.phrasings must be { [claim id]: { asserted, literal } } or null');
     return {
         question, run, model, tools, askUser, skills, history, signal, clock, toolContext,
-        config: { toolsEnabled, method, limits }
+        config: { toolsEnabled, method, limits, phrasings }
     };
 };
 
@@ -228,30 +234,32 @@ const turnMessages = (plan, { question, history }) => buildCopilotMessages({
     method: plan.method
 });
 
-// The four checks the loop runs with: the Workbench's own questions (only
-// with someone to ask), the evidence gate (on the run's shells, its
-// elements and the tools offered, tools on or off), the context facts the
-// answer must not contradict, and the context {{ctx.…}} references read: the
-// one the model was shown. The verification module replaces them with one
-// object. The shells are the run's one shell reading (context/shells.js),
-// with the run settings' closest-approach constraints, as the context and
-// find_gr_peaks read them.
-const loopChecks = (plan, { run, askUser }) => {
+// The two checks the loop runs with: the Workbench's own questions (only
+// with someone to ask) and the verification (verification/: the evidence
+// gate on the run's shells, its elements and the tools offered, tools on or
+// off; the checks on the answer against the context's facts; {{ctx.…}}
+// against the context the model was shown; the Outcome), under the turn's
+// method (with 'off' a send-back names no analysis), with the caller's claim
+// phrasings and, when the limits state it, its send-backs per turn. The
+// shells are the run's one shell reading (context/shells.js), with the run
+// settings' closest-approach constraints, as the context and find_gr_peaks
+// read them.
+const turnChecks = (plan, { run, askUser, config }) => {
     const clarifier = buildClarifier(
         { plotFiles: run.plotFiles, structure: run.structure, runSettings: run.runSettings, symmetry: run.symmetry },
         { noiseFloor: plan.context.symmetry?.noise_floor_A ?? null }
     );
+    const sendBacks = config.limits.maxEvidenceGates;
     return {
         clarifier: askUser ? clarifier : null,
-        evidence: buildEvidenceGate({
+        verification: createVerification({
+            context: plan.context,
             catalog: clarifier.catalog,
             offered: plan.offered.tools.map((tool) => tool.name),
-            elements: Object.keys(plan.context.structure?.elements || {}),
-            // Under method 'off' its send-back names no analysis (evidence.js).
-            method: plan.method
-        }),
-        auditContext: contextAuditFacts(plan.context, pointGroupFacts),
-        referenceContext: plan.shown
+            phrasings: config.phrasings,
+            method: plan.method,
+            ...(sendBacks != null ? { maxSendBacks: sendBacks } : {})
+        })
     };
 };
 
@@ -274,7 +282,7 @@ export async function* runTurn(spec) {
     const turn = readSpec(spec, { running: true });
     const plan = planTurn(turn);
     const messages = turnMessages(plan, turn);
-    const checks = loopChecks(plan, turn);
+    const checks = turnChecks(plan, turn);
     const stamp = (event) => ({ ...event, at: turn.clock.now() });
     yield stamp({ type: 'start', ...describe(plan) });
     let answered = false;

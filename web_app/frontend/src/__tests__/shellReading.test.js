@@ -5,7 +5,7 @@
 // Demo and on every dev case of the validation, each reader shows the run's
 // shell catalogue (llm/context/shells.js) and nothing of its own — the run
 // context's pair_correlations, find_gr_peaks, the Workbench's clarifier, the
-// evidence gate and arm A+'s cluster windows. Before, they searched different
+// verification's evidence gate and arm A+'s cluster windows. Before, they searched different
 // r ranges, rounded differently and integrated the CN differently, and the
 // Demo's Ta–Se first peak read 3.9 Se per Ta in one and 3.86 in another; it
 // is 3.25 now, to the minimum between the two Ta–Se peaks (approved
@@ -13,10 +13,10 @@
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { buildClarifier } from '../llm/copilot/clarify';
-import { buildEvidenceGate, CLUSTER_CN_MAX } from '../llm/copilot/evidence';
 import { buildRunTools } from '../llm/copilot/runTools';
+import { createVerification } from '../llm/copilot/verification';
 import { buildRunContext } from '../llm/context/runContext';
-import { CN_MATCH_TOLERANCE, shellCatalogue } from '../llm/context/shells';
+import { CLUSTER_CN_MAX, CN_MATCH_TOLERANCE, clusterElementsOf, shellCatalogue } from '../llm/context/shells';
 import { buildCase, DEV_CASES } from '../../validation/cases';
 import { loadRun } from '../../validation/runFolder';
 import { runArmSweep } from '../../validation/armA';
@@ -41,14 +41,19 @@ describe('one shell reading per pair, per run', () => {
         const { props } = runs.get(name);
         const catalogue = shellCatalogue(props);
         expect(catalogue).not.toBeNull();
-        // The clarifier's catalogue is the run's (memoised), as is the gate's.
+        // The clarifier's catalogue is the run's (memoised), and the gate's
+        // finite clusters are its: "no order" asks analyze_clusters for each.
         const clarifier = buildClarifier(props);
         expect(clarifier.catalog).toBe(catalogue);
-        const gate = buildEvidenceGate({ catalog: clarifier.catalog });
-        expect(gate.clusterElements).toEqual(catalogue.elements.filter((element) => {
+        const clusters = clusterElementsOf(clarifier.catalog);
+        expect(clusters).toEqual(catalogue.elements.filter((element) => {
             const cn = catalogue.shell(element, element)?.cn;
             return Number.isFinite(cn) && cn >= CN_MATCH_TOLERANCE && cn <= CLUSTER_CN_MAX;
         }));
+        const sendBack = createVerification({ catalog: clarifier.catalog })
+            .judge('There is no local order beyond thermal motion.', { canSendBack: true }).sendBack;
+        expect(sendBack.missing.filter((item) => item.startsWith('analyze_clusters for ')))
+            .toEqual(clusters.map((element) => `analyze_clusters for ${element} (its first ${element}–${element} shell is a finite cluster's)`));
 
         const context = Object.fromEntries((buildRunContext(props).pair_correlations || []).map((entry) => [entry.pair, entry]));
         const grPeaks = buildRunTools(props).find((tool) => tool.name === 'find_gr_peaks');

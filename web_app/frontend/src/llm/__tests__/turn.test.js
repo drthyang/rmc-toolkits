@@ -529,6 +529,46 @@ describe('the method: full (the Copilot as it ships) and off (arm C)', () => {
     });
 });
 
+// The verification the turn builds (copilot/verification/): one call, from
+// the run, the tools offered, the method, the caller's claim phrasings and,
+// when the limits state it, the send-backs per turn.
+describe('the verification the turn builds', () => {
+    const analysis = (name) => echoTool({ name, parameters: { type: 'object', properties: {} }, run: async () => ({ data: {}, checks: [] }) });
+    const gates = async (replies, config = {}) => {
+        const { port } = scriptedPort(replies);
+        const events = await collect(runTurn(spec({
+            tools: [modulations(), analysis('analyze_displacement_directions'), analysis('analyze_clusters')], model: port, config
+        })));
+        return events.filter((event) => event.type === 'gate').map((event) => event.id);
+    };
+
+    it('reads the caller\'s phrasings beside its own (the harness\'s verdict words, config.phrasings)', async () => {
+        const text = 'VERDICT {"features": [{"kind": "off_centre", "element": "Ti"}]}';
+        const phrasings = { 'split-site': { asserted: [/(^|[^\w-])(off_centre)\b/gi] } };
+        expect(await gates([{ text }, answer()], { phrasings })).toEqual(['split-site']);
+        // The app's own catalogue reads no schema word.
+        expect(await gates([{ text }])).toEqual([]);
+    });
+
+    // Behaviour change (candidate #4): the send-backs per turn are the
+    // verification's (DEFAULT_MAX_SEND_BACKS, 2); the loop's DEFAULT_LIMITS
+    // no longer hold maxEvidenceGates, and a run's limits still set it.
+    it('sends back at most twice a turn; config.limits.maxEvidenceGates sets it', async () => {
+        const text = 'Ti forms a superstructure. Site 2 has a preferred displacement direction. The Ti octahedra breathe.\nOutcome: sure.';
+        expect(await gates([{ text }, { text }, { text }])).toEqual(['order-between-cells', 'direction']);
+        expect(await gates([{ text }, { text }], { limits: { maxEvidenceGates: 1 } })).toEqual(['order-between-cells']);
+        expect(await gates([{ text }], { limits: { maxEvidenceGates: 0 } })).toEqual([]);
+        expect(await gates([{ text }, { text }, { text }, { text }], { limits: { maxEvidenceGates: 3 } })).toEqual(['order-between-cells', 'direction', 'clusters']);
+    });
+
+    it('invalid phrasings throw a TypeError on the first next()', async () => {
+        const { port } = scriptedPort([answer()]);
+        for (const phrasings of ['off_centre', { superstructure: { asserted: [/x/g] } }, { clusters: { asserted: [/x/] } }, { clusters: { asserted: ['x'] } }]) {
+            await expect(runTurn(spec({ model: port, config: { phrasings } })).next()).rejects.toBeInstanceOf(TypeError);
+        }
+    });
+});
+
 describe('the history window', () => {
     const firstMessages = async (history) => {
         const { port, requests } = scriptedPort([answer()]);

@@ -21,11 +21,9 @@ import assert from 'node:assert/strict';
 import {
     LOW_INDEX_CONE_DEG, SIGNIFICANCE_SIGMA, summarizeBondAngles, summarizeOrientation, summarizeSymmetry
 } from '../../copilotTools';
-import { auditAnswer, contextAuditFacts } from '../../llm/copilot/answerAudit';
 import { buildRunTools } from '../../llm/copilot/runTools';
-import { computeOutcome } from '../../llm/copilot/verdict';
+import { createVerification } from '../../llm/copilot/verification';
 import { buildRunContext } from '../../llm/context/runContext';
-import { pointGroupFacts } from '../../llm/context/pointGroups';
 import { MODAL_COORDINATION_SHARE, UNBONDED_APEX_FRACTION } from '../../llm/context/shells';
 import {
     AXIS_CONE_DEG, AXIS_ENHANCEMENT, CLUSTER_EFFECT, CLUSTER_Z, SPLIT_SITE_KURTOSIS, SPLIT_SITE_SE, TRIGONALITY_EFFECT, isSplitSite
@@ -70,13 +68,22 @@ const bondAnglePayload = (coordination) => ({
 });
 const refused = (result) => typeof result.data.refused === 'string' && !('mean_deg' in result.data);
 
-// One message of answerAudit's rule `rule` on `text`.
+// The answer judged by the verification (llm/copilot/verification/): the
+// tools' `facts` recorded as steps, the run `context` given, no claim offered
+// (only the checks on the answer speak). Its `done`: the findings and the
+// Outcome they compute.
+const judgeAnswer = (text, { facts = [], context = null } = {}) => {
+    const verification = createVerification({ context, offered: [] });
+    facts.forEach((item) => verification.record({ name: 'analysis', args: {}, status: 'ok', error: null, executed: true, facts: item }, () => ({ data: null })));
+    return verification.judge(text).done;
+};
+// One message of the answer check `rule` on `text`.
 const findsRule = (text, options, rule) => {
-    const rules = auditAnswer(text, options).map((finding) => finding.rule);
-    assert.ok(rules.includes(rule), `answerAudit gave [${rules.join(', ')}] on "${text}", not "${rule}"`);
+    const rules = judgeAnswer(text, options).audit.map((finding) => finding.rule);
+    assert.ok(rules.includes(rule), `the answer checks gave [${rules.join(', ')}] on "${text}", not "${rule}"`);
 };
 // A finding under the answer lowers the computed Outcome (the "warning under it").
-const lowersOutcome = (findings) => assert.equal(computeOutcome({ text: 'An answer.', findings }).status, 'not verified');
+const lowersOutcome = (text, options) => assert.equal(judgeAnswer(text, options).outcome.status, 'not verified');
 
 // A χ² history still falling at the end: the watchdog says improving.
 const fallingHistory = { name: 'run-01.log', plotData: { chiColumn: 'X_ray_(R)1', series: [{ y: Array.from({ length: 60 }, (_, i) => 5 - 0.05 * i) }] } };
@@ -263,13 +270,13 @@ export const FIRM_RULES = [
     {
         file: ANISOTROPY,
         find: 'claims a preferred displacement direction when every directions analysis of the question found none',
-        enforcedBy: 'answerAudit rule "direction", from analyze_displacement_directions\' facts.direction',
+        enforcedBy: 'the answer check "direction" (the verification\'s FACTS), from analyze_displacement_directions\' facts.direction',
         probe: () => {
             const { facts } = summarizeOrientation(orientationPayload({ peak: 1.2, map: 0.5 }), null);
             findsRule('Site 1 has a preferred displacement direction along [1 1 1].', { facts: [facts] }, 'direction');
             const significant = summarizeOrientation(orientationPayload({ peak: 4, map: 0.5 }), null).facts;
-            assert.deepEqual(auditAnswer('Site 1 has a preferred displacement direction along [1 1 1].', { facts: [significant] }), []);
-            lowersOutcome(auditAnswer('Site 1 has a preferred displacement direction.', { facts: [facts] }));
+            assert.deepEqual(judgeAnswer('Site 1 has a preferred displacement direction along [1 1 1].', { facts: [significant] }).audit, []);
+            lowersOutcome('Site 1 has a preferred displacement direction.', { facts: [facts] });
         }
     },
     {
@@ -290,7 +297,7 @@ export const FIRM_RULES = [
     {
         file: SYMMETRY,
         find: '`detect_symmetry` and the context\'s ladder state the point groups\' facts',
-        enforcedBy: 'detect_symmetry\'s point_group_facts (summarizeSymmetry), the context\'s ladder (buildRunContext), and answerAudit rules "chirality", "centrosymmetry", "polar", "inversion-lost"',
+        enforcedBy: 'detect_symmetry\'s point_group_facts (summarizeSymmetry), the context\'s ladder (buildRunContext), and the answer checks "chirality", "centrosymmetry", "polar", "inversion-lost" (the verification\'s FACTS)',
         probe: () => {
             const detected = summarizeSymmetry({ spaceGroup: 'P-42_1m', spaceGroupNumber: 113, pointGroup: '-42m', nSpace: 8, orbits: [] }, 0.025);
             assert.ok(detected.data.point_group_facts, 'detect_symmetry states no point-group facts');
@@ -298,28 +305,28 @@ export const FIRM_RULES = [
             const context = buildRunContext({ symmetry: demoSymmetry });
             assert.ok(context.symmetry.ladder.every((rung) => rung.pg), 'the context\'s ladder has no point groups');
             assert.ok(context.symmetry.point_group_facts?.length, 'the context states no point-group facts');
-            const audit = { facts: [detected.facts], context: contextAuditFacts(context, pointGroupFacts) };
+            const audit = { facts: [detected.facts], context };
             findsRule('P-42₁m is chiral.', audit, 'chirality');
             findsRule('F-43m is centrosymmetric.', audit, 'centrosymmetry');
             findsRule('P-42₁m is polar.', audit, 'polar');
             findsRule('Going from F-43m to P-42₁m, the inversion centre is lost.', audit, 'inversion-lost');
-            lowersOutcome(auditAnswer('P-42₁m is chiral.', audit));
+            lowersOutcome('P-42₁m is chiral.', audit);
         }
     },
     {
         file: FIT,
         find: 'says the run has converged while the watchdog or `assess_convergence` says improving or diverging',
-        enforcedBy: 'answerAudit rule "convergence", from assess_convergence\'s facts and the context\'s watchdog_status',
+        enforcedBy: 'the answer check "convergence" (the verification\'s FACTS), from assess_convergence\'s facts and the context\'s watchdog_status',
         probe: async () => {
             const tool = buildRunTools({ rValueFile: fallingHistory }).find((item) => item.name === 'assess_convergence');
             assert.ok(tool, 'no assess_convergence for a χ² history');
             const { facts } = await tool.run({});
             assert.equal(facts.convergence, 'improving');
             findsRule('The run has converged.', { facts: [facts] }, 'convergence');
-            const context = contextAuditFacts(buildRunContext({ rValueFile: fallingHistory }), pointGroupFacts);
-            assert.equal(context.convergence, 'improving', 'the context\'s watchdog_status is not the audit\'s');
+            const context = buildRunContext({ rValueFile: fallingHistory });
+            assert.equal(context.convergence?.watchdog_status, 'improving', 'the context\'s watchdog_status is not improving');
             findsRule('The run has converged.', { context }, 'convergence');
-            lowersOutcome(auditAnswer('The run has converged.', { context }));
+            lowersOutcome('The run has converged.', { context });
         }
     }
 ];
