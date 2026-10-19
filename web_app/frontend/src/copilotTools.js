@@ -19,7 +19,7 @@
 import { describeSymmetry, orbitLabel } from './symmetryModel';
 import { siteLabel } from './siteLabel';
 import { crystalOrientationRows, invert3, matVec3, transpose3, unitCellVectors } from './pcaCrystalFrame';
-import { cnMatches, countsCut, describePointGroup, lowerGroupTolerance, methodCheck, pointGroupFacts } from './llm';
+import { cnMatches, describePointGroup, lowerGroupTolerance, methodCheck, pointGroupFacts, shellCatalogue, windowCut } from './llm';
 import { symmetryNoiseFloor } from './llm/context/runContext';
 import { symmetryShifts } from './symmetryShift';
 import { nearestLowIndex } from './viewer3d';
@@ -502,10 +502,16 @@ const lengthSummary = (lengths) => {
 
 const BOND_LENGTHS = oneOf({ mean_A: 'number|null', unique_bonds: 'number', 'sd_A?': 'number|null' }, 'null');
 const ANGLE_BAND = { share: 'number|null', mean_deg: 'number|null' };
-// A refused window keeps the counts that show the cut and drops the angles
-// (mean_deg … histogram_10deg_sin_corrected), with `refused` saying why; the
-// B–C window and bond read 'same as A–B' for one shared window; `polyhedron`
-// only for a whole shell of about six (octahedron) or four (tetrahedron).
+// A bond window against the run's first shell of its pair (the shell
+// catalogue's window(): what it holds of the shell, its CN from the partial
+// g(r) beside the shell's).
+const SHELL_READING = { note: 'string', window_A: ['number', 'number'], cn: 'number|null', cn_in_window: 'number|null', holds: 'string' };
+// A refused window keeps the counts and the shell readings that show the cut
+// and drops the angles (mean_deg … histogram_10deg_sin_corrected), with
+// `refused` saying why; the B–C window and bond read 'same as A–B' for one
+// shared window; `shell_ab` only where the run reads a first shell for the
+// A–B pair, `shell_bc` only for a B–C window of its own; `polyhedron` only for
+// a whole shell of about six (octahedron) or four (tetrahedron).
 const BOND_ANGLES_SHAPE = {
     triplet: 'string',
     window_ab_A: ['number', 'number'],
@@ -519,7 +525,11 @@ const BOND_ANGLES_SHAPE = {
     'histogram_10deg_sin_corrected?': ['number|null'],
     bond_ab: BOND_LENGTHS,
     bond_bc: oneOf('string', BOND_LENGTHS),
-    coordination: { note: 'string', counts: ['number'], mean: 'number|null' },
+    coordination: {
+        note: 'string', counts: ['number'], mean: 'number|null', modal: 'number|null', modal_share: 'number|null', unbonded_share: 'number|null'
+    },
+    'shell_ab?': SHELL_READING,
+    'shell_bc?': SHELL_READING,
     'refused?': 'string',
     'polyhedron?': oneOf(
         { ideal: 'string', cis_below_135_deg: ANGLE_BAND, trans_above_135_deg: ANGLE_BAND },
@@ -527,28 +537,42 @@ const BOND_ANGLES_SHAPE = {
     )
 };
 
+// A bond window against its first shell, as the data hold it (shell_ab, shell_bc).
+const shellReadingOf = (reading, centre, partner) => ({
+    note: `the first ${centre}–${partner} shell (find_gr_peaks); cn, cn_in_window: ${partner} per ${centre}`,
+    window_A: [...reading.shell.window],
+    cn: round(reading.shell.cn),
+    cn_in_window: round(reading.cn),
+    holds: reading.holds
+});
+
 /**
- * The bond-angle result the model reads, with deterministic checks: a window
- * that misses most central atoms, or in which fewer than 60 % of them share
- * the most common bond count, cuts the coordination shell (the 2026-10-10 spot
- * check read such a cut as "incomplete octahedra"). Such a window is refused —
- * its angles are not the polyhedron's — unless the user chose it
- * (`windowConfirmed`, the coordination-shells skill's firm rule; its 60 %
- * threshold is an interview item): the counts that show the cut are returned
- * instead. The rule is the shell module's counts reading (llm/context/
- * shells.js countsCut, MODAL_COORDINATION_SHARE and UNBONDED_APEX_FRACTION),
- * on the engine's coordinationSummary. For a whole shell of about six or four
- * neighbours the angles are also read against an ideal octahedron or
+ * The bond-angle result the model reads, with deterministic checks. A window
+ * that cuts the coordination shell is refused — its angles are not the
+ * polyhedron's (the 2026-10-10 spot check read such a cut as "incomplete
+ * octahedra") — unless the user chose it (`windowConfirmed`, the
+ * coordination-shells skill's firm rule): the counts and shell readings that
+ * show the cut are returned instead. The rule is the one the Workbench asks
+ * on (llm/context/shells.js windowCut; approved by the user, 2026-10-19):
+ * each bond window the tool reads (`shells`, the catalogue's window() for
+ * each of its shellWindows: A–B, and B–C when it has a window of its own; null
+ * where the run reads no shell) cuts its shell when it meets it and holds
+ * fewer partner atoms than the whole shell by max(0.5, 15 % of the shell's
+ * CN). Only where there is no shell to compare the A–B window with does the
+ * engine's coordinationSummary decide (the counts fallback). The counts stay
+ * in the data as information either way. For a whole shell of about six or
+ * four neighbours the angles are also read against an ideal octahedron or
  * tetrahedron, and the sin θ-corrected histogram shows the trans angles raw
  * counts hide.
  */
-export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) => {
+export const summarizeBondAngles = (payload, { windowConfirmed = false, shells = [] } = {}) => {
     const total = payload.angleCount || 0;
     const coordination = Array.isArray(payload.coordination) ? payload.coordination : [];
     const apexTotal = coordination.reduce((sum, count) => sum + count, 0);
     // The engine's summary of the counts (triplets.py coordination_summary,
     // workers/triplets.js coordinationSummaryOf): the mean, the modal count
-    // and the shares the window refusal reads.
+    // and its share, the share with no bond — information in the data, and
+    // the counts fallback of the cut rule where the run reads no shell.
     const summary = payload.coordinationSummary;
     if (!summary || typeof summary !== 'object') {
         throw new Error('the bond-angle engine returned no coordinationSummary (triplets.py bond_angle_summary, workers/triplets.js bondAngleSummary)');
@@ -571,9 +595,23 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
         coordination: {
             note: 'counts[n] = central atoms with exactly n A–B bonds in the window',
             counts: coordination,
-            mean: round(meanCoordination)
+            mean: round(meanCoordination),
+            modal: Number.isFinite(summary.modal) ? summary.modal : null,
+            modal_share: round(summary.modalShare, 2),
+            unbonded_share: round(summary.unbondedShare, 2)
         }
     };
+    // Each bond window the tool reads (its shellWindows: A–B, and B–C when it
+    // has a window of its own) by the one cut rule (shells.js windowCut, the
+    // Workbench's): against the run's first shell of its pair, the A–B window
+    // with the engine's counts as the fallback where there is none.
+    const windows = [
+        { key: 'shell_ab', partner: a, reading: shells[0] ?? null, counts: summary },
+        ...(payload.sharedEnds ? [] : [{ key: 'shell_bc', partner: c, reading: shells[1] ?? null, counts: null }])
+    ].map((item) => ({ ...item, verdict: windowCut(item.reading, item.counts) }));
+    windows.forEach(({ key, partner, reading }) => {
+        if (reading) data[key] = shellReadingOf(reading, b, partner);
+    });
     const checks = [...parseWarningCheck(payload)];
     // Where the window comes from is method (llm copilot/method.js): arm C's
     // method 'off' sends the failure and the plain remedy.
@@ -584,24 +622,33 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
             ' or check the elements.'));
         return { data, checks };
     }
-    let cutText = null;
-    const counts = countsCut(summary);
-    if (counts.by === 'unbonded') {
-        cutText = `${Math.round(summary.unbondedShare * 100)} % of the ${b} atoms have no ${a}–${b} bond in the window: it misses most of the shell.`;
-    } else if (counts.by === 'count-spread') {
+    // Why each cut window cuts: the CN shortfall against its shell (by path),
+    // or, with no shell to compare, the counts (the fallback's words).
+    const cutTexts = windows.filter(({ verdict }) => verdict.cut).map(({ key, partner, reading, verdict }) => {
+        if (verdict.by === 'cn-margin') {
+            return `The window cuts the first ${b}–${partner} shell: it holds ${round(reading.cn)} ${partner} per ${b} (${key}.cn_in_window) `
+                + `of the shell's ${round(reading.shell.cn)} (${key}.cn, in ${key}.window_A), fewer by at least max(0.5, 15 % of the shell's CN).`;
+        }
+        if (verdict.by === 'unbonded') {
+            return `${Math.round(summary.unbondedShare * 100)} % of the ${b} atoms have no ${a}–${b} bond in the window: it misses most of the shell.`;
+        }
         const present = coordination.map((count, bonds) => (count > 0 ? bonds : null)).filter((bonds) => bonds != null);
-        cutText = `Only ${Math.round(summary.modalShare * 100)} % of the ${b} atoms have the most common count (${summary.modal} ${a}–${b} bonds); `
+        return `Only ${Math.round(summary.modalShare * 100)} % of the ${b} atoms have the most common count (${summary.modal} ${a}–${b} bonds); `
             + `the counts spread from ${present[0]} to ${present.at(-1)}. The window cuts through a coordination shell.`;
-    }
+    });
+    const cutText = cutTexts.length ? cutTexts.join(' ') : null;
     // For the coordination answer check (review L5): the A–B count in this
-    // window, and whether it is the whole shell or a window the user chose.
+    // window, and whether it is the whole shell (its CN the shell's within the
+    // CN margin; with no shell to compare, not cut by the counts) or a window
+    // the user chose.
+    const wholeShell = windows[0].verdict.whole;
     const facts = {
         coordination: {
             centre: b,
             partner: a,
             window: payload.bond12 ?? null,
             cn: round(meanCoordination),
-            whole_shell: !cutText,
+            whole_shell: wholeShell,
             confirmed: windowConfirmed
         }
     };
@@ -617,8 +664,7 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
         return { data, checks, facts };
     }
     if (cutText) checks.push({ level: 'warn', text: `${cutText} Kept: the user chose this window; say that its angles are of a partial shell.` });
-    const cut = Boolean(cutText);
-    if (!cut) {
+    if (!cutText) {
         checks.push({ level: 'ok', text: `${total} angles around ${apexTotal} ${b} atoms (mean coordination ${round(meanCoordination)}).` });
     }
     // Only a whole shell is read against an ideal polyhedron: a cut TaSe6
@@ -626,7 +672,7 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
     // shell: an A–B–A triplet with one window. A mixed (Se–Ta–Te) or split
     // (two windows) triplet's angles are a subset of the polyhedron's.
     const oneShell = a === c && payload.sharedEnds === true;
-    const reference = cut || !oneShell ? null : polyhedronReference(payload.binCenters || [], payload.counts || [], total, meanCoordination);
+    const reference = !wholeShell || !oneShell ? null : polyhedronReference(payload.binCenters || [], payload.counts || [], total, meanCoordination);
     if (reference) data.polyhedron = reference;
     if (reference?.trans_above_135_deg) {
         // A band with no angles has no mean: say "none", never "null°".
@@ -642,6 +688,28 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
     }
     return { data, checks, facts };
 };
+
+/**
+ * compute_bond_angles' bond windows (its `shellWindows`): the A–B window
+ * around the central atom B, and the B–C window when the call gives one. The
+ * Workbench asks about these before the tool runs (llm clarify.js), and the
+ * tool refuses on the same windows by the same rule; `apply` puts a chosen
+ * window back into the arguments, confirmed when it is the user's own.
+ */
+const bondShellWindows = (args) => [
+    {
+        centre: args.apex,
+        partner: args.end1,
+        window: [args.r12_min, args.r12_max],
+        apply: ([lo, hi], { confirmed = false } = {}) => ({ ...args, r12_min: lo, r12_max: hi, ...(confirmed ? { window_confirmed: true } : {}) })
+    },
+    ...(args.r23_min != null && args.r23_max != null ? [{
+        centre: args.apex,
+        partner: args.end2,
+        window: [args.r23_min, args.r23_max],
+        apply: ([lo, hi], { confirmed = false } = {}) => ({ ...args, r23_min: lo, r23_max: hi, ...(confirmed ? { window_confirmed: true } : {}) })
+    }] : [])
+];
 
 // --- analyze_clusters ------------------------------------------------------------
 
@@ -1463,13 +1531,20 @@ const elementProperty = (elements, description) => (
  * run's structureFromRmc6f, or a server folder's /api/structure; none for a
  * coords-only file) enables detect_symmetry and measure_symmetry_lowering, and
  * so does a server folder's `basisOmitted` (above the finder's site cap, where
- * both answer "not analysed", as for the browser's basis).
+ * both answer "not analysed", as for the browser's basis). `plotFiles` and
+ * `runSettings` are the run's (CopilotChat's props of the same names): with
+ * the structure they give the run's shell catalogue (llm/context/shells.js),
+ * against which compute_bond_angles judges its windows by the rule the
+ * Workbench asks on; without a partials file there is none.
  * Model arguments reach the engines only through the explicit
  * mapping in each run(), never by spreading.
  */
-export const buildCopilotTools = ({ request, structure, elements = [] }) => {
+export const buildCopilotTools = ({ request, structure, elements = [], plotFiles = null, runSettings = null }) => {
     const tools = [];
     const unitCellFrom = (payload) => unitCellVectors(payload?.latticeVectors ?? structure?.latticeVectors, payload?.supercell ?? structure?.supercell);
+    // The run's one shell reading, memoised per partials data, structure and
+    // run settings: the catalogue the Workbench's questions read for the same run.
+    const shells = () => shellCatalogue({ plotFiles, structure, runSettings });
 
     if (request) {
         tools.push({
@@ -1563,21 +1638,9 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                 required: ['end1', 'apex', 'end2', 'r12_min', 'r12_max']
             },
             // The bond windows, for the Workbench's check that a window does
-            // not cut a coordination shell before this runs (llm clarify.js).
-            shellWindows: (args) => [
-                {
-                    centre: args.apex,
-                    partner: args.end1,
-                    window: [args.r12_min, args.r12_max],
-                    apply: ([lo, hi], { confirmed = false } = {}) => ({ ...args, r12_min: lo, r12_max: hi, ...(confirmed ? { window_confirmed: true } : {}) })
-                },
-                ...(args.r23_min != null && args.r23_max != null ? [{
-                    centre: args.apex,
-                    partner: args.end2,
-                    window: [args.r23_min, args.r23_max],
-                    apply: ([lo, hi], { confirmed = false } = {}) => ({ ...args, r23_min: lo, r23_max: hi, ...(confirmed ? { window_confirmed: true } : {}) })
-                }] : [])
-            ],
+            // not cut a coordination shell before this runs (llm clarify.js),
+            // and for this tool's own refusal: the same windows, the same rule.
+            shellWindows: bondShellWindows,
             dataShape: BOND_ANGLES_SHAPE,
             label: ({ end1, apex, end2, r12_min: lo, r12_max: hi }) => (
                 `Bond angles ${end1}–${apex}–${end2}${Number.isFinite(lo) && Number.isFinite(hi) ? ` · ${lo}–${hi} Å` : ''}`
@@ -1612,7 +1675,11 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                     params.r23Min = args.r23_min;
                     params.r23Max = args.r23_max;
                 }
-                return summarizeBondAngles(await request('triplets', params, { signal }), { windowConfirmed: args.window_confirmed === true });
+                const payload = await request('triplets', params, { signal });
+                // Each window the Workbench reads, against the run's shell of its pair.
+                const catalogue = shells();
+                const readings = bondShellWindows(args).map(({ centre, partner, window }) => catalogue?.window(centre, partner, window) ?? null);
+                return summarizeBondAngles(payload, { windowConfirmed: args.window_confirmed === true, shells: readings });
             }
         });
 

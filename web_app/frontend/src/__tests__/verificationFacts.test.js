@@ -42,7 +42,9 @@ describe('the facts catalogue against the real tools (the Demo run)', () => {
         const request = inProcessEngine(rmc6fText);
         const tools = [
             ...buildRunTools(run, { cards: [] }),
-            ...buildCopilotTools({ request, structure: run.structure, elements: Object.keys(run.structure.elementCounts || {}).sort() })
+            ...buildCopilotTools({
+                request, structure: run.structure, elements: Object.keys(run.structure.elementCounts || {}).sort(), plotFiles: run.plotFiles, runSettings: run.runSettings
+            })
         ];
         for (const [name, args] of CALLS) {
             const tool = tools.find((candidate) => candidate.name === name);

@@ -8,7 +8,7 @@
 // Workbench's window questions (clarify.js), the verification
 // (copilot/verification/: the evidence gate's finite clusters,
 // clusterElementsOf; the answer checks, cnMatches), compute_bond_angles'
-// window refusal (copilotTools.js: countsCut) and arm A+ (validation/armA.js).
+// window refusal (copilotTools.js: windowCut) and arm A+ (validation/armA.js).
 // Before, five readers each searched their own r range, rounded their own way
 // and integrated the coordination number their own way, and one shell could
 // read three ways (the Demo's Ta–Se first peak: 3.9 Se per Ta in one, 3.86 in
@@ -57,14 +57,18 @@
 //   clusters    an element whose own first shell holds 0.5–4.5 neighbours
 //               may form finite clusters (clusterElementsOf: the evidence
 //               gate's "no order" and arm A+'s cluster sweep).
-//   cut         two readings of whether a window cuts a shell, both today's:
-//               the Workbench asks on the CN margin (cnMarginCut: the window
-//               overlaps the shell and holds fewer atoms by at least
-//               max(0.5, 15 % of the shell's)); compute_bond_angles refuses on
-//               the coordination counts (countsCut: more than half the
+//   cut         one rule (windowCut; approved by the user, 2026-10-19): a
+//               window that meets a shell cuts it when it holds fewer partner
+//               atoms than the whole shell by at least max(0.5, 15 % of the
+//               shell's CN) (cnMarginCut). The Workbench asks on it before an
+//               analysis runs (clarify.js) and compute_bond_angles refuses on
+//               it unless the user chose the window. Only where the run reads
+//               no shell to compare the window with — no partials, no closed
+//               shell for the pair, no density for a CN, or a window apart
+//               from the first shell — does the tool fall back on the
+//               coordination counts, as before (countsCut: more than half the
 //               central atoms unbonded, or fewer than 60 % with the most
-//               common count). Which rule should decide is the user's
-//               decision; both readings live here so they can be compared.
+//               common count).
 //
 // Pure functions of plain data (no React), inside the llm module (its import
 // boundary: README.md), so the context, the copilot and the host all reach it.
@@ -111,14 +115,17 @@ export const CLUSTER_CN_MAX = 4.5;
 export const SEPARATION_G_FRACTION = 0.02;
 // The cut sensitivity: the shell's top moved this far (Å) either way.
 export const CUT_SHIFT_A = 0.2;
-// The Workbench's CN margin: a window changes the answer when its CN differs
-// from the whole shell's by at least the larger of these (atoms; fraction of
-// the shell's CN).
+// The CN margin: a window changes the answer when its CN differs from the
+// whole shell's by at least the larger of these (atoms; fraction of the
+// shell's CN). One that meets the shell with fewer atoms by it cuts the shell
+// (cnMarginCut): the cut rule of the Workbench's question and of
+// compute_bond_angles' refusal (windowCut).
 export const CN_CHANGE_ABS = 0.5;
 export const CN_CHANGE_REL = 0.15;
-// compute_bond_angles' counts rule (pinned as it was in copilotTools.js):
-// central atoms with no A–B bond in the window above this fraction — the
-// window misses them …
+// The counts fallback (countsCut), for a window the run reads no shell to
+// compare with (windowCut); before 2026-10-19 compute_bond_angles' rule for
+// every window. Central atoms with no A–B bond in the window above this
+// fraction — the window misses them …
 export const UNBONDED_APEX_FRACTION = 0.5;
 // … or fewer central atoms than this share with the most common A–B bond
 // count — the coordination is spread, as when the window edge cuts through a
@@ -428,27 +435,62 @@ const holdsOf = ([lo, hi], [shellLo, shellHi]) => {
 };
 
 /**
- * The Workbench's rule (today's, unchanged): a window cuts the shell when it
- * overlaps it and holds fewer partner atoms than the whole shell by the CN
- * margin (cnChanges).
+ * The CN margin's cut: a window cuts the shell when it overlaps it and holds
+ * fewer partner atoms than the whole shell by the CN margin (cnChanges). The
+ * rule windowCut applies wherever the window meets a shell.
  */
 export const cnMarginCut = (cn, shell, [lo, hi]) => Boolean(shell?.window) && Number.isFinite(shell.cn)
     && hi > shell.window[0] && lo < shell.window[1]
     && Number.isFinite(cn) && cn < shell.cn && cnChanges(cn, shell.cn);
 
 /**
- * compute_bond_angles' rule (today's, pinned): a window cuts the shell when
- * more than UNBONDED_APEX_FRACTION of the central atoms have no bond in it
- * ('unbonded'), or fewer than MODAL_COORDINATION_SHARE share the most common
- * count ('count-spread'). `summary` is the bond-angle engine's
- * coordinationSummary { mean, modal, modalShare, unbondedShare }
- * (triplets.py bond_angle_summary, workers/triplets.js bondAngleSummary).
- * Returns { cut, by }.
+ * The counts fallback (windowCut's, for a window with no shell to compare):
+ * a window cuts a shell when more than UNBONDED_APEX_FRACTION of the central
+ * atoms have no bond in it ('unbonded'), or fewer than
+ * MODAL_COORDINATION_SHARE share the most common count ('count-spread').
+ * `summary` is the bond-angle engine's coordinationSummary { mean, modal,
+ * modalShare, unbondedShare } (triplets.py bond_angle_summary,
+ * workers/triplets.js bondAngleSummary). Returns { cut, by }.
  */
 export const countsCut = (summary) => {
     if (summary?.unbondedShare > UNBONDED_APEX_FRACTION) return { cut: true, by: 'unbonded' };
     if (Number.isFinite(summary?.modalShare) && summary.modalShare < MODAL_COORDINATION_SHARE) return { cut: true, by: 'count-spread' };
     return { cut: false, by: null };
+};
+
+/**
+ * Whether a bond window cuts its coordination shell: the one rule (approved
+ * by the user, 2026-10-19). The Workbench asks on it before an analysis runs
+ * (clarify.js beforeCall, without counts) and compute_bond_angles refuses on
+ * it unless the user chose the window (copilotTools.js, with the bond-angle
+ * engine's counts). `reading` is the catalogue's window() for the window (null
+ * when the run reads no closed shell for the pair, or has no partials);
+ * `counts` the engine's coordinationSummary for the window, or null.
+ *
+ *   - The window meets a shell with a CN (it overlaps the shell, and the
+ *     structure gives the partner's density): the CN margin decides
+ *     (cnMarginCut; rule 'cn-margin'). `whole`: its CN is the shell's within
+ *     the margin, either way (a window that holds more than the shell by the
+ *     margin is not cut, and does not count the shell either).
+ *   - Otherwise — no partials, no closed shell for the pair, no density for a
+ *     CN, or a window apart from the shell (the module reads first shells
+ *     only, so it cannot say whether such a window cuts a later one) — the
+ *     coordination counts decide, as they did for every window before
+ *     2026-10-19 (countsCut; rule 'counts'). `whole` is "not cut", except that
+ *     a window apart from the first shell never holds it. Without counts
+ *     nothing decides (rule null: not cut, not whole).
+ *
+ * Returns { cut, by, rule, whole }; `by` is 'cn-margin', 'unbonded',
+ * 'count-spread' or null.
+ */
+export const windowCut = (reading, counts = null) => {
+    if (reading && reading.holds !== 'apart' && Number.isFinite(reading.cn) && Number.isFinite(reading.shell?.cn)) {
+        const cut = reading.cnMargin.cut;
+        return { cut, by: cut ? 'cn-margin' : null, rule: 'cn-margin', whole: !cnChanges(reading.cn, reading.shell.cn) };
+    }
+    if (!counts) return { cut: false, by: null, rule: null, whole: false };
+    const { cut, by } = countsCut(counts);
+    return { cut, by, rule: 'counts', whole: !cut && reading?.holds !== 'apart' };
 };
 
 /**
@@ -591,12 +633,10 @@ const buildCatalogue = (partials, structure, runSettings) => {
          * centre–partner shell: its CN (partner atoms per centre, integrated
          * over exactly that window), what it holds of the shell ('whole',
          * 'part', 'more' — the whole shell and beyond its boundary — or
-         * 'apart'), the Workbench's CN-margin reading and, given the window's
-         * coordination counts (the bond-angle engine's coordinationSummary),
-         * compute_bond_angles' counts reading. Null when the pair has no
-         * closed shell.
+         * 'apart') and its CN-margin reading (cnMarginCut), which the one cut
+         * rule reads (windowCut). Null when the pair has no closed shell.
          */
-        window: (centre, partner, [lo, hi] = [], { counts = null } = {}) => {
+        window: (centre, partner, [lo, hi] = []) => {
             const found = shell(centre, partner);
             if (!found?.window || !(hi > lo)) return null;
             const cn = cnOf(sources.get(`${centre}|${partner}`).data, elementDensity(structure, partner), [lo, hi]);
@@ -604,7 +644,6 @@ const buildCatalogue = (partials, structure, runSettings) => {
                 cn,
                 holds: holdsOf([lo, hi], found.window),
                 cnMargin: { cut: cnMarginCut(cn, found, [lo, hi]) },
-                counts: counts ? countsCut(counts) : null,
                 shell: found
             };
         }
@@ -622,8 +661,8 @@ const CATALOGUES = new WeakMap();
  * ({ plotFiles, structure, runSettings }; only the partial-PDF file is
  * required — without the structure's counts and cell there is no CN, without
  * the run settings no constraint). Returns { elements, pairs, shell(centre,
- * partner), window(centre, partner, [lo, hi], { counts }) }, or null without a
- * partials file with element-pair series.
+ * partner), window(centre, partner, [lo, hi]) }, or null without a partials
+ * file with element-pair series.
  */
 export const shellCatalogue = (run) => {
     const partials = partialsOf(run?.plotFiles);

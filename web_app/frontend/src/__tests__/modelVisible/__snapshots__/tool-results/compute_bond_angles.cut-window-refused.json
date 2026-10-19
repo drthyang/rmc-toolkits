@@ -7,13 +7,13 @@
     "r12_min": 2.3,
     "r12_max": 2.7
   },
-  "content_chars": 833,
+  "content_chars": 1081,
   "content": {
     "ref": "r1",
     "checks": [
       {
         "level": "fail",
-        "text": "Refused: Only 47 % of the Ta atoms have the most common count (3 Se–Ta bonds); the counts spread from 1 to 6. The window cuts through a coordination shell. Use the whole shell (find_gr_peaks' first_shell.window_A). If the user wants this window, ask them (ask_user) and call again with window_confirmed: true."
+        "text": "Refused: The window cuts the first Ta–Se shell: it holds 3.75 Se per Ta (shell_ab.cn_in_window) of the shell's 6 (shell_ab.cn, in shell_ab.window_A), fewer by at least max(0.5, 15 % of the shell's CN). Use the whole shell (find_gr_peaks' first_shell.window_A). If the user wants this window, ask them (ask_user) and call again with window_confirmed: true."
       }
     ],
     "data": {
@@ -31,7 +31,17 @@
       "coordination": {
         "note": "counts[n] = central atoms with exactly n A–B bonds in the window",
         "counts": [0, 7, 231, 7596, 4930, 2457, 779],
-        "mean": 3.75
+        "mean": 3.75,
+        "modal": 3,
+        "modal_share": 0.47,
+        "unbonded_share": 0
+      },
+      "shell_ab": {
+        "note": "the first Ta–Se shell (find_gr_peaks); cn, cn_in_window: Se per Ta",
+        "window_A": [2.21, 3.23],
+        "cn": 6,
+        "cn_in_window": 3.75,
+        "holds": "part"
       },
       "refused": "the window cuts the coordination shell, so its angles are not the polyhedron's and are not returned"
     }
