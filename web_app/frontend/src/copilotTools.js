@@ -54,8 +54,70 @@ const parseWarningCheck = (payload) => (
     payload?.parseWarning ? [{ level: 'warn', text: `Structure file: ${payload.parseWarning}` }] : []
 );
 
+// --- split sites (list_sites and the cluster summary) ------------------------------
+
+// A site is split (two positions) when its PC1 is resolved and its PC1 excess
+// kurtosis is at most −0.5 — the value at which two equal wells ±δ of thermal
+// width σ separate (δ = σ: κ = −2δ⁴/(δ² + σ²)² = −0.5) — and at least this
+// many sampling errors (√(24/n)) below zero.
+export const SPLIT_SITE_KURTOSIS = -0.5;
+export const SPLIT_SITE_SE = 3;
+// The threshold as the texts the model reads write it (a true minus sign).
+const SPLIT_RULE_KURTOSIS = String(SPLIT_SITE_KURTOSIS).replace('-', '−');
+
+/** Whether one site (an engine 'sites' row) is split: the app's one rule, for list_sites and analyze_clusters. */
+export const isSplitSite = (site) => {
+    const kappa = site?.excessKurtosis?.[0];
+    return Boolean(site?.axisResolved?.[0]) && Number.isFinite(kappa) && site.count > 0
+        && kappa <= SPLIT_SITE_KURTOSIS && kappa <= -SPLIT_SITE_SE * Math.sqrt(24 / site.count);
+};
+
+/**
+ * A split site's static displacement along PC1 and its sampling error, from
+ * its engine row (docs/algorithms/ai-assistant.md, Step 20):
+ *
+ *   δ² = λ₁ − (λ₂ + λ₃)/2 = rms1² − rms⊥²,
+ *
+ * rms⊥ the RMS of the two other axes: the thermal width along PC1 is taken as
+ * the mean of the widths across it (exact for isotropic or uniaxial thermal
+ * motion; with rms2 alone, the larger of two equal sample variances would
+ * bias δ low). Each eigenvalue's sampling variance is (m4 − m2²)/n =
+ * (κ + 2)·m2²/n, with the engine's population moments along that axis
+ * (m2 = λ(n − 1)/n, κ its excess kurtosis): the error the engine's axis
+ * resolution uses. The three add as independent (exact when the thermal
+ * motion along PC1 is independent of the position taken and of the motion
+ * across it), and the root by the delta method: SE(δ) = SE(δ²)/(2δ). For two
+ * equally occupied positions ±δ this is the half distance between them; for
+ * unequal ones, the RMS of the static displacement. Null without a spread
+ * along PC1 beyond the other two axes.
+ */
+export const splitDisplacement = (site) => {
+    const lambda = site?.eigenvalues;
+    const n = site?.count;
+    if (!Array.isArray(lambda) || lambda.length !== 3 || !lambda.every(Number.isFinite) || !(n > 1)) return null;
+    const delta2 = lambda[0] - (lambda[1] + lambda[2]) / 2;
+    if (!(delta2 > 0)) return null;
+    // A collapsed axis has no kurtosis (κ null): its m2 is round-off, and the
+    // Gaussian value adds nothing to the error.
+    const variance = lambda.map((value, a) => {
+        const kappa = site.excessKurtosis?.[a];
+        const m2 = (value * (n - 1)) / n;
+        return (Math.max((Number.isFinite(kappa) ? kappa : 0) + 2, 0) * m2 * m2) / n;
+    });
+    const delta = Math.sqrt(delta2);
+    return { delta, se: Math.sqrt(variance[0] + (variance[1] + variance[2]) / 4) / (2 * delta) };
+};
+
+/** The sites (list_sites' engine rows) among `refs` whose clouds are split. */
+export const splitMemberSites = (siteRows, refs) => (siteRows || []).filter((site) => (
+    refs.includes(site.referenceNumber) && isSplitSite(site)
+));
+
 // --- list_sites ------------------------------------------------------------------
 
+// The per-axis kurtosis only on resolved axes (an unresolved axis's direction
+// is noise, and so is its κ), PC1's crystal direction only when PC1 is
+// resolved, and delta_A / delta_se_A only on a split site.
 const SITES_SHAPE = {
     note: 'string',
     'element?': 'string',
@@ -72,15 +134,36 @@ const SITES_SHAPE = {
         rms_axes_A: oneOf(XYZ, 'null'),
         anisotropy: 'number|null',
         kurtosis: 'number|null',
+        'kurtosis_axes?': XYZ,
+        'pc1_uvw?': ['number', 'number', 'number'],
+        'delta_A?': 'number',
+        'delta_se_A?': 'number',
         'zero_spread?': 'boolean'
     }]
 };
 
-// Rows are ranked by |kurtosis|, then U_iso — the order the run context uses —
-// so trimming to the result budget drops the least remarkable sites first.
-export const summarizeSites =(payload, { element = null } = {}) => {
+// Split sites first, largest delta_A first; the rest by |kurtosis|, then
+// U_iso — the order the run context uses — so trimming to the result budget
+// drops the least remarkable sites first, and never a split site before
+// another site.
+const bySiteInterest = (a, b) => {
+    if (a.delta_A != null || b.delta_A != null) {
+        if (a.delta_A == null) return 1;
+        if (b.delta_A == null) return -1;
+        if (a.delta_A !== b.delta_A) return b.delta_A - a.delta_A;
+    }
+    return Math.abs(b.kurtosis ?? 0) - Math.abs(a.kurtosis ?? 0) || (b.U_iso_A2 ?? -Infinity) - (a.U_iso_A2 ?? -Infinity);
+};
+
+/**
+ * The site table the model reads. `unitCell` (rows a, b, c in Å) gives PC1's
+ * crystal direction; by default it is the payload's own (its supercell
+ * lattice over the supercell).
+ */
+export const summarizeSites = (payload, { element = null, unitCell = undefined } = {}) => {
     const all = payload?.sites || [];
     const picked = element ? all.filter((site) => site.element === element || site.elementCounts?.[element]) : all;
+    const cell = unitCell === undefined ? unitCellVectors(payload?.latticeVectors, payload?.supercell) : unitCell;
     const sites = picked.map((site) => {
         const row = {
             ref: site.referenceNumber,
@@ -91,19 +174,44 @@ export const summarizeSites =(payload, { element = null } = {}) => {
             anisotropy: round(site.anisotropy),
             kurtosis: round(site.nonGaussianity)
         };
+        const resolved = Array.isArray(site.axisResolved) ? site.axisResolved : [];
+        const axes = [0, 1, 2].map((a) => (resolved[a] ? round(site.excessKurtosis?.[a]) : null));
+        if (axes.some((value) => value != null)) row.kurtosis_axes = axes;
+        // The sense whose closest crystal axis is acute (crystalOrientationRows),
+        // as the PCA Ellipsoid table and analyze_displacement_directions quote it.
+        const orientation = resolved[0] && Array.isArray(site.axes) && cell ? crystalOrientationRows(site.axes, cell) : null;
+        if (orientation) row.pc1_uvw = orientation[0].crystalDirection.map((value) => roundFixed(value, 2));
+        const split = isSplitSite(site) ? splitDisplacement(site) : null;
+        if (split) {
+            row.delta_A = round(split.delta);
+            row.delta_se_A = round(split.se, 2);
+        }
         if (site.zeroSpread) row.zero_spread = true;
         return row;
-    }).sort((a, b) => (
-        Math.abs(b.kurtosis ?? 0) - Math.abs(a.kurtosis ?? 0) || (b.U_iso_A2 ?? -Infinity) - (a.U_iso_A2 ?? -Infinity)
-    ));
+    }).sort(bySiteInterest);
     const ranked = (key) => [...sites]
         .filter((site) => Number.isFinite(site[key]))
         .sort((a, b) => Math.abs(b[key]) - Math.abs(a[key]))
         .slice(0, 3)
         .map((site) => site.ref);
+    const splitRows = sites.filter((site) => site.delta_A != null);
+    // The note defines only the fields this result holds.
+    const note = [
+        'kurtosis = Mardia multivariate excess kurtosis (0 Gaussian; >0 peaked/heavy-tailed; <0 flat or split)',
+        sites.some((site) => site.kurtosis_axes)
+            ? 'kurtosis_axes = excess kurtosis along PC1, PC2, PC3, null where that axis is not resolved (its direction is noise)'
+            : null,
+        'anisotropy = rms1/rms3',
+        sites.some((site) => site.pc1_uvw) ? 'pc1_uvw = PC1 as a direct-lattice direction [u v w] (not a plane normal), where PC1 is resolved' : null,
+        splitRows.length
+            ? `delta_A = static displacement along PC1 of a split site (two positions: PC1 excess kurtosis ≤ ${SPLIT_RULE_KURTOSIS} and `
+                + `${SPLIT_SITE_SE} sampling errors below 0), sqrt(rms1² − rms⊥²) with rms⊥² = (rms2² + rms3²)/2: ±delta_A for two `
+                + 'equally occupied positions, their RMS otherwise; delta_se_A = its sampling error'
+            : null,
+        splitRows.length ? 'split sites first (largest delta_A first), then by |kurtosis|, largest first' : 'sites sorted by |kurtosis|, largest first'
+    ].filter(Boolean).join('; ');
     const data = {
-        note: 'kurtosis = Mardia multivariate excess kurtosis (0 Gaussian; >0 peaked/heavy-tailed; <0 flat or split); '
-            + 'anisotropy = rms1/rms3; sites sorted by |kurtosis|, largest first',
+        note,
         ...(element ? { element } : {}),
         n_sites: sites.length,
         total_atoms: payload?.totalAtoms ?? null,
@@ -125,6 +233,15 @@ export const summarizeSites =(payload, { element = null } = {}) => {
     const flat = sites.filter((site) => site.zero_spread).length;
     if (flat) {
         checks.push({ level: 'warn', text: `${flat} site(s) have zero spread (an averaged configuration?): no axes or kurtosis.` });
+    }
+    if (splitRows.length) {
+        const several = splitRows.length > 1;
+        checks.push({
+            level: 'note',
+            text: `Split: site${several ? 's' : ''} ${splitRows.map((site) => `${site.ref} (${site.site})`).join(', ')} `
+                + `${several ? 'have' : 'has'} two positions along PC1 (PC1 excess kurtosis ≤ ${SPLIT_RULE_KURTOSIS}, at least `
+                + `${SPLIT_SITE_SE} sampling errors below 0); delta_A is the static displacement, along pc1_uvw.`
+        });
     }
     if (sites.length && !checks.some((check) => check.level === 'warn' || check.level === 'fail')) {
         checks.push({ level: 'ok', text: `${sites.length} sites, ${payload?.totalAtoms ?? '?'} atoms.` });
@@ -565,19 +682,7 @@ const significant = (z, change, effect) => (
     Number.isFinite(z) && Math.abs(z) >= CLUSTER_Z && Number.isFinite(change) && Math.abs(change) >= effect
 );
 
-// A member site is split (two positions) when its PC1 is resolved and its
-// PC1 excess kurtosis is at most −0.5 — the value at which two equal wells
-// ±δ of thermal width σ separate (δ = σ: κ = −2δ⁴/(δ² + σ²)² = −0.5) — and at
-// least this many sampling errors (√(24/n)) below zero.
-export const SPLIT_SITE_KURTOSIS = -0.5;
-export const SPLIT_SITE_SE = 3;
-
-/** The sites (list_sites' engine rows) among `refs` whose clouds are split. */
-export const splitMemberSites = (siteRows, refs) => (siteRows || []).filter((site) => {
-    const kappa = site.excessKurtosis?.[0];
-    return refs.includes(site.referenceNumber) && site.axisResolved?.[0] && Number.isFinite(kappa) && site.count > 0
-        && kappa <= SPLIT_SITE_KURTOSIS && kappa <= -SPLIT_SITE_SE * Math.sqrt(24 / site.count);
-});
+// A member site is split by the rule list_sites reports (isSplitSite, above).
 
 // One statistic against its null: change = obs/null − 1, when both are finite.
 const NULL_ROW = { obs: 'number|null', null: 'number|null', z: 'number|null', 'change?': 'number' };
@@ -1263,8 +1368,9 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
         tools.push({
             name: 'list_sites',
             description: 'List every reference site of the RMC configuration with its displacement statistics from a '
-                + 'PCA of its displacement cloud: U_iso (Å²), principal RMS amplitudes (Å), anisotropy and Mardia '
-                + 'kurtosis. Use it to find the most disordered, anisotropic or anharmonic sites (their `ref`).',
+                + 'PCA of its displacement cloud: U_iso (Å²), principal RMS amplitudes (Å), anisotropy, Mardia and '
+                + 'per-axis kurtosis, PC1 as [u v w], and a split site\'s static displacement (Å) with its sampling error. '
+                + 'Use it to find the most disordered, anisotropic or anharmonic sites (their `ref`).',
             parameters: {
                 type: 'object',
                 properties: {
@@ -1275,7 +1381,10 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
             label: ({ element }) => `Site displacement table${element ? ` · ${element}` : ''}`,
             page: 'ellipsoids',
             cards: () => ['pca-stats'],
-            run: async ({ element }, { signal } = {}) => summarizeSites(await request('sites', {}, { signal }), { element })
+            run: async ({ element }, { signal } = {}) => {
+                const payload = await request('sites', {}, { signal });
+                return summarizeSites(payload, { element, unitCell: unitCellFrom(payload) });
+            }
         });
 
         tools.push({

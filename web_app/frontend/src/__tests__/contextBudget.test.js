@@ -88,39 +88,39 @@ const TWO_LARGEST_SKILLS_TODAY = Object.freeze([
 
 const DOCK_WORST_TURN_TODAY = Object.freeze({
     systemPrompt: 4762,
-    toolJson: 6752,
+    toolJson: 6790,
     contextBlock: 2213,
     question: 70,
     skills: 7814,
     analyses: 8724,
     replyReserve: 8192,
-    firstRequest: 13796,
-    prompt: 30333,
-    needed: 38525,
-    headroom: -5757,
-    lmStudioHeadroom: -1661
+    firstRequest: 13833,
+    prompt: 30370,
+    needed: 38562,
+    headroom: -5794,
+    lmStudioHeadroom: -1698
 });
 // By how much the dock's worst turn overflows the window today.
-const DOCK_OVERFLOW_TOKENS_TODAY = 5757;
+const DOCK_OVERFLOW_TOKENS_TODAY = 5794;
 
 // Arm B's first request on each dev case is 9.6k–10.4k tokens; the largest:
 const ARM_B_LARGEST_DEV_CASE = 'dev-symmetry-lowering';
 const ARM_B_WORST_TURN_TODAY = Object.freeze({
     systemPrompt: 4422,
-    toolJson: 4002,
+    toolJson: 4039,
     contextBlock: 1224,
     question: 707,
     skills: 7814,
     analyses: 8723,
     replyReserve: 8192,
-    firstRequest: 10353,
-    prompt: 26889,
-    needed: 35081,
-    headroom: -2313,
-    lmStudioHeadroom: 1783
+    firstRequest: 10391,
+    prompt: 26927,
+    needed: 35119,
+    headroom: -2351,
+    lmStudioHeadroom: 1745
 });
 // By how much arm B's worst turn (largest dev case) overflows the window today.
-const ARM_B_OVERFLOW_TOKENS_TODAY = 2313;
+const ARM_B_OVERFLOW_TOKENS_TODAY = 2351;
 
 // --- the turn ------------------------------------------------------------------------
 

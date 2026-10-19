@@ -8,7 +8,7 @@
 //   npx vite-node validation/run.js -- arm-a   --split dev [--out <dir>]
 //   npx vite-node validation/run.js -- live    --arm B --model qwen3.8-27b --split dev [--runs 3] [--cases id,id] [--out <dir>] [--pca-table]
 //   npx vite-node validation/run.js -- report  --in <dir> [--in <dir>…] [--out <file>]
-//   npx vite-node validation/run.js -- findings <file.jsonl>
+//   npx vite-node validation/run.js -- findings <file.jsonl | folder of .json records>
 //
 // The held-out test set: `--split test` also needs `--final` and a clean git
 // tree (its commit is recorded in every record), so its numbers always come
@@ -20,7 +20,7 @@
 // folder by default (…_pca-table).
 
 import { execSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { providerModel } from '../src/llm/provider/model';
@@ -34,7 +34,7 @@ import { renderTranscript } from './transcript';
 import { renderReport } from './report';
 import { resolveModel } from './models';
 import { createSpendTracker, meteredModel } from './spend';
-import { parseFindings } from './findings';
+import { parseFindingFiles, parseFindings } from './findings';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '../../..');
@@ -224,8 +224,17 @@ const commands = {
         else console.log(text);
     },
 
+    // A findings file (JSON lines), or a folder of records, one JSON file each
+    // (validation/findings/decisions).
     findings: async (args) => {
-        const results = parseFindings(readFileSync(resolve(args._[1]), 'utf8'));
+        const path = resolve(args._[1]);
+        if (statSync(path).isDirectory()) {
+            const results = parseFindingFiles(readdirSync(path).map((name) => ({ name, text: readFileSync(join(path, name), 'utf8') })));
+            results.forEach((result) => console.log(`${result.file}: ${result.ok ? 'ok' : result.errors.join('; ')}`));
+            if (results.some((result) => !result.ok)) process.exitCode = 1;
+            return;
+        }
+        const results = parseFindings(readFileSync(path, 'utf8'));
         results.forEach((result) => console.log(`line ${result.line}: ${result.ok ? 'ok' : result.errors.join('; ')}`));
         if (results.some((result) => !result.ok)) process.exitCode = 1;
     }

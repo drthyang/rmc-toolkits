@@ -40,6 +40,7 @@ describes the Copilot's messages and Step 17 its tool loop. Section anchors keep
   - [Step 17 — The Copilot tool loop (analyses, checks, budgets, verdict)](#step-17--the-copilot-tool-loop-analyses-checks-budgets-verdict)
   - [Step 18 — Cluster distortion against a shuffle null (`analyze_clusters`)](#step-18--cluster-distortion-against-a-shuffle-null-analyze_clusters)
   - [Step 19 — Displacement modulations: order that enlarges the cell (`analyze_modulations`)](#step-19--displacement-modulations-order-that-enlarges-the-cell-analyze_modulations)
+  - [Step 20 — A split site's static displacement and its sampling error (`list_sites`)](#step-20--a-split-sites-static-displacement-and-its-sampling-error-list_sites)
   - [Runtime-mode differences (static vs Flask) — read this before quoting the assistant](#runtime-mode-differences-static-vs-flask--read-this-before-quoting-the-assistant)
   - [Parameters and defaults](#parameters-and-defaults)
   - [Caveats / what this is not](#caveats--what-this-is-not)
@@ -1216,13 +1217,13 @@ not answer as asked". A tool is offered only when its inputs exist.
 | `read_run_data(section)` | the context has the section | `buildRunContext` | one context section as built (the builder's caps apply: ≤ 12 sites, 48 history points), before `contextToJson`'s trims | — |
 | `assess_convergence()` | an R-value series exists | `classifyConvergence` (Step 14), `seriesStats` | column, status, n, first/last/min, total drop, least-squares slope per row over the last 10 / 25 / 50 % (≥ 3 points each) | note: judged on one `.log` column, not the total; ok: converged; note: improving; warn: stalled/diverging; warn: non-finite rows; warn: < 5 rows; fail: < 2 finite rows |
 | `find_gr_peaks(pair, r_max = 6, max_peaks = 3)` | a parsed partials file | `extractPeaks` (Step 8), `firstShell` (Step 9) | peaks (r, FWHM); first-peak window `[r − FWHM, r + FWHM]`; `first_shell`: its window (onset − one grid step to the boundary), the peaks inside it, mean distance and sd from $r^2g$, the CN in both directions and the CN with the cut 0.2 Å earlier / later, the trough $\tilde g/h$ at the boundary; the pair's `MINIMUM_DISTANCES` value, matched order-free, and `g_at_constraint_fraction` | warn: the first shell is not separated from the next ($\tilde g/h > 0.02$ at its boundary: distances fill the gap, the CN depends on the cut); note: the shell holds several peaks (a split shell: use its window); note: a split shell joined across a deep trough, with the first peak's CN and window (`first_shell.first_peak_only`) and the summed count, said in the direction that is ideal (review L1); note: no boundary below max(r_max, r₁ + 3 Å); warn: the closest-approach constraint cuts the distribution — raw $g$ in $(d_{\min}, d_{\min} + 2.5\,\Delta r]$ above 2 % of the peak (`CONSTRAINT_PILEUP_FRACTION`; demo Ga–Se 9 % at 2.2 Å), or the old $r - \mathrm{FWHM}/2 \le d_{\min} + 0.05$ Å; ok: peak, shell edge, mean, CNs; fail: no peak |
-| `list_sites(element?)` | a browser-loaded run or Flask mode | worker `sites` / `/api/pca/sites` | per site: ref, label (composition if mixed), count, U_iso, rms axes, anisotropy, Mardia kurtosis; sorted by \|kurtosis\| then U_iso; top-3 refs by \|kurtosis\|, U_iso and anisotropy | warn: parse warning; note: reconstructed sites; warn: zero-spread sites; fail: no site (holding that element) |
+| `list_sites(element?)` | a browser-loaded run or Flask mode | worker `sites` / `/api/pca/sites` | per site: ref, label (composition if mixed), count, U_iso, rms axes, anisotropy, Mardia kurtosis; `kurtosis_axes`, the excess kurtosis along each principal axis on resolved axes only (null elsewhere; absent when none has one); `pc1_uvw`, PC1 as a direct-lattice `[u v w]` (`crystalOrientationRows`) when PC1 is resolved; on a split site, `delta_A` ± `delta_se_A`, its static displacement and sampling error (Step 20); split sites first (largest `delta_A` first), then by \|kurtosis\| and U_iso; top-3 refs by \|kurtosis\|, U_iso and anisotropy; the note defines only the fields the result holds | warn: parse warning; note: reconstructed sites; warn: zero-spread sites; note: the split sites by ref and label (PC1 resolved, κ₁ ≤ −0.5 and ≤ −3√(24/n): `isSplitSite`, the rule `analyze_clusters` uses); fail: no site (holding that element) |
 | `analyze_displacement_directions(site_ref \| element, frequency?)` | same | worker `orientation` / `/api/pca/orientation`, `geometry: false` | used / rejected points; peak enhancement, count, expected and calibrated `peakSignificance`; peak direction as a Cartesian unit vector, as `[u v w]` (direct lattice, $M^{-T}d$ scaled to max \|component\| = 1, sign kept, since the map is not antipodally folded) and as angles to a, b, c; `mapSignificance`; antipodal asymmetry, its z and flag; orientation-tensor eigenvalues, anisotropy and its Bingham significance; the principal axis `[u v w]` (`crystalOrientationRows`) | warn: < 100 vectors; ok: peak ≥ 3σ; note: peak < 3σ; note: map test undefined; ok: map ≥ 3σ, said as *anisotropic* and, without a significant peak, "not a preferred direction" (any anisotropic Gaussian ellipsoid passes the map test: the validation's thermal-only O, peak 2.3σ, map 7.2σ; review L3); note: tied peak cells; note: significant ± asymmetry; warn: parse warning; note: an element pooled over > 1 site (the site count from the basis) — where their local axes differ, as for the four vertices of a tetrahedral cluster, a per-site preference cancels, so an isotropic pooled map is not evidence against a per-site or cluster distortion |
 | `compute_bond_angles(end1, apex, end2, r12_min, r12_max, r23_min?, r23_max?, bin_width = 1)` | same | worker `triplets` / `/api/triplets` (`APP_MAX_ANGLES` applies) | angle count, central atoms, mean ± sd; ≤ 3 modes (local maxima of a 5-bin running mean of the counts, each with the share of angles within ± 7.5°); the distribution in 18 bins of 10° (the engine's bins shared by overlap), raw and sin θ-corrected ($S_j = (N_j/N)\,/\,[(\cos\theta_j - \cos\theta_{j+1})/2]$, 1 for random directions); for an A–B–A triplet in one window that does not cut the shell and a mean coordination within 0.5 of 6, the share and mean angle below and above 135° against an ideal octahedron (80 % cis at 90°, 20 % trans at 180°), within 0.5 of 4, the share within 15° of 109.47°; mean bond length, its sd from the engine's 40-bin length histogram, and unique bonds per window; coordination histogram and mean | fail: 0 angles ("widen the window"); warn: > 50 % of central atoms have no A–B bond in the window; otherwise warn: < 60 % of central atoms have the most common A–B bond count (the window cuts a coordination shell) — **refused** (fail) unless `window_confirmed`, the modes, mean, sd and histograms withheld (the coordination-shells skill's firm rule), else a warn "kept: the user chose this window"; note: raw counts deplete 180° (with the octahedron split); warn: parse warning; ok otherwise. Refused before running: min ≥ max, an r23 bound without its pair |
 | `detect_symmetry(tolerance_A ∈ [0.001, 1])` | the structure has a `basis` (browser-loaded runs) | `describeSymmetry` (the Detected SG card's finder), *not* changing the card | group, number (only when certain), point group and its facts (`point_group_facts`, as in the context), n ops, max residual, every orbit with `orbitLabel` Wyckoff label, site symmetry and representative fractional coordinates (4 decimals) | ok: group holds; note: the point group's facts ("take inversion, chirality and polarity from this"); note: undetermined; note: "≥" lower bound; warn: not analysed (caps); fail: no basis |
 | `measure_symmetry_lowering(parent_tolerance_A = 0.2, tolerance_A = 1.25 × noise floor)` | the structure has a `basis` | `symmetryShifts` (`symmetryShift.js`): the parent group at `parent_tolerance_A` (`analyseSymmetry`), each orbit averaged over its operations (`averageOrbit`), each member's ideal position the nearest image of that average; a member's shift = its mean − its ideal position, the common part the least-squares origin leaves removed by the geometric median of all members' shifts (Weiszfeld: the parent on the majority of the atoms, the description that moves the fewest); the lower group by `describeSymmetry` at `tolerance_A` | the parent and lower groups (the lower with its point-group facts), the noise floor, up to 12 sites (largest first) with `shift_A`, `direction_uvw`, `nearest_low_index` (within 15°, `LOW_INDEX_CONE_DEG`), `se_A` (the mean's sampling error along the shift) and `above_noise_floor`; `facts.lowering` = `{parent, lower, shifted: [{element, shift_A, direction_uvw}]}` | ok: each element whose largest shift exceeds the noise floor ("Ta shifted 0.065 Å along [0 0 1] (3.7° off) from the Pm-3m positions … a coherent shift every copy shares"); note: the parent → lower change in inversion and polarity; ok: no site above the noise floor; note: the lower tolerance still gives the parent group; warn: not analysed; fail: no basis, or no parent operation (review L4: the shift had to be worked out by hand from the orbit positions) |
 | `compare_fit(dataset, n_ranges = 6)` | a fit file with a model and a measured column (`xpdf`, `npdf`, `xray_sq`, `neutron_sq`, `bragg`; repeated kinds keyed `npdf_2`, …) | `fitTool` in `runTools.js` (roles by label `/exp\|obs/` vs `/calc\|rmc\|fit/`, else column order — `rwpColumns`, duplicated) | the dataset's $R$ (Step 10) over its range; per equal-width range of r or Q: $R$ there and its share of $\sum (y^\mathrm{calc}-y^\mathrm{expt})^2$; the 5 largest local extrema of the 5-point mean residual (position, model − data, relative to the data's rms) | ok (the card's headline): the overall $R$ and where the misfit lives — one range holding ≥ 40 % of the squared residual (`MISFIT_CONCENTRATION`), else spread; note: another range's own $R$ ≥ 3× the dataset's (`RELATIVE_MISFIT_FACTOR`) — weak signal poorly fitted, e.g. high-Q F(Q); fail: < 10 points |
-| `analyze_clusters(element, r_min, r_max)` | a browser-loaded run with site/cell columns, or Flask mode | worker `clusters` / `/api/clusters` (Step 18) | the cluster kind (members, edges, count, templates; other sizes); the average cluster's sorted edges, spread, median edge sampling error and spread/SE; per statistic obs / null mean / z / change = obs/null − 1 — the shape rows (edge ladder, ladder width, shape rms; tetrahedra: E and T2 rms and T2 trigonality; the fractions of long / short gyration axes within 15° of <100>, <110>, <111>) against `shapeNull`, the size rows (breathing sd, mean edge) against independent atoms (Step 18; review L2); `split_member_sites`: the analysed kind's member sites whose PC1 is resolved and whose PC1 excess kurtosis is ≤ −0.5 (`SPLIT_SITE_KURTOSIS`: two equal wells δ = σ, the onset of bimodality) and ≤ −3√(24/n) (`SPLIT_SITE_SE`), from the engine's `sites` rows the tool also requests; bonds outside the window, contacts between clusters per atom. `facts.cluster` = `{element, members, window, distorted, static, breathing, rigid, split, families}` for the cluster answer check | fail: extended network; fail: no clusters; warn: other sizes hold > 10 % of clusters; note: the average cluster is distorted (spread ≥ 5 SE, `STATIC_SPREAD_SE`) or regular; ok: dimers (one edge) — the shape is the bond length, read from the size row; ok: ladder width departs from the shape null (\|z\| ≥ 3 **and** \|change\| ≥ 5 %: more distorted — a correlated distortion — or less — rigid units, unless an axis family or the trigonality shows a pattern: then a distortion whose amplitude the null already holds), or matches it while the pattern does not (a correlated distortion held by the sites' own displacements), or matches it; note: breathing departs (same rule): more — collective breathing, a size fluctuation, not a shape distortion; less — stiffer bonds, the atoms move together; note: trigonality departs (\|z\| ≥ 3, \|Δ\| ≥ 0.02); note: an axis family enhanced (z ≥ 3, obs/null ≥ 1.1); note: split sites — at least half the member sites split: the null holds the amplitude, "no distortion" does not make the clusters regular; warn: > 5 % of bonds outside the window; warn: > 0.05 inter-cluster contacts per atom |
+| `analyze_clusters(element, r_min, r_max)` | a browser-loaded run with site/cell columns, or Flask mode | worker `clusters` / `/api/clusters` (Step 18) | the cluster kind (members, edges, count, templates; other sizes); the average cluster's sorted edges, spread, median edge sampling error and spread/SE; per statistic obs / null mean / z / change = obs/null − 1 — the shape rows (edge ladder, ladder width, shape rms; tetrahedra: E and T2 rms and T2 trigonality; the fractions of long / short gyration axes within 15° of <100>, <110>, <111>) against `shapeNull`, the size rows (breathing sd, mean edge) against independent atoms (Step 18; review L2); `split_member_sites`: the analysed kind's member sites whose PC1 is resolved and whose PC1 excess kurtosis is ≤ −0.5 (`SPLIT_SITE_KURTOSIS`: two equal wells δ = σ, the onset of bimodality) and ≤ −3√(24/n) (`SPLIT_SITE_SE`) — `isSplitSite`, the rule `list_sites` reports — from the engine's `sites` rows the tool also requests; bonds outside the window, contacts between clusters per atom. `facts.cluster` = `{element, members, window, distorted, static, breathing, rigid, split, families}` for the cluster answer check | fail: extended network; fail: no clusters; warn: other sizes hold > 10 % of clusters; note: the average cluster is distorted (spread ≥ 5 SE, `STATIC_SPREAD_SE`) or regular; ok: dimers (one edge) — the shape is the bond length, read from the size row; ok: ladder width departs from the shape null (\|z\| ≥ 3 **and** \|change\| ≥ 5 %: more distorted — a correlated distortion — or less — rigid units, unless an axis family or the trigonality shows a pattern: then a distortion whose amplitude the null already holds), or matches it while the pattern does not (a correlated distortion held by the sites' own displacements), or matches it; note: breathing departs (same rule): more — collective breathing, a size fluctuation, not a shape distortion; less — stiffer bonds, the atoms move together; note: trigonality departs (\|z\| ≥ 3, \|Δ\| ≥ 0.02); note: an axis family enhanced (z ≥ 3, obs/null ≥ 1.1); note: split sites — at least half the member sites split: the null holds the amplitude, "no distortion" does not make the clusters regular; warn: > 5 % of bonds outside the window; warn: > 0.05 inter-cluster contacts per atom |
 | `analyze_modulations(element?)` | same | worker `modulations` / `/api/modulations` (Step 19) | per element: the zone-boundary points as `[q, ratio to the median, percentile, σ]` rows, the three strongest modes as `[q, ratio, percentile, σ]` (σ only at a general q); the supercell, wavevector count and untestable points; `facts.modulation` = `{elements, ordered: [{element, q}], general: [{element, q}]}` | ok: ordered displacements at a zone-boundary point (ratio ≥ 3 and ≥ 3σ against independent displacements, corrected over the points tested); ok: no cell doubling (the most significant point named); ok: correlated displacements between cells at a general q — one of the strongest modes that is neither a zone-boundary point nor a long wave, with ratio ≥ 3 and ≥ 3σ against independent displacements: a complex Fourier sum, so an element's mean over m sites has ≥ 2m degrees of freedom (P ≥ χ²₂ₘ/2m, `generalModeSigma`), Šidák-corrected over the compared modes of every tested element — incommensurate or short-range order between cells, not a cell doubling (review L4); note: a long-wavelength wave dominates (≥ 5×, every \|q_i\| ≤ 0.25); note: untestable points (odd axes); fail: no displacements |
 
 **Show in \<page\>.** A tool may declare `page` and `pageParams(args)`. The loop computes the
@@ -1687,6 +1688,121 @@ on a 10³ grid.
 
 ---
 
+### Step 20 — A split site's static displacement and its sampling error (`list_sites`)
+
+**Why.** A site whose copies sit in two positions (two-site disorder, or the folded cloud of an
+antiphase order) has a prolate cloud whose PC1 marginal is bimodal, and its ellipsoid alone reads as
+large thermal motion. `list_sites` names such a site by the rule the cluster summary uses, and gives
+its static displacement with a sampling error, so an answer quotes the engine's number by reference
+(`{{r1.sites.0.delta_A}}`) instead of working it out by hand, which provenance flags as unsourced.
+Code: `isSplitSite`, `splitDisplacement` and `summarizeSites` in
+[`copilotTools.js`](../../web_app/frontend/src/copilotTools.js), from the engine's site rows
+(`site_ellipsoids` / `siteEllipsoids`, [pca-ellipsoid.md](pca-ellipsoid.md) Steps 3 and 12): the
+same in both runtimes, and nothing new in the engines (plan 4.1, 2026-10-19).
+
+**The rule** (`isSplitSite`). PC1 resolved (its eigenvalue gap to PC2 above three sampling errors,
+pca-ellipsoid.md 12b), and its excess kurtosis $\kappa_1 \le -0.5$ (`SPLIT_SITE_KURTOSIS`: two equal
+wells $\pm\delta$ of thermal width $\sigma$ have $\kappa = -2\delta^4/(\delta^2+\sigma^2)^2$, which is
+$-0.5$ at $\delta = \sigma$, where the marginal turns bimodal) and $\kappa_1 \le -3\sqrt{24/n}$
+(`SPLIT_SITE_SE`: three sampling errors of a Gaussian's sample kurtosis below zero). One definition:
+`splitMemberSites` (`analyze_clusters`' split member sites) calls it.
+
+**The estimator.** With $\lambda_1 \ge \lambda_2 \ge \lambda_3$ the eigenvalues of the site's
+covariance (unbiased, $1/(n-1)$; $\mathrm{rms}_a = \sqrt{\lambda_a}$),
+
+$$\hat\delta^2 = \lambda_1 - \tfrac12(\lambda_2 + \lambda_3) = \mathrm{rms}_1^2 - \mathrm{rms}_\perp^2,
+\qquad \mathrm{rms}_\perp^2 = \tfrac12\big(\mathrm{rms}_2^2 + \mathrm{rms}_3^2\big).$$
+
+For a cloud $\mathbf u = s\,\delta\,\mathbf e + \boldsymbol\varepsilon$ ($s = \pm1$, thermal motion
+$\boldsymbol\varepsilon$ with $\mathbf e$ one of its principal axes), $\Sigma = \delta^2\mathbf e\mathbf e^{\top} +
+\Sigma_\varepsilon$, so $\delta^2 = \lambda_1 - \sigma_e^2$ exactly, with $\sigma_e^2$ the thermal
+variance along the split, which no second moment separates from $\delta^2$. The estimator takes it
+as the mean thermal variance across the split: exact for isotropic or uniaxial thermal motion
+($\sigma_2 = \sigma_3 = \sigma_e$); otherwise $\hat\delta^2$ is off by
+$\sigma_e^2 - \tfrac12(\sigma_2^2 + \sigma_3^2)$ (a thermal ellipsoid 0.07 Å along a 0.2 Å split and
+0.05 Å across it reads 0.206 Å).
+
+*Why the RMS of both other axes, not $\mathrm{rms}_2$ alone* (arm A's $\sqrt{\mathrm{rms}_1^2 -
+\mathrm{rms}_2^2}$, `validation/armA.js`): the two agree when PC2 and PC3 are equal, as for every
+split the dev cases plant (dev-offcentre Nb 0.2019 against 0.2015 Å, dev-zone-boundary Ti 0.0989
+against 0.0987 Å). Where they are equal, $\hat\lambda_2$ is the larger of two noisy equal variances,
+biased upward (eigenvalue repulsion), so $\mathrm{rms}_2$ alone biases $\delta$ low, while
+$\tfrac12(\hat\lambda_2 + \hat\lambda_3) = \tfrac12(\mathrm{tr}\,S - \hat\lambda_1)$ is unbiased and
+averages two variances. It is also a smooth function of $S$ when $\lambda_2 = \lambda_3$, so the
+delta method below holds there; $\hat\lambda_2$ alone is not differentiable at a degenerate pair.
+The scoring's magnitude tolerance (`validation/scoring.js`, 25 % or 0.03 Å) was set for
+"$\sqrt{\mathrm{rms}_1^2 - \mathrm{rms}_\perp^2}$ and similar estimators (sampling error ~3 % at 500
+atoms per site)"; this one's is 1.4–3.4 % in the tests below.
+
+For two equally occupied positions $\delta$ is their half separation. For occupations $p$ and $1-p$
+at $+a$ and $-b$ ($pa = (1-p)b$) it is their RMS, $\sqrt{ab}$, which the second moments cannot split
+into $a$ and $b$; the +u/−u asymmetry of `analyze_displacement_directions` shows the imbalance.
+
+**The sampling error.** To first order $\hat\lambda_1 - \lambda_1 \approx \mathbf e^{\top}(S -
+\Sigma)\,\mathbf e$ (a simple eigenvalue) and $\mathrm{tr}\,S$ is linear, so
+$\hat\delta^2 - \delta^2 \approx \frac1n\sum_m Z_m - \mathbb E Z$ with $Z = y_1^2 - \tfrac12(y_2^2 +
+y_3^2)$, $y_a$ a copy's displacement along principal axis $a$:
+
+$$n\,\mathrm{Var}(\hat\delta^2) \approx \mathrm{Var}(y_1^2) + \tfrac14\mathrm{Var}(y_2^2) +
+\tfrac14\mathrm{Var}(y_3^2) - \mathrm{Cov}(y_1^2, y_2^2) - \mathrm{Cov}(y_1^2, y_3^2) +
+\tfrac12\mathrm{Cov}(y_2^2, y_3^2).$$
+
+The covariances vanish when the components are independent: thermal motion along PC1 independent of
+the position taken and of the motion across it, as for any Gaussian thermal motion along the
+principal axes with the two positions along one of them. They are dropped. Each
+$\mathrm{Var}(y_a^2)$ is estimated from the engine's own per-axis moments,
+$m_4 - m_2^2 = (\kappa_a + 2)\,m_2^2$ with $m_2 = \lambda_a(n-1)/n$: the standard error its axis
+resolution uses (pca-ellipsoid.md 12b). So
+
+$$\mathrm{SE}(\hat\delta^2)^2 = \frac{(\kappa_1+2)\,m_{2,1}^2 + \tfrac14(\kappa_2+2)\,m_{2,2}^2 +
+\tfrac14(\kappa_3+2)\,m_{2,3}^2}{n},\qquad \mathrm{SE}(\hat\delta) =
+\frac{\mathrm{SE}(\hat\delta^2)}{2\hat\delta}$$
+
+(a collapsed axis, whose $\kappa$ is undefined, counts as Gaussian: its $m_2$ is round-off). For two
+equal Gaussian wells this is $\sqrt{(4\delta^2\sigma^2 + 3\sigma^4)/n}\,/\,(2\delta)$: the split
+adds no variance ($s^2 = 1$), so the error is set by the thermal width — 0.0027 Å (1.4 %) at
+dev-offcentre's $\delta$ = 0.2, $\sigma$ = 0.06 Å, $n$ = 512.
+
+*What it is not.* The scatter of independent copies: copies that move together (domains, an ordered
+pattern) scatter differently from one configuration to the next, and the thermal-width assumption
+above is a systematic error outside it. It is quoted only for a split site, where the kurtosis bound
+keeps $\hat\delta$ many errors from zero; for a site near the rule's threshold, the sites the rule
+calls split carry $\hat\delta$ a few tenths of an error high (selection on $\hat\kappa_1$).
+
+**Known answer** ([`listSitesSplit.test.js`](../../web_app/frontend/src/__tests__/listSitesSplit.test.js)).
+Synthetic clouds through the engine's site rows, 1,000 seeds each, $z = (\hat\delta - \delta)/\mathrm{SE}$:
+
+| Planted | Called split | mean $z$ | sd $z$ | $\lvert z\rvert \le 1.96$ | PC1 off the planted [u v w], median / max |
+|---|---|---|---|---|---|
+| equal wells, $\delta$ = 0.2 Å = 3.3σ, $n$ = 512, cubic [0 0 1] | 1000 | 0.034 | 0.996 | 0.958 | 0.8° / 2.9° |
+| equal wells, $\delta$ = 0.09 Å = 1.5σ, $n$ = 512, cubic [1 1 1] | 998 | 0.072 | 1.036 | 0.939 | 2.4° / 7.6° |
+| equal wells, $\delta$ = 0.15 Å, $n$ = 216, hexagonal [2 1 0] | 1000 | 0.031 | 1.027 | 0.943 | 1.7° / 5.1° |
+| occupations ⅓ / ⅔ at +0.21 / −0.105 Å ($\delta = \sqrt{ab}$ = 0.148 Å), monoclinic [1 0 2] | 999 | 0.017 | 0.985 | 0.958 | 1.1° / 3.4° |
+| equal wells, 0.15 Å, thermal 0.07 / 0.05 Å across, their RMS along, cubic [1 2 3] | 1000 | −0.008 | 1.013 | 0.955 | 1.3° / 4.9° |
+
+The test holds each within about three standard errors of N(0, 1) over 1,000 seeds, every PC1
+within the scoring's 15°, and `[u v w]` read back as a direct-lattice direction in oblique cells
+(hexagonal [2 1 0] → [1 0.5 0], whose plane normal would be [5 4 0]; monoclinic −[1 0 2] → [0.5 0 1],
+the sense whose closest axis is acute). A prolate Gaussian (0.1 Å along, 0.05 Å across) is never
+called split (0 of 1,000 seeds; 0 of 5,000 at $n$ = 512 and at 216 when measured); an isotropic site
+resolves no axis, an oblate one only PC3, and a zero-spread site gives nothing. On the dev cases:
+dev-offcentre Nb $\delta$ = 0.202 ± 0.0028 Å (planted 0.2) along [0 0 1]; dev-zone-boundary Ti
+0.0989 ± 0.0029 Å (planted 0.1: the single-site statistics of an antiphase order, which
+`analyze_modulations` tells from disorder); dev-jahn-teller 4 of its 6 F sites, 0.149–0.160 Å (one
+long bond in three: the RMS of $+\tfrac23\Delta$ and $-\tfrac13\Delta$ is $\Delta\sqrt2/3$ = 0.151 Å for
+Δ = 0.32 Å), the same sites `analyze_clusters` names; no split site on the six others (the breathing
+Mo and the perovskite O are anisotropic Gaussians). Arms A and A+ do not read `list_sites`, and their
+dev records are unchanged.
+
+**In the row** (`summarizeSites`): `kurtosis_axes` (3 s.f.), `pc1_uvw` (`crystalOrientationRows`:
+$M^{-T}$ times the axis, largest component 1, two decimals), `delta_A` (3 s.f.) and `delta_se_A`
+(2 s.f.). Split sites come first (largest `delta_A` first), then by |Mardia kurtosis|, so trimming
+to the 3,000-character budget never drops a split site before another, and a note check names them.
+The Demo's 52 sites have none; three of the 13 rows its budget keeps resolve PC1 (heavy-tailed,
+κ₁ 7.4–8.0).
+
+---
+
 ### Runtime-mode differences (static vs Flask) — read this before quoting the assistant
 
 The context is far richer in **static mode** (the browser parses the run itself) than in **Flask mode**,
@@ -1779,6 +1895,7 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 | `DEFAULT_SHUFFLES`, `SHUFFLE_SEED`, `AXIS_CONE_DEG` | 24, `0x5EED`, 15° | — | `clusters.py`, `clusters.js` | The cluster null and the axis families |
 | `MAX_CLUSTER_WINDOW` | 8 | Å | `app.py`, `pcaKdeWorker.js` | Largest `rMax` of a cluster request |
 | `CLUSTER_Z`, `CLUSTER_EFFECT`, `TRIGONALITY_EFFECT`, `AXIS_ENHANCEMENT` | 3, 5 %, 0.02, 1.1 | — | `copilotTools.js` | A cluster statistic is a finding only when both its z and its size clear these |
+| `SPLIT_SITE_KURTOSIS`, `SPLIT_SITE_SE` | −0.5, 3 | PC1 excess kurtosis; its sampling errors $\sqrt{24/n}$ | `copilotTools.js` | A site with a resolved PC1 is split when $\kappa_1$ is at or below both (`isSplitSite`: `list_sites`' `delta_A`, `analyze_clusters`' split member sites; Step 20) |
 | `STATIC_SPREAD_SE` | 5 | sampling errors | `copilotTools.js` | The average cluster counts as distorted above this spread |
 | `CLUSTER_OUTLIER_FRACTION` | 0.05 | fraction / per atom | `copilotTools.js` | Bonds outside the window, contacts between clusters |
 | `MODULATION_RATIO` (+ `SIGNIFICANCE_SIGMA`) | 3 (+ 3σ) | × median (+ family-wise σ, `zoneBoundarySigma`) | `copilotTools.js` | A zone-boundary point is order above both |
