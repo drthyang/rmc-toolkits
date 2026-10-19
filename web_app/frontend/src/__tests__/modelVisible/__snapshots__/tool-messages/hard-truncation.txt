@@ -1,0 +1,4 @@
+# The tool messages the model reads: a result cut hard
+# prose({ value: 1 }): one long text and no list to halve, resultCharBudget 600
+## messages[3] · tool · call_1_0
+{"ref":"r1","checks":[{"level":"note","text":"long"}],"data":{"truncated":true,"text":"{\"text\":\"The first coordination shell. The first coordination shell. The first coordination shell. The first coordination shell. The first coordination shell. The first coordination shell. The first coordination shell. The first coordination shell. The first coordination shell. The first coordination shell. The first coordination shell. The first coordination shell. The first coordination shell. The first coordination shell. The first coordination shell. The first coordination shell. The first coordin"}}

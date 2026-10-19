@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import React, { useEffect, useId, useRef, useState } from 'react';
+import { questionReply } from '../copilot/turnState';
 
 // The Copilot's clarifying question (ask_user, copilot/askUser.js) as a card
 // in the conversation: the question, 2–4 option buttons (each with its one-line
@@ -12,7 +13,9 @@ import React, { useEffect, useId, useRef, useState } from 'react';
 // Once answered (or stopped) it keeps the question and the reply, compact,
 // and keeps the focus the answer took from its option (the composer stays
 // disabled while the turn goes on), so keyboard users are not dropped to the
-// page's start.
+// page's start. Whether the question was asked, skipped or answered is read
+// from the step's result and the user's choice (turnState.js questionReply),
+// the same reading the screen reader's line takes.
 
 // Focus may move to the card from nowhere in particular or from inside the
 // conversation (the empty composer, where it rests after a question is sent),
@@ -25,12 +28,6 @@ const mayTakeFocus = (card) => {
         return false;
     }
     return Boolean(card.closest('.llm-chat-panel')?.contains(active));
-};
-
-const repliedText = (step) => {
-    const data = step.data || {};
-    if (data.skipped) return data.answer ? `Skipped: the Copilot uses its default, ${data.answer}.` : 'Skipped.';
-    return data.answer ?? '';
 };
 
 const QuestionCard = ({ step, request = null, onAnswer }) => {
@@ -84,8 +81,9 @@ const QuestionCard = ({ step, request = null, onAnswer }) => {
     };
 
     if (!waiting) {
+        const reply = questionReply(step);
         const stopped = step.status === 'stopped' || (step.status === 'running' && !request);
-        const failed = step.status === 'failed';
+        const failed = reply.state === 'not_asked';
         return (
             <li className={`llm-step llm-ask is-${stopped ? 'stopped' : failed ? 'failed' : 'answered'}`} ref={cardRef} tabIndex={-1}>
                 <div className="llm-ask-kicker">
@@ -98,7 +96,7 @@ const QuestionCard = ({ step, request = null, onAnswer }) => {
                 {question && <p className="llm-ask-question">{question}</p>}
                 {failed && step.error && <p className="llm-step-headline is-fail">{step.error}</p>}
                 {!stopped && !failed && step.status !== 'running' && (
-                    <p className="llm-ask-reply"><span className="llm-ask-reply-who">You</span>{repliedText(step)}</p>
+                    <p className="llm-ask-reply"><span className="llm-ask-reply-who">You</span>{reply.text}</p>
                 )}
             </li>
         );

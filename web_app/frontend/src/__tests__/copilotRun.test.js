@@ -16,6 +16,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { ARM_A_RULES } from '../../validation/armA';
 import { COPILOT_RUN_PROPS, DEFAULT_VIEW, copilotRun, normalizeView } from '../copilotRun';
 import { openRunFolder, readRunFolder } from '../openRunFolder';
+import basisFixture from './fixtures/structure_basis_fixture.json';
 import { demoEntries, loadDemoAssistantRun } from './modelVisible/helpers';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -130,25 +131,53 @@ describe('copilotRun (the pure core)', () => {
         expect(run.props.symmetry.spaceGroup).toBe(copilotRun(loaded).props.symmetry.spaceGroup);
     });
 
-    it('a Flask-shaped run: no symmetry, no settings, no detect_symmetry tool', () => {
-        // /api/files' listing (plot kinds from Flask, nothing parsed) and
-        // /api/structure's model, which has no basis.
-        const { basis: _basis, ...flaskStructure } = loaded.structure;
-        const files = [
-            { name: 'run.rmc6f', path: '/runs/a/run.rmc6f', type: 'file', plotKind: null },
-            { name: 'run_PDFpartials.csv', path: '/runs/a/run_PDFpartials.csv', type: 'file', plotKind: 'pdf_partials' },
-            { name: 'run-01.log', path: '/runs/a/run-01.log', type: 'file', plotKind: 'r_value' }
-        ];
+    // A server folder: /api/files' listing (plot kinds from Flask, nothing
+    // parsed) and /api/structure's model.
+    const serverFiles = [
+        { name: 'run.rmc6f', path: '/runs/a/run.rmc6f', type: 'file', plotKind: null },
+        { name: 'run_PDFpartials.csv', path: '/runs/a/run_PDFpartials.csv', type: 'file', plotKind: 'pdf_partials' },
+        { name: 'run-01.log', path: '/runs/a/run-01.log', type: 'file', plotKind: 'r_value' }
+    ];
+    const serverRun = (basis) => {
+        const { basis: _basis, ...model } = loaded.structure;
+        const structure = basis === undefined ? model : { ...model, basis };
         const engine = async () => ({});
-        const run = copilotRun({ name: '/runs/a', files, structure: flaskStructure, structurePath: '/runs/a/run.rmc6f', settings: null, engine });
-        expect(run.props).toMatchObject({ runName: '/runs/a', symmetry: null, runSettings: null });
+        return { engine, run: copilotRun({ name: '/runs/a', files: serverFiles, structure, structurePath: '/runs/a/run.rmc6f', settings: null, engine }) };
+    };
+    const tool = (run, name) => run.tools.find((entry) => entry.name === name);
+
+    it('a server folder: the basis of /api/structure gives the symmetry and both symmetry tools', async () => {
+        // The basis Flask computes (rmc_toolkits/structure_basis.py: the golden's demo rows).
+        const { run, engine } = serverRun(basisFixture.cases[0].basis);
+        const browser = copilotRun(loaded);
+        expect(run.props).toMatchObject({ runName: '/runs/a', runSettings: null });
         expect(run.props.plotFiles.map((file) => file.name)).toEqual(['run-01.log', 'run_PDFpartials.csv']);
         expect(run.props.rValueFile.name).toBe('run-01.log');
         expect(run.engine).toBe(engine);
-        const names = run.tools.map((tool) => tool.name);
-        expect(names).toContain('list_sites');
-        expect(names).not.toContain('detect_symmetry');
-        expect(names).not.toContain('measure_symmetry_lowering');
+        expect(run.props.symmetry).toMatchObject({ spaceGroup: 'F-43m', toleranceA: 0.2 });
+        expect(run.props.symmetry.ladder.map((brick) => brick.spaceGroup)).toEqual(browser.props.symmetry.ladder.map((brick) => brick.spaceGroup));
+        // Every tool the same files picked in the browser get, as the model is sent them...
+        expect(definitions(run.tools)).toEqual(definitions(browser.tools));
+        expect(run.tools.map((entry) => entry.name)).toEqual(expect.arrayContaining(['detect_symmetry', 'measure_symmetry_lowering']));
+        // ...and the symmetry tools' answers.
+        for (const args of [{ tolerance_A: 0.2 }, { tolerance_A: 0.02 }]) {
+            expect(await tool(run, 'detect_symmetry').run(args)).toEqual(await tool(browser, 'detect_symmetry').run(args));
+        }
+        expect(await tool(run, 'measure_symmetry_lowering').run({})).toEqual(await tool(browser, 'measure_symmetry_lowering').run({}));
+    });
+
+    it('a server folder without a basis (a coords-only file, an older server): no symmetry, no symmetry tool', () => {
+        // Flask answers `basis: []` for a file with no reference numbers; a
+        // server before 0.8 sent no basis at all.
+        for (const basis of [[], undefined]) {
+            const { run, engine } = serverRun(basis);
+            expect(run.props).toMatchObject({ runName: '/runs/a', symmetry: null, runSettings: null });
+            expect(run.engine).toBe(engine);
+            const names = run.tools.map((entry) => entry.name);
+            expect(names).toContain('list_sites');
+            expect(names).not.toContain('detect_symmetry');
+            expect(names).not.toContain('measure_symmetry_lowering');
+        }
     });
 
     it('never throws on a missing piece; a non-positive tolerance is a RangeError', () => {

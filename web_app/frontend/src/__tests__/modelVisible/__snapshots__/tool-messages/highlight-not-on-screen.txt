@@ -1,0 +1,4 @@
+# The tool messages the model reads: highlight_cards, not on screen
+# the Detected SG card; the focus controller reports it missing
+## messages[3] · tool · call_1_0
+{"ref":"r1","checks":[{"level":"warn","text":"Not on screen: Detected SG — its page has not drawn it (no data yet?) or it is on another page."}],"data":{"highlighted":[{"id":"symmetry","title":"Detected SG","page":"Dashboard"}],"page":"Dashboard","not_on_screen":["symmetry"]}}

@@ -32,13 +32,18 @@
 //   method        the turn's ('off': the send-back names no analysis, claims.js).
 //
 // record(step, show): once per tool step, in the order the model reads them.
-// `step` is { name, args, status, error, executed, interactive, reading, view,
-// facts? }; `show(ref)` builds the tool message — called once, synchronously,
-// returning { data, … } — and the ref then resolves to exactly that data (a
-// callback because the ref is written into the message before the data is
-// fitted to its budget). Refs are r1, r2, … in record order, a step with an
-// error taking none; its facts are dropped. `analysis` is isAnalysis(step);
-// the gate also needs the step to have no error.
+// `step` is the call's ToolResult (the tool contract, tools.js: resultStatus,
+// args, error, checks, facts?, …) with the tool's `name` and kind
+// (`interactive`, `reading`, `view`); the verification reads the step's
+// severity (severityOf: the `status` the Outcome counts) and whether it ran
+// (ran: not an unknown tool or a skipped call) from it. `show(ref)` builds the
+// tool message — called once, synchronously, returning { data, … } — and the
+// ref then resolves to exactly that data (a callback because the ref is
+// written into the message before the data is fitted to its budget). Refs are
+// r1, r2, … in record order, a step with an error taking none; its facts are
+// dropped. A 'refused' step (the tool's own fail check, no error) ran: it is
+// an analysis, takes a ref and keeps its facts. `analysis` is
+// isAnalysis(step); the gate also needs the step to have no error.
 //
 // judge(text, …), in a fixed order (the order is the point: a check on the
 // unfilled text missed what the filled one says):
@@ -57,14 +62,16 @@
 //
 // Errors: createVerification throws a TypeError on a phrasing keyed to an
 // unknown claim, or on a non-RegExp or non-global `asserted` pattern (or a
-// non-RegExp `literal` one); record or judge after `done` throws (one
-// verification serves one turn). Model text and tool facts never throw. Pure,
-// no React.
+// non-RegExp `literal` one); record throws a TypeError on a step that is no
+// tool result (no known resultStatus); record or judge after `done` throws
+// (one verification serves one turn). Model text and tool facts never throw.
+// Pure, no React.
 
 import { contextToJson } from '../../context/runContext';
 import { clusterElementsOf } from '../../context/shells';
 import { createReferenceStore, fillReferences } from '../references';
 import { TURN_METHODS } from '../method';
+import { RESULT_STATUSES, ran as toolRan, severityOf } from '../tools';
 import { CLAIM_IDS, claimsOf, evidenceFinding, sendBackOf } from './claims';
 import { FACTS, contextAuditFacts } from './facts';
 import { parseOutcome } from './outcome';
@@ -188,6 +195,9 @@ export const createVerification = ({
         record(step, show) {
             open('record');
             if (!step || typeof step !== 'object' || typeof step.name !== 'string') throw new TypeError('verification.record: step must be { name, … }');
+            if (!RESULT_STATUSES.includes(step.resultStatus)) {
+                throw new TypeError(`verification.record: step must be a tool result (resultStatus one of ${RESULT_STATUSES.join(', ')}; tools.js toolResult), got ${JSON.stringify(step.resultStatus)}`);
+            }
             if (typeof show !== 'function') throw new TypeError('verification.record: show must be a function of the ref');
             const ref = step.error ? null : `r${references.size() + 1}`;
             const shown = show(ref);
@@ -196,9 +206,9 @@ export const createVerification = ({
             // A failed step's facts are dropped; facts that are no object are no facts.
             if (!step.error && step.facts && typeof step.facts === 'object') facts.push(step.facts);
             const entry = {
-                name: step.name, args: step.args, status: step.status, error: step.error || null,
+                name: step.name, args: step.args, status: severityOf(step), error: step.error || null,
                 interactive: Boolean(step.interactive), reading: Boolean(step.reading), view: Boolean(step.view),
-                executed: Boolean(step.executed), ref
+                executed: toolRan(step), ref
             };
             steps.push(entry);
             return { ref, analysis: isAnalysis(entry), ...shown };

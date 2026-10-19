@@ -24,6 +24,7 @@ import CopilotView from '../llm/components/CopilotView';
 import { STOPPED_BY } from '../llm/copilot/turnPolicy';
 import { buildCase, DEV_CASES } from '../../validation/cases';
 import { runLiveCase } from '../../validation/harness';
+import { pinRecord } from '../../validation/__tests__/recordFiles';
 
 const model = vi.hoisted(() => ({ script: null }));
 vi.mock('../llm/provider/contextGuard', async (importOriginal) => ({
@@ -172,6 +173,7 @@ describe('the endings, through the dock and the harness alike', () => {
             expect(record.error).toBeNull();
             expect(record.final.stopped_by).toBe(scenario.stoppedBy);
         }
+        await pinRecord(`endings.${scenario.stoppedBy}`, record);
     });
 
     it('a stall records error and Stop records stopped, identically in both, with nothing else recorded as an answer', async () => {
@@ -211,6 +213,7 @@ describe('the endings, through the dock and the harness alike', () => {
             stopped_by: 'max_rounds', cut: false, audit: [], references: null, reasoning: '', reason: null
         });
         expect(emptyFinal.stopped_by).toBe('max_rounds');
+        await pinRecord('endings.empty-final', emptyFinal);
         // An answer: raw_text as written, reason null, references the verification's.
         extra.limits = {};
         const answered = await inTheHarness({ replies: [{ text: ANSWER }] });

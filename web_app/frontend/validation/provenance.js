@@ -4,11 +4,12 @@
 // Where each number in an answer came from. A checkable number is one with a
 // decimal point or a unit (Å, %, σ, °, ×): counts, indices and Miller
 // components are left out. Each is matched to the values the model was
-// shown (every tool result it read, the run context, the question) at the
-// precision it was written, a percentage also to a fraction (28 % ↔ 0.28);
-// an unmatched number is "unsourced": derived by the model, or invented.
-// A match at low precision (one decimal) can be a coincidence: the record
-// names the value it matched, so a reviewer can check it.
+// told (each tool message it read: the data as fitted, the checks, the error
+// and the note; the run context as shown; the question) at the precision it
+// was written, a percentage also to a fraction (28 % ↔ 0.28); an unmatched
+// number is "unsourced": derived by the model, or invented. A match at low
+// precision (one decimal) can be a coincidence: the record names the value
+// it matched, so a reviewer can check it.
 
 const NUMBER = /(?<![\w.])([-−]?\d+(?:\.\d+)?)(\s*(?:Å|A\b|%|σ|sigma|°|deg\b|×|x\b))?/g;
 
@@ -58,9 +59,11 @@ const collectValues = (value, path, out) => {
 };
 
 /**
- * The values the model was shown: `steps` are the turn's tool calls
- * ({ id, name, data, checks }), `context` the run context object, and the
- * question text.
+ * The values the model was told: `steps` are what each tool step told it
+ * ({ id, name, data, checks, error, note }: a tool message's fields; the
+ * caller leaves out what the model never read), `context` the run context
+ * object as shown, and the question text. In that order, each step's data,
+ * checks, error, then note: a number is credited to the first that holds it.
  */
 export const shownValues = ({ steps = [], context = null, question = '' }) => {
     const out = [];
@@ -68,6 +71,9 @@ export const shownValues = ({ steps = [], context = null, question = '' }) => {
         collectValues(step.data, '', []).forEach((entry) => out.push({ ...entry, source: `tool ${step.name} (${step.id})${entry.path ? ` data.${entry.path}` : ''}` }));
         (step.checks || []).forEach((check, index) => collectValues(check.text, '', []).forEach((entry) => out.push({
             ...entry, source: `tool ${step.name} (${step.id}) check ${index + 1}`
+        })));
+        ['error', 'note'].forEach((key) => collectValues(step[key] ?? null, '', []).forEach((entry) => out.push({
+            ...entry, source: `tool ${step.name} (${step.id}) ${key}`
         })));
     });
     if (context) collectValues(context, '', []).forEach((entry) => out.push({ ...entry, source: `run context ${entry.path}` }));

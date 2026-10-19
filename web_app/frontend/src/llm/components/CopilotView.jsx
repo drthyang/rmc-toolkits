@@ -4,7 +4,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { contextToJson } from '../context/runContext';
 import { STOPPED_BY } from '../copilot/turnPolicy';
-import { stepSummary } from '../copilot/turnState';
+import { questionReply, stepSummary } from '../copilot/turnState';
 import { useCopilot } from '../useCopilot';
 import MarkdownMessage from './MarkdownMessage';
 import QuestionCard from './QuestionCard';
@@ -178,6 +178,15 @@ const AssistantTurn = ({ turn, pages, onOpenPage, cardLinks, question = null, on
     );
 };
 
+// A question step's line, in the card's words (questionReply): asked, then
+// answered, skipped (the default stands), not asked, or not answered.
+const QUESTION_LINE = {
+    answered: (text) => `Answered: ${text}`,
+    skipped: (text) => text,
+    not_asked: (text) => `Not asked: ${text}`,
+    stopped: () => 'Not answered.'
+};
+
 // One short line for screen readers when a step starts or ends, or a turn
 // ends with its verdict — never the streamed tokens themselves.
 const announcementFor = (turn) => {
@@ -191,8 +200,9 @@ const announcementFor = (turn) => {
     const step = [...turn.items].reverse().find((item) => item.kind === 'tool');
     if (!step) return turn.streaming ? '' : 'Answer ready.';
     if (step.interactive) {
-        const asked = step.args?.question || '';
-        return step.status === 'running' ? `The Copilot asks: ${asked}` : `Answered: ${step.data?.answer ?? 'skipped'}`;
+        if (step.status === 'running') return `The Copilot asks: ${step.args?.question || ''}`;
+        const { state, text } = questionReply(step);
+        return QUESTION_LINE[state](text);
     }
     return step.status === 'running' ? `Running: ${step.label}` : `${step.label}: ${step.status}`;
 };

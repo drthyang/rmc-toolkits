@@ -166,12 +166,18 @@ inputs on its page, stays the *user's* action.
      are accepted for number fields.
 5. **`copilot/tools.js`** holds the tool contract (below) and `executeToolCall()`: parse, validate,
    run with a timeout, and give the tool its own `AbortSignal`, which is aborted on Stop or timeout.
-   A thrown error becomes a failed step whose message the model reads. `fitToBudget()` halves the
-   largest array, recording `*_omitted`, until a result fits. It never trims silently.
+   It decides how every call ends (*How a call ends*, below): one ToolResult with its
+   `resultStatus`, from `executeToolCall` (ok, refused, error) or the constructors for a call that
+   did not run. A thrown error becomes an error result whose message the model reads.
+   `toolMessage()` writes the message the model reads; `fitToBudget()` halves the largest array,
+   recording `*_omitted`, until a result fits. It never trims silently.
 6. **`copilot/agentLoop.js`**: `runCopilotTurn()` is a pure async generator of UI events, the turn
    module's internal module (`copilot/turn.js` is its one production caller). It calls a model
    port, so the tests script the model's replies, and before each model call it emits the request
-   as sent (`request`). It records each tool step with the turn's verification. What ends the
+   as sent (`request`). It records each tool step with the turn's verification and forwards its
+   ToolResult as `tool_end` (the status, the note, the choice beside the severity): it picks which
+   constructor answers a call, never the status, and keeps no store — the events are the
+   transcript the dock and the harness both read. What ends the
    turn, and why each request is made, is the turn policy's (`copilot/turnPolicy.js`, *The turn
    policy* below): the loop reports each event (the turn began, a reply, a round of calls, the
    model refused its tools) and does what the step says; the policy judges each answer through the
@@ -219,7 +225,10 @@ inputs on its page, stays the *user's* action.
    statuses, and it takes the last line.
    **`copilot/turnState.js`** folds loop events into a turn: ordered text segments (with
    reasoning) and tool steps; the footer counts the steps that ended as analyses
-   (`tool_end.analysis`).
+   (`tool_end.analysis`). Each step keeps its `resultStatus` (null while running and once
+   stopped), `note` and `choice`; `questionReply(step)` reads a question's state from them
+   (waiting, stopped, not asked, skipped, answered), the one wording of the card and the screen
+   reader's line.
 9. **`watchdog/`**: slope heuristics over the ln(χ²) history are the **source of truth** for the
    badge. The LLM only writes the tooltip note, and only when the status flips or enough new data
    arrived.
@@ -395,8 +404,9 @@ reset and the `configKey` history window; it closes a turn on its terminal event
 and shows that ending's note. The harness: the case's run (the run module), its compute-only tools, the simulated user,
 the arm's skills and method (arm C: `'off'`), the verdict's words for the gate
 (`validation/verdict.js` `VERDICT_PHRASINGS`, as `config.phrasings`), its port, and the record (every request as sent, the
-steps, the score; number provenance against `start.shown`; the method; `stopped_by` from every
-terminal event).
+steps as their `tool_end`s, the score; number provenance against what the model was told — each
+tool message it read and `start.shown`; the safety counts from each step's result status; the
+method; `stopped_by` from every terminal event).
 
 ## The turn policy: what ends a turn (`copilot/turnPolicy.js`)
 
@@ -500,8 +510,12 @@ offer two, so the agent asks:
   which the turn offers `ask_user` with and puts in the tools' context; the
   card settles it, and the answer returns as the tool's result (`answerResult()`: the chosen label
   and its meaning with "use exactly this choice", a typed answer verbatim, or a skip as "use your
-  default and say you assumed it"). Stop, a new run or an unmount rejects it with an AbortError:
-  the turn closes as *Stopped*, the card reads *Not answered*, and the next question works.
+  default and say you assumed it"), with the reply beside it as the step's `choice`
+  (`replyChoice()`: `{ source: 'option' | 'other' | 'skipped', index }`), which the card and the
+  record read; the model never sees it. A question that never reached the user (malformed, nobody
+  to ask, or refused by the loop) ends `error` or `skipped`, with no choice: the card reads *Not
+  asked*. Stop, a new run or an unmount rejects it with an AbortError: the turn closes as
+  *Stopped*, the card reads *Not answered*, and the next question works.
 - **The contract.** `interactive: true` marks a tool that waits for the user: never answered from
   the duplicate-call cache, no time limit, its wait not counted toward the turn's 10 min, at most
   `maxQuestions` (2) questions per request and one per step (`agentLoop.js`). It is not a view
@@ -562,7 +576,11 @@ the model's own `ask_user` still works beside it.
 
   The answer joins the user's question for the model: `(The Workbench asked: "…" — the user
   chose Se–Ta–Se: Se around Ta in the whole first Ta–Se shell, 2.21–3.23 Å (CN 6). Use exactly
-  this.)`. The conversation still shows the question as typed.
+  this.)`. The conversation still shows the question as typed. The question's step sends no
+  tool message and takes no ref: its `note` is the text the model read in its place (this one, or
+  before a call the note that call carries) and its `choice` the user's reply, with `confirmed`
+  (whether the answer keeps the user's own window: the clarifier choice's flag, true for "Keep …",
+  never read from the label).
 - **Before an analysis runs** (`beforeCall`, for tools that declare `shellWindows(args)`:
   `compute_bond_angles`, `analyze_clusters`): a window that overlaps a first shell but holds less
   of it by the same margin is put to the user — the whole first shell (default) or the window as
@@ -638,12 +656,16 @@ isAnalysis(step)           // the one definition of an analysis
   context facts (the watchdog, the ladder's groups, the parents) and the gate's elements; `offered:
   []` means no claim row (no gate), while references are still filled and the checks and the
   Outcome computed (the loop's default without a verification).
-- **record(step, show).** `step` is `{ name, args, status, error, executed, interactive, reading,
-  view, facts? }`; `show(ref)` builds the tool message, once and synchronously, and the ref then
-  resolves to exactly the data it returns (a callback: the ref is written into the message before
-  the data is fitted to the budget). Refs are r1, r2, … in record order; a step with an error takes
-  none, and its facts are dropped. `analysis` (`isAnalysis`: executed, and not a question, a skill
-  read or a view) rides on `tool_end`; the dock footer counts it, as the Outcome does.
+- **record(step, show).** `step` is the call's ToolResult (*The tool contract*: `resultStatus`,
+  `args`, `error`, `checks`, `facts`, …) with the tool's `name` and kind (`interactive`,
+  `reading`, `view`); a step with no known `resultStatus` is a TypeError. The verification reads
+  the step's severity (`severityOf`) and whether it ran (`ran`: not an unknown tool or a skipped
+  call) from it; a `refused` step ran. `show(ref)` builds the tool message, once and
+  synchronously, and the ref then resolves to exactly the data it returns (a callback: the ref is
+  written into the message before the data is fitted to the budget). Refs are r1, r2, … in record
+  order; a step with an error takes none, and its facts are dropped. `analysis` (`isAnalysis`:
+  executed, and not a question, a skill read or a view) rides on `tool_end`; the dock footer
+  counts it, as the Outcome does.
 - **judge(text, …), in a fixed order.** 1. fill the references; 2. decide a send-back on the
   FILLED text: it needs `canSendBack` (tools can still run: not the final round, the turn's time
   not spent), an unmet claim not sent back yet this turn, in CLAIMS order, and fewer than
@@ -868,7 +890,7 @@ tool with either name is refused, and the dock says so in its error line.
                                          // its bond windows, checked against the shells before it runs (optional)
   resultBudget: 9000,                    // its own result budget in characters (read_skill) (optional)
   keep: true,                            // its result is never compacted later in the question (optional)
-  run: async (args, { signal, focus, askUser }) => ({ data, checks, facts }),
+  run: async (args, { signal, focus, askUser }) => ({ data, checks, facts, choice }),
 }
 ```
 
@@ -898,7 +920,9 @@ tool with either name is refused, and the dock says so in its error line.
 - `focus` is the dock's card-focus controller, for view tools: `await focus.show(ids, { marks })`,
   `focus.onClear(undo)` (runs when the highlight ends), `focus.state()`.
 - `askUser(request, { signal })` shows a question card and resolves with the user's reply
-  (`{ answer, source: 'option' | 'other' | 'skipped', index }`), for interactive tools.
+  (`{ answer, source: 'option' | 'other' | 'skipped', index }`), for interactive tools. An
+  interactive tool returns the reply beside its result as `choice` (`{ source, index }`): kept on
+  the step, never sent (another tool's `choice`, or a malformed one, is dropped).
 - `facts` (optional, not sent to the model) are findings the final answer must not contradict
   (*Checks on the answer*), one key per row of the verification's facts catalogue (FACTS, with
   each key's producing tools and shape): `{ convergence }`, `{ groups: [{ symbol, point_group, centrosymmetric,
@@ -914,6 +938,58 @@ tool with either name is refused, and the dock says so in its error line.
   arguments for the window the user chose (`confirmed`: they kept their own).
 - Parameters may be arrays (`items`, `minItems`, `maxItems`) and objects (their own `properties` /
   `required`); a list sent as JSON text or a bare comma list is accepted.
+
+**How a call ends (architecture candidate #11, the tool transcript).** The contract decides it;
+the loop only forwards it. Every call ends as one ToolResult:
+
+```js
+{ resultStatus, args, data, checks, error, facts?, ms, cached, note,
+  choice?: { source: 'option' | 'other' | 'skipped', index, confirmed: true | false | null } }
+
+RESULT_STATUSES                                  // 'ok' | 'refused' | 'error' | 'unknown_tool' | 'skipped', closed
+executeToolCall(tool, raw, { signal, timeoutMs, context }) → ToolResult   // ok | refused | error
+skippedCall(args, reason, n)                     // SKIP_REASONS: 'call_limit' | 'one_question' | 'question_limit'
+unknownToolCall(args, name, names) · repeatedCall(cached) · withNote(result, note)
+questionResult(request, reply, { args, ms, confirmed })   // a Workbench question the user answered
+toolResult(fields)                               // the checked constructor the others call
+severityOf(result) → 'ok' | 'warn' | 'failed'    // the step's status (the dock, the Outcome)
+ran(result)                                      // not unknown_tool, not skipped
+toolMessage(result, { budget, ref }) → { content, data } · compactToolMessage(content)
+```
+
+| `resultStatus` | When | The model reads |
+| --- | --- | --- |
+| `ok` | the tool answered | the ref, the note, the checks, the data |
+| `refused` | the tool answered with a `fail` check (its own refusal: a cut window) | the same; it ran, is an analysis and backs its claim |
+| `error` | arguments that are not JSON or that the schema refuses, a throw, the time limit | the error (and the dropped-key notes) |
+| `unknown_tool` | no tool has that name | the error, with the names offered |
+| `skipped` | the loop did not run it: past the calls per round, a second question in a round, past the questions per request | the error, saying why |
+
+- **Invariants.** A non-empty `error` exactly for `error`, `unknown_tool` and `skipped`, which
+  then have no data, no ref and no facts; a `fail` check exactly for `refused` (beside an error a
+  check may be anything); `cached` (an identical earlier call repeated, with `REPEAT_NOTE`) only
+  for `ok` or `refused`; a `choice` only on `ok`. The constructors throw a TypeError on a result
+  that breaks one (a thrown error with no text of its own reads "the tool failed without saying
+  why"). `note` is what the app adds for the model beside the result — the Workbench's (its
+  choice applied or asked, before a repeat's) — and for a Workbench question, which sends no
+  message of its own, the text the model read in its place. `choice.confirmed` says whether a
+  window question's answer keeps the user's own window (the clarifier choice's flag); null for
+  any other question.
+- **The message.** `toolMessage(result)` is the only writer of the bytes the model reads: the
+  ref (with no error), the error, the note, the checks, then the data fitted to the budget less
+  the rest, in that key order. The status and the choice are never sent.
+  `compactToolMessage` shortens an earlier one to its ref, checks and headline numbers by reading
+  its own JSON back. `src/__tests__/modelVisible/toolMessages.test.js` pins every message no other
+  snapshot covers (a call that did not run, the questions, unreadable arguments, a throw, the time
+  limit, a repeat, the Workbench's notes, the budget, the compaction, `highlight_cards`) as raw
+  strings.
+- **The event stream is the transcript.** `tool_end` carries the result as it ended: `status`
+  (`severityOf`), `resultStatus`, `args`, `data` (as the model read it), `checks`, `error`, `note`,
+  `choice`, `ms`, `cached`, `ref`, `analysis`, `pageParams`. Nothing re-derives a status from an
+  error's text or a data field: the dock (`turnState.js`, `QuestionCard`, the screen reader's line,
+  `ToolStep`, which shows the note sent to the model) and the validation harness (each record
+  step's `result_status`, `note`, `choice`, `ref`, `analysis`; its safety counts) read the same
+  events, and the verification records the ToolResult itself.
 
 **The data's shape (`dataShape`).** With numbers by reference the model writes
 `{{r3.sites.0.shift_A}}`: the paths of a tool's `data` are an interface it writes against, and a key
@@ -972,8 +1048,8 @@ In this repository the host tools live in `src/copilotTools.js`:
 | `compute_bond_angles` | the triplets engine (Show in Bond Geometry fills the triplet and windows, then computes); the sin θ-corrected histogram, and a whole shell of ~6 or ~4 neighbours read against an ideal octahedron or tetrahedron |
 | `analyze_clusters` | the cluster engine (`workers/clusters.js`, `/api/clusters`): the shape of an element's finite clusters (M₄ tetrahedra, dimers, trimers) against a shuffle null of independent atoms, and the average cluster's own distortion. The engine returns its own verdict (distorted, breathing, rigid, split member sites, …); the tool shapes the data and says each finding (`CLUSTER_SENTENCES`), and its `facts` are the verdict's answers |
 | `analyze_modulations` | the modulation engine (`workers/modulations.js`, `/api/modulations`): each element's displacement power at the zone-boundary points and its strongest modes against the configuration's diffuse background — order that enlarges the cell, which the folded average cannot show, and correlation between cells at a general wavevector (incommensurate or short-range). The engine returns each point's calibrated σ (corrected over every element's points, whichever the call names), each point's polarisation (the direction the atoms move in that mode, with its share of the power) and each element's verdict (cell doubling, general order, long wave); the tool renders them (`MODULATION_SENTENCES`), the polarisation of ordered points only, and never prints a ratio or σ below its bar rounded onto it |
-| `detect_symmetry` | the symmetry finder at any tolerance, without changing the card (browser-loaded runs only), with the point group's facts (inversion, Sohncke, polar) |
-| `measure_symmetry_lowering` | the size and direction of the coherent shift of a symmetry lowering: each average site's distance from the position a parent group puts it at, against the noise floor (browser-loaded runs only) |
+| `detect_symmetry` | the symmetry finder at any tolerance, without changing the card, with the point group's facts (inversion, Sohncke, polar); offered when the run's structure has an average-structure basis (a browser-loaded run, or a server folder through `/api/structure`, which above the finder's 2000-site cap sends only its size; not a coords-only file). Above the cap it answers "not analysed", in both runtimes |
+| `measure_symmetry_lowering` | the size and direction of the coherent shift of a symmetry lowering: each average site's distance from the position a parent group puts it at, against the noise floor; offered as `detect_symmetry` is |
 | `orient_3d_view` (view) | turns a 3D view (`src/copilotViewTools.js`): look down `[u v w]` / a, b, c / PC1–3 (c up, or b looking down c), centre or ring sites, select a site, reset |
 | `current_view` (view) | the page on screen, its cards, the highlight, and each 3D view's direction and site |
 
@@ -1186,6 +1262,18 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   a refused request has no `request` event.
   `copilotChat.test.jsx` runs a turn on a mocked Ollama loaded at 4,096 (native requests with
   `num_ctx` ≥ 16,384 and no `/v1` call), a refused turn, and a cut reply.
+- **How a call ends** (`tools.test.js`, the tool contract at its interface): every result status
+  and who decides it, with the exact texts the model reads (the skip reasons, the unknown tool, the
+  repeat's note), the constructors' TypeErrors, an interactive tool's `choice` passed through and
+  no other's, the tool message and its compaction, `severityOf`, `ran` and the budget helpers; and
+  the invariant table over one turn that reaches every status, a repeat, the model's question and
+  the Workbench's. `src/__tests__/toolOutcomes.test.jsx` runs one scripted turn on a dev case
+  through the dock (`CopilotView`) and the harness alike — every status, each step's end the same
+  in both — and pins the drift list: the dock's footer beside `failed_calls` and `refused_calls`,
+  `unknown_tool_calls`, "asked before", a skipped question on the card and in the screen reader's
+  line, the note on the step and in the record, provenance against what the model was told, a
+  step running at a stop listed as stopped. The validation's scripted records are pinned as files
+  (`validation/__tests__/__snapshots__/records/`, the transcript's added keys left out).
 - **The agent loop, against a scripted model:**
   - the call → result → answer cycle; argument errors fed back and corrected;
   - `ask_user` replays on the Demo's Ta–Se shell: an ambiguous Se–Ta–Se question finds the shells,
@@ -1247,9 +1335,11 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
 - **What the model sees** (`src/__tests__/modelVisible/`): snapshot files of every system-prompt
   variant (with method `'off'` too), the dock's and the validation harness's first request and tool
   list (both through the turn module; arms B and C, arm C's request checked for every skill name,
-  skill step, method sentence and piece of tool advice), and one tool message per tool on the Demo
-  (and the two whose checks carry advice, as arm C reads them). A diff there is a change to what the
-  model sees: call it out in the PR
+  skill step, method sentence and piece of tool advice), one tool message per tool on the Demo
+  (and the two whose checks carry advice, as arm C reads them), and every tool message no other
+  file covers, raw (`toolMessages.test.js`: a call that did not run, the questions, unreadable
+  arguments, a throw, the time limit, a repeat, the Workbench's notes, the budget, the compaction,
+  `highlight_cards`). A diff there is a change to what the model sees: call it out in the PR
   ([copilot-validation.md](../../../../docs/algorithms/copilot-validation.md#what-the-model-sees-snapshot-tests)).
 - **The shape of each tool's data:** the notation and its checker (`dataShape.test.js`), and every
   live tool's results on the Demo and the dev cases against its `dataShape`

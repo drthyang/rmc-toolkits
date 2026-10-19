@@ -5,7 +5,11 @@
 // (turn.js, agentLoop.js). A turn is an ordered list of items — text segments
 // (one per model request, with that request's reasoning) and tool steps —
 // plus the final verdict. Pure: `applyTurnEvent(turn, event, now)` returns a
-// new turn.
+// new turn. A step keeps its tool_end as the loop sent it: its severity
+// (`status`, or 'running' / 'stopped'), how the call ended (`resultStatus`,
+// the tool contract's, tools.js; null while running and once stopped), the
+// app's `note` and the user's `choice`. The step cards read those, never the
+// text the model read (questionReply).
 
 import { createReferenceStore, fillReferences } from './references';
 
@@ -86,9 +90,12 @@ export const applyTurnEvent = (turn, event, now = 0) => {
                     // Set when it ends (tool_end's `analysis`).
                     analysis: false,
                     status: 'running',
+                    resultStatus: null,
                     data: null,
                     checks: [],
                     error: null,
+                    note: null,
+                    choice: null,
                     ms: null,
                     cached: false,
                     pageParams: null
@@ -100,10 +107,13 @@ export const applyTurnEvent = (turn, event, now = 0) => {
                 items: turn.items.map((item) => (item.kind === 'tool' && item.id === event.id ? {
                     ...item,
                     status: event.status,
+                    resultStatus: event.resultStatus ?? null,
                     args: event.args ?? item.args,
                     data: event.data,
                     checks: event.checks || [],
                     error: event.error,
+                    note: event.note ?? null,
+                    choice: event.choice ?? null,
                     ms: event.ms,
                     cached: Boolean(event.cached),
                     ref: event.ref ?? null,
@@ -161,6 +171,33 @@ export const closeTurn = (turn, stoppedBy) => {
         stoppedBy,
         streaming: false
     };
+};
+
+// The results of a question that never reached the user.
+const NOT_ASKED = ['error', 'skipped', 'unknown_tool'];
+
+/**
+ * How a question step stands, as its card and the screen reader say it, read
+ * from the step's result (never from the text the model read): `{ state,
+ * text }`.
+ *   'waiting'    it runs: the card shows the options;
+ *   'stopped'    Stop or a restart came before the reply: "Not answered";
+ *   'not_asked'  it never reached the user (refused by the loop, malformed,
+ *                nobody to ask: resultStatus 'error', 'skipped' or
+ *                'unknown_tool'); `text` is the error;
+ *   'skipped'    the user skipped (choice.source 'skipped'): the default
+ *                stands, if there is one;
+ *   'answered'   the user chose an option or typed an answer; `text` is it.
+ */
+export const questionReply = (step) => {
+    if (step.status === 'running') return { state: 'waiting', text: '' };
+    if (step.status === 'stopped') return { state: 'stopped', text: 'Not answered' };
+    if (NOT_ASKED.includes(step.resultStatus)) return { state: 'not_asked', text: step.error || '' };
+    const answer = step.data?.answer;
+    if (step.choice?.source === 'skipped') {
+        return { state: 'skipped', text: answer ? `Skipped: the Copilot uses its default, ${answer}.` : 'Skipped.' };
+    }
+    return { state: 'answered', text: answer == null ? '' : String(answer) };
 };
 
 /**

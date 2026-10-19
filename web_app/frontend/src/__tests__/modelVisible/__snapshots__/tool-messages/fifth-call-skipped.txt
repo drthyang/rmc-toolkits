@@ -1,0 +1,12 @@
+# The tool messages the model reads: the fifth call of a round, skipped
+# five echo calls in one round: four per round run (DEFAULT_LIMITS), the fifth is answered skipped
+## messages[3] · tool · call_1_0
+{"ref":"r1","checks":[{"level":"ok","text":"fine"}],"data":{"value":1,"list":[1,2,3]}}
+## messages[4] · tool · call_1_1
+{"ref":"r2","checks":[{"level":"ok","text":"fine"}],"data":{"value":2,"list":[1,2,3]}}
+## messages[5] · tool · call_1_2
+{"ref":"r3","checks":[{"level":"ok","text":"fine"}],"data":{"value":3,"list":[1,2,3]}}
+## messages[6] · tool · call_1_3
+{"ref":"r4","checks":[{"level":"ok","text":"fine"}],"data":{"value":4,"list":[1,2,3]}}
+## messages[7] · tool · call_1_4
+{"error":"skipped: at most 4 tool calls per step — call it again in the next step if it is still needed"}
