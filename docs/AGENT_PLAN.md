@@ -48,7 +48,7 @@ PR, and a decision record in `validation/findings/decisions/` and here.
 | 1.5 | #76 | the holdout scan widened |
 | 3.3 | #77 | every live tool declares its `dataShape` |
 | 2, 1.3 | #78 | the run module; records keep their view |
-| — | #79 | test-breathing recomposed (protocol 2026-10-19.2) |
+| — | #79 | the held-out breathing case recomposed (protocol 2026-10-19.2) |
 | 5.1 | #80 | the skill lint |
 | 5.5 (test) | #81 | the 32k budget test |
 | 4.1 | #82 | `list_sites` shows the split (protocol 2026-10-19.3) |
@@ -62,8 +62,9 @@ PR, and a decision record in `validation/findings/decisions/` and here.
   rate at or below α), has a known-answer test on a planted spread, and uses dev cases only.
 - **5.4:** waits for the user's skill review. Arm B's descriptions keep their method advice until
   the skill text carries it; arm C drops it through 1.8.
-- **Test-breathing:** recomposed, because its cluster was the skills' reference compound, which
-  `read_skill` serves to arm B. The user may reverse this (`decisions/2026-10-19-test-breathing-recomposed.json`).
+- **The held-out breathing case:** recomposed, because its cluster was the skills' reference compound,
+  which `read_skill` serves to arm B. The user may reverse this (its record is in
+  `validation/findings/decisions/`).
 - **The context budget (Q3):** the guard, its estimate (1.4 characters per token for tool
   messages), the 8,192-token reserve, the budgets and the prompt stay unchanged; refusing rather
   than cutting is the behaviour wanted.
