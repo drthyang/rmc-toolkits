@@ -269,4 +269,22 @@ describe('where a finding stands, and validation batch 1', () => {
             expect(tools.some((finding) => finding.evidence.includes(label)), label).toBe(true);
         }
     });
+
+    // Decisions on the validation itself, in the same form. The schema's
+    // approval is the user's; a decision taken on the user's delegation says
+    // so in its evidence and proposed fix.
+    it('decisions: the recomposed test breathing case, approved on the user\'s delegation and implemented with its commit', () => {
+        const results = parseFindings(readFileSync(join(FRONTEND, 'validation/findings/decisions.jsonl'), 'utf8'));
+        results.forEach((result) => expect(result.errors, `line ${result.line}`).toEqual([]));
+        const findings = results.map((result) => result.finding);
+        expect(findings).toHaveLength(1);
+        const [recomposed] = findings;
+        expect(recomposed).toMatchObject({
+            case: 'test-breathing', kind: 'bug', status: 'implemented', needs_user_approval: true,
+            approval: { by: 'user', date: '2026-10-19', batch: 2 }
+        });
+        for (const field of ['evidence', 'proposed_fix']) {
+            expect(recomposed[field], field).toMatch(/approved by the manager on the user's delegation, 2026-10-19/i);
+        }
+    });
 });
