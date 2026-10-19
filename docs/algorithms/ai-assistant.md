@@ -931,7 +931,9 @@ The full context is **re-sent with every request**, which is why old turns can b
 The request body is `{model, messages, temperature, stream: true}`, plus `tools` and `tool_choice`
 when analyses are on. `temperature` comes from settings (default **0.2**). For an Ollama server the
 same messages and tools go to its native `/api/chat` instead, with `options: {temperature, num_ctx,
-num_predict}` and no `tool_choice` (Step 16, Step 17 *The context window*).
+num_predict}` and no `tool_choice` (the native API has none). The final request of a turn that
+used its analysis budget (`tool_choice: 'none'`) goes to Ollama with no tools at all (the model
+port, `provider/model.js`; Step 16, Step 17 *The context window*).
 
 #### Numeric rules the system prompt asserts (no code backs them)
 
@@ -1128,14 +1130,17 @@ OpenAI-compatible client (no SDK, no SSE library).
     `thought_signature` there and requires it back.
   - `{finishReason}`.
 
-  `tools` / `tool_choice` join the body only when given. An HTTP failure carries its `status` (the
-  Copilot's tools-unsupported test reads it).
+  `tools` / `tool_choice` join the body only when given. An HTTP failure carries its `status` and
+  its parsed error `body` (`httpError`); the model port reads both to tell "tools unsupported".
 - `completeChat()` is the non-streaming variant used by the watchdog.
-- The Copilot's requests go through `streamCopilotChat()`
-  ([`llm/provider/contextGuard.js`](../../web_app/frontend/src/llm/provider/contextGuard.js)): for a
-  server on this machine or on port 11434 it first reads the server's kind (`GET /api/version`, else
-  `GET /api/v0/models`) and, for Ollama, the model's loaded and maximum context (`GET /api/ps`,
-  `POST /api/show`), then sends Ollama requests through `streamOllamaChat()`
+- The Copilot's requests go through the model port, `providerModel`
+  ([`llm/provider/model.js`](../../web_app/frontend/src/llm/provider/model.js)), and
+  `streamCopilotChat()`
+  ([`llm/provider/contextGuard.js`](../../web_app/frontend/src/llm/provider/contextGuard.js)). For a
+  server on this machine or on port 11434, the port's `prepare` first reads the server's kind (`GET
+  /api/version`, else `GET /api/v0/models`) and, for Ollama, the model's loaded and maximum context
+  (`GET /api/ps`, `POST /api/show`) (`planCopilotChat`). `streamCopilotChat()` then sends Ollama
+  requests through `streamOllamaChat()`
   ([`llm/provider/ollama.js`](../../web_app/frontend/src/llm/provider/ollama.js): `POST /api/chat`,
   newline-delimited JSON) and everything else through `streamChat()`. The watchdog stays on
   `completeChat()`.
@@ -1192,13 +1197,20 @@ What the loop guarantees:
   - Over 12,000 chars per question, the oldest results are replaced by
     `{compacted: …, checks}`. The newest round is never compacted, and checks are never trimmed.
 - **When the budget is used**, a user-role note says so and the last request is sent with
-  `tool_choice: 'none'`. Tool calls in that reply are ignored. If it brings no text (Ollama ignores
-  `tool_choice`), a fixed "analysis budget used" answer closes the turn with
-  `Outcome: not achieved`.
-- **Models without tool support.** A 4xx whose message says the model or server "does not support"
-  (or "is not supported" for) tools, tool calling, tool use or function calling retries the
-  question once without tools, under `COPILOT_PROMPT_NO_TOOLS`. The model is then remembered for the
-  session. Any other HTTP error is shown, including a schema 400 that merely mentions a function.
+  `tool_choice: 'none'`. The model port puts that in each server's form: `"tool_choice": "none"`
+  beside the tools on OpenAI-compatible servers, and no tools at all on Ollama, whose native API
+  has no `tool_choice`. Tool calls in that reply are ignored. If it brings no text (a server that
+  takes the field but does not honour it; LM Studio, Gemini and Anthropic are not verified), a
+  fixed "analysis budget used" answer closes the turn with `Outcome: not achieved`.
+- **Models without tool support.** The model port (`provider/model.js`) raises a
+  `ToolsUnsupportedError` when the provider's response says the model cannot take tools. It reads
+  Ollama's 400 `{error: "<model> does not support tools"}` and OpenAI's 400
+  `{error: {param: "tools", code: "unsupported_parameter"}}` first. The fallback is a 4xx whose
+  message says the model or server "does not support" (or "is not supported" for) tools, tool
+  calling, tool use or function calling. On the question's first request the loop then retries
+  once without tools, under `COPILOT_PROMPT_NO_TOOLS`, and the model is remembered for the session.
+  The loop reacts to the type only. Any other error is shown, including a schema 400 that merely
+  mentions a function.
 - **Stop / timeout.** Each tool run gets its own `AbortSignal`, aborted on Stop or timeout. The
   Copilot's worker (one of its own, not the pages' shared worker) is then terminated, and a Flask
   request is cancelled. `describeSymmetry` runs synchronously and cannot be interrupted (≈ 0.1 s on
@@ -1452,10 +1464,13 @@ default and say you assumed it"). A second call in the same round, or a third in
 answered with an error, and its card reads *Not asked*. The turn's abort signal rejects the wait (Stop, a run
 change, an unmount). `ASK_RULES` join the prompt when the tool is offered (`copilotSystemPrompt`).
 
-**The context window** (`provider/contextGuard.js`, `provider/ollama.js`). Every
-Copilot request goes through `streamCopilotChat()`. A server is probed only when it is local or on
-port 11434: `GET /api/version` answering a version is Ollama; `GET /api/v0/models` listing load
-states is LM Studio; anything else is sent unchanged (`client.js`).
+**The context window** (`provider/contextGuard.js`, `provider/ollama.js`). The model port's
+`prepare` asks the guard for its plan before each Copilot request (`planCopilotChat()`): the
+server kind and, below, the context it sizes or the refusal (`ContextLimitError`, before anything
+is sent). The request as sent carries that plan (`sent.plan`), and `streamCopilotChat()` sends
+it under it. A server is probed only when it is local or on port 11434: `GET /api/version`
+answering a version is Ollama; `GET /api/v0/models` listing load states is LM Studio; anything
+else is sent unchanged (`client.js`).
 
 - **The estimate** (`estimatePromptTokens`): the characters of every message's content, tool
   names and the tool schemas' JSON divided by `CHARS_PER_TOKEN` = 2.5, those of tool results and

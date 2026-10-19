@@ -219,7 +219,7 @@ describe('a live run under the policy (run.js liveRun, fake servers)', () => {
     it('LM Studio below 48k: refused before any request, and no record', async () => {
         const { chats } = fakeServer({ kind: 'lmstudio', loaded: 32768, replies: [{ text: ANSWER }] });
         const model = qwen();
-        await expect(liveRun({ built: built('dev-offcentre'), arm: 'C', model, runIndex: 0, base: providerModel(model, { session: {} }), session: {} }))
+        await expect(liveRun({ built: built('dev-offcentre'), arm: 'C', model, runIndex: 0, base: providerModel(model, { session: {} }) }))
             .rejects.toBeInstanceOf(RunPolicyError);
         expect(chats).toEqual([]);
     });
@@ -228,7 +228,7 @@ describe('a live run under the policy (run.js liveRun, fake servers)', () => {
         const { chats } = fakeServer({ kind: 'lmstudio', loaded: 49152, replies: [{ call: ['list_sites', {}] }, { text: ANSWER }] });
         const model = qwen();
         const session = {};
-        const record = await liveRun({ built: built('dev-offcentre'), arm: 'C', model, runIndex: 0, base: providerModel(model, { session }), session });
+        const record = await liveRun({ built: built('dev-offcentre'), arm: 'C', model, runIndex: 0, base: providerModel(model, { session }) });
         expect(record.error).toBeNull();
         expect(chats.map((chat) => chat.url)).toEqual(['http://localhost:1234/v1/chat/completions', 'http://localhost:1234/v1/chat/completions']);
         expect(record.policy).toMatchObject({
@@ -261,7 +261,7 @@ describe('a live run under the policy (run.js liveRun, fake servers)', () => {
         fakeServer({ kind: 'lmstudio', loaded: 49152, replies: [{ text: ANSWER }] });
         const model = qwen();
         const session = {};
-        const record = await liveRun({ built: built('dev-offcentre'), arm: 'C', model, runIndex: 0, base: providerModel(model, { session }), session });
+        const record = await liveRun({ built: built('dev-offcentre'), arm: 'C', model, runIndex: 0, base: providerModel(model, { session }) });
         // As if LM Studio had loaded the model again at its default context.
         noteWindowAfter(record.policy, { kind: 'lmstudio', loaded_tokens: 4096 });
         expect(record.policy.warnings).toEqual([expect.stringMatching(/^LM Studio's loaded context changed during the run: 49,152 tokens before, 4,096 after/)]);
@@ -273,7 +273,7 @@ describe('a live run under the policy (run.js liveRun, fake servers)', () => {
         const { chats } = fakeServer({ kind: 'ollama', id: 'gemma4:26b', loaded: null, max: 262144, replies: [{ call: ['list_sites', {}] }, { text: ANSWER }] });
         const model = gemma();
         const session = {};
-        const record = await liveRun({ built: built('dev-offcentre'), arm: 'C', model, runIndex: 0, base: providerModel(model, { session }), session });
+        const record = await liveRun({ built: built('dev-offcentre'), arm: 'C', model, runIndex: 0, base: providerModel(model, { session }) });
         expect(record.error).toBeNull();
         const sent = chats.map((chat) => chat.body.options.num_ctx);
         expect(sent).toHaveLength(2);
@@ -306,12 +306,12 @@ describe('a live run under the policy (run.js liveRun, fake servers)', () => {
     it('the report sets two columns\' policies side by side and flags limits that differ', async () => {
         fakeServer({ kind: 'lmstudio', loaded: 65536, replies: [{ text: ANSWER }] });
         const lmStudio = qwen();
-        const a = await liveRun({ built: built('dev-offcentre'), arm: 'C', model: lmStudio, runIndex: 0, base: providerModel(lmStudio, { session: {} }), session: {} });
+        const a = await liveRun({ built: built('dev-offcentre'), arm: 'C', model: lmStudio, runIndex: 0, base: providerModel(lmStudio, { session: {} }) });
         guard.forgetServers();
         fakeServer({ kind: 'ollama', id: 'gemma4:26b', loaded: null, replies: [{ text: ANSWER }] });
         const ollama = gemma();
         const session = {};
-        const b = await liveRun({ built: built('dev-offcentre'), arm: 'C', model: ollama, runIndex: 0, base: providerModel(ollama, { session }), session, limits: { maxRounds: 3 } });
+        const b = await liveRun({ built: built('dev-offcentre'), arm: 'C', model: ollama, runIndex: 0, base: providerModel(ollama, { session }), limits: { maxRounds: 3 } });
         const report = renderReport([a, b]);
         expect(report).toMatch(/\| gemma4:26b · C \| Ollama 0\.40\.2 \| num_ctx [\d,]+, sized per request \(the model holds 262,144\) \| num_ctx minus the prompt estimate, per request \| no tools sent \| 0\.2 \(retry ≥ 0\.6\) \| 3 rounds × 4 calls/);
         expect(renderTranscript(b)).toContain('· final round: no tools sent (the native API has no tool_choice)');
