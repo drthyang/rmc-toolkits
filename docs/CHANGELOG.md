@@ -21,6 +21,26 @@ Chronological record of notable changes, newest first. For current architecture 
   only, off by default) adds the PCA table for a check of its effect
   ([copilot-validation.md](algorithms/copilot-validation.md#records-transcripts-findings)).
 
+### Copilot: the shape of every tool's data, declared and checked (plan 3.3)
+
+- With numbers by reference the model quotes `{{r3.sites.0.shift_A}}`, so the paths of a tool's
+  `data` are an interface. Each live tool's spec now declares them: `dataShape`, in a small
+  notation that reads like the JSON (`'number|null'`, `'key?'` optional, `'cn_*_per_*'` pattern
+  keys, `[shape]` lists, `[a, b]` tuples, `oneOf(…)`), with one pure checker
+  (`src/llm/copilot/dataShape.js`) that names every mismatch by its reference path. The four run
+  tools (with every `read_run_data` section), the seven engine tools, `ask_user` and `read_skill`
+  declare theirs; the engine tools' shapes sit beside the summarizers that build the data.
+- `dataShape` is internal: `toRequestTools` sends name, description and parameters only, and the
+  model-visible snapshots are unchanged.
+- `src/__tests__/toolDataShapes.test.js` runs every tool through `executeToolCall` on the Demo run
+  and on every dev case (≈ 3 s), with arguments read from each run's own data (every section and
+  pair, whole, cut, confirmed, two-window and empty bond windows, each same-element shell's
+  clusters, three tolerances, each `ask_user` reply form, every skill and reference), and checks
+  each result both ways: no undeclared key, no required key missing, every value of its type, and
+  every declared key returned by some call except the forms the runs cannot reach (listed with
+  their reason). A PR that changes a tool's output changes its `dataShape` in the same diff. No
+  tool's behaviour or output changed.
+
 ### Copilot validation: the holdout scan widened
 
 - `validation/__tests__/split.test.js` (with `holdoutScan.js`) now looks for each held-out test

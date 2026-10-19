@@ -21,6 +21,12 @@ import { symmetryNoiseFloor } from './llm/context/runContext';
 import { symmetryShifts } from './symmetryShift';
 import { nearestLowIndex } from './viewer3d';
 import { normalQuantile, regularizedGamma } from './workers/orientation';
+import { oneOf } from './llm/copilot/dataShape';
+
+// Each tool's `dataShape` (llm/copilot/dataShape.js) is the shape of the data
+// its summarizer builds — the paths the model quotes by reference — declared
+// beside that summarizer and carried on the tool's spec.
+const XYZ = ['number|null', 'number|null', 'number|null'];
 
 // A tolerance this factor above the sampling noise floor holds clearly above
 // it (the Workbench's tolerance question uses the same margin, clarify.js).
@@ -50,9 +56,29 @@ const parseWarningCheck = (payload) => (
 
 // --- list_sites ------------------------------------------------------------------
 
+const SITES_SHAPE = {
+    note: 'string',
+    'element?': 'string',
+    n_sites: 'number',
+    total_atoms: 'number|null',
+    largest_U_iso_refs: ['number'],
+    largest_abs_kurtosis_refs: ['number'],
+    most_anisotropic_refs: ['number'],
+    sites: [{
+        ref: 'number',
+        site: 'string',
+        count: 'number',
+        U_iso_A2: 'number|null',
+        rms_axes_A: oneOf(XYZ, 'null'),
+        anisotropy: 'number|null',
+        kurtosis: 'number|null',
+        'zero_spread?': 'boolean'
+    }]
+};
+
 // Rows are ranked by |kurtosis|, then U_iso — the order the run context uses —
 // so trimming to the result budget drops the least remarkable sites first.
-export const summarizeSites = (payload, { element = null } = {}) => {
+export const summarizeSites =(payload, { element = null } = {}) => {
     const all = payload?.sites || [];
     const picked = element ? all.filter((site) => site.element === element || site.elementCounts?.[element]) : all;
     const sites = picked.map((site) => {
@@ -126,6 +152,38 @@ const anglesToCell = (direction, unitCell) => unitCell.map((edge) => {
     const cosine = (direction[0] * edge[0] + direction[1] * edge[1] + direction[2] * edge[2]) / (length * norm);
     return roundFixed(Math.acos(Math.max(-1, Math.min(1, cosine))) * 180 / Math.PI, 1);
 });
+
+// direction_uvw, angles_to_abc_deg and principal_axis_uvw need the unit cell.
+const ORIENTATION_SHAPE = {
+    note: 'string',
+    site: 'number|null',
+    element: 'string',
+    frequency: 'number',
+    cells: 'number',
+    used_points: 'number',
+    rejected_points: 'number',
+    enhancement_range: ['number|null', 'number|null'],
+    peak: {
+        enhancement: 'number|null',
+        count: 'number',
+        expected: 'number|null',
+        significance_sigma: 'number|null',
+        direction_cartesian: oneOf(XYZ, 'null'),
+        'direction_uvw?': oneOf(XYZ, 'null'),
+        'angles_to_abc_deg?': XYZ
+    },
+    map_significance_sigma: 'number|null',
+    antipodal_asymmetry: 'number|null',
+    antipodal_asymmetry_z: 'number|null',
+    antipodal_asymmetry_significant: 'boolean',
+    orientation_tensor: {
+        eigenvalues: ['number|null'],
+        anisotropy: 'number|null',
+        anisotropy_significance_sigma: 'number|null',
+        'principal_axis_uvw?': XYZ
+    },
+    recommended_frequency: 'number'
+};
 
 export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}) => {
     const direction = payload.peakDirection;
@@ -344,6 +402,33 @@ const lengthSummary = (lengths) => {
     return summary;
 };
 
+const BOND_LENGTHS = oneOf({ mean_A: 'number|null', unique_bonds: 'number', 'sd_A?': 'number|null' }, 'null');
+const ANGLE_BAND = { share: 'number|null', mean_deg: 'number|null' };
+// A refused window keeps the counts that show the cut and drops the angles
+// (mean_deg … histogram_10deg_sin_corrected), with `refused` saying why; the
+// B–C window and bond read 'same as A–B' for one shared window; `polyhedron`
+// only for a whole shell of about six (octahedron) or four (tetrahedron).
+const BOND_ANGLES_SHAPE = {
+    triplet: 'string',
+    window_ab_A: ['number', 'number'],
+    window_bc_A: oneOf('string', ['number', 'number']),
+    angle_count: 'number',
+    central_atoms: 'number',
+    'mean_deg?': 'number|null',
+    'sd_deg?': 'number|null',
+    'modes?': [{ angle_deg: 'number|null', share: 'number|null' }],
+    'histogram_10deg?': ['number|null'],
+    'histogram_10deg_sin_corrected?': ['number|null'],
+    bond_ab: BOND_LENGTHS,
+    bond_bc: oneOf('string', BOND_LENGTHS),
+    coordination: { note: 'string', counts: ['number'], mean: 'number|null' },
+    'refused?': 'string',
+    'polyhedron?': oneOf(
+        { ideal: 'string', cis_below_135_deg: ANGLE_BAND, trans_above_135_deg: ANGLE_BAND },
+        { ideal: 'string', within_15_deg_of_109_5: ANGLE_BAND }
+    )
+};
+
 /**
  * The bond-angle result the model reads, with deterministic checks: a window
  * that misses most central atoms, or in which fewer than 60 % of them share
@@ -493,6 +578,39 @@ export const splitMemberSites = (siteRows, refs) => (siteRows || []).filter((sit
     return refs.includes(site.referenceNumber) && site.axisResolved?.[0] && Number.isFinite(kappa) && site.count > 0
         && kappa <= SPLIT_SITE_KURTOSIS && kappa <= -SPLIT_SITE_SE * Math.sqrt(24 / site.count);
 });
+
+// One statistic against its null: change = obs/null − 1, when both are finite.
+const NULL_ROW = { obs: 'number|null', null: 'number|null', z: 'number|null', 'change?': 'number' };
+// No clusters (an extended network, or no two sites in the window): element,
+// window_A, sites and sites_without_bond only; the rest comes together. The
+// axis families are keyed <100>, <110>, <111>.
+const CLUSTERS_SHAPE = {
+    element: 'string',
+    window_A: ['number', 'number'],
+    sites: 'number',
+    'sites_without_bond?': 'number',
+    'clusters?': {
+        members: 'number',
+        edges: 'number',
+        count: 'number',
+        templates: 'number',
+        'other_sizes?': [{ members: 'number', count: 'number' }]
+    },
+    'average_structure?': { edges_A: ['number|null'], spread_A: 'number|null', edge_se_A: 'number|null', spread_over_se: 'number|null' },
+    'local?': {
+        note: 'string',
+        ladder_A: { obs: ['number|null'], null: ['number|null'], z: ['number|null'] },
+        ladder_width_A: NULL_ROW,
+        shape_rms_A: NULL_ROW,
+        breathing_sd_A: NULL_ROW,
+        mean_edge_A: NULL_ROW,
+        'tetrahedral_modes?': { note: 'string', e_rms_A: NULL_ROW, t2_rms_A: NULL_ROW, t2_trigonality: NULL_ROW },
+        'long_axis_within_15deg?': { '<*>': NULL_ROW },
+        'short_axis_within_15deg?': { '<*>': NULL_ROW }
+    },
+    'outliers?': { bonds_outside_window: 'number|null', contacts_between_clusters_per_atom: 'number|null' },
+    'split_member_sites?': ['number']
+};
 
 /**
  * The cluster result the model reads. The shape statistics (edge spread,
@@ -799,6 +917,16 @@ const qLabel = (q) => `(${q.map((value) => {
     return rounded === 0.5 ? '½' : String(rounded + 0);
 }).join(', ')})`;
 
+// A mode row is [q label, ratio, percentile, sigma]; sigma reads '>8' past 8σ.
+const MODE_ROW = ['string', 'number|null', 'number|null', 'number|string|null'];
+const MODULATIONS_SHAPE = {
+    note: 'string',
+    supercell: ['number', 'number', 'number'],
+    wavevectors: 'number',
+    elements: [{ element: 'string', sites: 'number', zone_boundary: [MODE_ROW], strongest: [MODE_ROW] }],
+    'untestable_zone_boundary?': ['string']
+};
+
 export const summarizeModulations = (payload) => {
     const checks = [...parseWarningCheck(payload)];
     const tested = (payload.elements || []).filter((entry) => entry.sites);
@@ -918,6 +1046,19 @@ export const summarizeModulations = (payload) => {
 
 // --- detect_symmetry -------------------------------------------------------------
 
+// No average sites: tolerance_A only. A structure the finder did not analyse
+// reads space_group 'not analysed' and n_ops '—'.
+const SYMMETRY_SHAPE = {
+    tolerance_A: 'number',
+    'space_group?': 'string',
+    'number?': 'number|null',
+    'point_group?': 'string|null',
+    'point_group_facts?': 'string',
+    'n_ops?': 'number|string',
+    'max_residual_A?': 'number|null',
+    'orbits?': [{ element: 'string', wyckoff: 'string', site_symmetry: 'string', frac: oneOf(XYZ, 'null') }]
+};
+
 export const summarizeSymmetry = (described, tolerance) => {
     if (!described) {
         return {
@@ -979,6 +1120,25 @@ const lowIndexOf = (vector, unitCell) => {
     const found = unitCell ? nearestLowIndex(vector, unitCell, { maxIndex: 1, toleranceDeg: LOW_INDEX_CONE_DEG }) : null;
     return found?.exact ? { uvw: found.uvw, off_deg: roundFixed(found.offDeg, 1) } : null;
 };
+
+// {} when there is nothing to measure (no average sites, or not analysed);
+// above_noise_floor only with a noise floor, nearest_low_index only for a
+// shift within LOW_INDEX_CONE_DEG of <100>, <110> or <111>.
+const LOWERING_SHAPE = oneOf({}, {
+    note: 'string',
+    parent: { tolerance_A: 'number', space_group: 'string', point_group: 'string|null' },
+    lower: oneOf({ tolerance_A: 'number', space_group: 'string', point_group: 'string|null', 'point_group_facts?': 'string' }, 'null'),
+    noise_floor_A: 'number|null',
+    sites: [{
+        ref: 'number',
+        element: 'string',
+        shift_A: 'number|null',
+        direction_uvw: oneOf(XYZ, 'null'),
+        'nearest_low_index?': { uvw: ['number', 'number', 'number'], off_deg: 'number|null' },
+        se_A: 'number|null',
+        'above_noise_floor?': 'boolean'
+    }]
+});
 
 /**
  * The coherent shift of a symmetry lowering (symmetryShift.js), for the model:
@@ -1111,6 +1271,7 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                     element: elementProperty(elements, 'Only the sites holding this element.')
                 }
             },
+            dataShape: SITES_SHAPE,
             label: ({ element }) => `Site displacement table${element ? ` · ${element}` : ''}`,
             page: 'ellipsoids',
             cards: () => ['pca-stats'],
@@ -1131,6 +1292,7 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                     frequency: { type: 'integer', minimum: 1, maximum: 24, description: 'Sphere resolution (10ν²+2 cells). Default: chosen from the point count.' }
                 }
             },
+            dataShape: ORIENTATION_SHAPE,
             label: ({ site_ref: ref, element }) => `Displacement directions ${ref != null ? `site ${ref}` : (element || '')}`.trim(),
             page: 'orientation',
             cards: () => ['direction-sphere'],
@@ -1197,6 +1359,7 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                     apply: ([lo, hi], { confirmed = false } = {}) => ({ ...args, r23_min: lo, r23_max: hi, ...(confirmed ? { window_confirmed: true } : {}) })
                 }] : [])
             ],
+            dataShape: BOND_ANGLES_SHAPE,
             label: ({ end1, apex, end2, r12_min: lo, r12_max: hi }) => (
                 `Bond angles ${end1}–${apex}–${end2}${Number.isFinite(lo) && Number.isFinite(hi) ? ` · ${lo}–${hi} Å` : ''}`
             ),
@@ -1259,6 +1422,7 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                 window: [args.r_min, args.r_max],
                 apply: ([lo, hi]) => ({ ...args, r_min: lo, r_max: hi })
             }],
+            dataShape: CLUSTERS_SHAPE,
             label: ({ element, r_min: lo, r_max: hi }) => (
                 `Clusters ${element || ''}${Number.isFinite(lo) && Number.isFinite(hi) ? ` · ${lo}–${hi} Å` : ''}`.trim()
             ),
@@ -1291,6 +1455,7 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                     element: elementProperty(elements, 'Only this element (default: each element).')
                 }
             },
+            dataShape: MODULATIONS_SHAPE,
             label: ({ element }) => `Superstructure test${element ? ` · ${element}` : ''}`,
             run: async ({ element }, { signal } = {}) => summarizeModulations(
                 await request('modulations', element ? { element } : {}, { signal })
@@ -1312,6 +1477,7 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                 },
                 required: ['tolerance_A']
             },
+            dataShape: SYMMETRY_SHAPE,
             label: ({ tolerance_A: tol }) => `Symmetry at ${tol} Å`,
             page: 'dashboard',
             cards: () => ['detected-sg'],
@@ -1336,6 +1502,7 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                     tolerance_A: { type: 'number', minimum: 0.001, maximum: 1, description: `Tolerance of the lower group (Å). Default ${lowerDefault}.` }
                 }
             },
+            dataShape: LOWERING_SHAPE,
             label: ({ parent_tolerance_A: parentTol = 0.2 }) => `Symmetry lowering from ${parentTol} Å`,
             page: 'dashboard',
             cards: () => ['detected-sg'],

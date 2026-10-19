@@ -10,6 +10,10 @@ import { parseToolArguments, validateToolArguments } from './toolCalls';
 //     name: 'compute_bond_angles',           // /^[a-z][a-z0-9_]{0,63}$/
 //     description: '…',                      // what it computes, for the model
 //     parameters: { type: 'object', properties: {…}, required: [...] },
+//     dataShape: { sites: [{ ref: 'number', … }], … },   // the shape of `data`
+//                                            // (dataShape.js): the paths the model
+//                                            // quotes by reference. Internal, never
+//                                            // sent; a tool that returns data declares it
 //     label: (args) => 'Bond angles Se–Ta–Se',   // step-card title (optional)
 //     page: 'geometry',                      // page key for "Open page" (optional)
 //     pageParams: (args) => ({ … }),         // what that page should load to show
