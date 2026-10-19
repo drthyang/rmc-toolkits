@@ -26,6 +26,7 @@ import {
 } from '../../copilotTools';
 import { buildClarifier } from '../../llm/copilot/clarify';
 import { buildRunTools } from '../../llm/copilot/runTools';
+import { toolResult } from '../../llm/copilot/tools';
 import { createVerification } from '../../llm/copilot/verification';
 import { buildRunContext, lowerGroupTolerance, NOISE_FLOOR_MARGIN } from '../../llm/context/runContext';
 import { CLUSTER_CN_MAX, clusterElementsOf, MODAL_COORDINATION_SHARE, UNBONDED_APEX_FRACTION } from '../../llm/context/shells';
@@ -79,7 +80,7 @@ const refused = (result) => typeof result.data.refused === 'string' && !('mean_d
 // Outcome they compute.
 const judgeAnswer = (text, { facts = [], context = null } = {}) => {
     const verification = createVerification({ context, offered: [] });
-    facts.forEach((item) => verification.record({ name: 'analysis', args: {}, status: 'ok', error: null, executed: true, facts: item }, () => ({ data: null })));
+    facts.forEach((item) => verification.record({ name: 'analysis', ...toolResult({ facts: item }) }, () => ({ data: null })));
     return verification.judge(text).done;
 };
 // One message of the answer check `rule` on `text`.

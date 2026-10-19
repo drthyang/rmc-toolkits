@@ -11,6 +11,7 @@
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { buildRunTools, MISFIT_CONCENTRATION } from '../../src/llm/copilot/runTools';
+import { toolResult } from '../../src/llm/copilot/tools';
 import { createVerification } from '../../src/llm/copilot/verification';
 import { buildRunContext } from '../../src/llm/context/runContext';
 import { buildCase, DEV_CASES } from '../cases';
@@ -131,7 +132,7 @@ describe('dev-fit-unconverged: a run with fit data (plan item 4.6)', () => {
         // The checks through the verification: the run context given, the tool's facts recorded, no claim offered.
         const rules = (text, turnFacts) => {
             const verification = createVerification({ context, offered: [] });
-            turnFacts.forEach((item) => verification.record({ name: 'assess_convergence', args: {}, status: 'ok', error: null, executed: true, facts: item }, () => ({ data: null })));
+            turnFacts.forEach((item) => verification.record({ name: 'assess_convergence', ...toolResult({ facts: item }) }, () => ({ data: null })));
             return verification.judge(text).done.audit.map((finding) => finding.rule);
         };
         expect(rules('The run has converged: the χ² history has plateaued.', [facts])).toEqual(['convergence']);

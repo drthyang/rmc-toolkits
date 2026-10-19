@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_LIMITS, assistantContent, runCopilotTurn } from '../copilot/agentLoop';
 import { ToolsUnsupportedError } from '../provider/model';
 import { ASK_USER, buildAskUserTool } from '../copilot/askUser';
-import { budgetJson, fitToBudget, stepStatus, usableTools } from '../copilot/tools';
+import { budgetJson, fitToBudget, severityOf, usableTools } from '../copilot/tools';
 import { createVerification } from '../copilot/verification';
 
 // A scripted model: each request consumes the next reply. A reply is either
@@ -457,10 +457,10 @@ describe('tool helpers', () => {
     });
 
     it('derives a step status from the error and checks', () => {
-        expect(stepStatus({ error: 'x', checks: [] })).toBe('failed');
-        expect(stepStatus({ error: null, checks: [{ level: 'fail', text: 'a' }] })).toBe('failed');
-        expect(stepStatus({ error: null, checks: [{ level: 'warn', text: 'a' }, { level: 'ok', text: 'b' }] })).toBe('warn');
-        expect(stepStatus({ error: null, checks: [{ level: 'note', text: 'a' }] })).toBe('ok');
+        expect(severityOf({ error: 'x', checks: [] })).toBe('failed');
+        expect(severityOf({ error: null, checks: [{ level: 'fail', text: 'a' }] })).toBe('failed');
+        expect(severityOf({ error: null, checks: [{ level: 'warn', text: 'a' }, { level: 'ok', text: 'b' }] })).toBe('warn');
+        expect(severityOf({ error: null, checks: [{ level: 'note', text: 'a' }] })).toBe('ok');
     });
 
     it('trims nested arrays and hard-cuts as a last resort, never silently', () => {

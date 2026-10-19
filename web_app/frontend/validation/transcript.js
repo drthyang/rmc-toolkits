@@ -68,8 +68,11 @@ export const renderTranscript = (record) => {
         } else if (typeof step.why === 'string') {
             lines.push(`*${step.why}*\n`);
         }
-        lines.push(`**Arguments:** \`${JSON.stringify(step.args)}\` · status ${step.status}${step.cached ? ' (cached repeat)' : ''} · ${step.ms ?? 0} ms`);
+        // How the call ended, beside its severity, when it did not simply answer.
+        const ended = step.result_status && step.result_status !== 'ok' ? ` (${step.result_status.replace('_', ' ')})` : '';
+        lines.push(`**Arguments:** \`${JSON.stringify(step.args)}\` · status ${step.status}${ended}${step.cached ? ' (cached repeat)' : ''} · ${step.ms ?? 0} ms`);
         if (step.error) lines.push(`\n**Error:** ${step.error}`);
+        if (step.note) lines.push(`\n**Note the app added for the model:** ${step.note}`);
         if (step.checks?.length) {
             lines.push('\n**Checks the model read:**\n');
             step.checks.forEach((check) => lines.push(`- ${check.level}: ${check.text}`));

@@ -14,7 +14,11 @@
 // The conversation supplies `askUser(request, { signal })` in the tools'
 // context (useCopilot.js); it resolves with the user's reply
 // `{ answer, source: 'option' | 'other' | 'skipped', index }` and rejects with
-// an AbortError when the turn is stopped or the conversation restarts.
+// an AbortError when the turn is stopped or the conversation restarts. The
+// tool returns the reply beside its result as `choice` (replyChoice), which
+// the tool contract keeps on the step (tools.js): the dock's card and the
+// validation's record read whether and how the user answered from it, never
+// from the text the model reads.
 
 export const ASK_USER = 'ask_user';
 // Per question from the user, and one per model step.
@@ -82,6 +86,16 @@ export const normalizeAskRequest = (args = {}) => {
         defaultIndex: defaultIndex >= 0 ? defaultIndex : null
     };
 };
+
+/**
+ * The user's reply as a step's choice: where it came from (an option, a typed
+ * answer, a skip) and the option's index (null for a typed answer or a skip).
+ * A reply of no known source reads as an option, as answerResult reads it.
+ */
+export const replyChoice = (reply) => ({
+    source: reply?.source === 'other' || reply?.source === 'skipped' ? reply.source : 'option',
+    index: Number.isInteger(reply?.index) ? reply.index : null
+});
 
 /** The tool result the model reads after the user replied. */
 export const answerResult = (request, reply) => {
@@ -170,6 +184,6 @@ export const buildAskUserTool = () => ({
             throw new Error('the user cannot be asked here: proceed with your default and say what you assumed');
         }
         const reply = await askUser(request, { signal });
-        return answerResult(request, reply);
+        return { ...answerResult(request, reply), choice: replyChoice(reply) };
     }
 });
