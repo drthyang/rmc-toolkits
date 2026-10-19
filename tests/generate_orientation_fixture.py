@@ -15,9 +15,12 @@ committed file no longer matches the Python engine. Contents:
   asymmetric, sparse, singly occupied pairs, 8 wells) stored in ``inputs``, and
   sites of the committed demo run (``web_app/frontend/public/demo``), at
   several resolutions, smoothing passes, weights and frames. ``keys`` is each
-  payload's whole key set; the per-cell geometry (``centers``, ``areas``,
-  ``sizes``, ``antipode``) depends only on the frequency and sits once per
-  frequency in ``tilings``.
+  payload's whole key set. Integer ``counts`` are stored for every case, the
+  other per-cell values only for the cases marked ``cells``, whose per-cell
+  geometry (``centers``, ``areas``, ``sizes``, ``antipode``, a function of the
+  frequency alone) sits once per frequency in ``tilings``. ``spectra`` gives
+  the eigenvalues behind ``pcaAxes`` and ``orientationAxes``, so a comparison
+  can tell a fixed axis from one inside a degenerate eigenspace.
 * ``assignments`` -- ``assign_cells`` of the exact tie families (the axes, the
   26 <100>/<110>/<111> directions).
 * ``tilingChecks`` -- ``neighbors`` checksums (the sum over cells c and slots k
