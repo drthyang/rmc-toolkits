@@ -507,8 +507,9 @@ web_app/frontend/src/
   distribution (never recomputed unasked). The pages are not remounted (docs/algorithms/notation.md
   §3c). The Dashboard takes it too and re-reads its structure (not its plots): the model card, the
   Detected SG card and the basis the Copilot's symmetry tools read stay on the configuration its
-  Flask analyses read (`DashboardServerStructure.test.jsx`). The AI Copilot gets the configuration as `configKey` (`configEpoch` here; for a
-  browser-loaded run, static-mode Live Data included, its `.rmc6f` files' signature,
+  Flask analyses read (`DashboardServerStructure.test.jsx`). The AI Copilot gets the configuration
+  as `configKey` (`configEpoch` here; for a browser-loaded run, static-mode Live Data included,
+  its `.rmc6f` files' signature,
   `configurationSignature`): a new one is not a new run, so the conversation stays on screen, but a
   divider ends the earlier answers ("New configuration saved — earlier answers were about the
   previous one") and the next question's history holds only the questions asked under the current
@@ -544,8 +545,8 @@ web_app/frontend/src/
 - **Backend data-root guard**: relative paths resolve under `RMC_TOOLKITS_DATA_ROOT` (default repo
   root); absolute paths are rejected unless inside the root or a natively-picked folder.
 - **Package root exports**: the main entry points of every engine (parsers, structure basis, KDE,
-  PCA, orientation, triplets, scaling, transforms) are re-exported from `rmc_toolkits`, and `__all__` is the list;
-  `tests/test_package_api.py` checks that every `__all__` name resolves. Not everything public is
+  PCA, orientation, triplets, scaling, transforms) are re-exported from `rmc_toolkits`, and
+  `__all__` is the list; `tests/test_package_api.py` checks that every `__all__` name resolves. Not everything public is
   there: helpers such as `transforms.sine_transform` / `low_q_correction_basis`,
   `scaling.crop_sq` / `validate_enforcement` and the CLI internals import from their modules. Add
   a new user-facing function to `__all__`.
