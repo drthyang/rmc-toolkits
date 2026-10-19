@@ -4267,5 +4267,542 @@
     "a chiral (Sohncke) group: no mirrors, no inversion, no rotoinversions"
    ]
   }
+ },
+ {
+  "id": "dev-fit-unconverged__A",
+  "protocol": "2026-10-19.2",
+  "commit": "2383578a3388678c26409fea133ee571c5aa4713",
+  "case": "dev-fit-unconverged",
+  "split": "dev",
+  "arm": "A",
+  "model": null,
+  "verdict": {
+   "features": [],
+   "space_group": "Fm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false
+  },
+  "score": {
+   "format_ok": true,
+   "null_case": true,
+   "features": [],
+   "spurious": [],
+   "tolerated": [],
+   "overclaim": false,
+   "symmetry": {
+    "space_group": "right",
+    "chiral": "right",
+    "centrosymmetric": "right",
+    "polar": "right"
+   },
+   "contradictions": [],
+   "score": 1
+  },
+  "readings": [
+   {
+    "page": "Detected SG card",
+    "what": "space group at 0.2 Å",
+    "value": "Fm-3m",
+    "point_group": "m-3m"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 1 Mg",
+    "value": {
+     "rms_A": [
+      0.0654,
+      0.0628,
+      0.0605
+     ],
+     "pc1_over_pc2": 1.04,
+     "pc1_excess_kurtosis": -0.272,
+     "pc1_uvw": [
+      0.48,
+      1,
+      -0.03
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 2 Mg",
+    "value": {
+     "rms_A": [
+      0.0623,
+      0.0591,
+      0.0528
+     ],
+     "pc1_over_pc2": 1.05,
+     "pc1_excess_kurtosis": 0.691,
+     "pc1_uvw": [
+      -0.34,
+      1,
+      0.18
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 3 Mg",
+    "value": {
+     "rms_A": [
+      0.0702,
+      0.0627,
+      0.0588
+     ],
+     "pc1_over_pc2": 1.12,
+     "pc1_excess_kurtosis": 0.144,
+     "pc1_uvw": [
+      -0.41,
+      0.79,
+      1
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 4 Mg",
+    "value": {
+     "rms_A": [
+      0.067,
+      0.0594,
+      0.0566
+     ],
+     "pc1_over_pc2": 1.13,
+     "pc1_excess_kurtosis": 0.131,
+     "pc1_uvw": [
+      1,
+      -0.77,
+      -0.19
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 5 O",
+    "value": {
+     "rms_A": [
+      0.0666,
+      0.0624,
+      0.0587
+     ],
+     "pc1_over_pc2": 1.07,
+     "pc1_excess_kurtosis": -0.244,
+     "pc1_uvw": [
+      0.44,
+      0.47,
+      1
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 6 O",
+    "value": {
+     "rms_A": [
+      0.0738,
+      0.0667,
+      0.0569
+     ],
+     "pc1_over_pc2": 1.11,
+     "pc1_excess_kurtosis": -0.227,
+     "pc1_uvw": [
+      1,
+      -0.82,
+      0.03
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 7 O",
+    "value": {
+     "rms_A": [
+      0.0765,
+      0.0673,
+      0.06
+     ],
+     "pc1_over_pc2": 1.14,
+     "pc1_excess_kurtosis": -0.266,
+     "pc1_uvw": [
+      -0.23,
+      1,
+      0.13
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 8 O",
+    "value": {
+     "rms_A": [
+      0.0688,
+      0.0646,
+      0.0602
+     ],
+     "pc1_over_pc2": 1.07,
+     "pc1_excess_kurtosis": -0.0201,
+     "pc1_uvw": [
+      1,
+      0.45,
+      0.05
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   }
+  ],
+  "truth": {
+   "summary": "rock-salt MgO, thermal motion only (independent isotropic Gaussian displacements): no local order; Fm-3m. The run has not converged: the X_ray_(R)1 χ² is still falling at the end of its history (a slow tail after a fast drop). The measured X-ray G(r) has a peak at 2.55 Å (height 0.15, sd 0.08 Å, data above the model) that the configuration does not reproduce; F(Q) is the same measurement in reciprocal space",
+   "features": [],
+   "tolerated": [],
+   "symmetry": {
+    "space_group": "Fm-3m",
+    "chiral": false,
+    "centrosymmetric": true,
+    "polar": false,
+    "primary": false
+   },
+   "fit": {
+    "convergence": "improving",
+    "chi_column": "X_ray_(R)1",
+    "misfit": {
+     "dataset": "xpdf",
+     "r_A": 2.55,
+     "height": 0.15,
+     "sd_A": 0.08,
+     "sign": "data above the model"
+    },
+    "same_measurement": [
+     "xray_sq",
+     "xpdf"
+    ],
+    "accepted_moves_per_atom": 9.41
+   },
+   "traps": [
+    "the end of the χ² plot looks flat, but X_ray_(R)1 is still falling: the watchdog and assess_convergence say improving, so the run has not converged",
+    "the G(r) misfit is one feature at 2.55 Å that the configuration lacks, not noise spread over r",
+    "F(Q) and its Fourier transform G(r) are one measurement: the F(Q) misfit sits at low Q because that one missing peak is a slow oscillation in Q (period 2π/2.55 ≈ 2.5 Å⁻¹, fading as 1/Q), not a scale or box-size error",
+    "a misfit is not order in the configuration: every analysis of the configuration shows thermal motion only"
+   ]
+  }
+ },
+ {
+  "id": "dev-fit-unconverged__A+",
+  "protocol": "2026-10-19.2",
+  "commit": "2383578a3388678c26409fea133ee571c5aa4713",
+  "case": "dev-fit-unconverged",
+  "split": "dev",
+  "arm": "A+",
+  "model": null,
+  "verdict": {
+   "features": [],
+   "space_group": "Fm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false
+  },
+  "score": {
+   "format_ok": true,
+   "null_case": true,
+   "features": [],
+   "spurious": [],
+   "tolerated": [],
+   "overclaim": false,
+   "symmetry": {
+    "space_group": "right",
+    "chiral": "right",
+    "centrosymmetric": "right",
+    "polar": "right"
+   },
+   "contradictions": [],
+   "score": 1
+  },
+  "readings": [
+   {
+    "page": "detect_symmetry at the noise floor",
+    "what": "space group at 0.034 Å",
+    "value": "Fm-3m",
+    "point_group": "m-3m"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 1 Mg",
+    "value": {
+     "rms_A": [
+      0.0654,
+      0.0628,
+      0.0605
+     ],
+     "pc1_over_pc2": 1.04,
+     "pc1_excess_kurtosis": -0.272,
+     "pc1_uvw": [
+      0.48,
+      1,
+      -0.03
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 2 Mg",
+    "value": {
+     "rms_A": [
+      0.0623,
+      0.0591,
+      0.0528
+     ],
+     "pc1_over_pc2": 1.05,
+     "pc1_excess_kurtosis": 0.691,
+     "pc1_uvw": [
+      -0.34,
+      1,
+      0.18
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 3 Mg",
+    "value": {
+     "rms_A": [
+      0.0702,
+      0.0627,
+      0.0588
+     ],
+     "pc1_over_pc2": 1.12,
+     "pc1_excess_kurtosis": 0.144,
+     "pc1_uvw": [
+      -0.41,
+      0.79,
+      1
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 4 Mg",
+    "value": {
+     "rms_A": [
+      0.067,
+      0.0594,
+      0.0566
+     ],
+     "pc1_over_pc2": 1.13,
+     "pc1_excess_kurtosis": 0.131,
+     "pc1_uvw": [
+      1,
+      -0.77,
+      -0.19
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 5 O",
+    "value": {
+     "rms_A": [
+      0.0666,
+      0.0624,
+      0.0587
+     ],
+     "pc1_over_pc2": 1.07,
+     "pc1_excess_kurtosis": -0.244,
+     "pc1_uvw": [
+      0.44,
+      0.47,
+      1
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 6 O",
+    "value": {
+     "rms_A": [
+      0.0738,
+      0.0667,
+      0.0569
+     ],
+     "pc1_over_pc2": 1.11,
+     "pc1_excess_kurtosis": -0.227,
+     "pc1_uvw": [
+      1,
+      -0.82,
+      0.03
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 7 O",
+    "value": {
+     "rms_A": [
+      0.0765,
+      0.0673,
+      0.06
+     ],
+     "pc1_over_pc2": 1.14,
+     "pc1_excess_kurtosis": -0.266,
+     "pc1_uvw": [
+      -0.23,
+      1,
+      0.13
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 8 O",
+    "value": {
+     "rms_A": [
+      0.0688,
+      0.0646,
+      0.0602
+     ],
+     "pc1_over_pc2": 1.07,
+     "pc1_excess_kurtosis": -0.0201,
+     "pc1_uvw": [
+      1,
+      0.45,
+      0.05
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "analyze_modulations",
+    "what": "zone-boundary points and general modes",
+    "value": null,
+    "reading": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, Mg at (½, ½, 0), is 1.7× the median, -1.5σ after the correction)."
+   },
+   {
+    "page": "analyze_clusters",
+    "what": "Mg clusters in 2.71–3.31 Å",
+    "value": null,
+    "reading": "The 2.71–3.31 Å window links the Mg atoms into an extended network (chains or a 3-D net), not finite clusters: narrow it to the intra-cluster bond (find_gr_peaks: first_shell.window_A of Mg-Mg)."
+   },
+   {
+    "page": "analyze_clusters",
+    "what": "O clusters in 2.67–3.33 Å",
+    "value": null,
+    "reading": "The 2.67–3.33 Å window links the O atoms into an extended network (chains or a 3-D net), not finite clusters: narrow it to the intra-cluster bond (find_gr_peaks: first_shell.window_A of O-O)."
+   }
+  ],
+  "truth": {
+   "summary": "rock-salt MgO, thermal motion only (independent isotropic Gaussian displacements): no local order; Fm-3m. The run has not converged: the X_ray_(R)1 χ² is still falling at the end of its history (a slow tail after a fast drop). The measured X-ray G(r) has a peak at 2.55 Å (height 0.15, sd 0.08 Å, data above the model) that the configuration does not reproduce; F(Q) is the same measurement in reciprocal space",
+   "features": [],
+   "tolerated": [],
+   "symmetry": {
+    "space_group": "Fm-3m",
+    "chiral": false,
+    "centrosymmetric": true,
+    "polar": false,
+    "primary": false
+   },
+   "fit": {
+    "convergence": "improving",
+    "chi_column": "X_ray_(R)1",
+    "misfit": {
+     "dataset": "xpdf",
+     "r_A": 2.55,
+     "height": 0.15,
+     "sd_A": 0.08,
+     "sign": "data above the model"
+    },
+    "same_measurement": [
+     "xray_sq",
+     "xpdf"
+    ],
+    "accepted_moves_per_atom": 9.41
+   },
+   "traps": [
+    "the end of the χ² plot looks flat, but X_ray_(R)1 is still falling: the watchdog and assess_convergence say improving, so the run has not converged",
+    "the G(r) misfit is one feature at 2.55 Å that the configuration lacks, not noise spread over r",
+    "F(Q) and its Fourier transform G(r) are one measurement: the F(Q) misfit sits at low Q because that one missing peak is a slow oscillation in Q (period 2π/2.55 ≈ 2.5 Å⁻¹, fading as 1/Q), not a scale or box-size error",
+    "a misfit is not order in the configuration: every analysis of the configuration shows thermal motion only"
+   ]
+  }
+ },
+ {
+  "id": "dev-fit-unconverged__D",
+  "protocol": "2026-10-19.2",
+  "commit": "2383578a3388678c26409fea133ee571c5aa4713",
+  "case": "dev-fit-unconverged",
+  "split": "dev",
+  "arm": "D",
+  "model": null,
+  "verdict": {
+   "features": [],
+   "space_group": "Fm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false
+  },
+  "score": {
+   "format_ok": true,
+   "null_case": true,
+   "features": [],
+   "spurious": [],
+   "tolerated": [],
+   "overclaim": false,
+   "symmetry": {
+    "space_group": "right",
+    "chiral": "right",
+    "centrosymmetric": "right",
+    "polar": "right"
+   },
+   "contradictions": [],
+   "score": 1
+  },
+  "readings": [],
+  "truth": {
+   "summary": "rock-salt MgO, thermal motion only (independent isotropic Gaussian displacements): no local order; Fm-3m. The run has not converged: the X_ray_(R)1 χ² is still falling at the end of its history (a slow tail after a fast drop). The measured X-ray G(r) has a peak at 2.55 Å (height 0.15, sd 0.08 Å, data above the model) that the configuration does not reproduce; F(Q) is the same measurement in reciprocal space",
+   "features": [],
+   "tolerated": [],
+   "symmetry": {
+    "space_group": "Fm-3m",
+    "chiral": false,
+    "centrosymmetric": true,
+    "polar": false,
+    "primary": false
+   },
+   "fit": {
+    "convergence": "improving",
+    "chi_column": "X_ray_(R)1",
+    "misfit": {
+     "dataset": "xpdf",
+     "r_A": 2.55,
+     "height": 0.15,
+     "sd_A": 0.08,
+     "sign": "data above the model"
+    },
+    "same_measurement": [
+     "xray_sq",
+     "xpdf"
+    ],
+    "accepted_moves_per_atom": 9.41
+   },
+   "traps": [
+    "the end of the χ² plot looks flat, but X_ray_(R)1 is still falling: the watchdog and assess_convergence say improving, so the run has not converged",
+    "the G(r) misfit is one feature at 2.55 Å that the configuration lacks, not noise spread over r",
+    "F(Q) and its Fourier transform G(r) are one measurement: the F(Q) misfit sits at low Q because that one missing peak is a slow oscillation in Q (period 2π/2.55 ≈ 2.5 Å⁻¹, fading as 1/Q), not a scale or box-size error",
+    "a misfit is not order in the configuration: every analysis of the configuration shows thermal motion only"
+   ]
+  }
  }
 ]

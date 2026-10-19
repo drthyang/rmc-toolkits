@@ -77,7 +77,7 @@ const toolLeaves = (tools) => new Map((tools || []).flatMap((tool) => (
 const firstRequest = async (built, arm) => {
     const model = recordingModel();
     const record = await runLiveCase({
-        built, arm, model: MODEL, callModel: model.callModel, skills: arm === 'B' ? skills : null
+        built, arm, model: MODEL, port: model.port, skills: arm === 'B' ? skills : null
     });
     expect(record.error).toBeNull();
     return model.requests[0];
@@ -109,6 +109,15 @@ describe('no case id or kind reaches the model (validation harness)', () => {
             found.push(...findings(id, 'the run folder', names, ID_PATTERNS));
         }
         expect(found).toEqual([]);
+    });
+
+    // Since plan item 4.6 the fit-data case (dev-fit-unconverged) offers the
+    // fit tools, so every tool the sweep below calls is offered, and its
+    // results checked, on some dev case.
+    it('the dev cases between them offer every tool the sweep below calls', () => {
+        const offered = (id) => captured.get(id).B.tools.map((tool) => tool.function.name);
+        expect([...new Set(DEV_CASES.flatMap((item) => offered(item.id)))].sort()).toEqual(Object.keys(SWEEP).sort());
+        expect(offered('dev-fit-unconverged')).toEqual(expect.arrayContaining(['assess_convergence', 'compare_fit']));
     });
 
     it.each(['B', 'C'])('arm %s: the first request names no case id, anywhere', (arm) => {
@@ -178,7 +187,7 @@ describe('no case id in the tools\' results (validation harness, dev cases)', ()
         const built = buildCase(DEV_CASES.find((item) => item.id === id));
         // The tools as runLiveCase offers them, read from its first request.
         const probe = recordingModel();
-        await runLiveCase({ built, arm: 'B', model: MODEL, callModel: probe.callModel, skills });
+        await runLiveCase({ built, arm: 'B', model: MODEL, port: probe.port, skills });
         const offered = probe.requests[0].tools.map((tool) => tool.function);
         expect(offered.filter((tool) => !SWEEP[tool.name]).map((tool) => tool.name)).toEqual([]);
         const calls = offered.flatMap((tool) => SWEEP[tool.name](tool).map((args) => [tool.name, args]));
@@ -187,7 +196,7 @@ describe('no case id in the tools\' results (validation harness, dev cases)', ()
 
         const model = recordingModel([...rounds, { text: 'Recorded.\n\nOutcome: every tool was called once.' }]);
         const record = await runLiveCase({
-            built, arm: 'B', model: MODEL, callModel: model.callModel, skills,
+            built, arm: 'B', model: MODEL, port: model.port, skills,
             // Room for every call; a round whose calls all fail does not end the sweep.
             limits: { maxRounds: rounds.length + 1, maxCallsPerRound: CALLS_PER_ROUND, maxNoProgressRounds: Infinity }
         });

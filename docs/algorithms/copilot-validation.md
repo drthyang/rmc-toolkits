@@ -38,12 +38,23 @@ Copilot worker's handler in-thread. The view is `HARNESS_VIEW`, the app's defaul
 SG card at 0.2 Å with its ladder, nothing hidden, no PCA table (the PCA Ellipsoid page not
 visited), Live Data off. Arms A and A+ read the same run, with the ladder off.
 
+**The question is the app's.** Each live run is one question through the turn module
+(`src/llm/copilot/turn.js`, `runTurn`), the same module the dock runs each question through: it
+builds the context, the prompt, `ask_user` and `read_skill`, the history, the Workbench's
+questions, the evidence gate, the answer checks and the references from the run props. The
+harness (`harness.js`) is its second adapter and passes only what is its own: the case's run, its
+compute-only tools (the tools over the run props with no cards, and the run's engine tools), the
+simulated user, the arm's skills (arm B) and a model port. `run.js` builds that port as the app
+does, with `providerModel` (`src/llm/provider/model.js`: the context guard, the warmer retry), and
+meters it for an API model (`spend.js` `meteredModel`).
+
 ## Cases
 
 Nine kinds, each a **dev** case (for improving tools and skills) and a held-out **test** case (for
 reported numbers only): the same physics with other elements, directions, magnitudes or
-structures. Each case is an `.rmc6f` supercell (reference sites and cell indices; coordinates
-wrapped into [0, 1) as RMCProfile writes them) with its partial g(r). `run.js write` saves each as
+structures, plus one dev-only case with fit data ([below](#the-fit-data-dev-case)). Each case is
+an `.rmc6f` supercell (reference sites and cell indices; coordinates wrapped into [0, 1) as
+RMCProfile writes them) with its partial g(r). `run.js write` saves each as
 `<out>/<case>/rmc_run/`, a run folder the Workbench opens, named as the harness names every run
 (the Workbench names a run after its folder), with the truth beside it in `<out>/<case>/truth.json`.
 
@@ -63,10 +74,51 @@ Thermal rms: 0.05–0.09 Å. Supercells: 6–8 cells a side, 1,024–2,560 atoms
 
 **The split is enforced in code** (`__tests__/split.test.js`):
 - the test set is pinned by a sha256 of its configurations, partials and truths;
+- every paired dev kind has a test case of the same kind; a dev-only case (`devOnly`) has a kind
+  no test case has;
 - dev and test share no id, and no tool, skill, app source or doc names a test case, its
   material, its planted lengths or its directions ([the holdout scan](#the-holdout-scan));
 - `--split test` needs `--final` and a clean git tree, and every record names its commit;
 - a supervisor finding on a test case may only report a bug, with the user's approval.
+
+### The fit-data dev case
+
+**dev-fit-unconverged** (plan item 4.6, kind `unconverged_fit`, `devOnly` in `cases.js`) is the one
+dev-only case. No other case has fit files, so without it `assess_convergence`,
+`compare_fit` and the rmc-fit-assessment skill were never exercised. It has no test twin and
+gives no reported number.
+- **The configuration:** rock-salt MgO (a = 4.212 Å, 6 × 6 × 6 cells, 1,728 atoms), independent
+  isotropic Gaussian displacements only (Mg 0.062, O 0.066 Å rms), seed 110. The structural
+  answer is "no order", Fm-3m, centrosymmetric, achiral, non-polar.
+- **The run folder:** besides `rmc_run.rmc6f` and `rmc_run_PDFpartials.csv`, RMCProfile's X-ray
+  file family in the Demo's formats (`runFolder.js` `RUN_FILES`, `caseFiles`):
+  `rmc_run_FQ1.csv` (Q, F(Q)_RMC, F(Q)_Expt), `rmc_run_FT_XFQ1.csv` (its Fourier transform: r(A),
+  X_ray-calc, X_ray_exp_renorm) and `rmc_run-00.log` (400 rows, 10 minutes apart: clock time,
+  moves accepted and generated, the χ² of F(Q)_1 and of X_ray_(R)1, Fortran E10.3). The
+  `.rmc6f` header carries the run counters (216,000 moves generated, 16,257 accepted: 9.4
+  accepted moves per atom). The run module detects the kinds (`xray_sq`, `xpdf`, `r_value`) as
+  for a user's run. The "calculated" columns are the configuration's own X-ray G(r)
+  (Faber–Ziman, f = Z) and its Lorch-windowed transform F(Q); the "experimental" ones carry the
+  planted difference and noise (G(r) 0.004, F(Q) 0.002), from a second seeded stream (111).
+- **The planted fit truth** (`truth.fit`, not scored):
+  - *Not converged.* X_ray_(R)1's χ² falls fast, then slowly: 0.01 + 1.0·e^(−t/25) +
+    0.02·e^(−t/600) per log row t. The plot's end looks flat, but ln χ² still drops 0.034 over
+    the last tenth; the watchdog and `assess_convergence` say *improving*.
+  - *One missed feature.* The measured G(r) has a Gaussian peak at 2.55 Å (height 0.15, sd
+    0.08 Å, data above the model) in the empty gap between the Mg–O and the Mg–Mg/O–O shells,
+    which the configuration does not reproduce. `compare_fit` puts 97 % of the G(r) misfit in
+    r = 2.17–3.33 Å, its largest residual at 2.545 Å (model − data −0.15).
+  - *One measurement in two spaces.* In F(Q) the same peak is a slow oscillation (period
+    2π/2.55 ≈ 2.5 Å⁻¹) fading as 1/Q: 95 % of the F(Q) misfit lies in Q = 0.5–4.58 Å⁻¹. That is
+    not a scale or box-size error, and the context marks the FT file as the same measurement.
+- **How it is scored:** as every case, on its structure (no spurious claim and the four symmetry
+  fields); `scoring.js` and the verdict schema are unchanged. The fit truth is exercised where
+  the app checks it: the context (`convergence`, `datasets` with Rw, `partial_weights`,
+  `configuration_optimization`), the two fit tools, and the answer check's convergence rule
+  (an answer that says "converged" gets a finding and the Outcome "not verified", whatever its
+  score). The record keeps every step and `truth.fit`, so a supervisor can read which fit tools
+  ran and what the answer made of them. `__tests__/fitCase.test.js` pins all of this with a
+  scripted model.
 
 ## The holdout scan
 
@@ -241,10 +293,60 @@ the model sees changes (the `list_sites` result and its description), so live ru
 protocols are not comparable. Arms A and A+ do not call `list_sites` and are unchanged. Approved by
 the manager on the user's delegation, 2026-10-19 (`validation/findings/decisions/`).
 
+**Protocol 2026-10-19.4 (the turn module).** The harness had assembled each question itself,
+beside the dock's own assembly, and the two had drifted apart. Both now run the turn module
+(above), and four things change for the harness; each is pinned in `harness.test.js`:
+1. **The warmer retry.** After a reply that kept repeating itself, the loop asks again warmer: the
+   dock sent that request at a temperature of 0.6 or more, the harness at the model's own (0.2), as
+   `streamCopilotChat` ignored the loop's flag. It now runs at 0.6 or more in both
+   (`providerModel`, `ANTI_REPEAT_TEMPERATURE`).
+2. **The no-tools prompt.** A model that refuses tools gets the tool-free system prompt, as in the
+   dock; the harness had kept the tool rules.
+3. **Provenance against what the model read.** Each answer number is matched against the run
+   context as the model was shown it (trimmed to its budget, the turn's `start.shown`), no longer
+   the whole context: a value the trim removed was never shown. No case's context is over the
+   budget at the default view (the largest is ~4,500 of 6,000 characters, ~5,600 for the Demo with
+   the PCA table), so no default record moves.
+4. **Every request as sent.** The record keeps `requests` (below).
+
+Changes 1 and 2 change what a run sends, so the protocol moves. Live runs under an earlier
+protocol that looped or met a model without tools are not comparable; arms A, A+ and D have no
+model and are unaffected.
+
+**Protocol 2026-10-19.5 (the run policy, plan item 1.2).** What the model is sent is unchanged:
+the model-visible snapshots did not move. Two things change, both [below](#the-run-policy-plan-item-12):
+1. **An LM Studio run starts only at 48k or more.** The pre-run check reads the loaded window
+   and refuses a run below 49,152 tokens. A turn that a 32k window would refuse, a score of 0 for
+   the harness's window rather than the model, can no longer happen in a run.
+2. **Each record states its run policy** and the window it ran under (`record.policy`, and each
+   request's `num_ctx` on Ollama).
+
+The protocol moves because the run's conditions are now part of it: a record under an earlier
+protocol does not say which window it ran under, so it cannot be set beside one under this. No arm
+B or C run exists under an earlier protocol; arms A, A+ and D have no model and are unaffected.
+
+**Protocol 2026-10-19.6 (plan item 4.6: the fit-data dev case).** dev-fit-unconverged joins the dev
+set ([Cases](#cases)). The question, the scoring, the verdict schema, the tools and the skills are
+unchanged; the run module reads the new files exactly as it reads a user's run.
+- **Arms A and A+ on it**, appended to `arm-a-dev.json` (`arm-a --split dev` at 2383578): both
+  score 1. Neither claims anything, and both read Fm-3m with its facts, A from the 0.2 Å card and
+  A+ at the noise floor (0.034 Å). A+'s cluster engine finds extended Mg and O networks, not
+  finite clusters, and its modulation test no zone-boundary order. D scores 1. The re-run's other
+  27 dev records equal the committed ones apart from protocol and commit, and stay as recorded.
+- **The means:** over the nine paired dev kinds they stay A 0.81 and A+ 0.99; over all ten dev
+  cases they are A 0.825 and A+ 0.99. The test set and `TEST_SET_SHA256` are unchanged.
+- **Arm B on dev:** the new case's first request is the dev set's largest (11,178 tokens: the two
+  fit tools and four more context sections). `contextBudget.test.js` now pins its worst turn:
+  35,906 tokens needed, 3,138 over 32,768 (dev-symmetry-lowering's was 35,119, 2,351 over). The
+  snapshots of what the model sees (the Demo, dev-offcentre) are unchanged.
+- **What the model is told:** nothing about the case. Its id, its kind and the id's stem reach no
+  request and no tool result (`caseBlind.test.js`, which now also checks that the dev cases
+  between them offer every tool its sweep calls: the fit tools only here).
+
 **Engine verdicts (2026-10-19, architecture candidate 5; not a protocol change).** The cluster and
 modulation engines decide what their statistics show and return it (`verdict`; ai-assistant.md
 Steps 18–19); `analyze_clusters` and `analyze_modulations` only render it, and what the model sees
-is byte-identical (the model-visible snapshots), so live runs under protocol 2026-10-19.3 stay
+is byte-identical (the model-visible snapshots), so live runs under protocol 2026-10-19.6 stay
 comparable. A+ now calls the engines (`run.engine('clusters' | 'modulations')`) and maps their
 answers: distorted → `cluster_distortion`, breathing → `cluster_breathing`, rigid →
 `rigid_cluster`, a cell doubling or order at a general q → `modulation` at the q that decided it.
@@ -254,10 +356,10 @@ the cluster's sites split by `isSplitSite`) instead of arm A's split site (a pro
 κ₁ ≤ −0.5 on any site of the element), and by a pattern (an axis family, a trigonal lean) beside a
 narrower edge spread; collective breathing no longer blocks it (the edge spread is read against the
 shape null, which keeps each cluster's breathing). On the dev set every score and every claim is
-unchanged (the `arms.test.js` pins hold); only the nine A+ records' cluster and modulation readings
+unchanged (the `arms.test.js` pins hold); only the ten A+ records' cluster and modulation readings
 change, from the tool's sentences to the engines' answers. Only a held-out case would exercise the
-rule changes; the test set was not run, and its A+ records are re-recorded at the freeze. Approved by the manager on the user's
-delegation, 2026-10-19 (`validation/findings/decisions/2026-10-19-engine-verdicts.json`).
+rule changes; the test set was not run, and its A+ records are re-recorded at the freeze. Approved
+by the manager on the user's delegation, 2026-10-19 (`validation/findings/decisions/2026-10-19-engine-verdicts.json`).
 
 ## Records, transcripts, findings
 
@@ -279,17 +381,36 @@ harness, so each record states it:
   is one fresh question (the app sends up to eight earlier turns). A case has `structure`,
   `symmetry`, `pair_correlations` and `datasets` (its partial g(r)). It has no
   `configuration_optimization` (no move counters), `run_settings`, `partial_weights` or
-  `convergence`, and no `pca_displacements` unless the PCA table is on.
+  `convergence`, and no `pca_displacements` unless the PCA table is on. The exception is
+  dev-fit-unconverged, whose fit files add `configuration_optimization`, both fitted datasets
+  with their Rw, `partial_weights` and `convergence` (it has no `run_settings` either). Read from
+  the context as the model was shown it (the turn's `start`);
+- `requests` (since protocol 2026-10-19.4): every model request as it was sent, in order, as
+  `{ round, why, sent }`, and since 2026-10-19.5 `num_ctx`, the context the guard sent Ollama for
+  it (null on other servers, or when the guard refused it): `why` is `first`, `tools` (the
+  results of the round before), `reminder`
+  (after an empty or looping reply), `gate` (an answer the evidence gate sent back), `final` (the
+  analysis budget used: `tool_choice` 'none') or `no_tools` (the retry of a model that refuses
+  tools); `sent` is the request as the port prepared it (`providerModel`: base URL, model id,
+  temperature, messages, tools, tool choice; never the API key). A request the spend cap refused
+  was never sent and is not there. One the context guard refuses (it would not fit the model's
+  window) is there, followed by the run's `error`: the guard decides as the request goes out, not
+  when it is prepared (the model-port PR, candidate 3, moves that decision into `prepare`).
 
-The transcript prints both under its header. **The PCA-table option** (`run.js live --pca-table`,
+**What the run ran under (plan item 1.2).** `policy` (since protocol 2026-10-19.5): the run policy,
+the server and the window the run ran under, the limits, the temperature, the reply cap, the context
+guard's decisions and the final round's form ([The run policy](#the-run-policy-plan-item-12)).
+
+The transcript prints the view, the context and the policy under its header. **The PCA-table option** (`run.js live --pca-table`,
 dev set only; `runLiveCase({ pcaTable: true })`) gives each run the PCA table from its own engine,
 the rows `list_sites` reads, as after a visit to the PCA Ellipsoid page. It is a dev check of what
 that section changes and is off by default. Such runs write to their own folder (`…_pca-table`),
 and `report` gives them their own column (`<model> · <arm> + PCA table`). It changes the context the
 model reads, so those runs are not comparable with the default runs.
 
-`report` puts every record side by side (case × model·arm), keeps failed runs as score 0, and
-lists every run used.
+`report` puts every record side by side (case × model·arm), keeps failed runs as score 0, sets
+the columns' run policies side by side ([what a comparison across models also
+compares](#what-a-comparison-across-models-also-compares)), and lists every run used.
 
 Supervisor findings (`findings.js`, `run.js findings <file.jsonl>` validates them) take the form
 `{case, run, step, kind: bug | missing-tool | skill-gap | orchestration | science-error, evidence,
@@ -316,18 +437,163 @@ the manager on the user's delegation on 2026-10-19: the recomposed test breathin
 ([ai-assistant.md](ai-assistant.md), Step 20). The schema's approver is the user, so the delegation
 is stated in each record's evidence and proposed fix.
 
+### The answer corpus (plan item 3.5)
+
+The evidence gate (`src/llm/copilot/evidence.js`) and the checks on the answer
+(`answerAudit.js`) read claims with regexes. `src/__tests__/answerCorpus.test.js` runs them over
+real answers and records what they read:
+- **The corpus:** one file per answer in `src/__tests__/answerCorpus/entries/`. Each file holds:
+  - the text and its `fidelity`: `verbatim` (committed as the model's words), `transcribed` (read
+    off a committed recording) or `quoted` (a docs or skill quotation, possibly shortened);
+  - its `source` (file, lines, commit), the model, the question and the run (the Demo or a dev
+    case, never a test case);
+  - the steps that ran, by name and arguments, or `null` when the record does not show them.
+- **The steps run** with the real engines. They must reproduce the numbers the transcript shows
+  (`reproduces`).
+- **One adapter** turns an answer into the pinned reading (`readAnswer` in
+  `answerCorpus/readAnswer.js`, public functions only):
+  - the claims the gate reads;
+  - the gate's send-back given the steps, or "steps unknown";
+  - the checks that fire.
+- **Each reading is judged by a person.** Every send-back, every finding, or the silence carries
+  `right` and a one-line `reason`. The test lists the false alarms and the misses.
+- **When one verification module replaces the gate and the checks**, only `readAnswer` changes.
+  The pins stay.
+
+**On 2026-10-19** the corpus holds nine answers on the Demo:
+- **Verbatim:** gemma4:26b's three correct answers of 2026-10-11.
+- **Transcribed:** Muse Glimmer's GaSe₄ answer from the README GIF.
+- **Quoted:** five wrong answers from the 2026-10-10 spot check and review.
+
+Four readings fire, and all four are right:
+- chirality and inversion lost, on qwen3.8's "P-42₁m is chiral and centrosymmetry is lost";
+- convergence, on "Converged — a plateau.";
+- the gate's cluster send-back, on "the cluster is distorted" with no `analyze_clusters`.
+
+There is no false alarm and one miss: "no cluster distortion", concluded from a pooled direction
+map, needs no analysis under any rule.
+
+No real answer yet makes a claim that the gate's split-site, lowering, modulation, direction or
+no-order rules read, or that the superstructure, cluster, polar or coordination checks read. The
+live runs' records are what will exercise them.
+
+**Adding an answer:**
+1. Copy the final answer of a live run's record on a dev case (or of a Demo session) verbatim into
+   `entries/<date>-<model>-<topic>.json`. Never use a test case's record.
+2. Copy the steps from the record, and a few of its numbers into `reproduces`.
+3. Run the test. Its diff gives the reading to put in `expected`.
+4. Judge each send-back and finding, or the silence.
+
+**A change to a claim regex** must keep every pin, or update the entry in the same PR with a
+judgement for each new reading. A new false alarm or miss shows in the test's lists.
+
+## The run policy (plan item 1.2)
+
+The cases, the question, the prompt, the tools and the scoring are the same for every model. The
+rest of what a run runs under is its **run policy** (`validation/runPolicy.js`). Each record keeps
+it (`record.policy`), each transcript prints it under its header, and the report sets the columns'
+policies side by side.
+
+| Field | What it states |
+| --- | --- |
+| `server` | The kind the context guard detects (`detectServer`: `lmstudio`, `ollama`, or `openai` for any other server, the cloud providers among them), Ollama's version, and the kind the model expects (`models.js` `server`) |
+| `temperature` | The model's (0.2), and the floor of a request asked again after a looping reply (0.6) |
+| `limits` | The agent loop's budgets as the run used them (`DEFAULT_LIMITS`): 6 rounds of at most 4 calls, 10 minutes, 3,000 characters a result and 12,000 a turn, 2 questions, 2 gate send-backs, the stall and no-progress guards |
+| `context` | The minimum window for the server kind; how the window is sized; the window read before the run (and after it, on LM Studio); the model's maximum (Ollama); every `num_ctx` an Ollama request was sent (`num_ctx_used`; each request in `requests` keeps its own) |
+| `reply_cap` | Ollama: `num_predict`, the num_ctx minus the prompt estimate. LM Studio: none sent (the guard needs 4,096 tokens of room). Cloud: none sent |
+| `context_guard` | The guard's decisions: a request that would not fit is refused, never cut; 2.5 characters a token, 1.4 for tool JSON, 8 tokens a message; 8,192 tokens reserved for the reply; 4,096 of room on LM Studio; contexts in steps of 8,192, at least 16,384; the 0.4 read-share backstop |
+| `final_round` | What the last request sends for `tool_choice: 'none'` ([below](#the-final-rounds-tool_choice)) |
+| `history` | One fresh question; earlier reasoning is never re-sent |
+| `spend` | An API model's cap, and the reply each request is priced at |
+| `warnings` | A window that changed during the run |
+
+**The decision (2026-10-19, the manager on the user's delegation).** The context guard, its
+estimate, the 8,192-token reply reserve, the loop's budgets and the prompt stay as they are:
+refusing a request rather than cutting it is the behaviour wanted. Instead, the live runs give
+each model a window that holds the worst turn (`MIN_CONTEXT_TOKENS`):
+
+| Server | Minimum window | Sized by |
+| --- | --- | --- |
+| LM Studio | **49,152 tokens (48k)** | The window the model is loaded with; read before and after each run |
+| Ollama | None | The guard, per request (`num_ctx`: at least 16,384, at most the model's maximum); recorded |
+| Cloud | None | The provider; never probed |
+
+48k holds the worst realistic turn of the dock and of arm B (two skills read whole, a full round of
+analyses, the 8,192-token reply reserve; `src/__tests__/contextBudget.test.js`), with 10,590 and
+13,246 tokens to spare (arm B's worst is dev-fit-unconverged since protocol 2026-10-19.6).
+
+**The pre-run check.** `run.js live` calls `preflight` before every run. It reads the model's
+server the way the guard does: `detectServer`, then LM Studio's `GET /api/v0/models`
+(`loaded_context_length` of the entry whose id is the model's). It refuses the run when:
+- the server at the model's URL is another kind, or nothing answers there;
+- an LM Studio model is not loaded under its id (a request would load it at LM Studio's default);
+- an LM Studio model is loaded below 48k.
+
+Nothing is sent and no record is written, so the same command resumes once the model is
+reloaded. The message says what was found, what is needed and how to reload:
+
+> LM Studio runs qwen3.8-27b with a 32,768-token context, but the run policy needs at least 49,152
+> (48k) for an LM Studio model, so the run was not started. In LM Studio, eject qwen3.8-27b and
+> load it again with a Context Length of 49,152 or more (its load settings), or from a terminal:
+> lms unload qwen3.8-27b && lms load qwen3.8-27b --context-length 49152. Then run the same
+> command again: the runs already recorded are kept.
+
+After the run the window is read again. If it changed (the model reloaded, or loaded again by a
+request at LM Studio's default), the record, the transcript and the report carry a warning.
+
+**The dock at 32k.** The decision fixes the validation, not the dock. A user who loads
+qwen3.8-27b in LM Studio at 32k can have the worst two-skill turn refused. The budget test pins the
+dock's worst turn 1,698 tokens over by LM Studio's rule (5,794 by `planContext`'s), and arm B's
+2,351 over by `planContext`'s. The fix is on-demand skill references (plan item 5.5, second half):
+the skills' long reference material leaves what `read_skill` returns whole. That is skill text, so
+it waits for the user.
+
+### The final round's tool_choice
+
+When the analysis budget is used, the loop asks for the answer with `tool_choice: 'none'`. The
+scripted check (`__tests__/runPolicy.test.js`) sends a final round through the production port
+(`providerModel` → `streamCopilotChat` → `client.js` or `ollama.js`) to each provider preset, with
+a fake server, and pins what goes out today:
+
+| Provider | Endpoint | The final request sends | Honoured? |
+| --- | --- | --- | --- |
+| OpenAI | `/v1/chat/completions` | `"tool_choice": "none"`, the tools still sent | Documented by OpenAI |
+| Gemini (OpenAI-compatible) | `/v1beta/openai/chat/completions` | The same | Not verified (no live call) |
+| Anthropic (OpenAI-compatible) | `/v1/chat/completions` | The same | Not verified (no live call) |
+| LM Studio | `/v1/chat/completions` | The same | Not verified; the smoke run shows it |
+| Ollama | `/api/chat` (native) | No `tool_choice` (the native API has none), the tools still sent | **No**: the model may still call tools. The loop ignores those calls and, with no text, ends on its empty-final answer |
+
+Ollama's form does not enforce the final round. Changing a form is the model port's job (plan
+candidate 3), not the policy's; the check records the forms so that change shows.
+
+### What a comparison across models also compares
+
+The report adds a table with one row per column: the server, the window, the reply cap, the final
+round's form, the temperature, the limits and the policy warnings. It says whether the limits, the
+temperature and the context guard are the same in every run, and lists what no policy sets. Today
+a comparison across the four models also compares:
+- **the context sizing:** Ollama gets a sized `num_ctx` and a `num_predict`; LM Studio a loaded
+  window of 48k or more and no reply cap; the API model its own window and no reply cap;
+- **the final round:** `tool_choice: 'none'` on the OpenAI-compatible servers, honoured where the
+  server honours it, and nothing on Ollama;
+- **what no policy sets:** sampling beyond the temperature (top_p, top_k, min_p, the repetition
+  penalty), the reasoning mode and its effort, the tokenizer (the guard's estimate of a request is
+  the same for every model, the real count is not), the quantization and the server's release.
+
 ## Models and spend
 
-Each model gets the same cases, prompt, tools and scoring, and the results are reported side by side:
-- qwen3.8-27b (LM Studio, 32k);
-- gemma4:26b (Ollama);
-- meta/muse-glimmer (LM Studio, 28B, tool use, up to 128k);
+Each model gets the same cases, prompt, tools and scoring, and the results are reported side by
+side, each under its run policy:
+- qwen3.8-27b (LM Studio, loaded with a context of 48k or more);
+- gemma4:26b (Ollama; the guard sizes `num_ctx`);
+- meta/muse-glimmer (LM Studio, 28B, tool use, up to 128k; loaded with 48k or more);
 - Claude Sonnet 5.5 (API).
 
 The API model (`claude-sonnet-5-5`) runs the test set only, arm B, 3 runs per case, under RMC's
 $12 share of the cycle's $40 cap. The spend tracker prices each request before sending it (prompt
-estimate + the largest reply) and refuses one that could cross the cap; a JSON-lines ledger keeps
-the total across restarts. The client sees no usage report, so the charge is an upper bound: the
+estimate + the largest reply) and refuses one that could cross the cap (`spend.js`
+`meteredModel`, a decorator over the model port: it reserves when the request is prepared, so a
+refused request is never sent); a JSON-lines ledger keeps the total across restarts. The client sees no usage report, so the charge is an upper bound: the
 Copilot's conservative token estimate (2.5 characters per token of text), with every prompt token
 at the dearest prompt rate. Prices (USD per million tokens, 2026-10-14): input $2, output $10,
 cache hits $0.10, cache writes $2.50, so prompts are charged at $2.50. `RMC_EVAL_SONNET_MODEL`,
@@ -393,6 +659,10 @@ reduces to whether B *matches* A+ — reaches the engines' conclusions, no over-
 the score does not measure (the answer checks, the evidence gate, number provenance,
 reproducibility). B − A (0.81) is still where the Copilot's value over the default pages shows.
 
+The dev-only fit-data case (protocol 2026-10-19.6) is not in these tables, whose means are over the
+nine paired kinds: A and A+ both score 1 on it, so over all ten dev cases the means are A 0.825
+and A+ 0.99.
+
 ## What the model sees (snapshot tests)
 
 A run means something only while the model is sent the same thing. The tests in
@@ -406,11 +676,16 @@ folder, with no model and no network:
   (CopilotChat → useCopilot, captured at `streamCopilotChat`): its fields, its messages and the
   `tools` field exactly as sent;
 - `harness/first-request.arm-B.txt`, `harness/first-request.arm-C.txt` and
-  `harness/tools.arm-B.json`: the same for `runLiveCase` on `dev-offcentre`, captured at its
-  `callModel`;
+  `harness/tools.arm-B.json`: the same for `runLiveCase` on `dev-offcentre`, captured at its model
+  port (the files' header still calls it `callModel`, its name before the turn module);
 - `tool-results/<tool>.json`: one result of every run tool and engine tool on the Demo, plus an
   `ask_user` answer, a `read_skill` and a window that cuts the Ta–Se shell, as the `tool` message
   the agent loop appends (budget applied, checks, `ref`, note).
+
+`turnRequests.test.js` (no snapshot file of its own) runs the turn module directly with a
+dock-shaped spec (the Demo run, the dock's tools, `providerModel`) and a harness-shaped one
+(`dev-offcentre` through the run module, arms B and C): its first requests are the requests in
+these files, so the dock and the harness send what the one module builds.
 
 Beside them, `caseBlind.test.js` (no snapshot file) checks that the harness tells the model nothing
 about the case:
@@ -439,7 +714,9 @@ A change to a tool's output changes its `dataShape` in the same PR, so it shows 
 
 ## Running the live arms (later, on the Mac)
 
-From `web_app/frontend`, with the model loaded in LM Studio or Ollama:
+From `web_app/frontend`, with the model loaded in LM Studio (with a context of 48k or more:
+`lms load <model> --context-length 49152`) or Ollama. Each run starts with the pre-run check
+([The run policy](#the-run-policy-plan-item-12)):
 
 ```bash
 # smoke pass: one run per dev case
@@ -460,6 +737,16 @@ npx vite-node validation/run.js -- report --in validation/runs/<dir> --in valida
 A rerun keeps runs already recorded in its folder, so an interrupted batch resumes. Merge the
 local-model hardening (`fix/local-model-robustness`) first: its deadlines and loop guards keep a
 stalled run from holding the batch.
+
+**Go/no-go before the live runs.**
+- **Each LM Studio model at 48k.** Whether the Mac can hold each model with a 48k context (its
+  memory, and the model's own maximum context) is checked at the go/no-go, one model at a time:
+  load it with `lms load <model> --context-length 49152`, run the smoke pass's first case, and read
+  the window in its record. The pre-run check refuses anything less, so a model the Mac cannot hold
+  at 48k does not run under this protocol.
+- **The final round on each local server.** In the smoke records, a run whose last request came
+  back as tool calls only ends on the loop's empty-final answer. On LM Studio that would mean
+  `tool_choice: 'none'` is not honoured; Ollama is known not to take it.
 
 **Time.** Each run is bounded by the agent loop: 6 rounds, 10 minutes plus the final reply. Since
 protocol 2026-10-17.2 the evidence gate can add up to two answer requests to a run (an answer sent

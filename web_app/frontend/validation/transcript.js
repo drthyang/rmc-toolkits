@@ -6,7 +6,10 @@
 // decided it, why, the arguments, the checks and the result it read), the
 // answer, its verdict and score, the answer checks, where every number came
 // from, safety, and last, the planted truth the model never saw. Steps are
-// numbered: a finding's `step` is that number (0 = the question).
+// numbered: a finding's `step` is that number (0 = the question). The header
+// also states the run policy the run ran under (runPolicy.js).
+
+import { policyLines } from './runPolicy';
 
 const fence = (value) => `\`\`\`json\n${JSON.stringify(value, null, 1)}\n\`\`\``;
 const quote = (text) => String(text || '').trim().split('\n').map((line) => `> ${line}`).join('\n');
@@ -36,6 +39,8 @@ export const renderTranscript = (record) => {
     lines.push(`- Case: \`${record.case}\` (${record.split} set) · Arm ${record.arm}: ${record.arm_label}`);
     lines.push(`- Model: ${record.model.label} (\`${record.model.id}\`, temperature ${record.model.temperature}) · run ${record.run_index}`);
     lines.push(`- Protocol ${record.protocol} · commit ${record.commit || 'unknown'} · ${record.started_at} → ${record.finished_at} (${Math.round((record.wall_ms || 0) / 1000)} s)`);
+    // The rules the run ran under (runPolicy.js).
+    policyLines(record.policy).forEach((line) => lines.push(line));
     lines.push(`- Tools offered: ${record.tools_offered.join(', ')}`);
     lines.push(`- Skills offered: ${record.skills_offered.length ? record.skills_offered.join(', ') : 'none (ablation)'}`);
     if (record.view && record.context) {

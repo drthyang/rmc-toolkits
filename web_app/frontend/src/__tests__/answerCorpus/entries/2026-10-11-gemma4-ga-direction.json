@@ -1,0 +1,32 @@
+{
+  "id": "2026-10-11-gemma4-ga-direction",
+  "fidelity": "verbatim",
+  "model": "gemma4:26b (Ollama)",
+  "date": "2026-10-11",
+  "run": "Demo (GaTa4Se8, 250 K)",
+  "question": "Do the Ga atoms have a preferred displacement direction?",
+  "source": {
+    "file": "web_app/frontend/src/__tests__/copilotChecksReplays.test.js",
+    "lines": "137-147",
+    "commit": "0326b5e",
+    "note": "committed as one of gemma4:26b's correct answers of 2026-10-11; the raw transcript is not in the repo"
+  },
+  "text": "Based on the displacement analysis, the Ga atoms do not exhibit a significant preferred displacement direction. The pooled analysis for all Ga atoms shows no significant peak direction (significance of $-0.887\\sigma$) and the overall displacement map is consistent with isotropy (map significance of $0.561\\sigma$). Furthermore, the orientation tensor anisotropy is not significant ($1.1\\sigma$).\nOutcome: achieved — The analysis of the Ga population shows no significant preferred direction or anisotropic orientation.",
+  "steps": [
+    { "name": "list_sites", "args": { "element": "Ga" } },
+    { "name": "analyze_displacement_directions", "args": { "element": "Ga" } }
+  ],
+  "stepsSource": "the replay of the same commit scripts these two calls before the answer; the answer quotes the directions analysis' numbers, which the step reproduces",
+  "reproduces": [
+    { "step": 2, "path": "facts.direction.peak_sigma", "value": -0.887 },
+    { "step": 2, "path": "facts.direction.map_sigma", "value": 0.561 }
+  ],
+  "expected": {
+    "claims": [],
+    "gateSendBack": null,
+    "auditFindings": []
+  },
+  "judgements": [
+    { "on": "silence", "right": true, "reason": "No preferred direction, as the analysis found (peak −0.887σ, map 0.561σ); the negated claims are read as negated." }
+  ]
+}

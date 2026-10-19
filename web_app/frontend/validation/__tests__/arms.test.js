@@ -24,6 +24,8 @@ const runBoth = async (item) => {
 // Batch 1 (2026-10-17): the sweep gained measure_symmetry_lowering and the
 // general-wavevector test (review L4), and dev-symmetry-lowering's A+ went
 // from 0.8333 to 1 (the shift is named); every other pin is unchanged.
+// Plan item 4.6: dev-fit-unconverged (dev only), scored on its
+// structure (no order, Fm-3m); its fit files change nothing the arms read.
 const BAR = [
     ['dev-offcentre', 1, [], 1, []],
     ['dev-zone-boundary', 0.6667, ['off_centre Ti'], 1, []],
@@ -33,7 +35,8 @@ const BAR = [
     ['dev-thermal-null', 1, [], 1, []],
     ['dev-symmetry-lowering', 0.3333, [], 1, []],
     ['dev-chirality-trap', 1, [], 1, []],
-    ['dev-chiral', 1, [], 1, []]
+    ['dev-chiral', 1, [], 1, []],
+    ['dev-fit-unconverged', 1, [], 1, []]
 ];
 
 describe('the model-free arms on the dev cases (the bar)', () => {

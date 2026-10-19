@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { toolBudgetNote } from '../prompts/copilot';
+import { asModelPort } from '../provider/model';
 import { auditAnswer } from './answerAudit';
 import { ASK_USER, MAX_QUESTIONS, answerResult } from './askUser';
 import { resolveClarification } from './clarify';
@@ -21,11 +22,20 @@ import {
 // with a `tool` message (result + deterministic checks), and the model is
 // called again — until it answers without tools, or the round budget is used
 // and a last request (tool_choice 'none') asks for the answer. An async
-// generator of UI events; no React. `callModel` is injected (the page wraps
-// provider/client.js streamChat), so tests script the model's replies.
+// generator of UI events; no React. The turn module (turn.js) is its one
+// production caller: it assembles the messages, the tools and the checks this
+// loop runs with. `model` is a model port (provider/model.js: prepare(intent)
+// → sent, stream(sent)), so tests script the model's replies.
 //
 // Events:
 //   { type: 'round', round }                       a model request starts
+//   { type: 'request', round, why, sent }          the request as sent (after the port's
+//                                                  prepare), before its reply; why: 'first',
+//                                                  'tools' (results of the round before),
+//                                                  'reminder' (after an empty or looping
+//                                                  reply), 'gate' (an answer sent back),
+//                                                  'final' (the budget is used: tool_choice
+//                                                  'none'), 'no_tools' (the retry without tools)
 //   { type: 'text', delta } / { type: 'reasoning', delta }
 //   { type: 'tool_start', id, name, label, args, page, cards, interactive }
 //   { type: 'tool_end', id, name, status, args, data, checks, error, ms, cached, pageParams }
@@ -53,7 +63,8 @@ import {
 // toward the turn budget: the agent follows a skill for the whole question).
 // An interactive tool (ask_user) waits for the user: it has no time limit, the
 // wait does not count toward `maxTurnMs`, and a turn asks at most
-// `maxQuestions` questions, one per step.
+// `maxQuestions` questions, one per step. Turn time is read from `clock.now()`
+// (the turn's clock; Date.now by default).
 //
 // `clarifier` (clarify.js) lets the Workbench ask itself where the run data
 // show that a choice changes the result: before the first request
@@ -76,9 +87,9 @@ import {
 // `stallMs`, or runs past `requestMaxMs`, is cancelled and explained; a reply
 // with neither an answer nor a call (a reasoning-only reply), or one stopped
 // because it kept writing the same passage (`repeatsItself`), gets one
-// reminder, asked a little warmer (`antiRepeat` on the request: the host
-// raises the temperature, as greedy decoding is what loops), before the turn
-// ends on an explained empty reply; a call written
+// reminder, asked a little warmer after a loop (the intent's `retry: 'warmer'`:
+// the model port raises the temperature, as greedy decoding is what loops),
+// before the turn ends on an explained empty reply; a call written
 // as JSON text is run; and two rounds in a row that add nothing new (every
 // call repeated or failed) end the analyses: the next request asks for the
 // answer (`stoppedBy: 'no_progress'`), so repetition never spends the round
@@ -199,8 +210,12 @@ const toolMessageContent = ({ data, checks, error, note }, budget, ref = null) =
     return { content: JSON.stringify(message), data: error ? null : message.data };
 };
 
+// The turn's clock when none is given (ms).
+const DEFAULT_CLOCK = Object.freeze({ now: () => Date.now() });
+
 export async function* runCopilotTurn({
-    callModel,
+    // The model port (provider/model.js), or a bare stream function.
+    model,
     messages: initialMessages,
     tools = [],
     limits = {},
@@ -218,8 +233,12 @@ export async function* runCopilotTurn({
     // The evidence gate (evidence.js buildEvidenceGate), or null for none.
     evidence = null,
     // The run context, for {{ctx.…}} references.
-    referenceContext = null
+    referenceContext = null,
+    // The turn's clock: its time limit and the user's waits.
+    clock = DEFAULT_CLOCK
 }) {
+    const port = asModelPort(model);
+    const now = () => clock.now();
     const {
         maxRounds, maxCallsPerRound, toolTimeoutMs, maxTurnMs, resultCharBudget, turnCharBudget, maxQuestions,
         stallMs, requestMaxMs, maxNoProgressRounds, maxEvidenceGates
@@ -274,7 +293,9 @@ export async function* runCopilotTurn({
     let emptyNudges = 0;
     let warmer = false;
     let finalNoted = false;
-    const startedAt = Date.now();
+    // Why the next model request is made (the `request` event's `why`).
+    let why = 'first';
+    const startedAt = now();
     // Time spent waiting for the user's answers, which the turn limit skips.
     let waitedMs = 0;
     let questions = 0;
@@ -311,9 +332,9 @@ export async function* runCopilotTurn({
             default: item.request.options[item.request.defaultIndex]?.label
         };
         yield { type: 'tool_start', id, name: ASK_USER, label: 'Question for you', args, page: null, cards: [], interactive: true, app: true };
-        const started = Date.now();
+        const started = now();
         const reply = await toolContext.askUser(item.request, { signal });
-        const ms = Date.now() - started;
+        const ms = now() - started;
         waitedMs += ms;
         questions += 1;
         const { data, checks } = answerResult(item.request, reply);
@@ -346,12 +367,14 @@ export async function* runCopilotTurn({
     };
 
     for (;;) {
-        const outOfTime = rounds > 0 && Date.now() - startedAt - waitedMs > maxTurnMs;
+        const outOfTime = rounds > 0 && now() - startedAt - waitedMs > maxTurnMs;
         const finalRound = useTools && (rounds >= maxRounds || outOfTime || stalled);
         // The last-round note is added once (a reminder can repeat that round).
         if (finalRound && !finalNoted) {
             finalNoted = true;
             addNote(messages, stalled ? noProgressNote(noProgressRounds) : toolBudgetNote(rounds));
+            // The request that asks for the answer (the first request stays 'first').
+            if (why !== 'first') why = 'final';
         }
         yield { type: 'round', round: rounds };
 
@@ -366,13 +389,18 @@ export async function* runCopilotTurn({
         const onTurnAbort = () => request.abort();
         signal?.addEventListener('abort', onTurnAbort, { once: true });
         try {
-            const stream = callModel({
-                messages,
+            // The intent (a snapshot of the messages: the loop keeps
+            // appending to its own list), prepared by the port into the
+            // request as sent, which the caller sees before the reply.
+            const intent = {
+                messages: [...messages],
                 tools: useTools ? requestTools : undefined,
                 toolChoice: useTools ? (finalRound ? 'none' : 'auto') : undefined,
-                signal: request.signal,
-                ...(warmer ? { antiRepeat: true } : {})
-            });
+                retry: warmer ? 'warmer' : null
+            };
+            const sent = await port.prepare(intent, { signal: request.signal });
+            yield { type: 'request', round: rounds, why, sent };
+            const stream = port.stream(sent, { signal: request.signal });
             for await (const chunk of withDeadlines(stream, { stallMs, maxMs: requestMaxMs, cancel: () => request.abort() })) {
                 if (chunk.content) {
                     text += chunk.content;
@@ -403,6 +431,7 @@ export async function* runCopilotTurn({
                     messages[0] = { ...messages[0], content: noToolsSystemPrompt };
                 }
                 yield { type: 'tools_unsupported', error: error.message };
+                why = 'no_tools';
                 continue;
             }
             throw error;
@@ -427,14 +456,15 @@ export async function* runCopilotTurn({
             }
         }
         const cut = finishReason === 'length';
-        const why = looped ? 'loop' : (cut ? 'cut' : 'empty');
+        const emptyWhy = looped ? 'loop' : (cut ? 'cut' : 'empty');
         if (!calls.length) {
             if (!text.trim() && emptyNudges < 1) {
                 // A reasoning-only, empty or looping reply: one reminder, then
                 // ask again (warmer after a loop).
                 emptyNudges += 1;
                 warmer = warmer || looped;
-                addNote(messages, emptyNudge(why));
+                addNote(messages, emptyNudge(emptyWhy));
+                why = 'reminder';
                 continue;
             }
             const stoppedBy = finalRound ? (stalled ? 'no_progress' : 'max_rounds') : 'answer';
@@ -466,7 +496,7 @@ export async function* runCopilotTurn({
                 } else {
                     yield {
                         type: 'done', text: '', outcome: null, rounds, stoppedBy: 'empty', cut, audit: [],
-                        reason: EMPTY_REASONS[why]
+                        reason: EMPTY_REASONS[emptyWhy]
                     };
                 }
                 return;
@@ -474,7 +504,7 @@ export async function* runCopilotTurn({
             // The evidence gate, on the answer as it will read (references
             // filled): a conclusion whose analysis did not run goes back to the
             // model, once per rule, while tools can still run in the next round.
-            const turnTimeLeft = !(rounds > 0 && Date.now() - startedAt - waitedMs > maxTurnMs);
+            const turnTimeLeft = !(rounds > 0 && now() - startedAt - waitedMs > maxTurnMs);
             const gate = evidence && useTools && !finalRound && turnTimeLeft && gates.length < maxEvidenceGates
                 ? evidence.check(fillReferences(text, references).text, { ran: ranCalls(), fired: gatesFired })
                 : null;
@@ -486,6 +516,7 @@ export async function* runCopilotTurn({
                 yield { type: 'retract' };
                 messages.push({ role: 'assistant', content: assistantContent(text) });
                 messages.push({ role: 'user', content: gate.nudge });
+                why = 'gate';
                 continue;
             }
             yield finish(text, stoppedBy, cut);
@@ -493,6 +524,8 @@ export async function* runCopilotTurn({
         }
 
         rounds += 1;
+        // The next request carries this round's results.
+        why = 'tools';
         // The assistant message must list every call that the tool messages
         // below answer, and every listed call gets exactly one answer. Its
         // arguments are echoed as valid JSON (unparseable text as '{}': some

@@ -18,14 +18,20 @@
 // visit to the PCA Ellipsoid page, to check that context section's effect;
 // its records say so (`view.pcaSites`, `context.sections`) and go to their own
 // folder by default (…_pca-table).
+//
+// Before every live run the run policy's pre-run check (runPolicy.js
+// preflight) reads the model's server: a server of another kind, or none, or
+// an LM Studio model loaded with less than 48k, stops the batch with what was
+// found, what is needed and how to reload the model; nothing is sent and no
+// record is written, so the same command resumes once it is fixed.
 
 import { execSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { streamCopilotChat } from '../src/llm/provider/contextGuard';
+import { providerModel } from '../src/llm/provider/model';
 import { buildCase, casesOf } from './cases';
-import { loadRun, RUN_FILES, RUN_NAME } from './runFolder';
+import { caseFiles, loadRun, RUN_NAME } from './runFolder';
 import { runArmA, runArmSweep } from './armA';
 import { scoreVerdict } from './scoring';
 import { truthVerdict } from './verdict';
@@ -33,8 +39,9 @@ import { ARMS, PROTOCOL_VERSION, runLiveCase } from './harness';
 import { renderTranscript } from './transcript';
 import { renderReport } from './report';
 import { resolveModel } from './models';
-import { createSpendTracker, meteredCall } from './spend';
+import { createSpendTracker, meteredModel } from './spend';
 import { parseFindingFiles, parseFindings } from './findings';
+import { contextSessionKey, noteWindowAfter, observeContext, preflight, readServer, windowSummary } from './runPolicy';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '../../..');
@@ -105,6 +112,31 @@ export const loadSkills = () => {
     return { files, references, load: async (path) => readFileSync(join(REPO, path), 'utf8') };
 };
 
+/**
+ * One live run under the run policy (runPolicy.js): the pre-run check (a
+ * RunPolicyError before anything is sent: the server is not the model's
+ * kind, or an LM Studio model's loaded window is below the minimum), the run
+ * through `base` (observed for the num_ctx Ollama was sent; metered under
+ * `tracker` for an API model, as `note`), and the window read again after.
+ * A spend cap still throws its SpendCapError, with the run's record.
+ */
+export const liveRun = async ({
+    built, arm, model, runIndex, base, session, tracker = null, note = null, skills = null, commit = null, pcaTable = false, limits = {}
+}) => {
+    const server = await preflight(model);
+    const observed = observeContext(base, { session, key: contextSessionKey(model) });
+    const port = tracker ? meteredModel(observed.port, tracker, note) : observed.port;
+    let record;
+    try {
+        record = await runLiveCase({ built, arm, model, runIndex, port, skills, commit, pcaTable, limits, server, contextUsed: observed.used });
+    } catch (failure) {
+        if (failure?.record) noteWindowAfter(failure.record.policy, await readServer(model));
+        throw failure;
+    }
+    noteWindowAfter(record.policy, await readServer(model));
+    return record;
+};
+
 const commands = {
     // Each case as <out>/<case>/rmc_run/, the run folder the Workbench opens
     // (Choose folder), named as the harness names every run: the Workbench
@@ -117,8 +149,7 @@ const commands = {
             const dir = join(out, built.id);
             const runDir = join(dir, RUN_NAME);
             mkdirSync(runDir, { recursive: true });
-            writeFileSync(join(runDir, RUN_FILES.rmc6f), built.rmc6f);
-            writeFileSync(join(runDir, RUN_FILES.partials), built.partials);
+            for (const { name, text } of caseFiles(built)) writeFileSync(join(runDir, name), text);
             writeFileSync(join(dir, 'truth.json'), `${JSON.stringify({ id: built.id, split: built.split, question: built.question, truth: built.truth }, null, 1)}\n`);
             console.log(`wrote ${runDir} (truth: ${join(dir, 'truth.json')})`);
         }
@@ -166,10 +197,11 @@ const commands = {
         mkdirSync(out, { recursive: true });
         const commit = commitOf();
         const skills = arm === 'B' ? loadSkills() : null;
+        // The app's production model port, bound to this model (the warmer
+        // retry, the context guard); one context-size session for the batch,
+        // which the run policy reads for the num_ctx each request was sent.
         const session = {};
-        const callModel = (request) => streamCopilotChat({
-            baseUrl: model.baseUrl, model: model.model, temperature: model.temperature, apiKey: model.apiKey, session, ...request
-        });
+        const base = providerModel(model, { session });
         let tracker = null;
         if (model.api) {
             const ledgerPath = resolve(args.ledger || 'validation/runs/api-spend.jsonl');
@@ -192,11 +224,14 @@ const commands = {
                     console.log(`${id}: already recorded, kept`);
                     continue;
                 }
-                const metered = tracker ? meteredCall(callModel, tracker, id) : callModel;
                 let record;
                 try {
-                    record = await runLiveCase({ built, arm, model, runIndex: index, callModel: metered, skills, commit, pcaTable });
+                    record = await liveRun({ built, arm, model, runIndex: index, base, session, tracker, note: id, skills, commit, pcaTable });
                 } catch (failure) {
+                    if (failure?.name === 'RunPolicyError') {
+                        console.log(`${id}: NOT STARTED (run policy)`);
+                        throw failure;
+                    }
                     if (failure?.name !== 'SpendCapError') throw failure;
                     record = failure.record;
                     writeFileSync(join(out, `${id}.json`), `${JSON.stringify(record, null, 1)}\n`);
@@ -206,8 +241,9 @@ const commands = {
                 }
                 writeFileSync(join(out, `${id}.json`), `${JSON.stringify(record, null, 1)}\n`);
                 writeFileSync(join(out, `${id}.md`), renderTranscript(record));
-                console.log(`${id}: score ${record.score.score.toFixed(2)} in ${Math.round(record.wall_ms / 1000)} s`
+                console.log(`${id}: score ${record.score.score.toFixed(2)} in ${Math.round(record.wall_ms / 1000)} s, window ${windowSummary(record.policy)}`
                     + `${record.error ? ` (error: ${record.error.message})` : ''}${tracker ? `  [$${tracker.spent().toFixed(2)} spent]` : ''}`);
+                record.policy.warnings.forEach((warning) => console.log(`${id}: run policy warning: ${warning}`));
             }
         }
     },

@@ -63,7 +63,7 @@ describe('a case opened through the run module', () => {
 
 describe('the record states the view and the context it ran with (plan 1.3)', () => {
     it('by default: the default view, no PCA table, no run settings, one fresh question', async () => {
-        const record = await runLiveCase({ built, arm: 'C', model: MODEL, callModel: answering() });
+        const record = await runLiveCase({ built, arm: 'C', model: MODEL, port: answering() });
         expect(record.error).toBeNull();
         expect(record.view).toEqual(DEFAULT_VIEW);
         expect(record.context.sections).toEqual(['structure', 'symmetry', 'pair_correlations', 'datasets']);
@@ -78,7 +78,7 @@ describe('the record states the view and the context it ran with (plan 1.3)', ()
     });
 
     it('with the PCA table: recorded, in the context, and a column of its own in the report', async () => {
-        const record = await runLiveCase({ built, arm: 'C', model: MODEL, callModel: answering(), pcaTable: true });
+        const record = await runLiveCase({ built, arm: 'C', model: MODEL, port: answering(), pcaTable: true });
         expect(record.error).toBeNull();
         expect(record.view.pcaSites?.sites?.length).toBeGreaterThan(0);
         expect(record.context.sections).toContain('pca_displacements');
