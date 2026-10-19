@@ -16,3 +16,7 @@ export { describePointGroup, pointGroupFacts } from './context/pointGroups';
 export {
     cnMatches, countsCut, MODAL_COORDINATION_SHARE, shellCatalogue, UNBONDED_APEX_FRACTION
 } from './context/shells';
+// The lower group's tolerance, NOISE_FLOOR_MARGIN × the sampling noise floor
+// (copilotTools.js measure_symmetry_lowering; the Workbench's tolerance
+// question reads the same margin).
+export { lowerGroupTolerance, NOISE_FLOOR_MARGIN } from './context/runContext';

@@ -26,6 +26,8 @@ const runBoth = async (item) => {
 // from 0.8333 to 1 (the shift is named); every other pin is unchanged.
 // Plan item 4.6: dev-fit-unconverged (dev only), scored on its
 // structure (no order, Fm-3m); its fit files change nothing the arms read.
+// Candidate 8 (2026-10-19, A+ reads the app's rules): no pin moved; only A+'s
+// readings (and dev-offcentre's δ, 0.201 → 0.202 Å) did, pinned below.
 const BAR = [
     ['dev-offcentre', 1, [], 1, []],
     ['dev-zone-boundary', 0.6667, ['off_centre Ti'], 1, []],
@@ -81,5 +83,29 @@ describe('the model-free arms on the dev cases (the bar)', () => {
         const jt = await runBoth(DEV_CASES.find((item) => item.id === 'dev-jahn-teller'));
         expect(jt.sweep.readings.find((r) => r.page === 'analyze_clusters').value)
             .toMatchObject({ distorted: 'true (axis_family)', splitMemberSites: 'true (half_or_more_split)', rigid: 'false (split_sites)' });
+    });
+
+    it('A+ reads the app\'s rules: the split site, the cluster elements, the lower group\'s tolerance (candidate 8, 2026-10-19)', async () => {
+        // The split site: isSplitSite, with list_sites' δ. On dev-jahn-teller
+        // two F sites (κ₁ −0.95 and −0.93 at 216 copies: 2.8 errors) are split
+        // by arm A's rule, not by the app's; the F claim (the largest δ) stays.
+        const jt = await runBoth(DEV_CASES.find((item) => item.id === 'dev-jahn-teller'));
+        const site = (arm, n) => arm.readings.find((r) => /^(PCA Ellipsoid|list_sites)$/.test(r.page) && r.what === `site ${n} F`);
+        for (const n of [5, 6]) {
+            expect(site(jt.a, n).reading).toMatch(/^split site along PC1/);
+            expect(site(jt.sweep, n)).toMatchObject({ page: 'list_sites', reading: 'not a split site' });
+            expect(site(jt.sweep, n).value.pc1_kurtosis_z).toBeGreaterThan(-3);
+        }
+        expect(site(jt.sweep, 3).value).toMatchObject({ delta_A: 0.16, delta_se_A: 0.0043, pc1_kurtosis_z: -4.43 });
+        expect(jt.sweep.verdict.features[0]).toEqual({ kind: 'off_centre', element: 'F', direction_uvw: [1, 0, -0.01], magnitude_A: 0.16 });
+        const offcentre = await runBoth(DEV_CASES.find((item) => item.id === 'dev-offcentre'));
+        expect(offcentre.sweep.verdict.features).toEqual([{ kind: 'off_centre', element: 'Nb', direction_uvw: [0.1, 0.06, -1], magnitude_A: 0.202 }]);
+        expect(offcentre.a.verdict.features[0].magnitude_A).toBe(0.201);
+        // The cluster elements: the gate's (CN 0.5–4.5); perovskite O (CN 8) no longer tried.
+        expect(offcentre.sweep.readings.filter((r) => r.page === 'analyze_clusters')).toEqual([]);
+        // The lower group: 1.25 × the noise floor (0.026 Å → 0.032 Å), the tool's default.
+        const lowering = await runBoth(DEV_CASES.find((item) => item.id === 'dev-symmetry-lowering'));
+        expect(lowering.sweep.readings[0]).toMatchObject({ page: 'detect_symmetry at 1.25 × the noise floor', what: 'space group at 0.032 Å', value: 'P4mm', noise_floor_A: 0.026 });
+        expect(lowering.sweep.readings.find((r) => r.page === 'measure_symmetry_lowering').reading).toContain('(the lower group P4mm at 0.032 Å)');
     });
 });
