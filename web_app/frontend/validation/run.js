@@ -20,7 +20,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { streamCopilotChat } from '../src/llm/provider/contextGuard';
 import { buildCase, casesOf } from './cases';
-import { loadRun } from './runFolder';
+import { loadRun, RUN_FILES } from './runFolder';
 import { runArmA, runArmSweep } from './armA';
 import { scoreVerdict } from './scoring';
 import { truthVerdict } from './verdict';
@@ -108,8 +108,8 @@ const commands = {
             const built = buildCase(item);
             const dir = join(out, built.id);
             mkdirSync(dir, { recursive: true });
-            writeFileSync(join(dir, built.rmc6fName), built.rmc6f);
-            writeFileSync(join(dir, built.partialsName), built.partials);
+            writeFileSync(join(dir, RUN_FILES.rmc6f), built.rmc6f);
+            writeFileSync(join(dir, RUN_FILES.partials), built.partials);
             writeFileSync(join(dir, 'truth.json'), `${JSON.stringify({ id: built.id, split: built.split, question: built.question, truth: built.truth }, null, 1)}\n`);
             console.log(`wrote ${dir}`);
         }
