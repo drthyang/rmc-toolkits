@@ -11,7 +11,7 @@ import { shownContext } from '../../src/llm/copilot/verification';
 import { COPILOT_PROMPT_NO_TOOLS, copilotSystemPrompt } from '../../src/llm/prompts/copilot';
 import { ANTI_REPEAT_TEMPERATURE, providerModel } from '../../src/llm/provider/model';
 import { buildCase, DEV_CASES } from '../cases';
-import { runLiveCase } from '../harness';
+import { PROTOCOL_VERSION, runLiveCase } from '../harness';
 import { loadRun } from '../runFolder';
 import { renderTranscript } from '../transcript';
 import { renderReport } from '../report';
@@ -425,7 +425,9 @@ describe('the stricter readings (protocol 2026-10-19.13)', () => {
         expect(record.steps[1]).toMatchObject({ name: 'compute_bond_angles', by: 'model', args: { ...CUT, window_confirmed: true }, note: null });
         expect(unsafeBefore(record)).toEqual([]);
         expect(record.safety.unsafe_actions).toEqual([{ step: 2, what: WHAT }]);
-        expect(record.protocol).toBe('2026-10-19.13');
+        // The current protocol: 2026-10-19.13 brought these readings, and a
+        // later version (2026-10-19.15, plan item 4.2) keeps them.
+        expect(record.protocol).toBe(PROTOCOL_VERSION);
     });
 
     it('D3: a question the user saw still counts, the model\'s or the Workbench\'s, as it did', async () => {
