@@ -769,8 +769,8 @@
  },
  {
   "id": "dev-zone-boundary__A+",
-  "protocol": "2026-10-19.8",
-  "commit": "63569f340cf81501c131d3e16144664861ea2c9b",
+  "protocol": "2026-10-19.12",
+  "commit": "1bc6557c475dc9a718d1453b749526e88717cde9",
   "case": "dev-zone-boundary",
   "split": "dev",
   "arm": "A+",
@@ -781,8 +781,8 @@
      "kind": "modulation",
      "element": "Ti",
      "direction_uvw": [
-      -0.03,
-      0.1,
+      -0.05,
+      0.09,
       1
      ],
      "q": [
@@ -807,7 +807,7 @@
      "claim_index": 0,
      "kind": "modulation",
      "element": "Ti",
-     "direction_error_deg": 5.9602619681462485,
+     "direction_error_deg": 5.878250113590982,
      "direction_ok": true,
      "q_claimed": [
       0,
@@ -957,7 +957,18 @@
      "Ti": {
       "cellDoubling": "true (ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "polarisation": [
+       {
+        "q": "(0, 0, 0.5)",
+        "uvw": [
+         -0.05,
+         0.09,
+         1
+        ],
+        "share": 1
+       }
+      ]
      }
     },
     "reading": "cell doubling: Ti at (0, 0, 0.5); order at a general q: none; long wave: Sr at (0.125, 0, 0)"
@@ -7256,8 +7267,8 @@
  },
  {
   "id": "dev-weak-order-a__A+",
-  "protocol": "2026-10-19.9",
-  "commit": "3de8fc5eb093a09fdafccfa58a0a7703c57e2267",
+  "protocol": "2026-10-19.12",
+  "commit": "1bc6557c475dc9a718d1453b749526e88717cde9",
   "case": "dev-weak-order-a",
   "split": "dev",
   "arm": "A+",
@@ -7267,6 +7278,11 @@
     {
      "kind": "modulation",
      "element": "Nb",
+     "direction_uvw": [
+      0.17,
+      0.06,
+      1
+     ],
      "q": [
       0.5,
       0.5,
@@ -7430,7 +7446,18 @@
      "Nb": {
       "cellDoubling": "true (ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "polarisation": [
+       {
+        "q": "(0.5, 0.5, 0)",
+        "uvw": [
+         0.17,
+         0.06,
+         1
+        ],
+        "share": 1
+       }
+      ]
      },
      "O": {
       "cellDoubling": "false (no_ordered_point)",
