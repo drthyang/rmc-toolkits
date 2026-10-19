@@ -6,8 +6,9 @@
 // resolution (the tiling analyze_displacement_directions reads), and shows
 // the ν the engine chose; a picked resolution overrides it and stays when the
 // site changes; and every readout comes from the raw histogram (smoothing 0)
-// while the sphere draws the smoothed map, so the smoothing never moves a
-// readout. The engine is a recording fake; the Three.js panels are stubbed.
+// while the sphere draws the map at the page's smoothing (0 to open, so one
+// request), so the smoothing never moves a readout. The engine is a recording
+// fake; the Three.js panels are stubbed.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
@@ -120,22 +121,23 @@ describe('the Displacement Directions page opens at the engine\'s resolution (pl
     const resolution = () => select('Sphere resolution');
     const selectedText = (element) => element.options[element.selectedIndex].textContent;
     const orientationRequests = () => state.requests.filter((request) => request.kind === 'orientation').map((request) => request.params);
+    // The latest readout request (every readout request is at smoothing 0).
+    const lastReadout = () => orientationRequests().filter((params) => params.smoothing === 0).at(-1);
 
     it('opens at Auto, labelled with the ν the engine chose, and reads its readouts from the raw histogram', async () => {
         await render();
         expect(resolution().value).toBe('auto');
         expect(selectedText(resolution())).toBe('Auto · ν=2 (42)');
+        // The map opens unsmoothed (decided 2026-10-19): the smoothing slider at 0.
+        expect(container.querySelector('input[aria-label="Neighbour smoothing passes"]').value).toBe('0');
 
-        // One readout request at smoothing 0 with no frequency (the engine's
-        // choice, as the tool asks), and the map at the default smoothing.
-        const [readout, map] = orientationRequests();
-        expect(readout).toMatchObject({ referenceNumber: 1, frequency: null, weight: 'count', frame: 'cartesian', minAmplitudeQuantile: 0, smoothing: 0 });
-        expect(map).toEqual({ ...readout, smoothing: 2 });
-        expect(orientationRequests()).toHaveLength(2);
-
-        // The sphere draws the smoothed map; every readout is the raw one.
-        expect(state.view.result).toMatchObject({ smoothing: 2, peakSignificance: 1.5 });
+        // One request: the readout at smoothing 0 with no frequency (the
+        // engine's choice, as the tool asks), which the sphere also draws.
+        expect(orientationRequests()).toEqual([
+            expect.objectContaining({ referenceNumber: 1, frequency: null, weight: 'count', frame: 'cartesian', minAmplitudeQuantile: 0, smoothing: 0 })
+        ]);
         expect(state.view.readout).toMatchObject({ smoothing: 0, peakSignificance: 4.5, frequency: RECOMMENDED });
+        expect(state.view.result).toBe(state.view.readout);
         expect(state.view.loadedRef).toBe(1);
     });
 
@@ -143,12 +145,13 @@ describe('the Displacement Directions page opens at the engine\'s resolution (pl
         await render();
         const readout = state.view.readout;
         await slide('Neighbour smoothing passes', 5);
-        expect(orientationRequests().slice(2)).toEqual([{ ...orientationRequests()[0], smoothing: 5 }]);
+        // One request: the map, smoothed; the readout is the raw one it was.
+        expect(orientationRequests().slice(1)).toEqual([{ ...orientationRequests()[0], smoothing: 5 }]);
         expect(state.view.readout).toBe(readout);
-        expect(state.view.result.smoothing).toBe(5);
-        // At 0 the readout is the map: nothing to ask.
+        expect(state.view.result).toMatchObject({ smoothing: 5, peakSignificance: 1.5 });
+        // Back at 0 the readout is the map: nothing to ask.
         await slide('Neighbour smoothing passes', 0);
-        expect(orientationRequests()).toHaveLength(3);
+        expect(orientationRequests()).toHaveLength(2);
         expect(state.view.result).toBe(readout);
         expect(state.view.readout).toBe(readout);
     });
@@ -157,19 +160,19 @@ describe('the Displacement Directions page opens at the engine\'s resolution (pl
         await render();
         await change(resolution(), 6);
         expect(resolution().value).toBe('6');
-        expect(orientationRequests().at(-2)).toMatchObject({ referenceNumber: 1, frequency: 6, smoothing: 0 });
+        expect(lastReadout()).toMatchObject({ referenceNumber: 1, frequency: 6, smoothing: 0 });
         // The Auto choice still says what Auto would pick for this site.
         expect([...resolution().options].find((option) => option.value === 'auto').textContent).toBe('Auto · ν=2 (42)');
 
         // Another site: the pick is page state and stays.
         await change(select('Site'), 2);
         expect(resolution().value).toBe('6');
-        expect(orientationRequests().at(-2)).toMatchObject({ referenceNumber: 2, frequency: 6, smoothing: 0 });
+        expect(lastReadout()).toMatchObject({ referenceNumber: 2, frequency: 6, smoothing: 0 });
         expect(state.view.loadedRef).toBe(2);
 
         // Back to Auto: the engine chooses again.
         await change(resolution(), 'auto');
-        expect(orientationRequests().at(-2)).toMatchObject({ referenceNumber: 2, frequency: null, smoothing: 0 });
+        expect(lastReadout()).toMatchObject({ referenceNumber: 2, frequency: null, smoothing: 0 });
         expect(state.view.readout.frequency).toBe(RECOMMENDED);
     });
 
@@ -179,6 +182,6 @@ describe('the Displacement Directions page opens at the engine\'s resolution (pl
         await render({ request: { id: 1, page: 'orientation', params: { referenceNumber: 2, frequency: 'auto' } } });
         expect(select('Site').value).toBe('2');
         expect(resolution().value).toBe('auto');
-        expect(orientationRequests().at(-2)).toMatchObject({ referenceNumber: 2, frequency: null, smoothing: 0 });
+        expect(lastReadout()).toMatchObject({ referenceNumber: 2, frequency: null, smoothing: 0 });
     });
 });

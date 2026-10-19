@@ -98,6 +98,12 @@ export function DirectionReadouts({ readout }) {
         <div className="ui-inline-stats">
             <span className="ui-inline-stat">
                 peak <b>{numberFormat(readout.peakEnhancement, 2)}×</b> at {formatDirection(readout.peakDirection)}
+                {/* How finely the peak names its direction: its cell's radius. */}
+                {Number.isFinite(readout.peakCellRadiusDeg) && (
+                    <span className="ui-inline-stat__null">
+                        {` ± ${readout.peakCellRadiusDeg.toFixed(1)}°, the cell radius at ν = ${readout.frequency}`}
+                    </span>
+                )}
                 {readout.peakTieCount > 1 && (
                     <span className="ui-inline-stat__null" title="Several cells share the maximum enhancement (within 1e-9); the lowest-index cell is reported">
                         {' '}(1 of {readout.peakTieCount} equal cells)
@@ -117,8 +123,16 @@ export function DirectionReadouts({ readout }) {
                     <p>
                         Read from the raw counts at this resolution: smoothing redraws the
                         map but never moves this peak, its direction or its σ (the
-                        brightest drawn cell can differ). The direction is good to within
-                        its cell.
+                        brightest drawn cell can differ).
+                    </p>
+                    <p>
+                        The direction is the peak cell&apos;s centre, and ± is the cell&apos;s
+                        radius, the largest angle from its centre to its corners: every
+                        direction counted in the cell lies within that angle of it, so the
+                        peak direction is known no more finely — 37.4° at ν = 1, about 20°
+                        at ν = 2. Wider than 15° it cannot tell the &lt;100&gt;, &lt;110&gt; and
+                        &lt;111&gt; families apart; a finer ν places a lobe more closely, with
+                        fewer atoms per cell.
                     </p>
                 </InfoBadge>
             </span>

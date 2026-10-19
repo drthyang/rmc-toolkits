@@ -48,6 +48,7 @@ describe('the page and the tool at the same settings (plan item 2.5): the dev th
                 peak_sigma: answer.data.peak.significance_sigma,
                 enhancement: answer.data.peak.enhancement,
                 peak_uvw: answer.data.peak.direction_uvw,
+                radius_deg: answer.data.peak.radius_deg,
                 map_sigma: answer.data.map_significance_sigma
             });
         }
@@ -72,10 +73,14 @@ describe('the page and the tool at the same settings (plan item 2.5): the dev th
         const run = await loadThermal();
         const { sites } = await run.engine('sites');
         let moved = 0;
+        // The map opens unsmoothed (the drawn map is then the readout itself);
+        // a user who smooths it, two passes here, redraws only the map.
+        const smoothed = (settings) => directionMapRequest({ ...settings, smoothing: 2 });
+        expect(directionMapRequest({ ...DIRECTION_DEFAULTS, referenceNumber: 1 })).toEqual(directionReadoutRequest({ ...DIRECTION_DEFAULTS, referenceNumber: 1 }));
         for (const site of sites) {
             const readout = await atDefaults(run, site.referenceNumber);
-            const drawn = await atDefaults(run, site.referenceNumber, directionMapRequest);
-            expect(drawn.smoothing).toBe(DIRECTION_DEFAULTS.smoothing);
+            const drawn = await atDefaults(run, site.referenceNumber, smoothed);
+            expect(drawn.smoothing).toBe(2);
             // The same tiling and the same raw-count tests.
             expect(drawn.frequency).toBe(readout.frequency);
             expect(drawn.counts).toEqual(readout.counts);

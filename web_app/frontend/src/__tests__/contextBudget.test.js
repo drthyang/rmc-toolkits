@@ -98,22 +98,24 @@ const TWO_LARGEST_SKILLS_TODAY = Object.freeze([
 // description says its shell does not depend on r_max (the tools +16).
 // Plan item 4.2 (2026-10-19) added 48: find_gr_peaks' description names a
 // joined shell's split (its parts and long − short; the tools +48).
+// Plan item 2.5 (2026-10-19) added 8: analyze_displacement_directions'
+// description gives the peak direction ± its cell's radius (the tools +9).
 const DOCK_WORST_TURN_TODAY = Object.freeze({
     systemPrompt: 4762,
-    toolJson: 6854,
+    toolJson: 6863,
     contextBlock: 2286,
     question: 70,
     skills: 7814,
     analyses: 8724,
     replyReserve: 8192,
-    firstRequest: 13971,
-    prompt: 30508,
-    needed: 38700,
-    headroom: -5932,
-    lmStudioHeadroom: -1836
+    firstRequest: 13979,
+    prompt: 30516,
+    needed: 38708,
+    headroom: -5940,
+    lmStudioHeadroom: -1844
 });
 // By how much the dock's worst turn overflows the window today.
-const DOCK_OVERFLOW_TOKENS_TODAY = 5932;
+const DOCK_OVERFLOW_TOKENS_TODAY = 5940;
 
 // Arm B's first request on each dev case is 9.7k–11.2k tokens; the largest,
 // since plan item 4.6, is the fit-data case: its fit tools (assess_convergence,
@@ -121,23 +123,24 @@ const DOCK_OVERFLOW_TOKENS_TODAY = 5932;
 // (before it, dev-symmetry-lowering: 10,391 tokens, 35,119 needed, 2,351 over).
 const ARM_B_LARGEST_DEV_CASE = 'dev-fit-unconverged';
 // find_gr_peaks' description (candidate #6) added 16 tokens to its tools, and
-// 49 more with a joined shell's split (plan item 4.2).
+// 49 more with a joined shell's split (plan item 4.2); the directions tool's
+// description 8 more with the cell radius (plan item 2.5; the request +9).
 const ARM_B_WORST_TURN_TODAY = Object.freeze({
     systemPrompt: 4422,
-    toolJson: 4637,
+    toolJson: 4645,
     contextBlock: 1574,
     question: 610,
     skills: 7814,
     analyses: 8723,
     replyReserve: 8192,
-    firstRequest: 11242,
-    prompt: 27778,
-    needed: 35970,
-    headroom: -3202,
-    lmStudioHeadroom: 894
+    firstRequest: 11251,
+    prompt: 27787,
+    needed: 35979,
+    headroom: -3211,
+    lmStudioHeadroom: 885
 });
 // By how much arm B's worst turn (largest dev case) overflows the window today.
-const ARM_B_OVERFLOW_TOKENS_TODAY = 3202;
+const ARM_B_OVERFLOW_TOKENS_TODAY = 3211;
 
 // --- the turn ------------------------------------------------------------------------
 
@@ -356,6 +359,6 @@ describe('the worst realistic turn in a 32,768-token window (plan 5.5)', () => {
             expect(plan.needed).toBe(turn.numbers.needed);
             expect(turn.numbers.prompt + LMSTUDIO_REPLY_MIN_TOKENS).toBeLessThanOrEqual(window);
         }
-        expect([window - dockTurn.numbers.needed, window - armBTurn.numbers.needed]).toEqual([10452, 13182]);
+        expect([window - dockTurn.numbers.needed, window - armBTurn.numbers.needed]).toEqual([10444, 13173]);
     });
 });

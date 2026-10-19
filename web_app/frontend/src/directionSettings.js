@@ -18,6 +18,11 @@
 //   carries the page's analysis settings at smoothing 0, as the tool's does.
 //   The map request is the same request smoothed for display, so smoothing
 //   only redraws the map.
+// - The map opens unsmoothed (smoothing 0, decided 2026-10-19): Auto's cells
+//   already average at least 12 displacements, and on its coarse tilings
+//   (twelve or 42 cells for a typical site) two passes left about 30 % of a
+//   cell's excess in place. At 0 the drawn map is the readout itself, the
+//   tool's map. A display setting only: no readout, and no score, depends on it.
 
 /** The page's opening settings. `smoothing` is a display setting only. */
 export const DIRECTION_DEFAULTS = Object.freeze({
@@ -25,7 +30,7 @@ export const DIRECTION_DEFAULTS = Object.freeze({
     weight: 'count',
     frame: 'cartesian',
     minQuantile: 0,
-    smoothing: 2
+    smoothing: 0
 });
 
 /** Resolution choices: 'auto', or a geodesic frequency ν (10ν² + 2 cells). */

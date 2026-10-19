@@ -250,6 +250,23 @@ const anglesToCell = (direction, unitCell) => unitCell.map((edge) => {
     return roundFixed(Math.acos(Math.max(-1, Math.min(1, cosine))) * 180 / Math.PI, 1);
 });
 
+// The peak direction is the peak cell's centre: it names a direction only to
+// within the cell's circumscribed radius (the engine's peakCellRadiusDeg, the
+// largest angle from the centre to the cell's corners). Within
+// LOW_INDEX_CONE_DEG the direction is resolved finely enough to tell the
+// <100>, <110> and <111> families apart; a wider cell (every cell at ν ≤ 2,
+// 19.3–37.4°) does not resolve it. Arm A+ applies the same bound
+// (validation/armA.js, SWEEP_RULES.directionResolved).
+export const directionResolved = (radiusDeg) => Number.isFinite(radiusDeg) && radiusDeg <= LOW_INDEX_CONE_DEG;
+
+// The peak direction as the checks write it: the crystal [u v w], else the
+// Cartesian triple.
+const peakDirectionText = (peak) => {
+    if (Array.isArray(peak.direction_uvw)) return `[${peak.direction_uvw.join(' ')}]`;
+    if (Array.isArray(peak.direction_cartesian)) return `(${peak.direction_cartesian.join(', ')}) (Cartesian)`;
+    return 'the peak cell\'s centre';
+};
+
 // direction_uvw, angles_to_abc_deg and principal_axis_uvw need the unit cell.
 const ORIENTATION_SHAPE = {
     note: 'string',
@@ -267,7 +284,8 @@ const ORIENTATION_SHAPE = {
         significance_sigma: 'number|null',
         direction_cartesian: oneOf(XYZ, 'null'),
         'direction_uvw?': oneOf(XYZ, 'null'),
-        'angles_to_abc_deg?': XYZ
+        'angles_to_abc_deg?': XYZ,
+        radius_deg: 'number|null'
     },
     map_significance_sigma: 'number|null',
     antipodal_asymmetry: 'number|null',
@@ -295,6 +313,9 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
         peak.direction_uvw = cartesianToUvw(direction, unitCell);
         peak.angles_to_abc_deg = anglesToCell(direction, unitCell);
     }
+    // How finely the peak names its direction: the peak cell's radius.
+    const radius = Number.isFinite(payload.peakCellRadiusDeg) ? roundFixed(payload.peakCellRadiusDeg, 1) : null;
+    peak.radius_deg = radius;
     const tensor = {
         eigenvalues: (payload.orientationEigenvalues || []).map((value) => round(value)),
         anisotropy: round(payload.orientationAnisotropy),
@@ -306,7 +327,8 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
     if (axisRows) tensor.principal_axis_uvw = axisRows[0].crystalDirection.map((value) => roundFixed(value, 2));
     const data = {
         note: 'enhancement = density / isotropic (1 = isotropic); significances are calibrated one-sided sigma; '
-            + 'the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal',
+            + 'the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal; '
+            + 'peak.radius_deg is the peak cell\'s radius: the peak names its direction only to within it',
         site: payload.referenceNumber ?? null,
         element: payload.element ?? 'all',
         frequency: payload.frequency,
@@ -327,9 +349,16 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
         checks.push({ level: 'warn', text: `Only ${payload.usedPoints} displacement vectors: the map is noisy.` });
     }
     if (payload.peakSignificance >= SIGNIFICANCE_SIGMA) {
+        const strength = `the peak cell is ${round(payload.peakEnhancement)}× isotropic at ${round(payload.peakSignificance)}σ (corrected over all cells)`;
+        const where = `${peakDirectionText(peak)}${radius == null ? '' : ` ± ${radius}°, the cell radius at ν = ${payload.frequency}`}`;
         checks.push({
             level: 'ok',
-            text: `Preferred direction: the peak cell is ${round(payload.peakEnhancement)}× isotropic at ${round(payload.peakSignificance)}σ (corrected over all cells).`
+            // A cell wider than LOW_INDEX_CONE_DEG cannot say which low-index
+            // family the direction belongs to: say so, and name none.
+            text: radius != null && !directionResolved(radius)
+                ? `Preferred direction: ${strength}, toward ${where}. The direction is not resolved finer than ${radius}° `
+                    + `(over ${LOW_INDEX_CONE_DEG}°), so it names no <100>, <110> or <111> family.`
+                : `Preferred direction: ${where}; ${strength}.`
         });
     } else {
         checks.push({ level: 'note', text: `No significant peak direction (${round(payload.peakSignificance)}σ < ${SIGNIFICANCE_SIGMA}σ).` });
@@ -344,7 +373,9 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
             level: 'ok',
             text: `The displacements are anisotropic: the map departs from isotropy at ${round(payload.mapSignificance)}σ. `
                 + (payload.peakSignificance >= SIGNIFICANCE_SIGMA
-                    ? 'The peak test above names the preferred direction.'
+                    ? (radius != null && !directionResolved(radius)
+                        ? 'The peak test above places the preferred direction only to within its cell.'
+                        : 'The peak test above names the preferred direction.')
                     : 'Thermal ellipsoids pass this test too: it is not a preferred direction, which needs the peak test.')
         });
     }
@@ -1499,7 +1530,7 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
             name: 'analyze_displacement_directions',
             description: 'Histogram the displacement directions of one site (site_ref, from list_sites) or of every atom '
                 + 'of one element (element; "all" pools every atom) on the sphere, and test them: the peak direction '
-                + '(Cartesian and crystal [u v w]) with its calibrated significance, the whole-map test against '
+                + '(Cartesian and crystal [u v w], ± its cell\'s radius) with its calibrated significance, the whole-map test against '
                 + 'isotropy, the +u/−u asymmetry, and the orientation-tensor anisotropy.',
             parameters: {
                 type: 'object',

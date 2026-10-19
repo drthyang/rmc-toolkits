@@ -127,19 +127,19 @@
   {
    "round": 0,
    "why": "first",
-   "sent": "28694 characters, sha256 34016675e88fb1ab",
+   "sent": "28715 characters, sha256 856a53cf1e7ae667",
    "num_ctx": null
   },
   {
    "round": 1,
    "why": "tools",
-   "sent": "30691 characters, sha256 767bbc4fbcee5e1e",
+   "sent": "30712 characters, sha256 6af3e4828c3169c9",
    "num_ctx": null
   },
   {
    "round": 2,
    "why": "tools",
-   "sent": "35344 characters, sha256 0a3322333e191c71",
+   "sent": "35587 characters, sha256 32662f0bcb20a288",
    "num_ctx": null
   }
  ],
@@ -492,7 +492,7 @@
     }
    ],
    "data": {
-    "note": "enhancement = density / isotropic (1 = isotropic); significances are calibrated one-sided sigma; the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal",
+    "note": "enhancement = density / isotropic (1 = isotropic); significances are calibrated one-sided sigma; the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal; peak.radius_deg is the peak cell's radius: the peak names its direction only to within it",
     "site": 1,
     "element": "Mg",
     "frequency": 1,
@@ -522,7 +522,8 @@
       31.7,
       90,
       121.7
-     ]
+     ],
+     "radius_deg": 37.4
     },
     "map_significance_sigma": -0.593,
     "antipodal_asymmetry": 0.102,
@@ -569,7 +570,7 @@
     }
    ],
    "data": {
-    "note": "enhancement = density / isotropic (1 = isotropic); significances are calibrated one-sided sigma; the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal",
+    "note": "enhancement = density / isotropic (1 = isotropic); significances are calibrated one-sided sigma; the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal; peak.radius_deg is the peak cell's radius: the peak names its direction only to within it",
     "site": 5,
     "element": "O",
     "frequency": 1,
@@ -599,7 +600,8 @@
       90,
       58.3,
       31.7
-     ]
+     ],
+     "radius_deg": 37.4
     },
     "map_significance_sigma": -1.22,
     "antipodal_asymmetry": 0.0926,

@@ -19,7 +19,9 @@ import { ARM_A_RULES } from '../../validation/armA';
 
 describe('the Displacement Directions page settings (plan item 2.5)', () => {
     it('open at Auto, with the analysis settings analyze_displacement_directions uses', () => {
-        expect(DIRECTION_DEFAULTS).toEqual({ frequency: 'auto', weight: 'count', frame: 'cartesian', minQuantile: 0, smoothing: 2 });
+        // The map opens unsmoothed too (decided 2026-10-19): the drawn map is the readout.
+        expect(DIRECTION_DEFAULTS).toEqual({ frequency: 'auto', weight: 'count', frame: 'cartesian', minQuantile: 0, smoothing: 0 });
+        expect(directionMapRequest({ ...DIRECTION_DEFAULTS, referenceNumber: 3 })).toEqual(directionReadoutRequest({ ...DIRECTION_DEFAULTS, referenceNumber: 3 }));
         expect(Object.isFrozen(DIRECTION_DEFAULTS)).toBe(true);
         expect(FREQUENCY_OPTIONS[0]).toBe('auto');
         // No frequency: the engine resolves it to its recommended one, as for the tool.

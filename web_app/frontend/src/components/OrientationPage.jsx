@@ -171,8 +171,9 @@ export default function OrientationPage({ directory, localRun, dataEpoch = 0, re
                                     </p>
                                     <p>
                                         A tiling names a direction only to within its cell — at ν = 1
-                                        (twelve cells) up to 37° off. A finer ν places a lobe more
-                                        closely, with fewer atoms per cell.
+                                        (twelve cells) up to 37.4° off, at ν = 2 about 20°; the peak
+                                        readout gives its cell&apos;s radius as ± R°. A finer ν places a
+                                        lobe more closely, with fewer atoms per cell.
                                     </p>
                                 </InfoBadge>
                             </>

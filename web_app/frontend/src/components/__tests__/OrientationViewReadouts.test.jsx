@@ -29,9 +29,15 @@ const common = {
     browserOrientation: true
 };
 // A raw histogram and the map drawn from it with two smoothing passes
-// (synthetic numbers).
-const readout = { ...common, smoothing: 0, vmax: 2.5, peakEnhancement: 2.5, peakDirection: [0.6, -0.8, 0], peakTieCount: 1, peakSignificance: 3.4 };
-const map = { ...common, smoothing: 2, vmax: 1.5, peakEnhancement: 1.5, peakDirection: [-0.8, 0, 0.6], peakTieCount: 3, peakSignificance: -2.1 };
+// (synthetic numbers; ν = 2, whose cells reach 19.3–20.9° from their centres).
+const readout = {
+    ...common, frequency: 2, smoothing: 0, vmax: 2.5, peakEnhancement: 2.5, peakDirection: [0.6, -0.8, 0], peakCellRadiusDeg: 20.905,
+    peakTieCount: 1, peakSignificance: 3.4
+};
+const map = {
+    ...common, frequency: 2, smoothing: 2, vmax: 1.5, peakEnhancement: 1.5, peakDirection: [-0.8, 0, 0.6], peakCellRadiusDeg: 19.348,
+    peakTieCount: 3, peakSignificance: -2.1
+};
 
 const render = (props) => renderToStaticMarkup(
     <OrientationView
@@ -57,8 +63,11 @@ describe('the direction sphere\'s readouts are the raw histogram\'s', () => {
         expect(strip(html)).toContain('2.50×');
         expect(strip(html)).toContain('[0.60, -0.80, 0.00]');
         expect(strip(html)).toContain('3.4σ');
+        // The direction with its resolution: the peak cell's radius (plan item 2.5).
+        expect(strip(html)).toContain(' ± 20.9°, the cell radius at ν = 2');
         // Nothing of the smoothed map's own peak.
         expect(strip(html)).not.toContain('1.50×');
+        expect(strip(html)).not.toContain('19.3°');
         expect(strip(html)).not.toContain('equal cells');
         expect(strip(html)).not.toContain('not significant');
         // The colorbar and the legend describe what is drawn.
