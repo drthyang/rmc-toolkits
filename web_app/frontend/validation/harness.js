@@ -159,7 +159,10 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // rule, one on each side of the bar again — and arm C reads analyze_modulations'
 // long-wave and in-phase notes without what the pattern is evidence of
 // (inference); arm B unchanged.
-export const PROTOCOL_VERSION = '2026-10-19.19';
+// 2026-10-19.20: the held-out marginal pair re-set by a fresh blind author
+// from the updated spec (the marginal situation was re-set after F1's
+// corrected null raised the test's power, 2026-10-19).
+export const PROTOCOL_VERSION = '2026-10-19.20';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one
 // follows the full method.
