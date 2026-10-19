@@ -17,16 +17,17 @@
 
 import assert from 'node:assert/strict';
 import {
-    AXIS_ENHANCEMENT, CLUSTER_EFFECT, CLUSTER_Z, LOW_INDEX_CONE_DEG, MODAL_COORDINATION_SHARE, SIGNIFICANCE_SIGMA,
-    SPLIT_SITE_KURTOSIS, SPLIT_SITE_SE, TRIGONALITY_EFFECT, UNBONDED_APEX_FRACTION,
-    splitMemberSites, summarizeBondAngles, summarizeOrientation, summarizeSymmetry
+    LOW_INDEX_CONE_DEG, MODAL_COORDINATION_SHARE, SIGNIFICANCE_SIGMA, UNBONDED_APEX_FRACTION,
+    summarizeBondAngles, summarizeOrientation, summarizeSymmetry
 } from '../../copilotTools';
 import { auditAnswer, contextAuditFacts } from '../../llm/copilot/answerAudit';
 import { buildRunTools } from '../../llm/copilot/runTools';
 import { computeOutcome } from '../../llm/copilot/verdict';
 import { buildRunContext } from '../../llm/context/runContext';
 import { pointGroupFacts } from '../../llm/context/pointGroups';
-import { AXIS_CONE_DEG } from '../../workers/clusters';
+import {
+    AXIS_CONE_DEG, AXIS_ENHANCEMENT, CLUSTER_EFFECT, CLUSTER_Z, SPLIT_SITE_KURTOSIS, SPLIT_SITE_SE, TRIGONALITY_EFFECT, isSplitSite
+} from '../../workers/clusters';
 import { ASYMMETRY_FLAG_SIGMA, MAP_TEST_MIN_PAIRS } from '../../workers/orientation';
 import { AXIS_RESOLUTION_SIGMAS } from '../../workers/pcaKde';
 
@@ -126,12 +127,12 @@ export const BINDINGS = [
         find: 'flat or split, e.g. two wells',
         before: 12,
         number: /< ?(?<n>[−–-]?\d+(?:\.\d+)?) flat or split/,
-        constants: [constant('SPLIT_SITE_KURTOSIS', SPLIT_SITE_KURTOSIS, 'copilotTools.js, splitMemberSites')],
+        constants: [constant('SPLIT_SITE_KURTOSIS', SPLIT_SITE_KURTOSIS, 'workers/clusters.js, isSplitSite (list_sites; the cluster verdict\'s split member sites)')],
         statistic: { pattern: /\bPC1\b|per-axis/, says: `the PC1 excess kurtosis on a resolved axis, at least ${SPLIT_SITE_SE} sampling errors below zero` },
         verify: () => {
             const site = (kappa) => ({ referenceNumber: 1, count: 4000, axisResolved: [true, true, true], excessKurtosis: [kappa, 0, 0] });
-            assert.equal(splitMemberSites([site(SPLIT_SITE_KURTOSIS - 0.01)], [1]).length, 1);
-            assert.equal(splitMemberSites([site(SPLIT_SITE_KURTOSIS + 0.01)], [1]).length, 0, 'a kurtosis above the bound counted as split');
+            assert.equal(isSplitSite(site(SPLIT_SITE_KURTOSIS - 0.01)), true);
+            assert.equal(isSplitSite(site(SPLIT_SITE_KURTOSIS + 0.01)), false, 'a kurtosis above the bound counted as split');
         }
     },
     {
@@ -154,7 +155,7 @@ export const BINDINGS = [
         find: 'counts as significant',
         before: 14,
         number: /≥ (?<n>\d+(?:\.\d+)?)σ counts as significant/,
-        constants: [SIGMA, ASYMMETRY_SIGMA, constant('CLUSTER_Z', CLUSTER_Z, 'copilotTools.js')]
+        constants: [SIGMA, ASYMMETRY_SIGMA, constant('CLUSTER_Z', CLUSTER_Z, 'workers/clusters.js')]
     },
     {
         file: SIGNIFICANCE,
@@ -176,7 +177,7 @@ export const BINDINGS = [
         gate: 'a cluster statistic\'s z',
         find: 'clear their thresholds (z',
         number: /\(z ≥ (?<n>\d+(?:\.\d+)?) and/,
-        constants: [constant('CLUSTER_Z', CLUSTER_Z, 'copilotTools.js')]
+        constants: [constant('CLUSTER_Z', CLUSTER_Z, 'workers/clusters.js')]
     },
     {
         file: SIGNIFICANCE,
@@ -184,21 +185,21 @@ export const BINDINGS = [
         find: 'a relative change',
         number: /a relative change ≥ (?<n>\d+(?:\.\d+)?) %/,
         unit: '%',
-        constants: [constant('CLUSTER_EFFECT', CLUSTER_EFFECT, 'copilotTools.js')]
+        constants: [constant('CLUSTER_EFFECT', CLUSTER_EFFECT, 'workers/clusters.js')]
     },
     {
         file: SIGNIFICANCE,
         gate: 'the T2 trigonality effect',
         find: 'T2 trigonality',
         number: /T2 trigonality ≥ (?<n>\d+(?:\.\d+)?)/,
-        constants: [constant('TRIGONALITY_EFFECT', TRIGONALITY_EFFECT, 'copilotTools.js')]
+        constants: [constant('TRIGONALITY_EFFECT', TRIGONALITY_EFFECT, 'workers/clusters.js')]
     },
     {
         file: SIGNIFICANCE,
         gate: 'the axis-family enhancement',
         find: 'axis enhancement',
         number: /axis enhancement ≥ (?<n>\d+(?:\.\d+)?) ?×/,
-        constants: [constant('AXIS_ENHANCEMENT', AXIS_ENHANCEMENT, 'copilotTools.js')]
+        constants: [constant('AXIS_ENHANCEMENT', AXIS_ENHANCEMENT, 'workers/clusters.js')]
     },
     {
         file: SHELLS,
