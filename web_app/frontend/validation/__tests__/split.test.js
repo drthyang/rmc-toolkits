@@ -411,9 +411,10 @@ describe('where a finding stands, and validation batch 1', () => {
         const [[recomposed, { case: heldOut }]] = onTestCase();
         expect(recomposed).toBe(`2026-10-19-${heldOut}-recomposed`);
         expect(ids.filter((id) => id !== recomposed)).toEqual([
-            '2026-10-19-aplus-app-rules', '2026-10-19-asked-before', '2026-10-19-engine-verdicts', '2026-10-19-judgment-dev-cases',
-            '2026-10-19-list-sites-split', '2026-10-19-mode-polarisation', '2026-10-19-modulation-bar-and-family',
-            '2026-10-19-provenance-told', '2026-10-19-shell-catalogue', '2026-10-19-shell-cut-rule'
+            '2026-10-19-aplus-app-rules', '2026-10-19-asked-before', '2026-10-19-engine-verdicts', '2026-10-19-f5-shell-join',
+            '2026-10-19-judgment-dev-cases', '2026-10-19-list-sites-split', '2026-10-19-mode-polarisation',
+            '2026-10-19-modulation-bar-and-family', '2026-10-19-provenance-told', '2026-10-19-shell-catalogue',
+            '2026-10-19-shell-cut-rule'
         ]);
         expect(existsSync(join(FRONTEND, 'validation/findings/decisions.jsonl'))).toBe(false);
         const record = readFileSync(join(DECISIONS, `${recomposed}.json`), 'utf8');
