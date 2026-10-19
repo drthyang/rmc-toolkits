@@ -285,8 +285,13 @@ documented in [ALGORITHMS.md](ALGORITHMS.md) stands.
     lower bounds fully.
   - Subgroup enumeration instead of the greedy maximal group.
 - **Displacement Directions:**
-  - Making Auto (or a coarser ν) the default resolution instead of ν = 10. Measured during the
-    audit, 1 of 52 real sites exceeded 2σ at ν = 10, against 8–11 on Auto.
+  - ~~Making Auto (or a coarser ν) the default resolution instead of ν = 10.~~ Done (plan item
+    2.5, 2026-10-19): the page opens at Auto, the tool's tiling, and reads its readouts at smoothing
+    0. Measured during the audit, 1 of 52 real sites exceeded 2σ at ν = 10, against 8–11 on Auto.
+  - A direction finer than its cell: on Auto a small site's tiling is coarse (ν = 1 names a cube
+    axis only to within 31.7°). Reported since plan item 2.5 (the peak ± its cell's circumscribed
+    radius; unresolved above 15°; the map opens unsmoothed); still open: a direction estimate finer
+    than the cell (the lobe's own mean direction, or the orientation tensor's axis where it applies).
   - Removing or renaming the legacy `significance`/`peakZScore` fields.
   - A variance-matched map test, and an exact antipodal null at coarse ν.
   - A reference-position option, since coherent off-centring is invisible by construction.

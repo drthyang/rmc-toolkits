@@ -10,6 +10,16 @@
 // controls bar, the three viewport panels sit in one equal-height grid (axis
 // views : sphere : site picker = 3 : 6.5 : 6.5), and each panel's actions
 // (frame toggle, Reset, Save) live in its own header.
+//
+// The settings open at DIRECTION_DEFAULTS (directionSettings.js), the rule
+// the validation's arm A reads too: the resolution opens at Auto, the
+// engine's recommended frequency and the tiling the AI Copilot reads, with
+// the ν it chose in the Auto choice's label. Like every option here, a pick
+// is page state: it stays when the site changes, the tab is left and the page
+// returns, or another run opens (the page is never remounted), until the user
+// changes it (Auto included) or a Copilot step's Show in sets it. The
+// readouts come from the raw histogram whatever the smoothing
+// (useDirectionHistogram).
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { isStaticMode } from '../browserData';
@@ -20,6 +30,8 @@ import InfoBadge from '../ui/InfoBadge';
 import OrientationView from './OrientationView';
 import SiteStructurePanel from './SiteStructurePanel';
 import useSiteCloud from '../useSiteCloud';
+import useDirectionHistogram from '../useDirectionHistogram';
+import { autoResolutionLabel, cellCountOf, DIRECTION_DEFAULTS, FREQUENCY_OPTIONS } from '../directionSettings';
 import { siteLabel } from '../siteLabel';
 import AppFooter from './AppFooter';
 import './OrientationPage.css';
@@ -28,11 +40,6 @@ const numberFormat = (value, digits = 4) =>
     Number.isFinite(value) ? value.toFixed(digits) : '—';
 
 const DEFAULT_CLUSTER_THRESHOLD = 1.5;
-
-// Manual resolution choices (geodesic frequency ν → 10ν²+2 cells). 'auto' asks
-// the engine for recommended_frequency, the over-binning guard: the finest ν
-// whose cells still average at least 12 points.
-const FREQUENCY_OPTIONS = ['auto', 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24];
 
 const WEIGHT_OPTIONS = [
     { value: 'count', label: 'Count' },
@@ -46,13 +53,11 @@ export default function OrientationPage({ directory, localRun, dataEpoch = 0, re
     const [clusterThreshold, setClusterThreshold] = useState(DEFAULT_CLUSTER_THRESHOLD);
 
     // Histogram + display options (owned here, in the top controls bar).
-    // Default ν=10 (1002 cells) + 2× smoothing gives a legible map on a
-    // typical ~1000-copy site out of the box.
-    const [frequency, setFrequency] = useState(10);
-    const [weight, setWeight] = useState('count');
-    const [frame, setFrame] = useState('cartesian');
-    const [smoothing, setSmoothing] = useState(2);
-    const [minQuantile, setMinQuantile] = useState(0);
+    const [frequency, setFrequency] = useState(DIRECTION_DEFAULTS.frequency);
+    const [weight, setWeight] = useState(DIRECTION_DEFAULTS.weight);
+    const [frame, setFrame] = useState(DIRECTION_DEFAULTS.frame);
+    const [smoothing, setSmoothing] = useState(DIRECTION_DEFAULTS.smoothing);
+    const [minQuantile, setMinQuantile] = useState(DIRECTION_DEFAULTS.minQuantile);
     const [colormap, setColormap] = useState('viridis');
     const [contrast, setContrast] = useState(1);
     const [relief, setRelief] = useState(0.5);
@@ -72,12 +77,23 @@ export default function OrientationPage({ directory, localRun, dataEpoch = 0, re
         unitCell
     } = useSiteCloud({ directory, localRun, clusterThreshold, dataEpoch });
 
+    // The selected site's readout (raw histogram) and drawn map.
+    const histogram = useDirectionHistogram({
+        requestPca,
+        ready,
+        selectedRef,
+        clusterThreshold,
+        settings: { frequency, weight, frame, minQuantile, smoothing }
+    });
+    // Auto's label names the ν the engine chose for the site on screen.
+    const autoLabel = autoResolutionLabel(histogram.loadedRef === selectedRef ? histogram.readout : null);
+
     // "Show in Displacement Directions" from an AI Copilot step (App.jsx
     // `request`, a new `id` per click): select its site and, when it is one
     // of the offered resolutions, its sphere resolution ('auto' when the
     // Copilot let the engine choose). Smoothing, weight and frame stay as the
     // user set them, so the drawn map can differ from the Copilot's (which is
-    // unsmoothed); the significance tests use the raw counts either way.
+    // unsmoothed); the readouts use the raw counts either way.
     useEffect(() => {
         const params = request?.params;
         if (!params) return;
@@ -147,9 +163,17 @@ export default function OrientationPage({ directory, localRun, dataEpoch = 0, re
                                     <p>
                                         Geodesic frequency ν of the hex tiling (10ν² + 2 cells — hexagons
                                         plus the 12 pentagons every hexagonal tiling of a sphere must
-                                        contain). Auto picks the finest ν whose cells still average at
-                                        least 12 displacements, the guard against reading Poisson noise
-                                        as structure.
+                                        contain). Auto, the default, is the engine&apos;s choice and the
+                                        tiling the AI Copilot reads: the finest ν whose cells still
+                                        average at least 12 displacements, the guard against reading
+                                        Poisson noise as structure. Its label shows the ν it chose for
+                                        this site.
+                                    </p>
+                                    <p>
+                                        A tiling names a direction only to within its cell — at ν = 1
+                                        (twelve cells) up to 37.4° off, at ν = 2 about 20°; the peak
+                                        readout gives its cell&apos;s radius as ± R°. A finer ν places a
+                                        lobe more closely, with fewer atoms per cell.
                                     </p>
                                 </InfoBadge>
                             </>
@@ -162,7 +186,7 @@ export default function OrientationPage({ directory, localRun, dataEpoch = 0, re
                         >
                             {FREQUENCY_OPTIONS.map((option) => (
                                 <option key={option} value={option}>
-                                    {option === 'auto' ? 'Auto' : `ν=${option} (${10 * option * option + 2})`}
+                                    {option === 'auto' ? autoLabel : `ν=${option} (${cellCountOf(option)})`}
                                 </option>
                             ))}
                         </select>
@@ -252,8 +276,9 @@ export default function OrientationPage({ directory, localRun, dataEpoch = 0, re
                                     <p>
                                         Neighbour-diffusion passes over the cell graph (mass-conserving):
                                         each pass shares part of every cell's count with its neighbours,
-                                        trading resolution for a smoother, lower-noise map. The z-scores
-                                        and significance always come from the raw, unsmoothed counts.
+                                        trading resolution for a smoother, lower-noise map. It only
+                                        redraws the map: the peak, its direction and σ, and every test
+                                        under the sphere come from the raw, unsmoothed counts.
                                     </p>
                                 </InfoBadge>
                             </>
@@ -347,18 +372,16 @@ export default function OrientationPage({ directory, localRun, dataEpoch = 0, re
             {/* Three equal-height panels: axis views : sphere : site picker = 3 : 6.5 : 6.5. */}
             <div className="orient-layout">
                 <OrientationView
-                    requestPca={requestPca}
-                    ready={ready}
+                    result={histogram.map}
+                    readout={histogram.readout}
+                    loading={histogram.loading}
+                    error={histogram.error}
+                    loadedRef={histogram.loadedRef}
                     selectedRef={selectedRef}
                     selectedEllipsoid={selectedEllipsoid}
-                    clusterThreshold={clusterThreshold}
                     unitCell={unitCell}
-                    frequency={frequency}
-                    weight={weight}
                     frame={frame}
                     onFrameChange={setFrame}
-                    smoothing={smoothing}
-                    minQuantile={minQuantile}
                     colormap={colormap}
                     contrast={contrast}
                     relief={relief}

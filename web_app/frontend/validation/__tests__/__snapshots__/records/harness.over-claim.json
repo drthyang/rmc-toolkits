@@ -94,7 +94,6 @@
  "skills_offered": [
   "coordination-shells",
   "displacement-anisotropy",
-  "local-order",
   "local-symmetry",
   "rmc-fit-assessment"
  ],
@@ -126,13 +125,13 @@
   {
    "round": 0,
    "why": "first",
-   "sent": "27040 characters, sha256 90180c5f4fb831a9",
+   "sent": "26568 characters, sha256 59261fae344c9109",
    "num_ctx": null
   },
   {
    "round": 1,
    "why": "tools",
-   "sent": "38661 characters, sha256 c7cb4de6c4e2574e",
+   "sent": "36514 characters, sha256 b639772c35c65915",
    "num_ctx": null
   }
  ],
@@ -159,7 +158,7 @@
    ],
    "data": {
     "skill": "displacement-anisotropy",
-    "text": "# Displacement anisotropy and directions\n\n**Status: Draft: awaiting the user's interview.** Written from the 2026-10-10 spot check, the\nreview that followed, the PCA Ellipsoid and Displacement Directions algorithm notes, and the\ntools' checks; the split-site step, the 15° family rule and the peak-test rule were added in\nvalidation batch 1 (the 2026-10-14 tool review, approved by the user that day). A step marked \"(to\nconfirm with the user)\" is not yet the user's own practice: say in the answer which choice you\nmade.\n\nEach atom's displacement is its offset from its own reference site's mean position, so a site's\ncloud is centred by construction: a coherent off-centring shared by every copy moves the mean\nand is invisible here.\n\n## Steps\n\n1. **Rank the sites:** `list_sites` (optionally for one element). Per site: U_iso (Å²), the\n   principal RMS amplitudes, anisotropy = rms1/rms3, and Mardia's multivariate excess kurtosis\n   (0 for a Gaussian; > 0 heavy-tailed or peaked; < 0 flat or split, e.g. two wells). Sites come\n   sorted by |kurtosis|; the `largest_*_refs` name the extremes.\n   **A split site is not yet disorder.** Ordered antiphase displacements (a superstructure) give a\n   site exactly the same cloud as random two-site disorder: only the correlation between cells\n   differs. Before calling a split or flat site (negative kurtosis) random off-centring, run\n   `analyze_modulations`: an ordered zone-boundary point (or order at a general wavevector) of that\n   element makes it order with that q, not disorder.\n2. **One site at a time:** `analyze_displacement_directions` with `site_ref`. Pooling an element\n   over sites mixes their local frames (each vertex of an M₄ tetrahedron sits on its own 3m\n   axis), so a preference every site shares in its own frame cancels in the pooled map: an\n   isotropic pooled map is not evidence against a per-site or cluster distortion.\n3. **Read the significances, all calibrated one-sided σ** (≥ 3 is significant):\n   `peak.significance_sigma` (the peak cell, corrected over all cells), the whole map's departure\n   from isotropy, `orientation_tensor.anisotropy_significance_sigma` (Bingham), and the\n   +u/−u asymmetry z (a skewness the ellipsoid cannot show). A local z-score is never a\n   significance. **A preferred direction needs the peak test.** The map and the tensor tests show\n   anisotropy, which every anisotropic thermal ellipsoid has (an O flattened across its bond,\n   thermal motion only: map 7.2σ, peak 2.3σ): say \"anisotropic\", not \"a preferred direction\".\n4. **Directions:** `peak.direction_uvw` and the tensor's principal axis are direct-lattice\n   `[u v w]` directions (not plane normals); the map is not antipodally folded, so +u and −u\n   differ. Name the nearest low-index family (<100>, <110>, <111>) only when the angle to it is\n   under 15° — half the smallest angle between two such families (<110> to <111> is 35.3°);\n   otherwise give the `[u v w]` as measured.\n5. **Size, not only significance.** With thousands of atoms a tiny effect reaches 3σ: quote the\n   enhancement (× isotropic) or the anisotropy with its σ. For a cluster-level question\n   (trigonal versus tetragonal distortion of an M₄ cluster), use `analyze_clusters`: its <100>,\n   <110>, <111> gyration-axis families against the shuffle null, with effect size and z. The\n   shape is read at each cluster's own size, and a collective size fluctuation (breathing) is\n   reported on its own: it is not a shape distortion. Where the member sites are split, the null\n   already holds the distortion's amplitude, and only the pattern (axis families, trigonality)\n   can show it.\n\n## Judgment calls\n\n- The sphere resolution (the tool chooses from the point count; the page defaults to ν = 10)\n  and whether a result must hold at two resolutions (to confirm with the user).\n- Whether a 3–5σ direction with a small enhancement (under 1.2× isotropic) is reported as a\n  finding or as a hint (to confirm with the user).\n- When to report per-axis kurtosis (only on axes the PCA resolves) (to confirm with the user).\n- The 15° cone for naming a low-index family (batch 1; to confirm with the user).\n\n## Acceptance checklist\n\n- [ ] Sites are named by `ref` and element, with U_iso, anisotropy and kurtosis from the tool.\n- [ ] Directions are analysed per site, or pooling is stated with its caveat.\n- [ ] \"Preferred direction\" only with a peak significance ≥ 3σ, quoted with the enhancement; a\n      significant map or tensor test alone is called anisotropy.\n- [ ] `[u v w]` given as a direction, the low-index family named only within 15°.\n- [ ] A split site is called disorder only after `analyze_modulations` found no order of its\n      element.\n- [ ] Cluster-level claims rest on `analyze_clusters` (effect size and z).\n- [ ] No invented uncertainty: every number from a tool.\n\n## Known failure modes\n\n- **The pooled map read as \"no distortion\"** (review: 16 Ta sites pooled → isotropic). The\n  tool now notes the cancellation; per site and with `analyze_clusters` the Ta₄ clusters prefer\n  <111> compression (19 % vs 14 %, z = 11), with no <001> signal.\n- **Anisotropic thermal motion read as a preferred direction** (tool review, 2026-10-14, L3): the\n  direction check counted the map test, which any thermal ellipsoid passes. *Firm rule in the\n  app:* only the peak test makes a direction significant; the map test is reported as\n  anisotropy.\n- **Ordered antiphase displacements read as random off-centring** (validation arm A, the\n  zone-boundary dev case): the PCA cloud is split exactly as for two-site disorder;\n  `analyze_modulations` finds the order at (0, 0, ½) at > 8σ.\n- **A direction called preferred without significance.** *Firm rule in the app:* an answer that\n  claims a preferred displacement direction when every directions analysis of the question found\n  none at ≥ 3σ gets a warning under it.\n- **Effect size ignored:** thousands of clusters make a 1 % effect \"significant\"; the cluster\n  tool requires both its z and its effect size to clear their thresholds.\n- **Numbers differ from the page:** the tool lets the engine choose the resolution while the\n  page keeps its own (ν = 10, smoothed); say which you quote.\n\n## Report\n\nThe sites in question with U_iso, anisotropy and kurtosis; per site, the strongest direction with\nits enhancement and σ (or \"none at ≥ 3σ\"); the asymmetry where significant; for clusters, the\nanalyze_clusters result with effect size and z; and what the average ellipsoid cannot show.\n\nReferences (read one with read_skill and `reference`):\n- significance-reading: what each σ in the direction and cluster results tests, with the Demo's values."
+    "text": "# Displacement anisotropy and directions\n\n**Status: Draft: awaiting the user's interview.** Written from the 2026-10-10 spot check, the\nreview that followed, the PCA Ellipsoid and Displacement Directions algorithm notes, and the\ntools' checks. A step marked \"(to confirm with the user)\" is not yet the user's own practice: say\nin the answer which choice you made.\n\nEach atom's displacement is its offset from its own reference site's mean position, so a site's\ncloud is centred by construction: a coherent off-centring shared by every copy moves the mean\nand is invisible here.\n\n## Steps\n\n1. **Rank the sites:** `list_sites` (optionally for one element). Per site: U_iso (Å²), the\n   principal RMS amplitudes, anisotropy = rms1/rms3, and Mardia's multivariate excess kurtosis\n   (0 for a Gaussian; > 0 heavy-tailed or peaked; < 0 flat or split, e.g. two wells). Sites come\n   sorted by |kurtosis|; the `largest_*_refs` name the extremes.\n2. **One site at a time:** `analyze_displacement_directions` with `site_ref`. Pooling an element\n   over sites mixes their local frames (each vertex of an M₄ tetrahedron sits on its own 3m\n   axis), so a preference every site shares in its own frame cancels in the pooled map: an\n   isotropic pooled map is not evidence against a per-site or cluster distortion.\n3. **Read the significances, all calibrated one-sided σ** (≥ 3 is significant):\n   `peak.significance_sigma` (the peak cell, corrected over all cells), the whole map's departure\n   from isotropy, `orientation_tensor.anisotropy_significance_sigma` (Bingham), and the\n   +u/−u asymmetry z (a skewness the ellipsoid cannot show). A local z-score is never a\n   significance.\n4. **Directions:** `peak.direction_uvw` and the tensor's principal axis are direct-lattice\n   `[u v w]` directions (not plane normals); the map is not antipodally folded, so +u and −u\n   differ. Name the nearest low-index family (<100>, <110>, <111>) only when the angle to it is\n   small.\n5. **Size, not only significance.** With thousands of atoms a tiny effect reaches 3σ: quote the\n   enhancement (× isotropic) or the anisotropy with its σ. For a cluster-level question\n   (trigonal versus tetragonal distortion of an M₄ cluster), use `analyze_clusters`: its <100>,\n   <110>, <111> gyration-axis families against the shuffle null, with effect size and z.\n\n## Judgment calls\n\n- The sphere resolution (the tool chooses from the point count; the page defaults to ν = 10)\n  and whether a result must hold at two resolutions (to confirm with the user).\n- Whether a 3–5σ direction with a small enhancement (under 1.2× isotropic) is reported as a\n  finding or as a hint (to confirm with the user).\n- When to report per-axis kurtosis (only on axes the PCA resolves) (to confirm with the user).\n\n## Acceptance checklist\n\n- [ ] Sites are named by `ref` and element, with U_iso, anisotropy and kurtosis from the tool.\n- [ ] Directions are analysed per site, or pooling is stated with its caveat.\n- [ ] \"Preferred direction\" only with a significance ≥ 3σ, quoted with the enhancement.\n- [ ] `[u v w]` given as a direction, the low-index family named only when close.\n- [ ] Cluster-level claims rest on `analyze_clusters` (effect size and z).\n- [ ] No invented uncertainty: every number from a tool.\n\n## Known failure modes\n\n- **The pooled map read as \"no distortion\"** (review: 16 Ta sites pooled → isotropic). The\n  tool now notes the cancellation; per site and with `analyze_clusters` the Ta₄ clusters prefer\n  <111> compression (19 % vs 14 %, z = 11), with no <001> signal.\n- **A direction called preferred without significance.** *Firm rule in the app:* an answer that\n  claims a preferred displacement direction when every directions analysis of the question found\n  none at ≥ 3σ gets a warning under it.\n- **Effect size ignored:** thousands of clusters make a 1 % effect \"significant\"; the cluster\n  tool requires both its z and its effect size to clear their thresholds.\n- **Numbers differ from the page:** the tool lets the engine choose the resolution while the\n  page keeps its own (ν = 10, smoothed); say which you quote.\n\n## Report\n\nThe sites in question with U_iso, anisotropy and kurtosis; per site, the strongest direction with\nits enhancement and σ (or \"none at ≥ 3σ\"); the asymmetry where significant; for clusters, the\nanalyze_clusters result with effect size and z; and what the average ellipsoid cannot show.\n\nReferences (read one with read_skill and `reference`):\n- significance-reading: what each σ in the direction and cluster results tests, with the Demo's values."
    },
    "error": null,
    "ms": "<ms>",
@@ -304,7 +303,7 @@
    "checks": [
     {
      "level": "ok",
-     "text": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, O at (½, 0, 0), is 2.8× the median, -0.24σ after the correction)."
+     "text": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, O at (½, 0, 0), is 2.8× the median, 1.1σ after the correction)."
     },
     {
      "level": "note",
@@ -312,7 +311,7 @@
     }
    ],
    "data": {
-    "note": "zone_boundary rows are [q, ratio, percentile, sigma]: an element's displacement power at wavevector q (fractions of the cell's reciprocal axes) over its median across all q of the supercell grid (the diffuse background), the share of the compared modes (one per ±q pair, long waves with every |q_i| ≤ 0.25 left out) with less power, and the calibrated one-sided significance against independent displacements, corrected over all 21 zone-boundary points of the configuration's 3 elements, whichever the call names (≥ 3 with ratio ≥ 3 is order). strongest rows are [q, ratio, percentile, sigma]: the sigma of a general q (neither zone boundary nor long wave; a complex sum, corrected over the compared modes of every element), null otherwise. A ½ component is order that doubles the cell along that axis; order at a general q is correlation between cells (incommensurate or short-range) that does not.",
+    "note": "zone_boundary rows are [q, ratio, percentile, sigma]: an element's displacement power at wavevector q (fractions of the cell's reciprocal axes) over its median across all q of the supercell grid (the diffuse background), the share of the compared modes (one per ±q pair, long waves with every |q_i| ≤ 0.25 left out) with less power, and the calibrated one-sided significance against independent cells (each cell's own correlations kept), corrected over all 21 zone-boundary points of the configuration's 3 elements, whichever the call names (≥ 3 with ratio ≥ 3 is order). strongest rows are [q, ratio, percentile, sigma]: the sigma of a general q (neither zone boundary nor long wave; a complex sum, corrected over the compared modes of every element), null otherwise. A ½ component is order that doubles the cell along that axis; order at a general q is correlation between cells (incommensurate or short-range) that does not. diffuse is [lag, correlation, sigma]: the strongest correlation between a site's displacements in cells one lag apart that the power over the compared modes shows (+ in phase, − antiphase), and the significance of the 13 neighbour-cell lags together against independent cells (≥ 3 with |correlation| ≥ 0.1: correlation spread over many q).",
     "supercell": [
      8,
      8,
@@ -328,43 +327,43 @@
         "(0, 0, ½)",
         0.58,
         18.8,
-        -4.7
+        -6.4
        ],
        [
         "(0, ½, 0)",
         1.3,
         66.5,
-        -3.1
+        -3.5
        ],
        [
         "(0, ½, ½)",
         0.29,
         2.5,
-        -5.9
+        null
        ],
        [
         "(½, 0, 0)",
         3.8,
         99.5,
-        -0.7
+        0.5
        ],
        [
         "(½, 0, ½)",
         0.53,
         15.2,
-        -4.8
+        -6.7
        ],
        [
         "(½, ½, 0)",
         0.45,
         10.2,
-        -5.1
+        -7.3
        ],
        [
         "(½, ½, ½)",
         0.47,
         11.2,
-        -5.1
+        -7.1
        ]
       ],
       "strongest": [
@@ -384,8 +383,13 @@
         "(0.25, -0.375, -0.25)",
         3.3,
         99,
-        -7.7
+        -2.3
        ]
+      ],
+      "diffuse": [
+       "[1 -1 0]",
+       -0.12,
+       -1.3
       ]
      },
      {
@@ -396,43 +400,43 @@
         "(0, 0, ½)",
         0.75,
         20.8,
-        -5.2
+        -6.3
        ],
        [
         "(0, ½, 0)",
         0.66,
         12.2,
-        -5.7
+        -7.1
        ],
        [
         "(0, ½, ½)",
         0.87,
         33.5,
-        -4.7
+        -5.4
        ],
        [
         "(½, 0, 0)",
         2.8,
         99.5,
-        -0.2
+        1.1
        ],
        [
         "(½, 0, ½)",
         0.84,
         27.4,
-        -4.8
+        -5.7
        ],
        [
         "(½, ½, 0)",
         1.6,
         90.9,
-        -2.4
+        -1.7
        ],
        [
         "(½, ½, ½)",
         0.72,
         15.7,
-        -5.4
+        -6.6
        ]
       ],
       "strongest": [
@@ -446,14 +450,19 @@
         "(0.25, 0, ½)",
         2.2,
         99,
-        -7.7
+        -2.7
        ],
        [
         "(0.375, -0.125, -0.125)",
         1.9,
         98.5,
-        null
+        -4.7
        ]
+      ],
+      "diffuse": [
+       "[0 1 0]",
+       0.034,
+       -0.3
       ]
      },
      {
@@ -464,43 +473,43 @@
         "(0, 0, ½)",
         0.26,
         4.1,
-        -6
+        null
        ],
        [
         "(0, ½, 0)",
         0.94,
         46.2,
-        -3.8
+        -4.7
        ],
        [
         "(0, ½, ½)",
         0.44,
         12.7,
-        -5.2
+        -7.3
        ],
        [
         "(½, 0, 0)",
         2.998,
         98,
-        -1.3
+        -0.3
        ],
        [
         "(½, 0, ½)",
         0.22,
         2.5,
-        -6.3
+        null
        ],
        [
         "(½, ½, 0)",
         1.8,
         84.8,
-        -2.5
+        -2.3
        ],
        [
         "(½, ½, ½)",
         1,
         56.3,
-        -3.5
+        -4.3
        ]
       ],
       "strongest": [
@@ -508,13 +517,13 @@
         "(½, 0.25, -0.25)",
         3.2,
         99.5,
-        -7.9
+        -2.6
        ],
        [
         "(0.25, -0.375, 0.125)",
         3.2,
         99,
-        -8.1
+        -2.7
        ],
        [
         "(0.125, 0, 0)",
@@ -522,6 +531,11 @@
         99,
         null
        ]
+      ],
+      "diffuse": [
+       "[0 0 1]",
+       0.16,
+       0.7
       ]
      }
     ]

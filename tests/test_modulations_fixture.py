@@ -61,6 +61,8 @@ class ModulationsFixtureTests(unittest.TestCase):
             ("point", "zone_boundary", "ordered"), ("point", "general", "ordered"),
             ("point", "general", "below_sigma"), ("point", "zone_boundary", "below_ratio"),
             ("point", "long_wave", "long_wave"), ("point", "zone_boundary", "zone_boundary"),
+            ("diffuseOrder", True, "correlated_antiphase"), ("diffuseOrder", True, "correlated_in_phase"),
+            ("diffuseOrder", False, "below_sigma"), ("diffuseOrder", None, "too_few_modes"),
         ]:
             self.assertIn(wanted, seen)
 

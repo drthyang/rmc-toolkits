@@ -100,25 +100,27 @@ const TWO_LARGEST_SKILLS_TODAY = Object.freeze([
 // description says its shell does not depend on r_max (the tools +16).
 // Plan item 4.2 (2026-10-19) added 48: find_gr_peaks' description names a
 // joined shell's split (its parts and long − short; the tools +48).
+// Plan item 2.5 (2026-10-19) added 8: analyze_displacement_directions'
+// description gives the peak direction ± its cell's radius (the tools +9).
 // The batch-1 skill drafts (#71) add 2,704: the skills' prompt index +189,
 // read_skill's enum +6 (local-order), the two largest skills read whole
 // +2,510 (7,814 → 10,324).
 const DOCK_WORST_TURN_TODAY = Object.freeze({
     systemPrompt: 4951,
-    toolJson: 6860,
+    toolJson: 6868,
     contextBlock: 2286,
     question: 70,
     skills: 10324,
     analyses: 8724,
     replyReserve: 8192,
-    firstRequest: 14165,
-    prompt: 33212,
-    needed: 41404,
-    headroom: -8636,
-    lmStudioHeadroom: -4540
+    firstRequest: 14174,
+    prompt: 33221,
+    needed: 41413,
+    headroom: -8645,
+    lmStudioHeadroom: -4549
 });
 // By how much the dock's worst turn overflows the window today.
-const DOCK_OVERFLOW_TOKENS_TODAY = 8636;
+const DOCK_OVERFLOW_TOKENS_TODAY = 8645;
 
 // Arm B's first request on each dev case is 9.7k–11.2k tokens; the largest,
 // since plan item 4.6, is the fit-data case: its fit tools (assess_convergence,
@@ -126,25 +128,26 @@ const DOCK_OVERFLOW_TOKENS_TODAY = 8636;
 // (before it, dev-symmetry-lowering: 10,391 tokens, 35,119 needed, 2,351 over).
 const ARM_B_LARGEST_DEV_CASE = 'dev-fit-unconverged';
 // find_gr_peaks' description (candidate #6) added 16 tokens to its tools, and
-// 49 more with a joined shell's split (plan item 4.2). The batch-1 skill
-// drafts (#71) add 2,705 (the prompt index +189, read_skill's enum +5, the
-// two largest skills +2,510).
+// 49 more with a joined shell's split (plan item 4.2); the directions tool's
+// description 8 more with the cell radius (plan item 2.5; the request +9).
+// The batch-1 skill drafts (#71) add 2,705 (the prompt index +189,
+// read_skill's enum +5, the two largest skills +2,510).
 const ARM_B_WORST_TURN_TODAY = Object.freeze({
     systemPrompt: 4611,
-    toolJson: 4642,
+    toolJson: 4651,
     contextBlock: 1574,
     question: 610,
     skills: 10324,
     analyses: 8723,
     replyReserve: 8192,
-    firstRequest: 11437,
-    prompt: 30483,
-    needed: 38675,
-    headroom: -5907,
-    lmStudioHeadroom: -1811
+    firstRequest: 11445,
+    prompt: 30491,
+    needed: 38683,
+    headroom: -5915,
+    lmStudioHeadroom: -1819
 });
 // By how much arm B's worst turn (largest dev case) overflows the window today.
-const ARM_B_OVERFLOW_TOKENS_TODAY = 5907;
+const ARM_B_OVERFLOW_TOKENS_TODAY = 5915;
 
 // --- the turn ------------------------------------------------------------------------
 
@@ -353,8 +356,8 @@ describe('the worst realistic turn in a 32,768-token window (plan 5.5)', () => {
     // The run policy's minimum for an LM Studio model (48k) holds both worst
     // turns with the full reply reserve, under both of the guard's rules
     // (planContext's, and LM Studio's prompt + LMSTUDIO_REPLY_MIN_TOKENS):
-    // the dock's with 7,748 tokens to spare, arm B's (dev-fit-unconverged since 4.6) with 10,477
-    // (10,452 and 13,182 before the batch-1 skill drafts).
+    // the dock's with 7,739 tokens to spare, arm B's (dev-fit-unconverged since 4.6) with 10,469
+    // (10,444 and 13,173 before the batch-1 skill drafts).
     it('fits both worst turns in the live runs\' LM Studio minimum (48k, validation/runPolicy.js)', () => {
         const window = MIN_CONTEXT_TOKENS.lmstudio;
         expect(window).toBe(49152);
@@ -364,6 +367,6 @@ describe('the worst realistic turn in a 32,768-token window (plan 5.5)', () => {
             expect(plan.needed).toBe(turn.numbers.needed);
             expect(turn.numbers.prompt + LMSTUDIO_REPLY_MIN_TOKENS).toBeLessThanOrEqual(window);
         }
-        expect([window - dockTurn.numbers.needed, window - armBTurn.numbers.needed]).toEqual([7748, 10477]);
+        expect([window - dockTurn.numbers.needed, window - armBTurn.numbers.needed]).toEqual([7739, 10469]);
     });
 });

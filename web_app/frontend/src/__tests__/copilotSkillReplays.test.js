@@ -21,7 +21,15 @@ const read = (name) => readFileSync(new URL(`../../public/demo/${name}`, import.
 const RMC6F = read('GTS_250K.rmc6f');
 const structure = structureFromRmc6f({ path: 'Demo/GTS_250K.rmc6f', text: RMC6F });
 const request = inProcessEngine(RMC6F);
-const hostTools = buildCopilotTools({ request, structure, elements: Object.keys(structure.elementCounts).sort() });
+// The demo's partials, as the Dashboard reads them: the shell catalogue
+// compute_bond_angles judges a window against (the rule the Workbench asks on).
+const partialsName = 'GTS_250K_PDFpartials.csv';
+const plotFiles = [{
+    name: partialsName,
+    plotKind: 'pdf_partials',
+    plotData: plotDataFromText({ name: partialsName, plotKind: 'pdf_partials', text: read(partialsName) })
+}];
+const hostTools = buildCopilotTools({ request, structure, elements: Object.keys(structure.elementCounts).sort(), plotFiles });
 
 // The demo's own χ² history, its three logs end to end, as the Dashboard reads it.
 const logs = ['GTS_250K-00.log', 'GTS_250K-01.log', 'GTS_250K-02.log']
@@ -105,7 +113,8 @@ describe('coordination-shells', () => {
             { text: 'The octahedra are incomplete: coordination 3.75.\nOutcome: achieved — computed.' }
         ]);
         expect(steps[0].status).toBe('failed');
-        expect(toolMessages[0].checks[0].text).toMatch(/^Refused: Only 47 % of the Ta atoms/);
+        // The CN shortfall against the whole shell, by path (the one cut rule, approved by the user 2026-10-19).
+        expect(toolMessages[0].checks[0].text).toMatch(/^Refused: The window cuts the first Ta–Se shell: it holds 3\.75 Se per Ta \(shell_ab\.cn_in_window\) of the shell's 6 \(shell_ab\.cn/);
         expect(toolMessages[0].data).not.toHaveProperty('modes');
         expect(toolMessages[0].data).not.toHaveProperty('mean_deg');
     });

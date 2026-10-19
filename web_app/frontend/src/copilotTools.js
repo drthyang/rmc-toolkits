@@ -19,7 +19,7 @@
 import { describeSymmetry, orbitLabel } from './symmetryModel';
 import { siteLabel } from './siteLabel';
 import { crystalOrientationRows, invert3, matVec3, transpose3, unitCellVectors } from './pcaCrystalFrame';
-import { cnMatches, countsCut, describePointGroup, lowerGroupTolerance, methodCheck, pointGroupFacts } from './llm';
+import { cnMatches, describePointGroup, lowerGroupTolerance, methodCheck, pointGroupFacts, shellCatalogue, windowCut } from './llm';
 import { symmetryNoiseFloor } from './llm/context/runContext';
 import { symmetryShifts } from './symmetryShift';
 import { nearestLowIndex } from './viewer3d';
@@ -250,6 +250,23 @@ const anglesToCell = (direction, unitCell) => unitCell.map((edge) => {
     return roundFixed(Math.acos(Math.max(-1, Math.min(1, cosine))) * 180 / Math.PI, 1);
 });
 
+// The peak direction is the peak cell's centre: it names a direction only to
+// within the cell's circumscribed radius (the engine's peakCellRadiusDeg, the
+// largest angle from the centre to the cell's corners). Within
+// LOW_INDEX_CONE_DEG the direction is resolved finely enough to tell the
+// <100>, <110> and <111> families apart; a wider cell (every cell at ν ≤ 2,
+// 19.3–37.4°) does not resolve it. Arm A+ applies the same bound
+// (validation/armA.js, SWEEP_RULES.directionResolved).
+export const directionResolved = (radiusDeg) => Number.isFinite(radiusDeg) && radiusDeg <= LOW_INDEX_CONE_DEG;
+
+// The peak direction as the checks write it: the crystal [u v w], else the
+// Cartesian triple.
+const peakDirectionText = (peak) => {
+    if (Array.isArray(peak.direction_uvw)) return `[${peak.direction_uvw.join(' ')}]`;
+    if (Array.isArray(peak.direction_cartesian)) return `(${peak.direction_cartesian.join(', ')}) (Cartesian)`;
+    return 'the peak cell\'s centre';
+};
+
 // direction_uvw, angles_to_abc_deg and principal_axis_uvw need the unit cell.
 const ORIENTATION_SHAPE = {
     note: 'string',
@@ -267,7 +284,8 @@ const ORIENTATION_SHAPE = {
         significance_sigma: 'number|null',
         direction_cartesian: oneOf(XYZ, 'null'),
         'direction_uvw?': oneOf(XYZ, 'null'),
-        'angles_to_abc_deg?': XYZ
+        'angles_to_abc_deg?': XYZ,
+        radius_deg: 'number|null'
     },
     map_significance_sigma: 'number|null',
     antipodal_asymmetry: 'number|null',
@@ -295,6 +313,9 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
         peak.direction_uvw = cartesianToUvw(direction, unitCell);
         peak.angles_to_abc_deg = anglesToCell(direction, unitCell);
     }
+    // How finely the peak names its direction: the peak cell's radius.
+    const radius = Number.isFinite(payload.peakCellRadiusDeg) ? roundFixed(payload.peakCellRadiusDeg, 1) : null;
+    peak.radius_deg = radius;
     const tensor = {
         eigenvalues: (payload.orientationEigenvalues || []).map((value) => round(value)),
         anisotropy: round(payload.orientationAnisotropy),
@@ -306,7 +327,8 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
     if (axisRows) tensor.principal_axis_uvw = axisRows[0].crystalDirection.map((value) => roundFixed(value, 2));
     const data = {
         note: 'enhancement = density / isotropic (1 = isotropic); significances are calibrated one-sided sigma; '
-            + 'the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal',
+            + 'the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal; '
+            + 'peak.radius_deg is the peak cell\'s radius: the peak names its direction only to within it',
         site: payload.referenceNumber ?? null,
         element: payload.element ?? 'all',
         frequency: payload.frequency,
@@ -327,9 +349,16 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
         checks.push({ level: 'warn', text: `Only ${payload.usedPoints} displacement vectors: the map is noisy.` });
     }
     if (payload.peakSignificance >= SIGNIFICANCE_SIGMA) {
+        const strength = `the peak cell is ${round(payload.peakEnhancement)}× isotropic at ${round(payload.peakSignificance)}σ (corrected over all cells)`;
+        const where = `${peakDirectionText(peak)}${radius == null ? '' : ` ± ${radius}°, the cell radius at ν = ${payload.frequency}`}`;
         checks.push({
             level: 'ok',
-            text: `Preferred direction: the peak cell is ${round(payload.peakEnhancement)}× isotropic at ${round(payload.peakSignificance)}σ (corrected over all cells).`
+            // A cell wider than LOW_INDEX_CONE_DEG cannot say which low-index
+            // family the direction belongs to: say so, and name none.
+            text: radius != null && !directionResolved(radius)
+                ? `Preferred direction: ${strength}, toward ${where}. The direction is not resolved finer than ${radius}° `
+                    + `(over ${LOW_INDEX_CONE_DEG}°), so it names no <100>, <110> or <111> family.`
+                : `Preferred direction: ${where}; ${strength}.`
         });
     } else {
         checks.push({ level: 'note', text: `No significant peak direction (${round(payload.peakSignificance)}σ < ${SIGNIFICANCE_SIGMA}σ).` });
@@ -344,7 +373,9 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
             level: 'ok',
             text: `The displacements are anisotropic: the map departs from isotropy at ${round(payload.mapSignificance)}σ. `
                 + (payload.peakSignificance >= SIGNIFICANCE_SIGMA
-                    ? 'The peak test above names the preferred direction.'
+                    ? (radius != null && !directionResolved(radius)
+                        ? 'The peak test above places the preferred direction only to within its cell.'
+                        : 'The peak test above names the preferred direction.')
                     : 'Thermal ellipsoids pass this test too: it is not a preferred direction, which needs the peak test.')
         });
     }
@@ -502,10 +533,16 @@ const lengthSummary = (lengths) => {
 
 const BOND_LENGTHS = oneOf({ mean_A: 'number|null', unique_bonds: 'number', 'sd_A?': 'number|null' }, 'null');
 const ANGLE_BAND = { share: 'number|null', mean_deg: 'number|null' };
-// A refused window keeps the counts that show the cut and drops the angles
-// (mean_deg … histogram_10deg_sin_corrected), with `refused` saying why; the
-// B–C window and bond read 'same as A–B' for one shared window; `polyhedron`
-// only for a whole shell of about six (octahedron) or four (tetrahedron).
+// A bond window against the run's first shell of its pair (the shell
+// catalogue's window(): what it holds of the shell, its CN from the partial
+// g(r) beside the shell's).
+const SHELL_READING = { note: 'string', window_A: ['number', 'number'], cn: 'number|null', cn_in_window: 'number|null', holds: 'string' };
+// A refused window keeps the counts and the shell readings that show the cut
+// and drops the angles (mean_deg … histogram_10deg_sin_corrected), with
+// `refused` saying why; the B–C window and bond read 'same as A–B' for one
+// shared window; `shell_ab` only where the run reads a first shell for the
+// A–B pair, `shell_bc` only for a B–C window of its own; `polyhedron` only for
+// a whole shell of about six (octahedron) or four (tetrahedron).
 const BOND_ANGLES_SHAPE = {
     triplet: 'string',
     window_ab_A: ['number', 'number'],
@@ -519,7 +556,11 @@ const BOND_ANGLES_SHAPE = {
     'histogram_10deg_sin_corrected?': ['number|null'],
     bond_ab: BOND_LENGTHS,
     bond_bc: oneOf('string', BOND_LENGTHS),
-    coordination: { note: 'string', counts: ['number'], mean: 'number|null' },
+    coordination: {
+        note: 'string', counts: ['number'], mean: 'number|null', modal: 'number|null', modal_share: 'number|null', unbonded_share: 'number|null'
+    },
+    'shell_ab?': SHELL_READING,
+    'shell_bc?': SHELL_READING,
     'refused?': 'string',
     'polyhedron?': oneOf(
         { ideal: 'string', cis_below_135_deg: ANGLE_BAND, trans_above_135_deg: ANGLE_BAND },
@@ -527,28 +568,42 @@ const BOND_ANGLES_SHAPE = {
     )
 };
 
+// A bond window against its first shell, as the data hold it (shell_ab, shell_bc).
+const shellReadingOf = (reading, centre, partner) => ({
+    note: `the first ${centre}–${partner} shell (find_gr_peaks); cn, cn_in_window: ${partner} per ${centre}`,
+    window_A: [...reading.shell.window],
+    cn: round(reading.shell.cn),
+    cn_in_window: round(reading.cn),
+    holds: reading.holds
+});
+
 /**
- * The bond-angle result the model reads, with deterministic checks: a window
- * that misses most central atoms, or in which fewer than 60 % of them share
- * the most common bond count, cuts the coordination shell (the 2026-10-10 spot
- * check read such a cut as "incomplete octahedra"). Such a window is refused —
- * its angles are not the polyhedron's — unless the user chose it
- * (`windowConfirmed`, the coordination-shells skill's firm rule; its 60 %
- * threshold is an interview item): the counts that show the cut are returned
- * instead. The rule is the shell module's counts reading (llm/context/
- * shells.js countsCut, MODAL_COORDINATION_SHARE and UNBONDED_APEX_FRACTION),
- * on the engine's coordinationSummary. For a whole shell of about six or four
- * neighbours the angles are also read against an ideal octahedron or
+ * The bond-angle result the model reads, with deterministic checks. A window
+ * that cuts the coordination shell is refused — its angles are not the
+ * polyhedron's (the 2026-10-10 spot check read such a cut as "incomplete
+ * octahedra") — unless the user chose it (`windowConfirmed`, the
+ * coordination-shells skill's firm rule): the counts and shell readings that
+ * show the cut are returned instead. The rule is the one the Workbench asks
+ * on (llm/context/shells.js windowCut; approved by the user, 2026-10-19):
+ * each bond window the tool reads (`shells`, the catalogue's window() for
+ * each of its shellWindows: A–B, and B–C when it has a window of its own; null
+ * where the run reads no shell) cuts its shell when it meets it and holds
+ * fewer partner atoms than the whole shell by max(0.5, 15 % of the shell's
+ * CN). Only where there is no shell to compare the A–B window with does the
+ * engine's coordinationSummary decide (the counts fallback). The counts stay
+ * in the data as information either way. For a whole shell of about six or
+ * four neighbours the angles are also read against an ideal octahedron or
  * tetrahedron, and the sin θ-corrected histogram shows the trans angles raw
  * counts hide.
  */
-export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) => {
+export const summarizeBondAngles = (payload, { windowConfirmed = false, shells = [] } = {}) => {
     const total = payload.angleCount || 0;
     const coordination = Array.isArray(payload.coordination) ? payload.coordination : [];
     const apexTotal = coordination.reduce((sum, count) => sum + count, 0);
     // The engine's summary of the counts (triplets.py coordination_summary,
     // workers/triplets.js coordinationSummaryOf): the mean, the modal count
-    // and the shares the window refusal reads.
+    // and its share, the share with no bond — information in the data, and
+    // the counts fallback of the cut rule where the run reads no shell.
     const summary = payload.coordinationSummary;
     if (!summary || typeof summary !== 'object') {
         throw new Error('the bond-angle engine returned no coordinationSummary (triplets.py bond_angle_summary, workers/triplets.js bondAngleSummary)');
@@ -571,9 +626,23 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
         coordination: {
             note: 'counts[n] = central atoms with exactly n A–B bonds in the window',
             counts: coordination,
-            mean: round(meanCoordination)
+            mean: round(meanCoordination),
+            modal: Number.isFinite(summary.modal) ? summary.modal : null,
+            modal_share: round(summary.modalShare, 2),
+            unbonded_share: round(summary.unbondedShare, 2)
         }
     };
+    // Each bond window the tool reads (its shellWindows: A–B, and B–C when it
+    // has a window of its own) by the one cut rule (shells.js windowCut, the
+    // Workbench's): against the run's first shell of its pair, the A–B window
+    // with the engine's counts as the fallback where there is none.
+    const windows = [
+        { key: 'shell_ab', partner: a, reading: shells[0] ?? null, counts: summary },
+        ...(payload.sharedEnds ? [] : [{ key: 'shell_bc', partner: c, reading: shells[1] ?? null, counts: null }])
+    ].map((item) => ({ ...item, verdict: windowCut(item.reading, item.counts) }));
+    windows.forEach(({ key, partner, reading }) => {
+        if (reading) data[key] = shellReadingOf(reading, b, partner);
+    });
     const checks = [...parseWarningCheck(payload)];
     // Where the window comes from is method (llm copilot/method.js): arm C's
     // method 'off' sends the failure and the plain remedy.
@@ -584,24 +653,33 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
             ' or check the elements.'));
         return { data, checks };
     }
-    let cutText = null;
-    const counts = countsCut(summary);
-    if (counts.by === 'unbonded') {
-        cutText = `${Math.round(summary.unbondedShare * 100)} % of the ${b} atoms have no ${a}–${b} bond in the window: it misses most of the shell.`;
-    } else if (counts.by === 'count-spread') {
+    // Why each cut window cuts: the CN shortfall against its shell (by path),
+    // or, with no shell to compare, the counts (the fallback's words).
+    const cutTexts = windows.filter(({ verdict }) => verdict.cut).map(({ key, partner, reading, verdict }) => {
+        if (verdict.by === 'cn-margin') {
+            return `The window cuts the first ${b}–${partner} shell: it holds ${round(reading.cn)} ${partner} per ${b} (${key}.cn_in_window) `
+                + `of the shell's ${round(reading.shell.cn)} (${key}.cn, in ${key}.window_A), fewer by at least max(0.5, 15 % of the shell's CN).`;
+        }
+        if (verdict.by === 'unbonded') {
+            return `${Math.round(summary.unbondedShare * 100)} % of the ${b} atoms have no ${a}–${b} bond in the window: it misses most of the shell.`;
+        }
         const present = coordination.map((count, bonds) => (count > 0 ? bonds : null)).filter((bonds) => bonds != null);
-        cutText = `Only ${Math.round(summary.modalShare * 100)} % of the ${b} atoms have the most common count (${summary.modal} ${a}–${b} bonds); `
+        return `Only ${Math.round(summary.modalShare * 100)} % of the ${b} atoms have the most common count (${summary.modal} ${a}–${b} bonds); `
             + `the counts spread from ${present[0]} to ${present.at(-1)}. The window cuts through a coordination shell.`;
-    }
+    });
+    const cutText = cutTexts.length ? cutTexts.join(' ') : null;
     // For the coordination answer check (review L5): the A–B count in this
-    // window, and whether it is the whole shell or a window the user chose.
+    // window, and whether it is the whole shell (its CN the shell's within the
+    // CN margin; with no shell to compare, not cut by the counts) or a window
+    // the user chose.
+    const wholeShell = windows[0].verdict.whole;
     const facts = {
         coordination: {
             centre: b,
             partner: a,
             window: payload.bond12 ?? null,
             cn: round(meanCoordination),
-            whole_shell: !cutText,
+            whole_shell: wholeShell,
             confirmed: windowConfirmed
         }
     };
@@ -617,8 +695,7 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
         return { data, checks, facts };
     }
     if (cutText) checks.push({ level: 'warn', text: `${cutText} Kept: the user chose this window; say that its angles are of a partial shell.` });
-    const cut = Boolean(cutText);
-    if (!cut) {
+    if (!cutText) {
         checks.push({ level: 'ok', text: `${total} angles around ${apexTotal} ${b} atoms (mean coordination ${round(meanCoordination)}).` });
     }
     // Only a whole shell is read against an ideal polyhedron: a cut TaSe6
@@ -626,7 +703,7 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
     // shell: an A–B–A triplet with one window. A mixed (Se–Ta–Te) or split
     // (two windows) triplet's angles are a subset of the polyhedron's.
     const oneShell = a === c && payload.sharedEnds === true;
-    const reference = cut || !oneShell ? null : polyhedronReference(payload.binCenters || [], payload.counts || [], total, meanCoordination);
+    const reference = !wholeShell || !oneShell ? null : polyhedronReference(payload.binCenters || [], payload.counts || [], total, meanCoordination);
     if (reference) data.polyhedron = reference;
     if (reference?.trans_above_135_deg) {
         // A band with no angles has no mean: say "none", never "null°".
@@ -642,6 +719,28 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
     }
     return { data, checks, facts };
 };
+
+/**
+ * compute_bond_angles' bond windows (its `shellWindows`): the A–B window
+ * around the central atom B, and the B–C window when the call gives one. The
+ * Workbench asks about these before the tool runs (llm clarify.js), and the
+ * tool refuses on the same windows by the same rule; `apply` puts a chosen
+ * window back into the arguments, confirmed when it is the user's own.
+ */
+const bondShellWindows = (args) => [
+    {
+        centre: args.apex,
+        partner: args.end1,
+        window: [args.r12_min, args.r12_max],
+        apply: ([lo, hi], { confirmed = false } = {}) => ({ ...args, r12_min: lo, r12_max: hi, ...(confirmed ? { window_confirmed: true } : {}) })
+    },
+    ...(args.r23_min != null && args.r23_max != null ? [{
+        centre: args.apex,
+        partner: args.end2,
+        window: [args.r23_min, args.r23_max],
+        apply: ([lo, hi], { confirmed = false } = {}) => ({ ...args, r23_min: lo, r23_max: hi, ...(confirmed ? { window_confirmed: true } : {}) })
+    }] : [])
+];
 
 // --- analyze_clusters ------------------------------------------------------------
 
@@ -1008,8 +1107,12 @@ export const summarizeClusters = (payload) => {
 // --- analyze_modulations ---------------------------------------------------------
 
 // analyze_modulations' own result budget (characters): the rows of four
-// elements with an ordered point's polarisation, and its checks.
-export const MODULATION_RESULT_BUDGET = 4000;
+// elements with an ordered point's polarisation and their diffuse rows, and
+// its checks. Since plan item 4.4's diffuse rows and note the largest results
+// are three elements each: the Demo's 3,687 (three long-wave notes and the
+// in-phase note), dev-zone-boundary's 3,344 (an ordered point); a fourth
+// element adds about 500.
+export const MODULATION_RESULT_BUDGET = 4500;
 
 const qLabel = (q) => `(${q.map((value) => {
     const rounded = Math.round(value * 1000) / 1000;
@@ -1029,12 +1132,18 @@ const POLARISATION_ROW = {
     share: 'number',
     'nearest_low_index?': { uvw: ['number', 'number', 'number'], off_deg: 'number|null' }
 };
+// The diffuse test (plan item 4.4) as a row: [lag, correlation, sigma] — the
+// neighbour-cell lag whose correlation the power fits most strongly, that
+// correlation, the whole neighbour-cell pattern's σ; absent when the grid
+// has too few compared modes.
+const DIFFUSE_ROW = ['string', 'number|string|null', 'number|string|null'];
 const MODULATIONS_SHAPE = {
     note: 'string',
     supercell: ['number', 'number', 'number'],
     wavevectors: 'number',
     elements: [{
-        element: 'string', sites: 'number', zone_boundary: [MODE_ROW], strongest: [MODE_ROW], 'polarisation?': [POLARISATION_ROW]
+        element: 'string', sites: 'number', zone_boundary: [MODE_ROW], strongest: [MODE_ROW], 'polarisation?': [POLARISATION_ROW],
+        'diffuse?': DIFFUSE_ROW
     }],
     'untestable_zone_boundary?': ['string']
 };
@@ -1063,9 +1172,27 @@ const barCell = (value, bar, usual) => {
 // The ratio and σ in a row. A null σ in a sentence is σ = −∞ (an undefined
 // one is said in words), written as the tool always wrote it.
 const ratioCell = (ratio, rules) => barCell(ratio, rules.ratio, round(ratio, 2));
-const sigmaCell = (sigma, rules) => (sigma == null ? null : (sigma >= rules.sigmaMax ? '>8' : barCell(sigma, rules.sigma, roundFixed(sigma, 1))));
-const sigmaText = (sigma) => (sigma > 8 ? '> 8σ' : `${round(sigma, 2)}σ`);
+const sigmaCell = (sigma, rules, bar = rules.sigma) => (sigma == null ? null : (sigma >= rules.sigmaMax ? '>8' : barCell(sigma, bar, roundFixed(sigma, 1))));
+// σ in a sentence: past 8 as '> 8σ'; null (σ = −∞: 1 − (1 − p)^F rounds to 1,
+// so σ < −8.2) as '< −8σ' — until F1 no nearest miss was ever that far below
+// the background, and the sentence printed 'nullσ'.
+const sigmaText = (sigma) => {
+    if (sigma == null) return '< −8σ';
+    return sigma > 8 ? '> 8σ' : `${round(sigma, 2)}σ`;
+};
 const sameQ = (a, b) => a.length === b.length && a.every((value, axis) => value === b[axis]);
+// A neighbour-cell lag [u v w] as written: "[1 -1 0]".
+const lagLabel = (lag) => `[${lag.join(' ')}]`;
+// A signed correlation to two significant digits, never printed onto its bar
+// (F2's rule on |Γ| against rules.diffuseCorrelation): nearer than six
+// digits, '<0.1' (or '>-0.1' for a negative one).
+const correlationCell = (correlation, rules) => {
+    if (correlation == null) return null;
+    const cell = barCell(Math.abs(correlation), rules.diffuseCorrelation, round(Math.abs(correlation), 2));
+    if (typeof cell === 'string') return correlation < 0 ? `>-${rules.diffuseCorrelation}` : cell;
+    return correlation < 0 ? -cell : cell;
+};
+const signedText = (value) => (value < 0 ? `−${Math.abs(value)}` : `+${value}`);
 
 // No element has an ordered zone-boundary point: one sentence for all of
 // them, naming the nearest miss (the largest σ over every element tested). A
@@ -1112,12 +1239,15 @@ const polarisedText = (row) => {
  * point, and its absence once for every element (noCellDoubling). Every
  * `because` the engine can give has an entry (copilotTools.test.js checks).
  */
+// "Ga", "Ga and Se", "Ga, Se and Ta".
+const listText = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0]);
+
 export const MODULATION_SENTENCES = {
     cellDoubling: {
         ordered_point: ({ element, point, family, polarisation }) => ({
             level: 'ok',
             text: `Ordered ${element} displacements at q = ${qLabel(point.q)}: ${round(point.ratio, 3)}× the median power, `
-                + `${sigmaText(point.sigma)} against independent displacements (corrected over ${family} zone-boundary points) `
+                + `${sigmaText(point.sigma)} against independent cells (corrected over ${family} zone-boundary points) `
                 + '— a superstructure doubling the cell along '
                 + `${['a', 'b', 'c'].filter((_, axis) => point.q[axis]).join(', ')}${polarisedText(polarisation)}.`
         }),
@@ -1130,7 +1260,7 @@ export const MODULATION_SENTENCES = {
         ordered_mode: ({ element, mode, family, polarisation }) => ({
             level: 'ok',
             text: `Correlated ${element} displacements between cells at q = ${qLabel(mode.q)}: ${round(mode.ratio, 3)}× the median power, `
-                + `${sigmaText(mode.sigma)} against independent displacements (corrected over ${family} compared modes) — order at a `
+                + `${sigmaText(mode.sigma)} against independent cells (corrected over ${family} compared modes) — order at a `
                 + `general wavevector (incommensurate, or short-range correlation between cells), not a cell doubling${polarisedText(polarisation)}.`
         }),
         no_ordered_mode: null,
@@ -1147,6 +1277,30 @@ export const MODULATION_SENTENCES = {
         below_ratio: null,
         strongest_not_long_wave: null,
         undefined_statistic: null,
+        no_displacements: null
+    },
+    // Plan item 4.4: correlation between neighbouring cells spread over many
+    // q. In antiphase it is short-range order, said per element; in phase it
+    // is neighbouring cells moving together, said once for every element.
+    diffuseOrder: {
+        correlated_antiphase: ({ element, diffuse, family }) => ({
+            level: 'ok',
+            text: `Short-range order between cells: ${element} displacements in neighbouring cells ${lagLabel(diffuse.lag)} apart move in antiphase `
+                + `(correlation ${signedText(round(diffuse.correlation, 2))}; the neighbour-cell pattern ${sigmaText(diffuse.sigma)} against independent `
+                + `cells, corrected over ${family} elements), the power spread over many q toward the zone boundary with no single mode `
+                + 'standing out — order that alternates between cells over a short range, not a long-range superstructure.'
+        }),
+        correlated_in_phase: ({ elements, strongest, diffuse }) => ({
+            level: 'note',
+            text: `${listText(elements)} displacements are correlated in phase between neighbouring cells (${elements.length > 1 ? `the strongest, ${strongest}, ` : ''}`
+                + `${signedText(round(diffuse.correlation, 2))} between cells ${lagLabel(diffuse.lag)} apart, ${sigmaText(diffuse.sigma)} against `
+                + 'independent cells): the power beyond the long waves leans toward the zone centre — neighbouring cells moving together '
+                + '(as RMC\'s long waves and acoustic-like thermal motion give), not a superstructure.'
+        }),
+        below_correlation: null,
+        below_sigma: null,
+        undefined_statistic: null,
+        too_few_modes: null,
         no_displacements: null
     }
 };
@@ -1172,16 +1326,26 @@ export const summarizeModulations = (payload, { unitCell = null } = {}) => {
     const polarisations = new Map(tested.map((entry) => [entry.element, orderedPoints(entry).map((point) => polarisationRow(point, unitCell))]));
     const polarisationOf = (element, q) => polarisations.get(element).find((row) => row.q === qLabel(q)) ?? null;
     const anyPolarisation = [...polarisations.values()].some((rows) => rows.length);
+    // The diffuse row of an element whose grid holds enough compared modes for the test.
+    const diffuseRow = (entry) => (entry.diffuse?.df != null && entry.diffuse.lag
+        ? [lagLabel(entry.diffuse.lag), correlationCell(entry.diffuse.correlation, rules), sigmaCell(entry.diffuse.sigma, rules, rules.diffuseSigma)]
+        : null);
+    const anyDiffuse = tested.some((entry) => diffuseRow(entry));
     const data = {
         note: 'zone_boundary rows are [q, ratio, percentile, sigma]: an element\'s displacement power at wavevector q (fractions '
             + 'of the cell\'s reciprocal axes) over its median across all q of the supercell grid (the diffuse background), the '
             + 'share of the compared modes (one per ±q pair, long waves with every |q_i| ≤ 0.25 left out) with less power, and '
-            + `the calibrated one-sided significance against independent displacements, corrected over all ${family.zoneBoundaryPoints} zone-boundary `
+            + `the calibrated one-sided significance against independent cells (each cell's own correlations kept), corrected over all ${family.zoneBoundaryPoints} zone-boundary `
             + `points of the configuration's ${familyElements.length} elements, whichever the call names (≥ 3 with ratio ≥ 3 is order). `
             + 'strongest rows are [q, ratio, percentile, sigma]: the sigma of a general q (neither zone boundary nor long wave; a '
             + 'complex sum, corrected over the compared modes of every element), null otherwise. '
             + 'A ½ component is order that doubles the cell along that axis; order at a general q is correlation between cells '
             + '(incommensurate or short-range) that does not.'
+            + (anyDiffuse
+                ? ' diffuse is [lag, correlation, sigma]: the strongest correlation between a site\'s displacements in cells one lag '
+                    + 'apart that the power over the compared modes shows (+ in phase, − antiphase), and the significance of the 13 '
+                    + 'neighbour-cell lags together against independent cells (≥ 3 with |correlation| ≥ 0.1: correlation spread over many q).'
+                : '')
             + (anyPolarisation
                 ? ' polarisation: each ordered point\'s displacement direction (the leading axis of the element\'s power tensor at '
                     + 'q) as a direct-lattice [u v w], an axis, and share, the fraction of the power at q along it (1: one '
@@ -1199,7 +1363,8 @@ export const summarizeModulations = (payload, { unitCell = null } = {}) => {
             strongest: entry.strongest.slice(0, 3).map((mode) => [
                 qLabel(mode.q), ratioCell(mode.ratio, rules), roundFixed(mode.percentile, 1), sigmaCell(mode.sigma, rules)
             ]),
-            ...(polarisations.get(entry.element).length ? { polarisation: polarisations.get(entry.element) } : {})
+            ...(polarisations.get(entry.element).length ? { polarisation: polarisations.get(entry.element) } : {}),
+            ...(diffuseRow(entry) ? { diffuse: diffuseRow(entry) } : {})
         }))
     };
     if (payload.untestable?.length) data.untestable_zone_boundary = payload.untestable.map((flags) => qLabel(flags.map((flag) => flag / 2)));
@@ -1235,6 +1400,20 @@ export const summarizeModulations = (payload, { unitCell = null } = {}) => {
         });
     });
     tested.forEach((entry) => say('longWave', entry.verdict.longWave, { element: entry.element, mode: entry.strongest[0] }));
+    // Diffuse order between cells (plan item 4.4): each element in antiphase
+    // on its own; every element in phase in one note, naming the most
+    // significant. An engine without the test (no diffuseOrder) says nothing.
+    const diffuseBecause = (entry) => entry.verdict.diffuseOrder?.because;
+    tested.filter((entry) => diffuseBecause(entry) === 'correlated_antiphase').forEach((entry) => say('diffuseOrder', entry.verdict.diffuseOrder, {
+        element: entry.element, diffuse: entry.diffuse, family: family.diffuse
+    }));
+    const inPhase = tested.filter((entry) => diffuseBecause(entry) === 'correlated_in_phase');
+    if (inPhase.length) {
+        const top = inPhase.reduce((best, entry) => ((entry.diffuse.sigma ?? -Infinity) > (best.diffuse.sigma ?? -Infinity) ? entry : best));
+        say('diffuseOrder', top.verdict.diffuseOrder, { elements: inPhase.map((entry) => entry.element), strongest: top.element, diffuse: top.diffuse });
+    }
+    tested.filter((entry) => entry.verdict.diffuseOrder && !['correlated_antiphase', 'correlated_in_phase'].includes(diffuseBecause(entry)))
+        .forEach((entry) => say('diffuseOrder', entry.verdict.diffuseOrder, {}));
     if (payload.untestable?.length) {
         checks.push({ level: 'note', text: `An odd supercell axis cannot hold ${data.untestable_zone_boundary.join(', ')}: not tested.` });
     }
@@ -1463,13 +1642,20 @@ const elementProperty = (elements, description) => (
  * run's structureFromRmc6f, or a server folder's /api/structure; none for a
  * coords-only file) enables detect_symmetry and measure_symmetry_lowering, and
  * so does a server folder's `basisOmitted` (above the finder's site cap, where
- * both answer "not analysed", as for the browser's basis).
+ * both answer "not analysed", as for the browser's basis). `plotFiles` and
+ * `runSettings` are the run's (CopilotChat's props of the same names): with
+ * the structure they give the run's shell catalogue (llm/context/shells.js),
+ * against which compute_bond_angles judges its windows by the rule the
+ * Workbench asks on; without a partials file there is none.
  * Model arguments reach the engines only through the explicit
  * mapping in each run(), never by spreading.
  */
-export const buildCopilotTools = ({ request, structure, elements = [] }) => {
+export const buildCopilotTools = ({ request, structure, elements = [], plotFiles = null, runSettings = null }) => {
     const tools = [];
     const unitCellFrom = (payload) => unitCellVectors(payload?.latticeVectors ?? structure?.latticeVectors, payload?.supercell ?? structure?.supercell);
+    // The run's one shell reading, memoised per partials data, structure and
+    // run settings: the catalogue the Workbench's questions read for the same run.
+    const shells = () => shellCatalogue({ plotFiles, structure, runSettings });
 
     if (request) {
         tools.push({
@@ -1499,7 +1685,7 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
             name: 'analyze_displacement_directions',
             description: 'Histogram the displacement directions of one site (site_ref, from list_sites) or of every atom '
                 + 'of one element (element; "all" pools every atom) on the sphere, and test them: the peak direction '
-                + '(Cartesian and crystal [u v w]) with its calibrated significance, the whole-map test against '
+                + '(Cartesian and crystal [u v w], ± its cell\'s radius) with its calibrated significance, the whole-map test against '
                 + 'isotropy, the +u/−u asymmetry, and the orientation-tensor anisotropy.',
             parameters: {
                 type: 'object',
@@ -1563,21 +1749,9 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                 required: ['end1', 'apex', 'end2', 'r12_min', 'r12_max']
             },
             // The bond windows, for the Workbench's check that a window does
-            // not cut a coordination shell before this runs (llm clarify.js).
-            shellWindows: (args) => [
-                {
-                    centre: args.apex,
-                    partner: args.end1,
-                    window: [args.r12_min, args.r12_max],
-                    apply: ([lo, hi], { confirmed = false } = {}) => ({ ...args, r12_min: lo, r12_max: hi, ...(confirmed ? { window_confirmed: true } : {}) })
-                },
-                ...(args.r23_min != null && args.r23_max != null ? [{
-                    centre: args.apex,
-                    partner: args.end2,
-                    window: [args.r23_min, args.r23_max],
-                    apply: ([lo, hi], { confirmed = false } = {}) => ({ ...args, r23_min: lo, r23_max: hi, ...(confirmed ? { window_confirmed: true } : {}) })
-                }] : [])
-            ],
+            // not cut a coordination shell before this runs (llm clarify.js),
+            // and for this tool's own refusal: the same windows, the same rule.
+            shellWindows: bondShellWindows,
             dataShape: BOND_ANGLES_SHAPE,
             label: ({ end1, apex, end2, r12_min: lo, r12_max: hi }) => (
                 `Bond angles ${end1}–${apex}–${end2}${Number.isFinite(lo) && Number.isFinite(hi) ? ` · ${lo}–${hi} Å` : ''}`
@@ -1612,7 +1786,11 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                     params.r23Min = args.r23_min;
                     params.r23Max = args.r23_max;
                 }
-                return summarizeBondAngles(await request('triplets', params, { signal }), { windowConfirmed: args.window_confirmed === true });
+                const payload = await request('triplets', params, { signal });
+                // Each window the Workbench reads, against the run's shell of its pair.
+                const catalogue = shells();
+                const readings = bondShellWindows(args).map(({ centre, partner, window }) => catalogue?.window(centre, partner, window) ?? null);
+                return summarizeBondAngles(payload, { windowConfirmed: args.window_confirmed === true, shells: readings });
             }
         });
 
@@ -1678,9 +1856,10 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
             },
             dataShape: MODULATIONS_SHAPE,
             label: ({ element }) => `Superstructure test${element ? ` · ${element}` : ''}`,
-            // Three elements with an ordered point and its polarisation run to
-            // ~2.9k characters with the checks (dev-zone-boundary), a fourth
-            // element past 3k: within the default budget the rows would be cut.
+            // Three elements with an ordered point, its polarisation and the
+            // diffuse rows run to ~3.3k characters with the checks
+            // (dev-zone-boundary), a fourth element to ~3.9k: within the
+            // default budget the rows would be cut.
             resultBudget: MODULATION_RESULT_BUDGET,
             run: async ({ element }, { signal } = {}) => summarizeModulations(
                 await request('modulations', element ? { element } : {}, { signal }),
