@@ -1990,7 +1990,10 @@ dev generator kinds it found order in 8.8 % of the Jahn–Teller, 12.1 % of the 
 31.8 % of the octahedral-cluster configurations; the calibrated null in 0.1–0.6 %, each of its
 three tests at its 0.135 % (`tests/test_modulation_calibration.py`; the decision record has every
 count and interval). The weak zone-boundary order of the judgment kind (one isotropic site) is
-found in 99 % of its configurations where it was a coin flip (44 %).
+found in 99 % of its configurations where it was a coin flip (44 %), at the amplitude the judgment
+pair then had. Protocol 2026-10-19.19 re-set that amplitude so that the expected (median) σ against
+this null is 3σ, a coin flip again; `validation/judgment-spec.md` gives the formula: the power at
+q is σ²/(3σ² + δ²)·χ'²₃(nδ²/σ²) against three weighted χ²₁ terms.
 
 **The verdict** (the engine's since 2026-10-19, architecture candidate 5; `summarizeModulations`
 says it through `MODULATION_SENTENCES`). A zone-boundary point is ordered displacement when its
@@ -2109,7 +2112,9 @@ mode with its polarisation; note — a long wave dominates; ok — each element 
 between neighbouring cells ("Short-range order between cells: … move in antiphase …, not a
 long-range superstructure"); note — every element correlated in phase, in one sentence ("…
 neighbouring cells moving together (as RMC's long waves and acoustic-like thermal motion give), not
-a superstructure"); note — untestable points. Each element's `diffuse` row is [lag, correlation, σ],
+a superstructure"); note — untestable points. The long-wave note's "(common in RMC)" and the
+in-phase note's parenthetical say what the pattern is evidence of: method advice
+(`methodCheck`), which the validation's arm C reads without (protocol 2026-10-19.19). Each element's `diffuse` row is [lag, correlation, σ],
 the correlation shown by F2's rule against its 0.1 bar. A nearest miss whose σ is −∞ reads
 "< −8σ" (it printed "nullσ" until the calibrated null first reached it). A ratio or σ
 below its bar (3, 3σ) is never printed rounded onto it (finding F2, 2026-10-19): where its usual
