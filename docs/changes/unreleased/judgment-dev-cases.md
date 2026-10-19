@@ -22,7 +22,10 @@
   the dev cases' ids and values.
 - **The report:** each split with judgment cases gets a table of each column's mean score per
   situation, over the subset and over the rest (`report.js` `renderJudgment`). The truth of a
-  judgment case says so (`truth.judgment`).
+  judgment case says so (`truth.judgment`), and a transcript's planted truth names the situation.
+- **Two situations through the harness, scripted** (`judgment.test.js`): a window that cuts the
+  octahedral clusters' split shell is asked about and the skip keeps the whole shell; a
+  superstructure claimed below the bar scores as a claim while the answer check flags it.
 - **The split test:** a judgment case may use a paired kind's options, and no test case is one yet.
   `TEST_SET_SHA256` is unchanged. The holdout scan never lets a judgment case remove a test token.
 - Arms A, A+ and D on the five cases are appended to `validation/baseline/arm-a-dev.json`. The

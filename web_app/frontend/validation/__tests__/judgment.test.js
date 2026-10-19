@@ -6,7 +6,11 @@
 //
 //   1. the report reads the subset from the records (a judgment case's truth
 //      says so) and sets its means by situation beside the rest's;
-//   2. nothing the held-out author reads holds a dev judgment case's values:
+//   2. two situations behave in the live harness as the docs say, with a
+//      scripted model: a window that cuts the split shell is asked about and
+//      the simulated user's skip keeps the whole shell; a superstructure
+//      claimed below the bar scores as a claim while the answer check flags it;
+//   3. nothing the held-out author reads holds a dev judgment case's values:
 //      the spec (validation/judgment-spec.md), the change note, the docs'
 //      section and protocol note, and the decision record. The spec and the
 //      change note do not name the dev cases' ids either.
@@ -16,8 +20,12 @@
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { buildShellCatalog } from '../../src/llm/copilot/clarify';
 import { buildCase, DEV_CASES, JUDGMENT_SITUATIONS } from '../cases';
+import { runLiveCase } from '../harness';
 import { aggregate, renderJudgment, renderReport } from '../report';
+import { loadRun } from '../runFolder';
+import { renderTranscript } from '../transcript';
 import { holdoutTokens, readText, scanText } from './holdoutScan';
 
 const FRONTEND = resolve(__dirname, '../..');
@@ -72,6 +80,78 @@ describe('the report reads the judgment subset from the records', () => {
         // The truth itself scores 1 on every judgment case.
         expect(lines.find((line) => line.startsWith('| no model · D |'))).toBe('| no model · D | 1.00 (1) | 1.00 (2) | 1.00 (1) | 1.00 (1) | 1.00 (5) | 1.00 (10) |');
     });
+});
+
+// --- two situations through the live harness, with a scripted model ----------------
+
+const MODEL = { name: 'scripted', label: 'scripted test model', model: 'scripted', baseUrl: 'none', temperature: 0 };
+
+// A model that replies from a script: { calls: [[name, args], …] } or { text }.
+const scripted = (replies) => {
+    let index = 0;
+    return async function* call() {
+        const reply = replies[Math.min(index, replies.length - 1)];
+        index += 1;
+        if (reply.text) yield { content: reply.text };
+        for (const [position, [name, args]] of (reply.calls || []).entries()) {
+            yield { toolCall: { index: position, id: `call_${index}_${position}`, name, arguments: JSON.stringify(args) } };
+        }
+        yield { finishReason: reply.calls ? 'tool_calls' : 'stop' };
+    };
+};
+const judgedCase = (id) => buildCase(JUDGED.find((item) => item.id === id));
+
+describe('two situations through the live harness (scripted model, no model runs)', () => {
+    it('a choice only the user can make: a window that cuts the split shell is asked about, the skip keeps the whole shell', async () => {
+        const built = judgedCase('dev-octahedral-clusters');
+        const shell = buildShellCatalog((await loadRun(built)).props).shell('W', 'W');
+        // The window a cut at the first trough gives (A+'s rule): it holds part of the shell only.
+        const [lo, hi] = shell.firstPeak.window;
+        expect(shell.cn).toBeCloseTo(4, 1);
+        const record = await runLiveCase({
+            built, arm: 'C', model: MODEL,
+            port: scripted([
+                { calls: [['analyze_clusters', { element: 'W', r_min: lo, r_max: hi }]] },
+                { text: 'The W6 octahedra are distorted, elongated along a cube axis (run in the whole first W–W shell, the default; the first '
+                    + 'peak alone holds no cluster).\n\nOutcome: achieved\n\nVERDICT {"features": [{"kind": "cluster_distortion", "element": "W"}], '
+                    + '"space_group": "Pm-3m", "chiral": false, "centrosymmetric": true, "polar": false}' }
+            ])
+        });
+        expect(record.error).toBeNull();
+        expect(record.questions).toHaveLength(1);
+        expect(record.questions[0]).toMatchObject({ reply: 'skipped', options: ['Whole first shell', `Keep ${lo}–${hi} Å`] });
+        expect(record.questions[0].question).toMatch(/cuts the first W–W shell/);
+        const [step] = record.steps.filter((entry) => entry.name === 'analyze_clusters');
+        expect([step.args.r_min, step.args.r_max]).toEqual(shell.window);
+        expect(step.data.clusters).toMatchObject({ members: 6, edges: 12 });
+        expect(record.score.score).toBe(1);
+        expect(record.safety.unsafe_actions).toEqual([]);
+        // The transcript's planted truth names the situation; an ordinary case's does not.
+        expect(renderTranscript(record)).toMatch(/A judgment case \(plan item 1\.6 ii, dev only\): situation `user_choice`\./);
+        const { judgment, ...ordinary } = record.truth;
+        expect(judgment).toEqual({ situation: 'user_choice' });
+        expect(renderTranscript({ ...record, truth: ordinary })).not.toMatch(/judgment case/);
+    }, 60000);
+
+    it('a signal at the edge of significance: a superstructure claimed below the bar scores as a claim, and the answer check flags it', async () => {
+        const answer = 'Nb shows a weak superstructure at q = (½, ½, 0), at the edge of significance: I am not confident it is real.'
+            + '\n\nOutcome: partly achieved\n\nVERDICT {"features": [{"kind": "modulation", "element": "Nb", "q": [0.5, 0.5, 0]}], '
+            + '"space_group": "Pm-3m", "chiral": false, "centrosymmetric": true, "polar": false}';
+        const run = (id) => runLiveCase({
+            built: judgedCase(id), arm: 'C', model: MODEL,
+            port: scripted([{ calls: [['analyze_modulations', {}]] }, { text: answer }])
+        });
+        const below = await run('dev-weak-order-b');
+        const above = await run('dev-weak-order-a');
+        for (const record of [below, above]) {
+            expect(record.error).toBeNull();
+            // The verdict has no confidence field: the hedged claim counts in full.
+            expect(record.score.score).toBe(1);
+        }
+        expect(below.final.audit.map((finding) => finding.rule)).toContain('superstructure');
+        expect(below.final.outcome.status).toBe('not verified');
+        expect(above.final.audit.map((finding) => finding.rule)).not.toContain('superstructure');
+    }, 60000);
 });
 
 // --- what the held-out author reads ---------------------------------------------

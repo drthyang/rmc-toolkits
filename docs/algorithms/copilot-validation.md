@@ -165,7 +165,12 @@ ambiguous or wrong, so a model that reads the tools with judgment has room to ad
 - **How the report reads it.** Each split with judgment cases gets a table: each column's mean
   score per situation, over the subset and over the rest, every run counted (`report.js`
   `renderJudgment`; a record is a judgment case's when its truth says so, `truth.judgment`). The
-  comparison beside the case score (part i) lists their components like any case's.
+  comparison beside the case score (part i) lists their components like any case's, and a
+  transcript's planted truth names the situation.
+- **Two situations through the harness** (`judgment.test.js`, a scripted model): a window that
+  cuts the octahedral clusters' split shell is asked about, and the simulated user's skip keeps
+  the whole shell; a superstructure claimed below the bar scores as a claim while the answer
+  check flags it and the computed verdict is "not verified".
 - **Where the results are.** In the PR, `validation/baseline/arm-a-dev.json` and the `arms.test.js`
   pins, not here: the held-out author may read this document.
 

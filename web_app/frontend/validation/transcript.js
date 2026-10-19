@@ -146,6 +146,11 @@ export const renderTranscript = (record) => {
     lines.push(record.truth.summary);
     lines.push('');
     lines.push(fence({ features: record.truth.features, tolerated: record.truth.tolerated, symmetry: record.truth.symmetry }));
+    // The judgment subset (plan item 1.6 ii): which situation the case tests.
+    if (record.truth.judgment) {
+        lines.push('');
+        lines.push(`A judgment case (plan item 1.6 ii, dev only): situation \`${record.truth.judgment.situation}\`.`);
+    }
     if (record.truth.traps?.length) {
         lines.push('');
         lines.push('Traps in this case:');

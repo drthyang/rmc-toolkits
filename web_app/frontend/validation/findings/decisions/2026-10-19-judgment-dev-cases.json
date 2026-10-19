@@ -23,6 +23,8 @@
     "web_app/frontend/validation/__tests__/arms.test.js › the judgment subset: where A+'s fixed joining rules fail, the readings show which rule",
     "web_app/frontend/validation/__tests__/judgment.test.js › one row per column: the mean per situation, over the subset and over the rest, every run counted",
     "web_app/frontend/validation/__tests__/judgment.test.js › the committed dev baseline: the subset's five cases beside the other ten, in every column",
+    "web_app/frontend/validation/__tests__/judgment.test.js › a choice only the user can make: a window that cuts the split shell is asked about, the skip keeps the whole shell",
+    "web_app/frontend/validation/__tests__/judgment.test.js › a signal at the edge of significance: a superstructure claimed below the bar scores as a claim, and the answer check flags it",
     "web_app/frontend/validation/__tests__/judgment.test.js › no id (in the spec and the change note), composition, cluster, length near its element, direction or wavevector of a dev judgment case",
     "web_app/frontend/validation/__tests__/judgment.test.js › no length of a dev judgment case anywhere, even far from an element",
     "web_app/frontend/validation/__tests__/scoring.test.js › the truth itself (arm D) scores 1 on every case, dev and test",
