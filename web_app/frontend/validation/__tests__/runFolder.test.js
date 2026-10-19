@@ -66,8 +66,8 @@ describe('the record states the view and the context it ran with (plan 1.3)', ()
         const record = await runLiveCase({ built, arm: 'C', model: MODEL, callModel: answering() });
         expect(record.error).toBeNull();
         expect(record.view).toEqual(DEFAULT_VIEW);
-        expect(record.context.sections).toEqual(expect.arrayContaining(['structure', 'symmetry', 'pair_correlations']));
-        expect(record.context.absent).toEqual(expect.arrayContaining(['run_settings', 'pca_displacements', 'convergence']));
+        expect(record.context.sections).toEqual(['structure', 'symmetry', 'pair_correlations', 'datasets']);
+        expect(record.context.absent).toEqual(['configuration_optimization', 'run_settings', 'pca_displacements', 'partial_weights', 'convergence']);
         expect(record.context.other_sections).toEqual([]);
         expect(record.context.earlier_turns).toBe(0);
         expect([...record.context.sections, ...record.context.absent].sort()).toEqual([...CONTEXT_SECTIONS].sort());

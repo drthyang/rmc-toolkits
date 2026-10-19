@@ -29,6 +29,15 @@ its context (`"run": "rmc_run"`) and a case id names the case's kind. The record
 id; the model never sees the record. So no truth reaches the model except through the tools
 (checked by `caseBlind.test.js`, below).
 
+**The run is the app's.** `runFolder.js` `loadRun` writes a case's files as the `rmc_run` folder
+and opens it through the run module's in-process adapter (`src/openRunFolder.js`), the same module
+that hands the dock its run in the app (`src/copilotRun.js`, through `useCopilotRun.js`): the
+Dashboard's plot parse and order, the plot kinds from `detectPlotKind`, the structure parse, the
+symmetry at the view's tolerance with its ladder, the engine tools, and an engine that runs the
+Copilot worker's handler in-thread. The view is `HARNESS_VIEW`, the app's defaults: the Detected
+SG card at 0.2 Å with its ladder, nothing hidden, no PCA table (the PCA Ellipsoid page not
+visited), Live Data off. Arms A and A+ read the same run, with the ladder off.
+
 ## Cases
 
 Nine kinds, each a **dev** case (for improving tools and skills) and a held-out **test** case (for
@@ -120,11 +129,31 @@ A, A+ and D have no model and are unaffected; their records keep protocol 2026-1
 ## Records, transcripts, findings
 
 Each live run writes:
-- `<case>__<arm>__<model>__r<n>.json`: every step with who decided it (the model or the
-  Workbench), the reasoning and text the model wrote before the call, the arguments, the checks
-  and the result it read, then the final answer, verdict, score, answer checks, provenance,
-  safety, and the truth;
+- `<case>__<arm>__<model>__r<n>.json`: the view the run was opened with and what the model was
+  told about it (below), every step with who decided it (the model or the Workbench), the
+  reasoning and text the model wrote before the call, the arguments, the checks and the result it
+  read, then the final answer, verdict, score, answer checks, provenance, safety, and the truth;
 - `.md`: the same as a self-contained transcript, with numbered steps and the planted truth last.
+
+**What the run had (plan item 1.3).** The app's Copilot can be handed more than a case gives the
+harness, so each record states it:
+- `view`: the run module's normalised view, `{ toleranceA, hiddenPlots, pcaSites, liveData,
+  ladder }`. By default it is `HARNESS_VIEW`: 0.2 Å with the ladder, nothing hidden, no PCA table,
+  Live Data off. In the app the tolerance is the user's ladder pick, and the PCA table joins once
+  the PCA Ellipsoid page has computed it;
+- `context`: `sections`, the context sections the model read (`harness.js` `CONTEXT_SECTIONS`, in
+  `buildRunContext`'s order); `absent`, the sections it lacked; `earlier_turns: 0`, since every run
+  is one fresh question (the app sends up to eight earlier turns). A case has `structure`,
+  `symmetry`, `pair_correlations` and `datasets` (its partial g(r)). It has no
+  `configuration_optimization` (no move counters), `run_settings`, `partial_weights` or
+  `convergence`, and no `pca_displacements` unless the PCA table is on.
+
+The transcript prints both under its header. **The PCA-table option** (`run.js live --pca-table`,
+dev set only; `runLiveCase({ pcaTable: true })`) gives each run the PCA table from its own engine,
+the rows `list_sites` reads, as after a visit to the PCA Ellipsoid page. It is a dev check of what
+that section changes and is off by default. Such runs write to their own folder (`…_pca-table`),
+and `report` gives them their own column (`<model> · <arm> + PCA table`). It changes the context the
+model reads, so those runs are not comparable with the default runs.
 
 `report` puts every record side by side (case × model·arm), keeps failed runs as score 0, and
 lists every run used.
@@ -272,6 +301,8 @@ npx vite-node validation/run.js -- live --arm C --model qwen3.8-27b --split dev 
 npx vite-node validation/run.js -- live --arm B --model qwen3.8-27b --split test --runs 3 --final
 # Claude Sonnet 5.5: test set, arm B, $12 cap
 ANTHROPIC_API_KEY=… npx vite-node validation/run.js -- live --arm B --model claude-sonnet-5.5 --split test --runs 3 --final
+# dev check only: the same with the PCA table in the context (own folder, own report column)
+npx vite-node validation/run.js -- live --arm B --model qwen3.8-27b --split dev --runs 1 --pca-table
 # side by side
 npx vite-node validation/run.js -- report --in validation/runs/<dir> --in validation/runs/<dir> --out validation/runs/report.md
 ```
