@@ -519,6 +519,7 @@ The host passes engine tools as plain objects; the module validates and runs the
   name: 'compute_bond_angles',           // /^[a-z][a-z0-9_]{0,63}$/, unique
   description: '…',                      // what it computes and when to use it, for the model
   parameters: { type: 'object', properties: {…}, required: [...] },
+  dataShape: { triplet: 'string', 'mean_deg?': 'number|null', … },   // the shape of `data` (below)
   label: (args) => 'Bond angles Se–Ta–Se',   // step-card title (optional)
   page: 'geometry',                      // host page key for the step's button (optional)
   pageParams: (args) => ({ … }),         // what that page loads to show the same analysis (optional)
@@ -554,6 +555,33 @@ The host passes engine tools as plain objects; the module validates and runs the
   arguments for the window the user chose (`confirmed`: they kept their own).
 - Parameters may be arrays (`items`, `minItems`, `maxItems`) and objects (their own `properties` /
   `required`); a list sent as JSON text or a bare comma list is accepted.
+
+**The data's shape (`dataShape`).** With numbers by reference the model writes
+`{{r3.sites.0.shift_A}}`: the paths of a tool's `data` are an interface it writes against, and a key
+renamed or dropped breaks every reference to it. So a tool that returns data declares the shape of
+that data on its own spec (`copilot/dataShape.js`, plain data that reads like the JSON):
+
+```js
+dataShape: {
+  note: 'string',                        // a JSON type: number (finite), string, boolean, null
+  'element?': 'string',                  // ? : the key may be absent
+  sites: [{ ref: 'number', shift_A: 'number|null', direction_uvw: oneOf(['number', 'number', 'number'], 'null') }],
+  cn: { '*_per_*': 'number' },           // a key with * : any keys whose names fit it
+  window_A: ['number', 'number']         // [shape] a list; [shape, shape, …] a tuple
+}
+```
+
+It is internal: `toRequestTools` sends a tool's name, description and parameters only. It describes
+`data` as the tool returns it, before the result budget (which halves the largest list and records
+`<key>_omitted` beside it). `checkShape(value, shape)` lists every mismatch by its reference path;
+`src/__tests__/toolDataShapes.test.js` runs every tool on the Demo and on each dev case of the
+validation and checks every result against its shape, both ways: no key the shape does not declare,
+and every declared key returned by some call (the forms those runs cannot reach are listed there).
+**A PR that changes what a tool returns changes its `dataShape` in the same diff**, so the change
+shows; the engine tools' shapes sit beside the summarizers that build their data
+(`src/copilotTools.js`), the run tools' in their specs (`copilot/runTools.js`, with
+`read_run_data`'s sections). The view tools (`highlight_cards`, `orient_3d_view`, `current_view`)
+describe the screen and declare none yet.
 
 `pages` (`{ key: label }`) and `onOpenPage(key, params)` let a step offer **Show in \<page\>**.
 
@@ -800,6 +828,9 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   variant, the dock's and the validation harness's first request and tool list, and one tool
   message per tool on the Demo. A diff there is a change to what the model sees: call it out in
   the PR ([copilot-validation.md](../../../../docs/algorithms/copilot-validation.md#what-the-model-sees-snapshot-tests)).
+- **The shape of each tool's data:** the notation and its checker (`dataShape.test.js`), and every
+  live tool's results on the Demo and the dev cases against its `dataShape`
+  (`src/__tests__/toolDataShapes.test.js`, *The tool contract*).
 - **Pointing:** the focus controller (`focus.test.js`: levels, page switch and wait, clearing,
   undo callbacks, re-rendered cards), card references (`cardRefs.test.js`), `highlight_cards`
   (`viewTools.test.js`), the dock's size rules (`dockLayout.test.js`), and list/object arguments

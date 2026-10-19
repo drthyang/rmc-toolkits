@@ -4,6 +4,7 @@
 import { buildRunContext, seriesStats } from '../context/runContext';
 import { elementDensity, extractPeaks, firstShell, gJustAbove, isIdealCoordination } from '../context/pairCorrelations';
 import { classifyConvergence } from '../watchdog/heuristics';
+import { oneOf } from './dataShape';
 
 // Copilot tools over the run data this module already receives as props
 // (plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites) — so
@@ -12,7 +13,9 @@ import { classifyConvergence } from '../watchdog/heuristics';
 // `tools` prop. Each tool is offered only when its data exists for this run.
 // Given the host's card catalog, each tool also names the cards it reads
 // (`cards(args)`), which breathe while it runs: a card's `kind` (a plot kind,
-// 'r_value', 'symmetry', 'model') and `file` tie it to the data.
+// 'r_value', 'symmetry', 'model') and `file` tie it to the data. Each declares
+// the shape of its `data` (`dataShape`, dataShape.js): the paths the model
+// quotes by reference.
 
 const roundSig = (value, digits = 3) => (
     Number.isFinite(value) && value !== 0 ? Number(value.toPrecision(digits)) : (Number.isFinite(value) ? value : null)
@@ -27,6 +30,111 @@ const SECTION_NOTES = {
     pair_correlations: 'partial g(r) first peaks vs the average-structure neighbour distance',
     datasets: 'per-dataset Rwp',
     convergence: 'ln(chi^2) history of the last .log column'
+};
+
+// Each section's shape as buildRunContext (context/runContext.js) builds it
+// and read_run_data returns it, untrimmed.
+const XYZ = ['number|null', 'number|null', 'number|null'];
+const SECTION_SHAPES = {
+    structure: {
+        cell_A: XYZ,
+        angles_deg: XYZ,
+        supercell: ['number', 'number', 'number'],
+        total_atoms: 'number',
+        'elements?': { '*': 'number' }
+    },
+    configuration_optimization: {
+        'moves_generated?': 'number',
+        'moves_tried?': 'number',
+        'moves_accepted?': 'number',
+        'acceptance_ratio?': 'number|null',
+        'accepted_moves_per_atom?': 'number|null',
+        'accumulated_time_h?': 'number|null'
+    },
+    run_settings: {
+        'title?': 'string',
+        'material?': 'string',
+        'phase?': 'string',
+        'temperature?': 'string',
+        // Labelled by element pair (atom) when the counts line up, else as listed.
+        'min_distances_A?': oneOf({ '*-*': 'number' }, ['number']),
+        'max_move_A?': oneOf({ '*': 'number' }, ['number']),
+        'time_limit?': 'string',
+        'save_period?': 'string',
+        'weight_optimization?': 'boolean',
+        'flags?': ['string'],
+        'fitted_data?': [{ type: 'string', 'file?': 'string', 'fit?': 'string', 'fitted_in?': 'string' }],
+        'independent_datasets?': 'number'
+    },
+    symmetry: {
+        space_group: 'string',
+        'point_group?': 'string',
+        'n_ops?': 'number',
+        'tolerance_A?': 'number',
+        'max_residual_A?': 'number',
+        'note?': 'string',
+        'ladder?': [{ sg: 'string', 'pg?': 'string', holds_A: ['number|null', 'number|null'], n_ops: 'number' }],
+        'point_group_facts?': ['string'],
+        'noise_floor_A?': 'number',
+        'noise_floor_note?': 'string',
+        'sites?': [{
+            element: 'string',
+            multiplicity: 'number',
+            'wyckoff?': 'string',
+            'site_sym?': 'string',
+            'frac?': XYZ,
+            'mean_disp_A?': 'number',
+            'max_disp_A?': 'number'
+        }],
+        'sites_omitted?': 'number'
+    },
+    pca_displacements: {
+        note: 'string',
+        sites: [{
+            ref: 'number',
+            element: 'string',
+            U_iso_A2: 'number|null',
+            'rms_axes_A?': XYZ,
+            anisotropy: 'number|null',
+            'non_gaussianity?': 'number',
+            'degenerate?': 'boolean',
+            'zero_spread?': 'boolean',
+            'mixed?': 'boolean',
+            'element_counts?': { '*': 'number' }
+        }],
+        'sites_omitted?': 'number'
+    },
+    pair_correlations: [{
+        pair: 'string',
+        'avg_structure_d_A?': 'number',
+        'gr_peaks_A?': [{ r: 'number|null', fwhm: 'number|null' }],
+        'first_shell?': {
+            mean_d_A: 'number',
+            to_A: 'number',
+            'cn_*_per_*': 'number',
+            'first_peak_to_A?': 'number|null',
+            'first_peak_cn?': 'number|null',
+            'gap_g_fraction?': 'number|null'
+        },
+        'cut_at_min_distance?': { at_A: 'number', g_fraction: 'number|null' }
+    }],
+    datasets: [{ kind: 'string', 'title?': 'string', 'rwp?': 'number', 'same_measurement_as?': 'string' }],
+    convergence: {
+        quantity: 'string',
+        n_steps: 'number',
+        first: 'number|null',
+        last: 'number|null',
+        min: 'number|null',
+        max: 'number|null',
+        watchdog_status: 'string',
+        recent_slope_per_step: 'number|null',
+        history: ['number|null'],
+        'change_over_last_10pct?': 'number|null',
+        'non_finite_steps?': 'number',
+        'non_finite_note?': 'string',
+        'column?': 'string',
+        'final_chi_squared?': 'number'
+    }
 };
 
 // Least-squares slope per log row over the last `fraction` of the finite values.
@@ -74,6 +182,11 @@ const readRunDataTool = (context, cardIds) => {
             properties: { section: { type: 'string', enum: sections, description: 'Which section to read.' } },
             required: ['section']
         },
+        // The section's name, and the section under that name (one of these).
+        dataShape: {
+            section: 'string',
+            ...Object.fromEntries(sections.map((key) => [`${key}?`, SECTION_SHAPES[key]]))
+        },
         label: ({ section }) => `Read ${String(section || '').replace(/_/g, ' ')}`,
         cards: ({ section }) => cardIds((card) => (SECTION_CARD_KINDS[section] || []).includes(card.kind)),
         run: async ({ section }) => ({ data: { section, [section]: context[section] }, checks: [] })
@@ -90,6 +203,18 @@ const convergenceTool = (rValueFile, cardIds) => {
             + 'not the total) with the dashboard watchdog heuristics, and report the slope per log row over '
             + 'the last 10 %, 25 % and 50 % of the run. Status: improving | converged | stalled | diverging.',
         parameters: { type: 'object', properties: {} },
+        dataShape: {
+            column: 'string|null',
+            quantity: 'string',
+            status: 'string',
+            n_steps: 'number',
+            first: 'number|null',
+            last: 'number|null',
+            min: 'number|null',
+            total_drop: 'number|null',
+            slope_per_step: { last_10pct: 'number|null', last_25pct: 'number|null', last_50pct: 'number|null' },
+            'non_finite_steps?': 'number'
+        },
         label: () => 'Convergence check',
         page: 'dashboard',
         cards: () => cardIds((card) => card.kind === 'r_value'),
@@ -161,6 +286,30 @@ const grPeaksTool = (plotFiles, context, structure, cardIds) => {
                 max_peaks: { type: 'integer', minimum: 1, maximum: 8, description: 'Default 3.' }
             },
             required: ['pair']
+        },
+        // No peak: pair, r_max_A and peaks_A [] only. The cn keys name the
+        // count each way, <partner>_per_<centre> (Se_per_Ta).
+        dataShape: {
+            pair: 'string',
+            r_max_A: 'number',
+            peaks_A: [{ r: 'number|null', fwhm: 'number|null' }],
+            'first_peak_window_A?': ['number|null', 'number|null'],
+            'first_shell?': {
+                window_A: ['number|null', 'number|null'],
+                peaks_in_shell_A: ['number|null'],
+                'mean_d_A?': 'number|null',
+                'sd_d_A?': 'number|null',
+                'cn?': { '*_per_*': 'number|null' },
+                'cn_if_cut_0p2A_earlier_later?': ['number|null', 'number|null'],
+                trough_g_fraction: 'number|null',
+                'first_peak_only?': {
+                    window_A: ['number|null', 'number|null'],
+                    cn: { '*_per_*': 'number|null' },
+                    trough_g_fraction: 'number|null'
+                }
+            },
+            'min_distance_constraint_A?': 'number',
+            'g_at_constraint_fraction?': 'number|null'
         },
         label: ({ pair }) => `g(r) peaks ${pair || ''}`.trim(),
         page: 'dashboard',
@@ -349,6 +498,26 @@ const fitTool = (plotFiles, cardIds) => {
                 n_ranges: { type: 'integer', minimum: 2, maximum: 12, description: 'Equal-width ranges over the data. Default 6.' }
             },
             required: ['dataset']
+        },
+        // Fewer than 10 points: the first five keys only. A range and a
+        // residual are named by the axis: r_A / r in real space, Q_A / Q in
+        // reciprocal space.
+        dataShape: {
+            dataset: 'string',
+            kind: 'string',
+            axis: 'string',
+            model_series: 'string',
+            data_series: 'string',
+            'rw?': 'number|null',
+            'range?': ['number|null', 'number|null'],
+            'by_range?': [oneOf(
+                { r_A: ['number|null', 'number|null'], rw: 'number|null', share_of_misfit: 'number|null' },
+                { Q_A: ['number|null', 'number|null'], rw: 'number|null', share_of_misfit: 'number|null' }
+            )],
+            'largest_residuals?': [oneOf(
+                { r: 'number|null', model_minus_data: 'number|null', relative_to_data_rms: 'number|null' },
+                { Q: 'number|null', model_minus_data: 'number|null', relative_to_data_rms: 'number|null' }
+            )]
         },
         label: ({ dataset }) => `Fit residual ${dataset || ''}`.trim(),
         page: 'dashboard',

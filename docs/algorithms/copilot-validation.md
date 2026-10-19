@@ -42,7 +42,7 @@ wrapped into [0, 1) as RMCProfile writes them) with its partial g(r). `run.js wr
 | --- | --- | --- |
 | offcentre | Two-site disorder: Nb ±0.20 Å along [001] in KNbO₃ / Ge ±0.16 Å along [110] | A split site looks like large thermal motion in the ellipsoid alone |
 | zone_boundary | Ordered antiphase Ti ±0.10 Å along c, q = (0,0,½) / Zr ±0.09 Å along a, q = (½,½,½); plus a stronger box-scale wave of the A cation | Identical single-site statistics to two-site disorder; the strongest mode is the decoy |
-| breathing | Mo₃ triangles / Nb₄ tetrahedra whose size fluctuates collectively (sd 4 % / 3.5 %), shape regular | Size is not shape |
+| breathing | Mo₃ triangles / Fe₄ tetrahedra (Cl anion, edge 2.75 Å; since protocol 2026-10-19.2) whose size fluctuates collectively (sd 4 % / 3.5 %), shape regular | Size is not shape |
 | jahn_teller | Isolated CuF₆ (4 × 1.93 + 2 × 2.25 Å) / MnCl₆ (2.48 / 2.85 Å), long axis random over x, y, z | The first peak holds 4 neighbours; the average octahedron is regular |
 | cell_wrap | Rigid V₂ / Ti₂ dimers whose first site sits at fractional 0 (half its atoms written near 1) | The cell wrap |
 | thermal_null | BaTiO₃ / PbTiO₃ composition, thermal motion only (O flattened across its bond) | Literature off-centring; anisotropic but Gaussian O |
@@ -54,9 +54,75 @@ Thermal rms: 0.05–0.09 Å. Supercells: 6–8 cells a side, 1,024–2,560 atoms
 
 **The split is enforced in code** (`__tests__/split.test.js`):
 - the test set is pinned by a sha256 of its configurations, partials and truths;
-- dev and test share no id, and no tool, skill or app source names a test case;
+- dev and test share no id, and no tool, skill, app source or doc names a test case, its
+  material, its planted lengths or its directions ([the holdout scan](#the-holdout-scan));
 - `--split test` needs `--final` and a clean git tree, and every record names its commit;
 - a supervisor finding on a test case may only report a bug, with the user's approval.
+
+## The holdout scan
+
+`__tests__/split.test.js` (with `__tests__/holdoutScan.js`) keeps the test cases out of what the
+tools, the skills and the docs say. It reads each test case's parameters from `cases.js` at run
+time, so no test-case value is written in the test, and a failure prints the line with what matched
+masked (■).
+
+- **Tokens, from the parameters:**
+  - the id, anywhere;
+  - the composition (two or more elements): a formula with exactly that element set, with or
+    without subscripts, or, for three or more elements, an element-dash chain naming each once;
+  - the cluster written as a formula of its own (a tetrahedron's M₄, a dimer's M₂);
+  - a structure-type word that only a test case uses;
+  - each planted length in Å (displacement, bond lengths with their split and mean, cluster
+    edge, the dimers' shared shift, the lattice parameter) within six words of its element;
+  - each planted direction family ([uvw] or <uvw>, any order and sign) and wavevector
+    (q ≡ −q ≡ q + G, any order) within six words of its element.
+
+  Lengths, directions and wavevectors count only where they differ from the dev cases of the same
+  kind, and thermal widths never count: those are the kind's physics, not the test case.
+- **Not hits:** a bare element symbol (they are everywhere); a formula with more or fewer
+  elements; a chain that repeats an element (A–X–A is a bond angle, which every study of that pair
+  writes); a number with more digits (0.371 is not 0.37) or more than six words from its element.
+- **Where:** `web_app/frontend/src` (js, jsx, md, and the snapshots of what the model sees), every
+  file in `.claude/skills`, `rmc_toolkits` (py), `docs/` (md) and the top-level md files. Not
+  scanned: the validation itself (`web_app/frontend/validation/`) and this document, whose Cases
+  table names every test case. [AGENT_PLAN.md](../AGENT_PLAN.md) is scanned; it pointed at the
+  open leak below without naming it.
+- **Checks on the scanner:** every test case yields more than its id, and the scan finds every
+  test case in its own truth (summary and traps, prose written from the same parameters). Its own
+  rules are pinned on made-up cases (`holdoutScan.test.js`).
+
+Every hit must sit in one of two lists in `split.test.js`, and each entry pins its exact number of
+hits, so a new mention, or a removed one, fails until the entry is reviewed. Any hit in neither list
+fails the test.
+
+**Open leaks, pending the user** (`HOLDOUT_LEAKS_PENDING_USER`). Text the model can read in arm B
+(the system prompt, the tool descriptions and results, `read_skill`'s output, every skill file)
+that names a held-out test case. Such a hit is a leak, not a known risk: the test prints it on
+every run and pins it line by line, and CI stays green only so that the decision stays with the
+user, whose text the skills are.
+
+**The list is empty since protocol 2026-10-19.2.** It held three lines of
+`.claude/skills/coordination-shells/lacunar-spinel-shells.md` (`:9`, `:31`, `:32`): the test
+breathing case's cluster was the cluster of the skills' reference compound, whose published
+distortion that reference file describes. The test case was recomposed instead of the skill
+(Protocol 2026-10-19.2, below), and nothing names its new composition: not the skills on main,
+not PR #71's drafts (read-only scan, 2026-10-19), not the snapshots. The list and its checks stay
+for any future skill-text hit.
+
+**Known risks: the allow-list** (`HOLDOUT_ALLOWED`). Only text no model can read, in any arm: the
+test checks that no allowed file is under `.claude/skills`, among the files `copilotSkills.js`
+bundles for the prompt and `read_skill`, or in the snapshots of what the model sees; that no app
+module (`src` outside `__tests__`) names it, so none can import it; and that no snapshot contains
+its matched text.
+
+| File | Case · token | Hits | Why it is not model-visible |
+| --- | --- | --- | --- |
+| `web_app/frontend/src/__tests__/fixtures/symmetryStructures.js` (65) | symmetry_lowering · composition | 1 | Test only: a symmetry-finder fixture of a real orthorhombic perovskite with the case's composition, imported only by the symmetry tests; unrelated to the planted shift |
+
+It was found on 2026-10-19 and reviewed against that rule. Four entries found that day for the test
+breathing case's old cluster (the llm README, a triplets engine test, ai-assistant.md and
+bond-geometry.md, all doc or test only) left the list with protocol 2026-10-19.2: they name the
+skills' reference compound, which is no longer a test case.
 
 ## The question and the verdict
 
@@ -117,6 +183,47 @@ context's `run`, in the first message, so every arm B and C run was told its cas
 under an earlier protocol, if any, are not comparable with later ones and must be run again. Arms
 A, A+ and D have no model and are unaffected; their records keep protocol 2026-10-17.1.
 
+**Protocol 2026-10-19.2 (test-breathing recomposed).** The held-out breathing case planted Nb₄
+tetrahedra with a Se anion: the skills' reference compound, whose published shells
+`.claude/skills/coordination-shells/lacunar-spinel-shells.md` gives and `read_skill` serves to arm
+B. That leaked the case's kind to arm B only. The fix goes in the test case; the skill is the
+user's text and is unchanged.
+- **The new composition:** Fe₄ tetrahedra with a Cl anion, a = 6.90 Å, edge 2.75 Å (Fe–Fe
+  ≈ 2.73–2.78 Å in Fe₄S₄ cubane cores). Shape, breathing (sd 0.035), thermal sd (0.05 Å) and
+  supercell (8³) are unchanged, and a/edge = 2.509 keeps the old shell separation. The shortest
+  Fe–Fe between clusters is 5.32 Å (1.94 × edge). A fresh author chose it, without seeing dev
+  results, dev parameters or arm records. No Fe, Cl, Fe–Cl, Fe₄, iron or chlorine word appears in
+  any skill (main or PR #71's drafts) or in the model-visible snapshots.
+- **The seed, by a rule fixed before looking:** seeds 731, 732, … in order; the first whose drawn
+  ε sample sd over the 512 clusters (the generator's own `cellState` draws) lies in
+  [0.033, 0.037]; at most 20 tries. 731 gave 0.03273 (out) and 732 gave 0.03696 (in), so the seed
+  is 732, used by no other case. The rule depends only on the case's own draws, not on any model or
+  arm result.
+- **Difficulty, honestly:** the shorter edge makes the planted radius spread 7 % smaller
+  (0.035 R = 0.059 vs 0.063 Å). The realised spread goes the other way: seed 732's ε lie above the
+  planted sd (0.03696) and the old seed's below (0.03362), so the realised radius spread is
+  0.0622 Å against the old case's 0.0607 Å (2.5 % larger). A+'s cluster engine reads the breathing
+  at z = 30, against 22 before.
+- **Approved by the manager on the user's delegation, 2026-10-19**
+  (`validation/findings/decisions.jsonl`). The user may reverse it: keep their compound in the test
+  case and disclose it as a known arm-B advantage.
+- **Nothing is lost:** no arm B or C run has touched the test set. `TEST_SET_SHA256` changes, so
+  any result on the old test set would not be comparable.
+- **Arms A and A+ on the test set**, re-recorded with `--final` at 4ab9eab: only the three
+  test-breathing records change (readings, the verdict's element, the truth), and no score moves.
+  A scores 0.50 (no page sees cluster breathing). A+ scores 1: Fe breathing found (breathing sd
+  0.107 vs 0.0635 Å for independent atoms, z = 30), no shape distortion (edge spread 0.152 vs
+  0.154 Å). D scores 1. The means stay A 0.81 and A+ 0.99. The dev records are unchanged: a re-run
+  equals `arm-a-dev.json` record for record, apart from protocol and commit.
+- **The dev set overlaps the skills, and may.** dev-breathing (Mo₃ triangles, O anion) was checked
+  against the same rule. No Mo₃, Mo–O or Mo appears in the skills on main or in the snapshots.
+  PR #71's draft `local-order/order-signatures.md:25` reads "Breathing Mo₃ triangles (size sd
+  4 %)": dev-breathing's cluster and its planted breathing. The dev set is for development, and
+  the skills learn from it. Once that draft merges, read an arm B result on dev-breathing with this
+  in mind; the reported numbers come from the test set.
+- **The holdout scan's open-leak list is now empty**, and the four allow-list entries for the old
+  cluster have left it ([the holdout scan](#the-holdout-scan)).
+
 ## Records, transcripts, findings
 
 Each live run writes:
@@ -144,6 +251,10 @@ Batch 1 (`validation/findings/batch-1.jsonl`) holds every tool change of the
 [review](copilot-review.md), approved by the user on 2026-10-14 and implemented on 2026-10-17:
 L1–L5 (L4 is two analyses), six findings; the five skill proposals are added by the skills PR,
 which waits for the user's review. `split.test.js` validates the file.
+Decisions on the validation itself take the same form in `validation/findings/decisions.jsonl`,
+also validated by `split.test.js`: so far one, the recomposed test breathing case (protocol
+2026-10-19.2), approved by the manager on the user's delegation on 2026-10-19. The schema's
+approver is the user, so the delegation is stated in the entry's evidence and proposed fix.
 
 ## Models and spend
 
@@ -166,7 +277,8 @@ cache hits $0.10, cache writes $2.50, so prompts are charged at $2.50. `RMC_EVAL
 
 `npx vite-node validation/run.js -- arm-a --split dev` (and `--split test --final`). Records:
 `validation/baseline/arm-a-{dev,test}.json` (re-recorded after batch 1 at commit 5780c50, below;
-the 2026-10-14 records are in git at b4fe09f).
+the 2026-10-14 records are in git at b4fe09f; the test records again at 4ab9eab for protocol
+2026-10-19.2, with the same scores).
 
 | Kind | A dev / test | A+ dev / test | Where the default analyses mislead |
 | --- | --- | --- | --- |
@@ -257,6 +369,13 @@ A change to any of these files is a change to what the model sees: say so in the
 `PROTOCOL_VERSION` when it changes what a run means. Refresh them with
 `npx vitest run src/__tests__/modelVisible -u` and read the diff before committing; CI never writes
 them, so a stale file fails there.
+
+The paths a run's answer quotes by reference (`{{r3.sites.0.shift_A}}`) are pinned too: every live
+tool declares the shape of its data on its spec (`dataShape`, never sent to the model), and
+`src/__tests__/toolDataShapes.test.js` checks every tool's results on the Demo and on each dev case
+against it — no undeclared key, no required key missing, every declared key returned by some call.
+A change to a tool's output changes its `dataShape` in the same PR, so it shows in the diff
+([llm README](../../web_app/frontend/src/llm/README.md), *The tool contract*).
 
 ## Running the live arms (later, on the Mac)
 

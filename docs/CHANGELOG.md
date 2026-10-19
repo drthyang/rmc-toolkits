@@ -22,6 +22,57 @@ Chronological record of notable changes, newest first. For current architecture 
   violation fails, and so does an entry a fix has cleared.
 - `workers/pcaKde.js` exports `AXIS_RESOLUTION_SIGMAS` (no change in behaviour).
 
+### Copilot validation: the held-out breathing case recomposed
+
+- The test breathing case's cluster and anion were the skills' reference compound, whose
+  published shells `coordination-shells/lacunar-spinel-shells.md` gives and `read_skill` serves to
+  arm B: a leak of the case's kind to arm B only. The case is recomposed, not the skill (the
+  user's text): a composition a fresh author chose without dev results, which no skill (main or
+  PR #71's drafts) or model-visible snapshot names. Its seed follows a rule fixed before looking:
+  the first seed from 731 up whose drawn breathing sd over the 512 clusters lies in
+  [0.033, 0.037] (732; 731 gave 0.0327). Shape, breathing, thermal width and supercell are unchanged.
+  Approved by the manager on the user's delegation, 2026-10-19; the user may reverse it.
+- `TEST_SET_SHA256` and `PROTOCOL_VERSION` 2026-10-19.2. No arm B or C run had touched the test
+  set. Arms A and A+ re-recorded on it with `--final` (4ab9eab): only the breathing case's records
+  change, and no score moves (A 0.81, A+ 0.99); the dev records are unchanged.
+- The holdout scan's open-leak list is empty (kept for future skill-text hits), and its four
+  allow-list entries for the old cluster are gone. `validation/findings/decisions.jsonl` records
+  the decision in the findings' form, validated by `split.test.js`. Details:
+  [copilot-validation.md](algorithms/copilot-validation.md), Protocol 2026-10-19.2.
+
+### Copilot: the shape of every tool's data, declared and checked (plan 3.3)
+
+- With numbers by reference the model quotes `{{r3.sites.0.shift_A}}`, so the paths of a tool's
+  `data` are an interface. Each live tool's spec now declares them: `dataShape`, in a small
+  notation that reads like the JSON (`'number|null'`, `'key?'` optional, `'cn_*_per_*'` pattern
+  keys, `[shape]` lists, `[a, b]` tuples, `oneOf(…)`), with one pure checker
+  (`src/llm/copilot/dataShape.js`) that names every mismatch by its reference path. The four run
+  tools (with every `read_run_data` section), the seven engine tools, `ask_user` and `read_skill`
+  declare theirs; the engine tools' shapes sit beside the summarizers that build the data.
+- `dataShape` is internal: `toRequestTools` sends name, description and parameters only, and the
+  model-visible snapshots are unchanged.
+- `src/__tests__/toolDataShapes.test.js` runs every tool through `executeToolCall` on the Demo run
+  and on every dev case (≈ 3 s), with arguments read from each run's own data (every section and
+  pair, whole, cut, confirmed, two-window and empty bond windows, each same-element shell's
+  clusters, three tolerances, each `ask_user` reply form, every skill and reference), and checks
+  each result both ways: no undeclared key, no required key missing, every value of its type, and
+  every declared key returned by some call except the forms the runs cannot reach (listed with
+  their reason). A PR that changes a tool's output changes its `dataShape` in the same diff. No
+  tool's behaviour or output changed.
+
+### Copilot validation: the holdout scan widened
+
+- `validation/__tests__/split.test.js` (with `holdoutScan.js`) now looks for each held-out test
+  case's composition, cluster, structure type, planted lengths, directions and wavevector, read
+  from `cases.js` at run time, not only its id. It scans `src` (js, jsx, md and the model-visible
+  snapshots), every skill file, `rmc_toolkits`, `docs/` and the top-level docs; the validation and
+  copilot-validation.md are not scanned. A bare element symbol is never a hit, and a failure prints
+  the matched text masked. Only text no model can read may be allow-listed, and the test checks
+  that rule; five test- or doc-only hits found on 2026-10-19 are. The skills' reference compound
+  reaches arm B through `read_skill`, so it is an open leak pending the user: printed on every run
+  and pinned line by line. Both lists are in
+  [copilot-validation.md](algorithms/copilot-validation.md#the-holdout-scan) (plan item 1.5).
+
 ### Copilot validation: the harness no longer tells the model the case kind
 
 - The harness named each run, and its `.rmc6f` and partials files, after the case id, and the

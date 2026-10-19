@@ -154,6 +154,15 @@ export const buildAskUserTool = () => ({
         },
         required: ['question', 'options']
     },
+    // answerResult: skipped (answer = the default's label, or null), typed
+    // (the user's own words) or an option chosen; `means` is that option's description.
+    dataShape: {
+        question: 'string',
+        answer: 'string|null',
+        'skipped?': 'boolean',
+        'typed?': 'boolean',
+        'means?': 'string'
+    },
     label: () => 'Question for you',
     run: async (args, { signal, askUser } = {}) => {
         const request = normalizeAskRequest(args);
