@@ -212,11 +212,16 @@ export const runArmA = async (copilotRun) => {
  *                   measure_symmetry_lowering's default and the Workbench's
  *                   tolerance question's margin; until then the floor itself.
  *
+ *   polarisation    the modulation engine's (plan item 4.3, protocol
+ *                   2026-10-19.12): the leading axis of the element's power
+ *                   tensor at the q that decided the order, its [u v w];
+ *                   until then the PC1 of the element's most prolate site
+ *                   (PC1/PC2 ≥ ARM_A_RULES.PROLATE_RATIO), a rule of A+'s own.
+ *
  * Arm A's rules (ARM_A_RULES) are the frozen protocol's and stay as they were.
  * What remains A+'s own is only how it joins the engines: one claim per
- * element, an ordered mode explains its element's split sites, an off-centred
- * centre its own split shell, and a mode's polarisation is the PC1 of the
- * element's most prolate site (PC1/PC2 ≥ ARM_A_RULES.PROLATE_RATIO).
+ * element, an ordered mode explains its element's split sites, and an
+ * off-centred centre its own split shell.
  *
  * The table holds the app's functions themselves, and A+ calls them through
  * it: a test checks they are the app's (one definition).
@@ -266,16 +271,30 @@ export const appSplitSites = async (run, readings) => {
 // An engine Finding as the readings record it: "answer (because)".
 const said = (finding) => `${finding.answer} (${finding.because})`;
 const qText = (q) => `(${q.map((value) => round(value, 3) ?? 0).join(', ')})`;
+const sameQ = (a, b) => a.length === b.length && a.every((value, axis) => value === b[axis]);
+// A direct-lattice [u v w] as A+'s other direction claims give it (two decimals, cartesianToUvw's).
+const uvwText = (uvw) => uvw.map((value) => Number(value.toFixed(2)) + 0);
 
-// The modulation engine's verdicts, per element tested, as a reading.
+// The point of an element's payload entry at q (a zone-boundary point or a strongest mode).
+const pointAt = (entry, q) => [...(entry.zoneBoundary || []), ...(entry.strongest || [])].find((point) => sameQ(point.q, q)) ?? null;
+
+// The modulation engine's verdicts, per element tested, as a reading, with
+// the polarisation of each ordered point (the direction a claim rests on).
 const modulationReading = (payload) => {
     const tested = (payload.elements || []).filter((entry) => entry.sites);
     const named = (name) => tested.filter((entry) => entry.verdict[name].answer === true)
         .map((entry) => `${entry.element} at ${entry.verdict[name].decidedBy.map(qText).join(', ')}`);
+    const polarisations = (entry) => ['cellDoubling', 'generalOrder']
+        .flatMap((name) => (entry.verdict[name].answer === true ? entry.verdict[name].decidedBy : []))
+        .map((q) => ({ q, polarisation: pointAt(entry, q)?.polarisation }))
+        .filter((item) => item.polarisation)
+        .map(({ q, polarisation }) => ({ q: qText(q), uvw: uvwText(polarisation.uvw), share: round(polarisation.share) }));
     return {
-        value: Object.fromEntries(tested.map((entry) => [entry.element, Object.fromEntries(
-            Object.entries(entry.verdict).map(([name, finding]) => [name, said(finding)])
-        )])),
+        value: Object.fromEntries(tested.map((entry) => {
+            const verdicts = Object.fromEntries(Object.entries(entry.verdict).map(([name, finding]) => [name, said(finding)]));
+            const rows = polarisations(entry);
+            return [entry.element, rows.length ? { ...verdicts, polarisation: rows } : verdicts];
+        })),
         reading: [['cellDoubling', 'cell doubling'], ['generalOrder', 'order at a general q'], ['longWave', 'long wave']]
             .map(([name, label]) => `${label}: ${named(name).join('; ') || 'none'}`).join('; ')
     };
@@ -314,7 +333,7 @@ export const runArmSweep = async (copilotRun) => {
     symmetry.reading.noise_floor_A = round(floor);
     readings.push(symmetry.reading);
 
-    const { payload: sites, found } = await appSplitSites(run, readings);
+    const { found } = await appSplitSites(run, readings);
     const features = [];
 
     // Superstructure: the modulation engine's verdict, a cell doubling (an
@@ -324,16 +343,14 @@ export const runArmSweep = async (copilotRun) => {
     readings.push({ page: 'analyze_modulations', what: 'zone-boundary points and general modes (engine verdict)', ...modulationReading(modulations) });
     const tested = (modulations.elements || []).filter((entry) => entry.sites);
     const orderedAt = (name) => tested.filter((entry) => entry.verdict[name].answer === true)
-        .map((entry) => ({ element: entry.element, q: entry.verdict[name].decidedBy[0] }));
+        .map((entry) => ({ entry, q: entry.verdict[name].decidedBy[0] }));
     const modulated = new Set();
-    for (const { element, q } of [...orderedAt('cellDoubling'), ...orderedAt('generalOrder')]) {
-        if (modulated.has(element)) continue;
-        modulated.add(element);
-        // Polarisation: PC1 of the element's most prolate site.
-        const site = (sites.sites || []).filter((s) => s.element === element && s.axes)
-            .sort((x, y) => (y.rms[0] / y.rms[1]) - (x.rms[0] / x.rms[1]))[0];
-        const prolate = site && site.rms[0] / site.rms[1] >= ARM_A_RULES.PROLATE_RATIO;
-        features.push({ kind: 'modulation', element, q, direction_uvw: prolate ? uvwOf(run.structure, site.axes[0]) : null });
+    for (const { entry, q } of [...orderedAt('cellDoubling'), ...orderedAt('generalOrder')]) {
+        if (modulated.has(entry.element)) continue;
+        modulated.add(entry.element);
+        // Polarisation: the engine's, at the q that decided the order (plan item 4.3).
+        const polarisation = pointAt(entry, q)?.polarisation;
+        features.push({ kind: 'modulation', element: entry.element, q, direction_uvw: polarisation ? uvwText(polarisation.uvw) : null });
     }
 
     // Split sites not explained by an ordered mode.
