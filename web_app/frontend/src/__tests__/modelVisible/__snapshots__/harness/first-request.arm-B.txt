@@ -1,0 +1,128 @@
+# First request of the validation harness, arm B (skills), dev case dev-offcentre
+# Captured at runLiveCase's callModel(request) (validation/harness.js), which validation/run.js binds to streamCopilotChat({ baseUrl, model, temperature, apiKey, session, ...request }).
+
+## Request fields
+signal: "AbortSignal"
+toolChoice: "auto"
+temperature: (not in the request)
+tools: 11, in the order sent (each definition in full: harness/tools.arm-B.json)
+  1. read_run_data
+  2. find_gr_peaks
+  3. list_sites
+  4. analyze_displacement_directions
+  5. compute_bond_angles
+  6. analyze_clusters
+  7. analyze_modulations
+  8. detect_symmetry
+  9. measure_symmetry_lowering
+  10. ask_user
+  11. read_skill
+
+## messages[0] · system
+(the system prompt, variant "tools-ask-skills": system-prompt/tools-ask-skills.txt, 11035 characters, sha256 3cc617dc3f91c602)
+
+## messages[1] · user
+Context for this RMC modeling run:
+```json
+{
+ "run": "dev-offcentre",
+ "live_mode": false,
+ "structure": {
+  "cell_A": [4, 4, 4],
+  "angles_deg": [90, 90, 90],
+  "supercell": [8, 8, 8],
+  "total_atoms": 2560,
+  "elements": {"K": 512, "Nb": 512, "O": 1536}
+ },
+ "symmetry": {
+  "space_group": "Pm-3m (No. 221)",
+  "point_group": "m-3m",
+  "n_ops": 48,
+  "tolerance_A": 0.2,
+  "max_residual_A": 0.0095,
+  "ladder": [
+   {"sg": "P1", "pg": "1", "holds_A": [0, 0.0041], "n_ops": 1},
+   {"sg": "Cm", "pg": "m", "holds_A": [0.0041, 0.0058], "n_ops": 2},
+   {"sg": "Amm2", "pg": "mm2", "holds_A": [0.0058, 0.0095], "n_ops": 4},
+   {"sg": "Pm-3m", "pg": "m-3m", "holds_A": [0.0095, 1], "n_ops": 48}
+  ],
+  "point_group_facts": ["m-3m: cubic; centrosymmetric; achiral (not a Sohncke group); non-polar", "1: triclinic; no inversion centre; a Sohncke group (a chiral structure is possible); polar", "m: monoclinic; no inversion centre; achiral (not a Sohncke group); polar", "mm2: orthorhombic; no inversion centre; achiral (not a Sohncke group); polar"],
+  "noise_floor_A": 0.043,
+  "noise_floor_note": "the site means carry sampling noise (rms displacement / √copies); a group change at a tolerance below noise_floor_A is within that noise, not evidence of a distortion",
+  "sites": [
+   {"element": "Nb", "multiplicity": 1, "wyckoff": "1b", "site_sym": "m-3m", "frac": [0.499, 0.5, 0.5], "mean_disp_A": 0.23, "max_disp_A": 0.23},
+   {"element": "O", "multiplicity": 3, "wyckoff": "3c", "site_sym": "4/mmm", "frac": [0.5, 0.5, 0.000573], "mean_disp_A": 0.14, "max_disp_A": 0.14},
+   {"element": "K", "multiplicity": 1, "wyckoff": "1a", "site_sym": "m-3m", "frac": [1, 0.999, 0.000795], "mean_disp_A": 0.14, "max_disp_A": 0.14}
+  ]
+ },
+ "pair_correlations": [
+  {
+   "pair": "K-K",
+   "avg_structure_d_A": 4,
+   "gr_peaks_A": [
+    {"r": 4, "fwhm": 0.28},
+    {"r": 5.66, "fwhm": 0.29}
+   ],
+   "first_shell": {"mean_d_A": 4, "to_A": 4.36, "cn_K_per_K": 6}
+  },
+  {
+   "pair": "K-Nb",
+   "avg_structure_d_A": 3.46,
+   "gr_peaks_A": [
+    {"r": 3.38, "fwhm": 0.47},
+    {"r": 3.56, "fwhm": 0.49}
+   ],
+   "first_shell": {"mean_d_A": 3.47, "to_A": 3.98, "cn_Nb_per_K": 8}
+  },
+  {
+   "pair": "K-O",
+   "avg_structure_d_A": 2.82,
+   "gr_peaks_A": [
+    {"r": 2.81, "fwhm": 0.3},
+    {"r": 4.89, "fwhm": 0.26}
+   ],
+   "first_shell": {"mean_d_A": 2.83, "to_A": 3.29, "cn_O_per_K": 12}
+  },
+  {
+   "pair": "Nb-Nb",
+   "avg_structure_d_A": 4,
+   "gr_peaks_A": [
+    {"r": 4, "fwhm": 0.21},
+    {"r": 5.39, "fwhm": 0.74}
+   ],
+   "first_shell": {"mean_d_A": 3.97, "to_A": 4.24, "cn_Nb_per_Nb": 5.46, "gap_g_fraction": 0.042}
+  },
+  {
+   "pair": "Nb-O",
+   "avg_structure_d_A": 2,
+   "gr_peaks_A": [
+    {"r": 1.83, "fwhm": 0.5},
+    {"r": 2.02, "fwhm": 0.23}
+   ],
+   "first_shell": {"mean_d_A": 2.01, "to_A": 2.48, "cn_O_per_Nb": 6}
+  },
+  {
+   "pair": "O-O",
+   "avg_structure_d_A": 2.83,
+   "gr_peaks_A": [
+    {"r": 2.83, "fwhm": 0.26},
+    {"r": 4, "fwhm": 0.24}
+   ],
+   "first_shell": {"mean_d_A": 2.83, "to_A": 3.19, "cn_O_per_O": 8}
+  }
+ ],
+ "datasets": [
+  {"kind": "pdf_partials", "title": "Partial g(r)"}
+ ]
+}
+```
+
+## messages[2] · assistant
+Understood. I will answer questions about this RMC modeling run from the context above and the analyses I run.
+
+## messages[3] · user
+Analyse the local structure of this RMC configuration. Is there order or distortion beyond the average structure (off-centred atoms, correlated clusters, a superstructure, distorted polyhedra)? What is the average structure's space group, and is it chiral, centrosymmetric, polar? Base every claim on the Workbench's analyses, and say so plainly if there is no such order.
+
+Finish with one line that starts with VERDICT and holds a JSON object, after everything else (the Outcome line included):
+VERDICT {"features": [{"kind": "...", "element": "...", "direction_uvw": [u, v, w] or null, "magnitude_A": number or null, "q": [h, k, l] or null}], "space_group": "..." or null, "chiral": true/false/null, "centrosymmetric": true/false/null, "polar": true/false/null}
+kind is one of off_centre, modulation, cluster_distortion, cluster_breathing, rigid_cluster, jahn_teller, symmetry_lowering. features is [] when there is no order beyond thermal motion. direction_uvw is a crystal direction; magnitude_A the static displacement (off_centre, symmetry_lowering) or the long minus short bond (jahn_teller); q in reciprocal-lattice units. Use null for what you did not determine. A number may be a reference to a tool result, as in the answer ("magnitude_A": {{r3.sites.0.shift_A}}): the app fills it in; a text reference goes inside its quotes ("element": "{{r3.sites.0.element}}").
