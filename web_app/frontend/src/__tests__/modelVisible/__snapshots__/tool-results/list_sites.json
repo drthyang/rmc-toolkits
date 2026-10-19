@@ -1,7 +1,7 @@
 {
   "tool": "list_sites",
   "arguments": {},
-  "content_chars": 1984,
+  "content_chars": 2369,
   "content": {
     "ref": "r1",
     "checks": [
@@ -11,7 +11,7 @@
       }
     ],
     "data": {
-      "note": "kurtosis = Mardia multivariate excess kurtosis (0 Gaussian; >0 peaked/heavy-tailed; <0 flat or split); anisotropy = rms1/rms3; sites sorted by |kurtosis|, largest first",
+      "note": "kurtosis = Mardia multivariate excess kurtosis (0 Gaussian; >0 peaked/heavy-tailed; <0 flat or split); kurtosis_axes = excess kurtosis along PC1, PC2, PC3, null where that axis is not resolved (its direction is noise); anisotropy = rms1/rms3; pc1_uvw = PC1 as a direct-lattice direction [u v w] (not a plane normal), where PC1 is resolved; sites sorted by |kurtosis|, largest first",
       "n_sites": 52,
       "total_atoms": 52000,
       "largest_U_iso_refs": [23, 33, 42],
@@ -52,7 +52,9 @@
           "U_iso_A2": 0.0155,
           "rms_axes_A": [0.145, 0.118, 0.108],
           "anisotropy": 1.35,
-          "kurtosis": 4.84
+          "kurtosis": 4.84,
+          "kurtosis_axes": [7.98, null, null],
+          "pc1_uvw": [0.96, 1, -0.71]
         },
         {
           "ref": 29,
@@ -97,7 +99,9 @@
           "U_iso_A2": 0.0166,
           "rms_axes_A": [0.153, 0.116, 0.113],
           "anisotropy": 1.36,
-          "kurtosis": 4.5
+          "kurtosis": 4.5,
+          "kurtosis_axes": [7.4, null, null],
+          "pc1_uvw": [0.96, 1, -0.98]
         },
         {
           "ref": 36,
@@ -115,7 +119,9 @@
           "U_iso_A2": 0.0154,
           "rms_axes_A": [0.148, 0.117, 0.102],
           "anisotropy": 1.45,
-          "kurtosis": 4.45
+          "kurtosis": 4.45,
+          "kurtosis_axes": [7.8, null, null],
+          "pc1_uvw": [1, -0.75, 0.86]
         },
         {
           "ref": 33,

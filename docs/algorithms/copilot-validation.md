@@ -214,8 +214,8 @@ user's text and is unchanged.
   0.0622 Å against the old case's 0.0607 Å (2.5 % larger). A+'s cluster engine reads the breathing
   at z = 30, against 22 before.
 - **Approved by the manager on the user's delegation, 2026-10-19**
-  (`validation/findings/decisions.jsonl`). The user may reverse it: keep their compound in the test
-  case and disclose it as a known arm-B advantage.
+  (`validation/findings/decisions/2026-10-19-test-breathing-recomposed.json`). The user may reverse
+  it: keep their compound in the test case and disclose it as a known arm-B advantage.
 - **Nothing is lost:** no arm B or C run has touched the test set. `TEST_SET_SHA256` changes, so
   any result on the old test set would not be comparable.
 - **Arms A and A+ on the test set**, re-recorded with `--final` at 4ab9eab: only the three
@@ -232,6 +232,14 @@ user's text and is unchanged.
   in mind; the reported numbers come from the test set.
 - **The holdout scan's open-leak list is now empty**, and the four allow-list entries for the old
   cluster have left it ([the holdout scan](#the-holdout-scan)).
+
+**Protocol 2026-10-19.3 (`list_sites` shows the split, plan 4.1).** Each site row gains its
+per-axis excess kurtosis on resolved axes (`kurtosis_axes`), PC1 as a direct-lattice [u v w]
+(`pc1_uvw`), and, for a site the tools call split (one rule, `isSplitSite`), its static
+displacement `delta_A` with its sampling error `delta_se_A`; the tool's description says so. What
+the model sees changes (the `list_sites` result and its description), so live runs under earlier
+protocols are not comparable. Arms A and A+ do not call `list_sites` and are unchanged. Approved by
+the manager on the user's delegation, 2026-10-19 (`validation/findings/decisions/`).
 
 ## Records, transcripts, findings
 
@@ -280,10 +288,15 @@ Batch 1 (`validation/findings/batch-1.jsonl`) holds every tool change of the
 [review](copilot-review.md), approved by the user on 2026-10-14 and implemented on 2026-10-17:
 L1–L5 (L4 is two analyses), six findings; the five skill proposals are added by the skills PR,
 which waits for the user's review. `split.test.js` validates the file.
-Decisions on the validation itself take the same form in `validation/findings/decisions.jsonl`,
-also validated by `split.test.js`: so far one, the recomposed test breathing case (protocol
-2026-10-19.2), approved by the manager on the user's delegation on 2026-10-19. The schema's
-approver is the user, so the delegation is stated in the entry's evidence and proposed fix.
+Decisions on the validation itself take the same form, one JSON file per record in
+`validation/findings/decisions/`, named by the record's id (the date and a slug,
+`2026-10-19-list-sites-split.json`), so that parallel changes never edit the same file.
+`parseFindingFiles` (`findings.js`) reads every `*.json` there in id order and validates each by the
+findings schema, in `split.test.js` and in `run.js findings <folder>`. So far two, both approved by
+the manager on the user's delegation on 2026-10-19: the recomposed test breathing case (protocol
+2026-10-19.2) and plan item 4.1, `list_sites` showing a split site's static displacement
+([ai-assistant.md](ai-assistant.md), Step 20). The schema's approver is the user, so the delegation
+is stated in each record's evidence and proposed fix.
 
 ### The answer corpus (plan item 3.5)
 
