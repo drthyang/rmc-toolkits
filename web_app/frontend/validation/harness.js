@@ -153,7 +153,13 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // one-component bound, so both dev weak orders are above the bar), and give
 // each element's diffuse order between cells (plan item 4.4), which
 // analyze_modulations says and A+ does not read.
-export const PROTOCOL_VERSION = '2026-10-19.16';
+// 2026-10-19.19: the marginal situation re-set for the independent-cell null
+// — the dev weak-order pair's amplitude set so its expected (median)
+// significance at q is 3σ (judgment-spec.md's new formula), its seeds by its
+// rule, one on each side of the bar again — and arm C reads analyze_modulations'
+// long-wave and in-phase notes without what the pattern is evidence of
+// (inference); arm B unchanged.
+export const PROTOCOL_VERSION = '2026-10-19.19';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one
 // follows the full method.
