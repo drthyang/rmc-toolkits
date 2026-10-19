@@ -2,8 +2,12 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 // The budget test of plan item 5.5 (docs/AGENT_PLAN.md, section E "Size
-// against a 32k window"): does the worst realistic Copilot turn fit the 32,768
-// tokens of the local tier's smallest window (qwen3.8-27b, validation/models.js)?
+// against a 32k window"): does the worst realistic Copilot turn fit 32,768
+// tokens, the window a user may load the local tier's smallest model with
+// (qwen3.8-27b in LM Studio)? The validation's live runs no longer run at
+// 32k: their run policy loads every LM Studio model with at least 48k
+// (validation/runPolicy.js MIN_CONTEXT_TOKENS, the decision of 2026-10-19),
+// which holds both worst turns below.
 //
 // Counted with the app's own estimator and constants, so the numbers are the
 // context guard's (provider/contextGuard.js): estimatePromptTokens — messages
@@ -65,9 +69,10 @@ import { buildCase, DEV_CASES } from '../../validation/cases';
 import { runLiveCase } from '../../validation/harness';
 import { MODELS } from '../../validation/models';
 import { loadSkills } from '../../validation/run';
+import { MIN_CONTEXT_TOKENS } from '../../validation/runPolicy';
 import { bundledSkills, loadDemoAssistantRun, promptVariants, recordingModel } from './modelVisible/helpers';
 
-// The local tier's smallest window: qwen3.8-27b, as the harness runs it.
+// A 32k window: qwen3.8-27b as a user may load it in LM Studio for the dock.
 const WINDOW_TOKENS = 32768;
 
 // --- today's numbers (tokens, estimatePromptTokens) --------------------------------
@@ -282,7 +287,7 @@ describe('the worst realistic turn in a 32,768-token window (plan 5.5)', () => {
         expect(dock.messages[0]).toEqual({ role: 'system', content: largest[1] });
         expect(snapshot('dock/first-request.txt')).toContain(dock.messages[1].content);
         expect(dock.tools.map((tool) => tool.function.name)).toEqual(expect.arrayContaining([READ_SKILL, 'ask_user', 'orient_3d_view']));
-        expect(MODELS['qwen3.8-27b'].contextTokens).toBe(WINDOW_TOKENS);
+        expect(MODELS['qwen3.8-27b'].server).toBe('lmstudio');
     });
 
     it('reads the two largest skills whole and keeps them through the analyses', () => {
@@ -327,5 +332,21 @@ describe('the worst realistic turn in a 32,768-token window (plan 5.5)', () => {
     it.fails('fits arm B\'s worst turn in 32,768 tokens (fails today: 5.5\'s on-demand references are the user\'s decision)', () => {
         expect(armBTurn.numbers.needed).toBeLessThanOrEqual(WINDOW_TOKENS);
         expect(armBTurn.plan.refuse).toBeUndefined();
+    });
+
+    // The run policy's minimum for an LM Studio model (48k) holds both worst
+    // turns with the full reply reserve, under both of the guard's rules
+    // (planContext's, and LM Studio's prompt + LMSTUDIO_REPLY_MIN_TOKENS):
+    // the dock's with 10,590 tokens to spare, arm B's with 14,033.
+    it('fits both worst turns in the live runs\' LM Studio minimum (48k, validation/runPolicy.js)', () => {
+        const window = MIN_CONTEXT_TOKENS.lmstudio;
+        expect(window).toBe(49152);
+        for (const turn of [dockTurn, armBTurn]) {
+            const plan = planContext({ estimate: turn.numbers.prompt, max: window });
+            expect(plan.refuse).toBeUndefined();
+            expect(plan.needed).toBe(turn.numbers.needed);
+            expect(turn.numbers.prompt + LMSTUDIO_REPLY_MIN_TOKENS).toBeLessThanOrEqual(window);
+        }
+        expect([window - dockTurn.numbers.needed, window - armBTurn.numbers.needed]).toEqual([10590, 14033]);
     });
 });

@@ -6,32 +6,41 @@
 // may run dev and test; the API model runs the test set only, under a spend
 // cap the tracker enforces (spend.js). Settings are the Copilot's own
 // defaults (temperature 0.2, the agent loop's DEFAULT_LIMITS).
+//
+// `server` is the server kind the model runs on, as the context guard names
+// it (contextGuard.js detectServer: 'lmstudio', 'ollama', 'openai' for a
+// cloud provider). The pre-run check (runPolicy.js preflight) refuses a run
+// when the server there is another kind or does not answer, and an LM Studio
+// model loaded with less than the run policy's minimum window (48k): the
+// window is set when the model is loaded, not here.
 
 export const MODELS = Object.freeze({
     'qwen3.8-27b': {
         label: 'qwen3.8-27b (LM Studio)',
         baseUrl: 'http://localhost:1234/v1',
         model: 'qwen3.8-27b',
-        contextTokens: 32768,
+        server: 'lmstudio',
         api: false
     },
     'gemma4:26b': {
         label: 'gemma4:26b (Ollama)',
         baseUrl: 'http://localhost:11434/v1',
         model: 'gemma4:26b',
+        server: 'ollama',
         api: false
     },
     'meta/muse-glimmer': {
         label: 'meta/muse-glimmer (LM Studio; 28B, tool use, up to 128k context)',
         baseUrl: 'http://localhost:1234/v1',
         model: 'meta/muse-glimmer',
-        contextTokens: 131072,
+        server: 'lmstudio',
         api: false
     },
     'claude-sonnet-5.5': {
         label: 'Claude Sonnet 5.5 (API)',
         baseUrl: 'https://api.anthropic.com/v1',
         model: 'claude-sonnet-5-5',
+        server: 'openai',
         modelEnv: 'RMC_EVAL_SONNET_MODEL',
         apiKeyEnv: 'ANTHROPIC_API_KEY',
         api: true,

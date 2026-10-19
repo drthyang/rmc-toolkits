@@ -41,7 +41,7 @@ const entry = (name, text) => ({ path: `${RUN_NAME}/${name}`, file: new File([te
 /**
  * The case's run-folder files as `[{ name, text }]`: the .rmc6f, the partial
  * g(r) when the case has one, and its fit files (F(Q), its Fourier transform
- * G(r), the χ² log) when it has fit data. `run.js write` should write these.
+ * G(r), the χ² log) when it has fit data. `run.js write` writes these.
  */
 export const caseFiles = (built) => [
     { name: RUN_FILES.rmc6f, text: built.rmc6f },
