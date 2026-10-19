@@ -3,6 +3,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { contextToJson } from '../context/runContext';
+import { STOPPED_BY } from '../copilot/turnPolicy';
 import { stepSummary } from '../copilot/turnState';
 import { useCopilot } from '../useCopilot';
 import MarkdownMessage from './MarkdownMessage';
@@ -25,17 +26,10 @@ const SUGGESTIONS = [
 
 const OUTCOME_TEXT = { achieved: 'Achieved', partial: 'Partial', 'not verified': 'Not verified', 'not achieved': 'Not achieved' };
 
-const STOP_NOTES = {
-    stopped: 'Stopped.',
-    error: 'Stopped by an error.',
-    max_rounds: 'Answered after using the analysis budget for one question.',
-    no_progress: 'Answered when repeated analyses stopped adding anything new.',
-    empty: 'The model returned an empty reply.'
-};
-
-// The stop note, with the reason when the loop gave one (an empty reply).
+// The turn's ending as its note (turnPolicy.js STOPPED_BY: none for an
+// answer), with the reason when the turn gave one (an empty reply).
 const stopNoteFor = (turn) => {
-    const note = STOP_NOTES[turn.stoppedBy];
+    const note = STOPPED_BY[turn.stoppedBy]?.note;
     return note && turn.reason ? `${note.replace(/\.$/, '')}: ${turn.reason}.` : note;
 };
 
@@ -175,7 +169,7 @@ const AssistantTurn = ({ turn, pages, onOpenPage, cardLinks, question = null, on
                             ...(turn.gates || []).map((gate) => gate.notice),
                             turn.toolsUnsupported ? 'this model cannot run analyses — answered from the run summary' : '',
                             cutNote ? 'the reply reached the model\'s length limit and is cut short' : '',
-                            turn.stoppedBy !== 'answer' ? stopNote : ''
+                            stopNote
                         ].filter(Boolean).join(' · ')}
                     </p>
                 )}

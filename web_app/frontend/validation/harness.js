@@ -37,7 +37,9 @@
 //
 // One run gives one record: every model request as it was sent, every
 // decision (round, tool, arguments, the reasoning and text the model wrote
-// before it, the result it read), the final answer, its verdict and score,
+// before it, the result it read), how the turn ended (`stopped_by`, from its
+// terminal event: a key of the turn policy's STOPPED_BY, as the dock reads
+// it), the final answer, its verdict and score,
 // the answer checks against the contradictions the score found, where each
 // reported number came from (against what the model was shown), and the
 // safety counts. The record is the transcript's source.
@@ -214,7 +216,11 @@ export const runLiveCase = async ({
         gates: [],
         rounds: 0,
         final: null,
-        error: null
+        error: null,
+        // How the turn ended, from its terminal event (src/llm/copilot/
+        // turnPolicy.js STOPPED_BY): answer, max_rounds, no_progress, empty,
+        // stopped or error.
+        stopped_by: null
     };
 
     // The round's reasoning and text, the "why" of the calls that follow it.
@@ -285,6 +291,7 @@ export const runLiveCase = async ({
         } else if (event.type === 'tools_unsupported') {
             record.tools_unsupported = event.error;
         } else if (event.type === 'done') {
+            record.stopped_by = event.stoppedBy;
             record.rounds = event.rounds;
             record.final = {
                 text: event.text, raw_text: event.rawText ?? event.text, outcome: event.outcome, stopped_by: event.stoppedBy,
@@ -294,6 +301,7 @@ export const runLiveCase = async ({
         } else if (event.type === 'stopped' || event.type === 'failed') {
             // The turn's end without an answer: the run is recorded with the
             // error. A spend cap stops the batch, with this run recorded.
+            record.stopped_by = event.stoppedBy;
             const failure = event.error;
             record.error = { name: failure?.name || 'Error', message: failure?.message || String(failure) };
             if (failure?.name === 'SpendCapError') {

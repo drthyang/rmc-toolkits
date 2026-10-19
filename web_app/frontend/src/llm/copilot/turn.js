@@ -78,13 +78,19 @@
 //   { type: 'start', offered, prompt, method, toolsActive, shown, skillsError }
 //       first, exactly once: describeTurn(spec) for this question
 //   { type: 'request', round, why, sent }      before each model call (the loop's)
-//   exactly one terminal event, always last:
-//   { type: 'done', … }                        the loop's, unchanged
-//   { type: 'stopped', error }                 aborted (an AbortError)
-//   { type: 'failed', error, message, hint }   any other error: the message and
-//                                              what to do (robustness.js
-//                                              explainModelError); a context-limit
-//                                              refusal and a spend cap land here
+//   exactly one terminal event, always last, each with its `stoppedBy`, a key
+//   of STOPPED_BY (turnPolicy.js: the one set of endings the dock and the
+//   harness read):
+//   { type: 'done', … }                        the loop's, passed on as it is: the
+//                                              turn policy's one shape (answer,
+//                                              max_rounds, no_progress, empty)
+//   { type: 'stopped', error, stoppedBy }      aborted (an AbortError): 'stopped'
+//   { type: 'failed', error, message, hint, stoppedBy }
+//                                              any other error, a stall included:
+//                                              'error'; the message and what to do
+//                                              (robustness.js explainModelError); a
+//                                              context-limit refusal and a spend cap
+//                                              land here
 // Order: start; a Workbench question (a tool_start/tool_end pair, `app`);
 // then per request: round, request, text/reasoning deltas, tool_start/tool_end
 // pairs (sharing an id); a gate is always followed by a retract;
@@ -92,8 +98,8 @@
 // round and request under the no-tools prompt.
 //
 // Seams: the verification is one object the turn builds (turnChecks) and
-// the loop records and judges with; provider quirks stay behind the model
-// port.
+// the loop records with and judges by (through the turn policy, which decides
+// when a turn ends); provider quirks stay behind the model port.
 
 import { runCopilotTurn } from './agentLoop';
 import { ASK_USER, buildAskUserTool } from './askUser';
@@ -102,6 +108,7 @@ import { TURN_METHODS, toolAsSent, toolDescription } from './method';
 import { compactAnswer, explainModelError } from './robustness';
 import { READ_SKILL, buildReadSkillTool, parseSkillFiles, skillIndex } from './skills';
 import { usableTools } from './tools';
+import { stoppedByFailure } from './turnPolicy';
 import { createVerification, shownContext } from './verification';
 import { buildRunContext } from '../context/runContext';
 import { buildCopilotMessages, copilotSystemPrompt } from '../prompts/copilot';
@@ -264,7 +271,15 @@ const turnChecks = (plan, { run, askUser, config }) => {
     };
 };
 
-const failed = (error) => ({ type: 'failed', error, ...explainModelError(error) });
+// The terminal event of a turn that threw: Stop ends it as `stopped`, any
+// other error (a stall, a refusal, a spend cap) as `failed`, each with its
+// ending (turnPolicy.js stoppedByFailure).
+const ending = (error) => {
+    const stoppedBy = stoppedByFailure(error);
+    return stoppedBy === 'stopped'
+        ? { type: 'stopped', error, stoppedBy }
+        : { type: 'failed', error, ...explainModelError(error), stoppedBy };
+};
 
 /**
  * What a turn with this spec offers and sends, without running it: `{ offered:
@@ -305,8 +320,8 @@ export async function* runTurn(spec) {
             if (event.type === 'done') answered = true;
             yield stamp(event);
         }
-        if (!answered) yield stamp(failed(new Error('The turn ended without an answer.')));
+        if (!answered) yield stamp(ending(new Error('The turn ended without an answer.')));
     } catch (error) {
-        yield stamp(error?.name === 'AbortError' ? { type: 'stopped', error } : failed(error));
+        yield stamp(ending(error));
     }
 }

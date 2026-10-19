@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { describeTurn, runTurn } from './copilot/turn';
+import { stoppedByFailure } from './copilot/turnPolicy';
 import { applyTurnEvent, closeTurn, newAssistantTurn } from './copilot/turnState';
 import { providerModel } from './provider/model';
 
@@ -201,11 +202,11 @@ export const useCopilot = ({
                 toolContext: focus ? { focus } : null,
                 config: { toolsEnabled: toolsEnabled && !unsupported }
             })) {
-                if (event.type === 'stopped') {
-                    turn = closeTurn(turn, 'stopped');
-                } else if (event.type === 'failed') {
-                    turn = closeTurn(turn, 'error');
-                    setError(event.hint ? `${event.message} ${event.hint}` : event.message);
+                if (event.type === 'stopped' || event.type === 'failed') {
+                    // The turn's ending (turnPolicy.js STOPPED_BY), as the
+                    // harness records it.
+                    turn = closeTurn(turn, event.stoppedBy);
+                    if (event.type === 'failed') setError(event.hint ? `${event.message} ${event.hint}` : event.message);
                 } else {
                     turn = applyTurnEvent(turn, event, event.at);
                     if (event.type === 'tool_start' && event.cards?.length) focus?.running(event.id, event.cards);
@@ -219,8 +220,9 @@ export const useCopilot = ({
         } catch (failure) {
             // The turn never throws once started: this is the dock's own
             // failure, shown as any other.
-            turn = closeTurn(turn, failure?.name === 'AbortError' ? 'stopped' : 'error');
-            if (failure?.name !== 'AbortError') setError(failure?.message || String(failure));
+            const stoppedBy = stoppedByFailure(failure);
+            turn = closeTurn(turn, stoppedBy);
+            if (stoppedBy === 'error') setError(failure?.message || String(failure));
         } finally {
             abortRef.current = null;
             focus?.doneAll();
