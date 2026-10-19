@@ -11,7 +11,10 @@
 // so a 4,096-token default (Ollama's on a machine without a usable GPU, older
 // releases everywhere) cuts it on the first request.
 //
-// Before each request this module estimates the prompt's size and:
+// Before each request this module estimates the prompt's size and decides
+// (planCopilotChat, which the model port calls in its `prepare`, so the
+// decision is in the request as sent, or refuses it before anything is
+// streamed; streamCopilotChat then sends under that plan):
 //   - Ollama: sends the request through the native API (ollama.js) with a
 //     `num_ctx` that holds the prompt and room for the reply, and a
 //     `num_predict` that keeps the reply inside it. It reuses the context the
@@ -211,24 +214,47 @@ export const lmStudioLoadedContext = async (baseUrl, model, { signal } = {}) => 
 
 const WHAT_IT_HOLDS = 'the Copilot\'s instructions, the run context, the analyses so far and room for the reply';
 
+/** The key a conversation's `session` keeps a model's Ollama context under. */
+export const sessionKey = (baseUrl, model) => `${baseUrl}|${model}`;
+
+// LM Studio's refusal: the loaded window cannot hold the prompt and
+// LMSTUDIO_REPLY_MIN_TOKENS of reply. `sent`: the request had already gone
+// out (a model loaded by it, JIT) and its reply was stopped unseen.
+const lmStudioTooSmall = ({ model, estimate, needed, loaded, sent }) => {
+    const suggest = Math.max(MIN_CONTEXT, Math.ceil((estimate + REPLY_RESERVE_TOKENS) / CONTEXT_STEP) * CONTEXT_STEP);
+    return new ContextLimitError(
+        `LM Studio runs ${model} with a ${formatTokens(loaded)}-token context, but this request needs about `
+        + `${formatTokens(needed)} (${WHAT_IT_HOLDS}). Reload the model in LM Studio with a context length of at least `
+        + `${formatTokens(suggest)}. ${sent
+            ? 'LM Studio loaded it for this request with that context, so the reply was stopped unseen'
+            : 'Nothing was sent'}: the model would have answered without part of its instructions.`,
+        { needed, available: loaded }
+    );
+};
+
 /**
- * The Copilot's model call: one streamed chat that the model receives whole.
- * Yields client.js fragments. `session` (an object the conversation keeps)
- * remembers the context asked for per model. Throws ContextLimitError instead
- * of sending a request the model would cut.
+ * The guard's decision for one request, before anything is sent: the plan
+ * the request goes out under, or a ContextLimitError when the model cannot
+ * hold it. `server` is detectServer's answer (detected here when null).
+ *   - Ollama: `{ server: 'ollama', version, estimate, needed, numCtx,
+ *     numPredict, loadedContext, maxContext }` (planContext; the context
+ *     this conversation asked before is read from `session`);
+ *   - LM Studio: `{ server: 'lmstudio', estimate, needed, loadedContext }`,
+ *     needed = estimate + LMSTUDIO_REPLY_MIN_TOKENS; loadedContext null when
+ *     the model is not loaded (the request loads it, JIT, and its window is
+ *     checked at the reply's first fragment);
+ *   - anything else: `{ server: 'openai' }` (sent unchanged, never probed).
+ * The plan is plain JSON: no key, no session.
  */
-export async function* streamCopilotChat({
-    baseUrl, model, temperature, apiKey, messages, tools, toolChoice, signal, session = null
-}) {
-    const server = await detectServer(baseUrl, { signal });
-    const estimate = server.kind === 'openai' ? null : estimatePromptTokens({ messages, tools });
-    if (server.kind === 'ollama') {
+export const planCopilotChat = async ({ baseUrl, model, messages, tools }, { server = null, session = null, signal } = {}) => {
+    const detected = server ?? await detectServer(baseUrl, { signal });
+    if (detected.kind === 'ollama') {
+        const estimate = estimatePromptTokens({ messages, tools });
         const [loaded, max] = await Promise.all([
             ollamaLoadedContext(baseUrl, model, { signal }),
             ollamaMaxContext(baseUrl, model, { signal })
         ]);
-        const key = `${baseUrl}|${model}`;
-        const plan = planContext({ estimate, loaded, max, previous: session?.[key] ?? null });
+        const plan = planContext({ estimate, loaded, max, previous: session?.[sessionKey(baseUrl, model)] ?? null });
         if (plan.refuse) {
             throw new ContextLimitError(
                 `This request needs about ${formatTokens(plan.needed)} tokens of context (${WHAT_IT_HOLDS}), but ${model} `
@@ -237,9 +263,47 @@ export async function* streamCopilotChat({
                 { needed: plan.needed, available: plan.max }
             );
         }
-        if (session) session[key] = plan.numCtx;
+        return {
+            server: 'ollama',
+            version: detected.version ?? null,
+            estimate,
+            needed: plan.needed,
+            numCtx: plan.numCtx,
+            numPredict: plan.numPredict,
+            loadedContext: loaded,
+            maxContext: max
+        };
+    }
+    if (detected.kind === 'lmstudio') {
+        const estimate = estimatePromptTokens({ messages, tools });
+        const needed = estimate + LMSTUDIO_REPLY_MIN_TOKENS;
+        const loaded = await lmStudioLoadedContext(baseUrl, model, { signal });
+        if (Number.isFinite(loaded) && loaded < needed) throw lmStudioTooSmall({ model, estimate, needed, loaded, sent: false });
+        return { server: 'lmstudio', estimate, needed, loadedContext: Number.isFinite(loaded) ? loaded : null };
+    }
+    return { server: 'openai' };
+};
+
+/**
+ * The Copilot's model call: one streamed chat that the model receives whole.
+ * Yields client.js fragments. `plan` is planCopilotChat's decision for this
+ * request (the model port makes it in `prepare`); without one it is made
+ * here. `session` (an object the conversation keeps) remembers the context
+ * asked for per model, written as the request goes out. Throws
+ * ContextLimitError instead of sending a request the model would cut; after
+ * sending, when Ollama read only part of the prompt, or a model LM Studio
+ * loaded for the request (JIT) has a window too small (the reply stopped
+ * unseen).
+ */
+export async function* streamCopilotChat({
+    baseUrl, model, temperature, apiKey, messages, tools, toolChoice, signal, session = null
+}, { plan = null } = {}) {
+    const planned = plan ?? await planCopilotChat({ baseUrl, model, messages, tools }, { session, signal });
+    if (planned.server === 'ollama') {
+        const { estimate, numCtx, numPredict } = planned;
+        if (session) session[sessionKey(baseUrl, model)] = numCtx;
         for await (const chunk of streamOllamaChat({
-            baseUrl, model, messages, tools, temperature, apiKey, numCtx: plan.numCtx, numPredict: plan.numPredict, signal
+            baseUrl, model, messages, tools, temperature, apiKey, numCtx, numPredict, signal
         })) {
             // A backstop: the request was sized to fit, so a cut means the
             // server did not honour the context asked for.
@@ -248,7 +312,7 @@ export async function* streamCopilotChat({
                 throw new ContextLimitError(
                     `Ollama read only ${formatTokens(read)} of about ${formatTokens(estimate)} prompt tokens: it cut the prompt, `
                     + 'so this reply did not see all of its instructions and the run context. Do not rely on it; '
-                    + `check the server's context settings (num_ctx ${formatTokens(plan.numCtx)} was asked for).`,
+                    + `check the server's context settings (num_ctx ${formatTokens(numCtx)} was asked for).`,
                     { needed: estimate, available: read }
                 );
             }
@@ -256,46 +320,31 @@ export async function* streamCopilotChat({
         }
         return;
     }
-    if (server.kind === 'lmstudio') {
-        const needed = estimate + LMSTUDIO_REPLY_MIN_TOKENS;
-        const tooSmall = (loaded, sent) => {
-            const suggest = Math.max(MIN_CONTEXT, Math.ceil((estimate + REPLY_RESERVE_TOKENS) / CONTEXT_STEP) * CONTEXT_STEP);
-            return new ContextLimitError(
-                `LM Studio runs ${model} with a ${formatTokens(loaded)}-token context, but this request needs about `
-                + `${formatTokens(needed)} (${WHAT_IT_HOLDS}). Reload the model in LM Studio with a context length of at least `
-                + `${formatTokens(suggest)}. ${sent
-                    ? 'LM Studio loaded it for this request with that context, so the reply was stopped unseen'
-                    : 'Nothing was sent'}: the model would have answered without part of its instructions.`,
-                { needed, available: loaded }
-            );
-        };
-        const loaded = await lmStudioLoadedContext(baseUrl, model, { signal });
-        if (Number.isFinite(loaded) && loaded < needed) throw tooSmall(loaded, false);
-        if (!Number.isFinite(loaded)) {
-            // Not loaded: this request loads it (JIT) with LM Studio's default
-            // context. Its window is read once it is loaded, at the first
-            // fragment, and a window too small stops the reply unseen.
-            const request = new AbortController();
-            const onAbort = () => request.abort();
-            signal?.addEventListener('abort', onAbort, { once: true });
-            try {
-                let checked = false;
-                for await (const chunk of streamChat({ baseUrl, model, temperature, apiKey, messages, tools, toolChoice, signal: request.signal })) {
-                    if (!checked) {
-                        checked = true;
-                        const now = await lmStudioLoadedContext(baseUrl, model, { signal });
-                        if (Number.isFinite(now) && now < needed) {
-                            request.abort();
-                            throw tooSmall(now, true);
-                        }
+    if (planned.server === 'lmstudio' && !Number.isFinite(planned.loadedContext)) {
+        // Not loaded: this request loads it (JIT) with LM Studio's default
+        // context. Its window is read once it is loaded, at the first
+        // fragment, and a window too small stops the reply unseen.
+        const { estimate, needed } = planned;
+        const request = new AbortController();
+        const onAbort = () => request.abort();
+        signal?.addEventListener('abort', onAbort, { once: true });
+        try {
+            let checked = false;
+            for await (const chunk of streamChat({ baseUrl, model, temperature, apiKey, messages, tools, toolChoice, signal: request.signal })) {
+                if (!checked) {
+                    checked = true;
+                    const now = await lmStudioLoadedContext(baseUrl, model, { signal });
+                    if (Number.isFinite(now) && now < needed) {
+                        request.abort();
+                        throw lmStudioTooSmall({ model, estimate, needed, loaded: now, sent: true });
                     }
-                    yield chunk;
                 }
-            } finally {
-                signal?.removeEventListener('abort', onAbort);
+                yield chunk;
             }
-            return;
+        } finally {
+            signal?.removeEventListener('abort', onAbort);
         }
+        return;
     }
     yield* streamChat({ baseUrl, model, temperature, apiKey, messages, tools, toolChoice, signal });
 }

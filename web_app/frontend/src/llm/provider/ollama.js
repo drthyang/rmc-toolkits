@@ -16,7 +16,7 @@
 // fragments as client.js streamChat (`{ content }`, `{ reasoning }`,
 // `{ toolCall }`, `{ finishReason }`), plus `{ usage }` from the last chunk.
 
-import { describeHttpError } from './client';
+import { httpError } from './client';
 
 /** The server root of an OpenAI-style base URL: `http://host:11434/v1` → `http://host:11434`. */
 export const serverOrigin = (baseUrl) => (baseUrl || '').replace(/\/+$/, '').replace(/\/v1$/, '');
@@ -67,7 +67,8 @@ export const toOllamaMessages = (messages) => {
  * Stream one chat from Ollama's native API. `numCtx` is the context the model
  * must run with; `numPredict` caps the reply so it cannot outgrow it.
  * `tool_choice` has no native equivalent and is not sent (Ollama ignores it
- * on /v1 too).
+ * on /v1 too): the model port (provider/model.js) enforces 'none' by sending
+ * no tools.
  */
 export async function* streamOllamaChat({
     baseUrl, model, messages, tools, temperature = 0.2, apiKey = '', numCtx, numPredict, signal
@@ -92,11 +93,7 @@ export async function* streamOllamaChat({
         body: JSON.stringify(body),
         signal
     });
-    if (!response.ok) {
-        const error = new Error(await describeHttpError(response));
-        error.status = response.status;
-        throw error;
-    }
+    if (!response.ok) throw await httpError(response);
     if (!response.body) throw new Error('The server returned no response body to stream');
     const reader = response.body.getReader();
     const decoder = new TextDecoder();

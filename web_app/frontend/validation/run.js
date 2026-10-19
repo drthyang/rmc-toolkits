@@ -48,7 +48,7 @@ import { renderReport } from './report';
 import { resolveModel } from './models';
 import { createSpendTracker, meteredModel } from './spend';
 import { parseFindingFiles, parseFindings } from './findings';
-import { contextSessionKey, noteWindowAfter, observeContext, preflight, readServer, windowSummary } from './runPolicy';
+import { noteWindowAfter, preflight, readServer, windowSummary } from './runPolicy';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '../../..');
@@ -123,19 +123,19 @@ export const loadSkills = () => {
  * One live run under the run policy (runPolicy.js): the pre-run check (a
  * RunPolicyError before anything is sent: the server is not the model's
  * kind, or an LM Studio model's loaded window is below the minimum), the run
- * through `base` (observed for the num_ctx Ollama was sent; metered under
+ * through `base` (the model port: each request as sent carries the context
+ * guard's plan, the num_ctx Ollama was sent among it; metered under
  * `tracker` for an API model, as `note`), and the window read again after.
  * A spend cap still throws its SpendCapError, with the run's record.
  */
 export const liveRun = async ({
-    built, arm, model, runIndex, base, session, tracker = null, note = null, skills = null, commit = null, pcaTable = false, limits = {}
+    built, arm, model, runIndex, base, tracker = null, note = null, skills = null, commit = null, pcaTable = false, limits = {}
 }) => {
     const server = await preflight(model);
-    const observed = observeContext(base, { session, key: contextSessionKey(model) });
-    const port = tracker ? meteredModel(observed.port, tracker, note) : observed.port;
+    const port = tracker ? meteredModel(base, tracker, note) : base;
     let record;
     try {
-        record = await runLiveCase({ built, arm, model, runIndex, port, skills, commit, pcaTable, limits, server, contextUsed: observed.used });
+        record = await runLiveCase({ built, arm, model, runIndex, port, skills, commit, pcaTable, limits, server });
     } catch (failure) {
         if (failure?.record) noteWindowAfter(failure.record.policy, await readServer(model));
         throw failure;
@@ -205,10 +205,9 @@ const commands = {
         const commit = commitOf();
         const skills = arm === 'B' ? loadSkills() : null;
         // The app's production model port, bound to this model (the warmer
-        // retry, the context guard); one context-size session for the batch,
-        // which the run policy reads for the num_ctx each request was sent.
-        const session = {};
-        const base = providerModel(model, { session });
+        // retry, the context guard, the provider's tool_choice form); one
+        // context-size session for the batch.
+        const base = providerModel(model, { session: {} });
         let tracker = null;
         if (model.api) {
             const ledgerPath = resolve(args.ledger || 'validation/runs/api-spend.jsonl');
@@ -233,7 +232,7 @@ const commands = {
                 }
                 let record;
                 try {
-                    record = await liveRun({ built, arm, model, runIndex: index, base, session, tracker, note: id, skills, commit, pcaTable });
+                    record = await liveRun({ built, arm, model, runIndex: index, base, tracker, note: id, skills, commit, pcaTable });
                 } catch (failure) {
                     if (failure?.name === 'RunPolicyError') {
                         console.log(`${id}: NOT STARTED (run policy)`);
