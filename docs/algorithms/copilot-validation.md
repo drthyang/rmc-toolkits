@@ -343,6 +343,30 @@ unchanged; the run module reads the new files exactly as it reads a user's run.
   request and no tool result (`caseBlind.test.js`, which now also checks that the dev cases
   between them offer every tool its sweep calls: the fit tools only here).
 
+**Protocol 2026-10-19.7 (the model port, architecture candidate 3).** The provider quirks moved
+behind the model port (`providerModel`, [the llm README](../../web_app/frontend/src/llm/README.md),
+*The model port*). Three things change for a run, each pinned (`runPolicy.test.js`,
+`modelPort.test.js`, `turn.test.js`):
+1. **An Ollama run's final request carries no tools.** Ollama's native `/api/chat` has no
+   `tool_choice`, so `'none'` was not sent and the tools were still offered. A final reply of calls
+   only then ended on the loop's "budget used" answer, scored as no verdict. The port now enforces
+   `'none'` by sending that request no tools; the earlier calls and results still travel as
+   messages. **This is what an Ollama run sends in its last round, so Ollama records under an
+   earlier protocol are not comparable on their final round.** The OpenAI-compatible servers
+   (LM Studio, the cloud) get the same body as before.
+2. **Each request as sent keeps the context guard's plan** (`sent.plan`, below): the server kind,
+   Ollama's `numCtx` and `numPredict`, LM Studio's loaded context, the estimate, and the tool
+   choice's form. Each request's `num_ctx` is read from it.
+3. **A request the guard refuses is not recorded as sent.** The guard decides in the port's
+   `prepare`, before anything is sent. A refused request has no entry in `requests`, as one the
+   spend cap refuses, and the run's `error` is the `ContextLimitError` with its sizes. It had been
+   recorded as sent, followed by the error. The choice keeps `requests` meaning "what reached the
+   model": the refusal is the run's outcome, not a request, and its numbers are in its message.
+
+What the model sees in every first request is unchanged (the model-visible snapshots pass as they
+were). No arm B or C run exists under an earlier protocol; arms A, A+ and D have no model and are
+unaffected.
+
 ## Records, transcripts, findings
 
 Each live run writes:
@@ -369,15 +393,20 @@ harness, so each record states it:
   the context as the model was shown it (the turn's `start`);
 - `requests` (since protocol 2026-10-19.4): every model request as it was sent, in order, as
   `{ round, why, sent }`, and since 2026-10-19.5 `num_ctx`, the context the guard sent Ollama for
-  it (null on other servers, or when the guard refused it): `why` is `first`, `tools` (the
+  it (null on other servers; since 2026-10-19.7 read from `sent.plan.numCtx`): `why` is `first`, `tools` (the
   results of the round before), `reminder`
   (after an empty or looping reply), `gate` (an answer the evidence gate sent back), `final` (the
   analysis budget used: `tool_choice` 'none') or `no_tools` (the retry of a model that refuses
   tools); `sent` is the request as the port prepared it (`providerModel`: base URL, model id,
-  temperature, messages, tools, tool choice; never the API key). A request the spend cap refused
-  was never sent and is not there. One the context guard refuses (it would not fit the model's
-  window) is there, followed by the run's `error`: the guard decides as the request goes out, not
-  when it is prepared (the model-port PR, candidate 3, moves that decision into `prepare`).
+  temperature, messages, tools, tool choice and, since 2026-10-19.7, `plan`, the context guard's
+  decision: `server`, and on Ollama `numCtx`, `numPredict`, `estimate`, `needed`,
+  `loadedContext`, `maxContext`, on LM Studio `estimate`, `needed`, `loadedContext`, with the tool
+  choice's form `toolChoice`: `body`, `omitted` or `tools_withheld`; never the API key). On an
+  Ollama final request `tools` is absent (withheld). A request the spend cap or the context guard
+  refused was never sent and is not there; the run's `error` names the refusal (since
+  2026-10-19.7 for the guard, which decides in `prepare`). A request sent and then stopped (Ollama
+  read only part of the prompt; a model LM Studio loaded for the request at too small a window)
+  is there, followed by the error.
 
 **What the run ran under (plan item 1.2).** `policy` (since protocol 2026-10-19.5): the run policy,
 the server and the window the run ran under, the limits, the temperature, the reply cap, the context
@@ -533,20 +562,24 @@ it waits for the user.
 ### The final round's tool_choice
 
 When the analysis budget is used, the loop asks for the answer with `tool_choice: 'none'`. The
-scripted check (`__tests__/runPolicy.test.js`) sends a final round through the production port
-(`providerModel` → `streamCopilotChat` → `client.js` or `ollama.js`) to each provider preset, with
-a fake server, and pins what goes out today:
+model port puts it in each server's form (`provider/model.js` `toolChoiceForm`; the request as sent
+names it, `sent.plan.toolChoice`). The scripted check (`__tests__/runPolicy.test.js`) sends a final
+round through the production port (`providerModel` → `streamCopilotChat` → `client.js` or
+`ollama.js`) to each provider preset, with a fake server, and pins what goes out:
 
-| Provider | Endpoint | The final request sends | Honoured? |
-| --- | --- | --- | --- |
-| OpenAI | `/v1/chat/completions` | `"tool_choice": "none"`, the tools still sent | Documented by OpenAI |
-| Gemini (OpenAI-compatible) | `/v1beta/openai/chat/completions` | The same | Not verified (no live call) |
-| Anthropic (OpenAI-compatible) | `/v1/chat/completions` | The same | Not verified (no live call) |
-| LM Studio | `/v1/chat/completions` | The same | Not verified; the smoke run shows it |
-| Ollama | `/api/chat` (native) | No `tool_choice` (the native API has none), the tools still sent | **No**: the model may still call tools. The loop ignores those calls and, with no text, ends on its empty-final answer |
+| Provider | Endpoint | The final request sends | Form | Honoured? |
+| --- | --- | --- | --- | --- |
+| OpenAI | `/v1/chat/completions` | `"tool_choice": "none"`, the tools still sent | `body` | Documented by OpenAI |
+| Gemini (OpenAI-compatible) | `/v1beta/openai/chat/completions` | The same | `body` | Not verified (no live call) |
+| Anthropic (OpenAI-compatible) | `/v1/chat/completions` | The same | `body` | Not verified (no live call) |
+| LM Studio | `/v1/chat/completions` | The same | `body` | Not verified; the smoke run shows it |
+| Ollama | `/api/chat` (native) | **No tools** and no `tool_choice` (the native API has none) | `tools_withheld` | **Enforced** (since protocol 2026-10-19.7): with no tools the model cannot call one |
 
-Ollama's form does not enforce the final round. Changing a form is the model port's job (plan
-candidate 3), not the policy's; the check records the forms so that change shows.
+Before protocol 2026-10-19.7 Ollama's final request still offered the tools, and a reply of calls
+only ended on the loop's empty-final answer. Every other round on Ollama still sends the tools and
+no `tool_choice` (form `omitted`: its default, auto). The loop keeps its guard for the servers
+that take the field: calls in a final reply are never run, and a final reply with no text ends on
+the fixed "budget used" answer.
 
 ### What a comparison across models also compares
 
@@ -557,7 +590,7 @@ a comparison across the four models also compares:
 - **the context sizing:** Ollama gets a sized `num_ctx` and a `num_predict`; LM Studio a loaded
   window of 48k or more and no reply cap; the API model its own window and no reply cap;
 - **the final round:** `tool_choice: 'none'` on the OpenAI-compatible servers, honoured where the
-  server honours it, and nothing on Ollama;
+  server honours it, and no tools on Ollama, which is enforced;
 - **what no policy sets:** sampling beyond the temperature (top_p, top_k, min_p, the repetition
   penalty), the reasoning mode and its effort, the tokenizer (the guard's estimate of a request is
   the same for every model, the real count is not), the quantization and the server's release.
@@ -726,9 +759,11 @@ stalled run from holding the batch.
   load it with `lms load <model> --context-length 49152`, run the smoke pass's first case, and read
   the window in its record. The pre-run check refuses anything less, so a model the Mac cannot hold
   at 48k does not run under this protocol.
-- **The final round on each local server.** In the smoke records, a run whose last request came
-  back as tool calls only ends on the loop's empty-final answer. On LM Studio that would mean
-  `tool_choice: 'none'` is not honoured; Ollama is known not to take it.
+- **The final round on LM Studio.** In the smoke records, a run whose last request came back as
+  tool calls only ends on the loop's empty-final answer. On LM Studio that would mean
+  `tool_choice: 'none'` is not honoured. On Ollama the last request carries no tools (protocol
+  2026-10-19.7); check in its smoke records that the final reply reads the earlier calls and
+  results from the messages alone and still answers (not verified with a live model).
 
 **Time.** Each run is bounded by the agent loop: 6 rounds, 10 minutes plus the final reply. Since
 protocol 2026-10-17.2 the evidence gate can add up to two answer requests to a run (an answer sent

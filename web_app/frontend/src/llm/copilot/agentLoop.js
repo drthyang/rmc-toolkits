@@ -2,14 +2,14 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { toolBudgetNote } from '../prompts/copilot';
-import { asModelPort } from '../provider/model';
+import { asModelPort, ToolsUnsupportedError } from '../provider/model';
 import { auditAnswer } from './answerAudit';
 import { ASK_USER, MAX_QUESTIONS, answerResult } from './askUser';
 import { resolveClarification } from './clarify';
 import { parseOutcome } from './outcome';
 import { createReferenceStore, fillReferences } from './references';
 import { computeOutcome } from './verdict';
-import { keyNumbers, repeatsItself, textToolCalls, withDeadlines } from './robustness';
+import { beforeStall, keyNumbers, repeatsItself, textToolCalls, withDeadlines } from './robustness';
 import {
     accumulateToolCall, canonicalJson, finalizeToolCalls, parseToolArguments, validateToolArguments
 } from './toolCalls';
@@ -35,11 +35,14 @@ import {
 //                                                  'reminder' (after an empty or looping
 //                                                  reply), 'gate' (an answer sent back),
 //                                                  'final' (the budget is used: tool_choice
-//                                                  'none'), 'no_tools' (the retry without tools)
+//                                                  'none'), 'no_tools' (the retry without tools).
+//                                                  A request the port refuses in prepare (the
+//                                                  context guard, a spend cap) has none
 //   { type: 'text', delta } / { type: 'reasoning', delta }
 //   { type: 'tool_start', id, name, label, args, page, cards, interactive }
 //   { type: 'tool_end', id, name, status, args, data, checks, error, ms, cached, pageParams }
-//   { type: 'tools_unsupported', error }           retried without tools
+//   { type: 'tools_unsupported', error }           the port's ToolsUnsupportedError on the
+//                                                  first request: retried without tools
 //   { type: 'gate', id, what, missing, notice }    the evidence gate sent the answer back
 //                                                  (a 'retract' withdraws its text)
 //   { type: 'done', text, rawText, outcome, rounds, stoppedBy: 'answer' | 'max_rounds' | 'empty', cut, audit,
@@ -108,15 +111,6 @@ export const DEFAULT_LIMITS = {
     maxNoProgressRounds: 2,
     maxEvidenceGates: 2
 };
-
-// A 4xx saying the model or server cannot take a `tools` field (Ollama:
-// "<model> does not support tools"). Deliberately narrow: a 400 about a
-// tool's schema is a real error and must be shown, not hidden by a fallback.
-const TOOLS_UNSUPPORTED = /(does not|doesn't|do not) support (tools|tool calling|tool use|function calling)|(tools|tool calling|tool use|function calling) (is |are )?not supported/i;
-export const isToolsUnsupportedError = (error) => (
-    Number.isInteger(error?.status) && error.status >= 400 && error.status < 500
-    && TOOLS_UNSUPPORTED.test(error.message || '')
-);
 
 // Assistant content that is only whitespace (models often stream a newline
 // before a tool call) is sent as null: Anthropic rejects empty text blocks.
@@ -391,14 +385,17 @@ export async function* runCopilotTurn({
         try {
             // The intent (a snapshot of the messages: the loop keeps
             // appending to its own list), prepared by the port into the
-            // request as sent, which the caller sees before the reply.
+            // request as sent, which the caller sees before the reply. A
+            // request the port refuses to send (the context guard, a spend
+            // cap) throws here, so it has no `request` event. Preparing may
+            // probe the server: it runs under the stall clock too.
             const intent = {
                 messages: [...messages],
                 tools: useTools ? requestTools : undefined,
                 toolChoice: useTools ? (finalRound ? 'none' : 'auto') : undefined,
                 retry: warmer ? 'warmer' : null
             };
-            const sent = await port.prepare(intent, { signal: request.signal });
+            const sent = await beforeStall(port.prepare(intent, { signal: request.signal }), { stallMs, cancel: () => request.abort() });
             yield { type: 'request', round: rounds, why, sent };
             const stream = port.stream(sent, { signal: request.signal });
             for await (const chunk of withDeadlines(stream, { stallMs, maxMs: requestMaxMs, cancel: () => request.abort() })) {
@@ -422,9 +419,11 @@ export async function* runCopilotTurn({
                 }
             }
         } catch (error) {
-            // Only the turn's first request falls back: later ones already
-            // carried tools successfully, so their failure is a real one.
-            if (useTools && rounds === 0 && !text && isToolsUnsupportedError(error)) {
+            // The port says, by type, that the model cannot take tools (it
+            // reads each provider's failure; provider/model.js). Only the
+            // turn's first request falls back: later ones already carried
+            // tools successfully, so their failure is a real one.
+            if (useTools && rounds === 0 && !text && error instanceof ToolsUnsupportedError) {
                 useTools = false;
                 // The tool rules would only confuse a model that has none.
                 if (noToolsSystemPrompt && messages[0]?.role === 'system') {
@@ -445,6 +444,10 @@ export async function* runCopilotTurn({
             text = '';
             fragments.length = 0;
         }
+        // The final round's calls are never run. The port enforces tool_choice
+        // 'none' where the provider has no such field (Ollama: no tools are
+        // sent); this guards the providers that take the field but are not
+        // verified to honour it (LM Studio, Gemini, Anthropic).
         let calls = useTools && !finalRound ? finalizeToolCalls(fragments, `${rounds}_`) : [];
         // A call written as JSON text (small local models do that) is run.
         if (!calls.length && useTools && !finalRound && text.trim()) {
@@ -475,8 +478,9 @@ export async function* runCopilotTurn({
                     yield finish(withdrawn, stoppedBy, cut);
                     return;
                 }
-                // Ollama ignores tool_choice 'none': a last round can come back
-                // as tool calls only. Say so instead of ending on nothing.
+                // A last round that came back as tool calls only (a provider
+                // that does not honour tool_choice 'none'), or with nothing
+                // after its reminder: say so instead of ending on nothing.
                 if (finalRound) {
                     const final = stalled ? EMPTY_STALLED : EMPTY_FINAL;
                     yield { type: 'text', delta: final };
