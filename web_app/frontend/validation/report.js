@@ -4,7 +4,9 @@
 // Every run, side by side: one table per split, a row per case, a column per
 // (model, arm), and the summary metrics. Nothing is filtered: a run that
 // failed, stopped at the spend cap or wrote no verdict counts as score 0 and
-// is listed; the appendix names every run record used.
+// is listed; the appendix names every run record used. Before it, what a
+// comparison across models also compares: the columns' run policies
+// (runPolicy.js) side by side, and what no policy sets.
 
 import { reproducibility } from './scoring';
 import { finalRoundSummary, limitsSummary, SERVER_LABELS, windowSummary } from './runPolicy';
