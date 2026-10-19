@@ -162,9 +162,15 @@ export const runLiveCase = async ({
     let round = { index: 0, reasoning: '', text: '' };
     const open = new Map();
     let gated = null;
+    // The loop's request in the form `callModel` takes (until the harness
+    // runs on the turn module): the intent's fields and the signal.
+    const legacyPort = (sent, { signal: requestSignal } = {}) => callModel({
+        messages: sent.messages, tools: sent.tools, toolChoice: sent.toolChoice, signal: requestSignal,
+        ...(sent.retry === 'warmer' ? { antiRepeat: true } : {})
+    });
     try {
         for await (const event of runCopilotTurn({
-            callModel, messages, tools, limits, signal, toolsEnabled: true,
+            model: legacyPort, messages, tools, limits, signal, toolsEnabled: true,
             toolContext: { askUser: skippingUser(asked) },
             auditContext: contextAuditFacts(context, pointGroupFacts),
             clarifier,

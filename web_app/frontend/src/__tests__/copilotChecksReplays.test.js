@@ -88,7 +88,7 @@ const replay = async (question, replies, { answer = null, withClarifier = true, 
     const { callModel, requests } = scriptedModel([...replies]);
     const events = [];
     for await (const event of runCopilotTurn({
-        callModel,
+        model: callModel,
         messages: [{ role: 'system', content: 'S' }, { role: 'user', content: question }],
         tools,
         signal,
@@ -360,7 +360,7 @@ describe('the questions the Workbench asks itself', () => {
         }));
         const run = (async () => {
             for await (const event of runCopilotTurn({
-                callModel, messages: [{ role: 'user', content: 'Compute the bond angles around Ta.' }], tools,
+                model: callModel, messages: [{ role: 'user', content: 'Compute the bond angles around Ta.' }], tools,
                 signal: controller.signal, toolContext: { askUser }, clarifier
             })) void event;
         })();

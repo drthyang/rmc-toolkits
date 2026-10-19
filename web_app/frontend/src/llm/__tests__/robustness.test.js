@@ -18,11 +18,12 @@ const collect = async (generator) => {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // A model whose replies are scripted: { text, reasoning, calls } or a stream
-// function (request) => async iterable.
+// function (request) => async iterable. A bare stream function is a model
+// port (provider/model.js): it gets the loop's intent and its signal.
 const scriptedModel = (replies) => {
     const requests = [];
-    const callModel = (request) => {
-        requests.push({ ...request, messages: request.messages.map((message) => ({ ...message })) });
+    const callModel = (request, { signal } = {}) => {
+        requests.push({ ...request, signal, messages: request.messages.map((message) => ({ ...message })) });
         const reply = replies.shift();
         if (typeof reply === 'function') return reply(request);
         return (async function* stream() {
@@ -155,12 +156,12 @@ describe('explainModelError', () => {
 describe('runCopilotTurn on a local model', () => {
     it('stops a request that stalls and explains it', async () => {
         let requestSignal = null;
-        const callModel = ({ signal }) => {
+        const callModel = (request, { signal }) => {
             requestSignal = signal;
             return (async function* stream() { yield { reasoning: 'Thinking' }; await sleep(500); yield { content: 'late' }; }());
         };
         await expect(collect(runCopilotTurn({
-            callModel, messages: baseMessages, tools: [echoTool()], limits: { stallMs: 30 }
+            model: callModel, messages: baseMessages, tools: [echoTool()], limits: { stallMs: 30 }
         }))).rejects.toBeInstanceOf(ModelTimeoutError);
         expect(requestSignal.aborted).toBe(true);
     });
@@ -170,7 +171,7 @@ describe('runCopilotTurn on a local model', () => {
             { reasoning: 'Let me think about the bonds…', finish: 'stop' },
             { text: 'The bond is 2.52 Å.\n\nOutcome: achieved — measured.' }
         ]);
-        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()] }));
+        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool()] }));
         expect(requests).toHaveLength(2);
         // The reminder joins the question: never two user messages in a row.
         expect(requests[1].messages).toHaveLength(2);
@@ -183,7 +184,7 @@ describe('runCopilotTurn on a local model', () => {
             { text: '{"name": "echo", "arguments": {"value": 4}}' },
             { text: 'The value is 4.\n\nOutcome: achieved.' }
         ]);
-        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()] }));
+        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool()] }));
         expect(events.filter((event) => event.type === 'tool_end')).toHaveLength(1);
         expect(events.some((event) => event.type === 'retract')).toBe(true);
         expect(JSON.parse(requests[1].messages.at(-1).content).data).toEqual({ value: 4, mean_A: 2.52 });
@@ -204,10 +205,10 @@ describe('runCopilotTurn on a local model', () => {
             for (; pieces < 1000; pieces += 1) yield { reasoning: LOOP };
         }());
         const { callModel, requests } = scriptedModel([looping, { text: 'Six Se at 2.52 Å.\n\nOutcome: achieved.' }]);
-        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()] }));
+        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool()] }));
         expect(pieces).toBeLessThan(40);
         expect(requests[0].signal.aborted).toBe(true);
-        expect(requests[1].antiRepeat).toBe(true);
+        expect(requests[1].retry).toBe('warmer');
         expect(requests[1].messages.at(-1).content).toMatch(/kept repeating the same passage/);
         expect(events.at(-1)).toMatchObject({ stoppedBy: 'answer' });
     });
@@ -217,7 +218,7 @@ describe('runCopilotTurn on a local model', () => {
             for (let index = 0; index < 1000; index += 1) yield { content: LOOP };
         }());
         const { callModel } = scriptedModel([looping, looping]);
-        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()] }));
+        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool()] }));
         expect(events.at(-1)).toMatchObject({
             type: 'done', text: '', stoppedBy: 'empty', reason: 'the model kept repeating the same passage, even after a reminder'
         });
@@ -229,7 +230,7 @@ describe('runCopilotTurn on a local model', () => {
             same, same, same,
             { text: 'The value is 1.\n\nOutcome: achieved.' }
         ]);
-        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()], limits: { maxRounds: 6 } }));
+        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool()], limits: { maxRounds: 6 } }));
         expect(requests).toHaveLength(4);
         expect(requests[3].toolChoice).toBe('none');
         expect(requests[3].messages.at(-1).content).toMatch(/added nothing new/);
@@ -251,7 +252,7 @@ describe('runCopilotTurn on a local model', () => {
         const same = { calls: [{ name: 'echo', args: { value: 1 } }] };
         const { callModel, requests } = scriptedModel([same, same, same, { text: 'Done.\n\nOutcome: achieved.' }]);
         const events = await collect(runCopilotTurn({
-            callModel, messages: baseMessages, tools: [shellTool], clarifier, toolContext: { askUser: async () => ({}) }
+            model: callModel, messages: baseMessages, tools: [shellTool], clarifier, toolContext: { askUser: async () => ({}) }
         }));
         expect(requests).toHaveLength(4);
         expect(events.at(-1)).toMatchObject({ stoppedBy: 'no_progress' });
@@ -260,7 +261,7 @@ describe('runCopilotTurn on a local model', () => {
     it('counts failing calls as no progress too', async () => {
         const bad = { calls: [{ name: 'echo', args: { value: 'x' } }] };
         const { callModel, requests } = scriptedModel([bad, bad, { text: 'I could not run it.\n\nOutcome: not achieved.' }]);
-        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()] }));
+        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool()] }));
         expect(requests).toHaveLength(3);
         expect(events.at(-1)).toMatchObject({ stoppedBy: 'no_progress' });
     });

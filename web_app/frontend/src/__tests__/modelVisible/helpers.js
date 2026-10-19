@@ -168,6 +168,10 @@ export const freezeRequest = (request) => Object.fromEntries(Object.entries(requ
 /**
  * A model that records every request and replies from `replies` in order
  * (the last one repeats): `{ calls: [[name, args], …] }` or `{ text }`.
+ * `callModel(request)` records a provider call as it is made (the dock's
+ * streamCopilotChat); `port` is a model port (provider/model.js) that records
+ * each intent it is sent with its signal, leaving out a null `retry` (no
+ * retry: the port's instruction, never sent to the model).
  */
 export const recordingModel = (replies = [{ text: 'Recorded.\n\nOutcome: a recorded request.' }]) => {
     const requests = [];
@@ -182,7 +186,10 @@ export const recordingModel = (replies = [{ text: 'Recorded.\n\nOutcome: a recor
             yield { finishReason: reply.calls ? 'tool_calls' : 'stop' };
         }());
     };
-    return { callModel, requests };
+    const port = {
+        stream: ({ retry = null, ...intent }, { signal } = {}) => callModel({ ...intent, ...(retry ? { retry } : {}), signal })
+    };
+    return { callModel, port, requests };
 };
 
 // --- a request as text --------------------------------------------------------------

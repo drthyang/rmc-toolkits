@@ -108,7 +108,7 @@ describe('tool results as the model reads them (the Demo run)', () => {
         });
         const events = [];
         for await (const event of runCopilotTurn({
-            callModel: model.callModel,
+            model: model.port,
             messages,
             tools,
             toolContext: { askUser },

@@ -118,7 +118,7 @@ describe('read_skill', () => {
             }());
         };
         for await (const event of runCopilotTurn({
-            callModel, messages: [{ role: 'system', content: 'S' }], tools: [reader, big], limits: { resultCharBudget: 1200, turnCharBudget: 1500 }
+            model: callModel, messages: [{ role: 'system', content: 'S' }], tools: [reader, big], limits: { resultCharBudget: 1200, turnCharBudget: 1500 }
         })) void event;
         const toolMessages = requests.at(-1).filter((message) => message.role === 'tool');
         const skill = JSON.parse(toolMessages[0].content);

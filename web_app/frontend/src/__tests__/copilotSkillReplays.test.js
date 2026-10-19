@@ -53,7 +53,7 @@ const replay = async (replies, { auditContext = null } = {}) => {
     const { callModel, requests } = scriptedModel([...replies]);
     const events = [];
     for await (const event of runCopilotTurn({
-        callModel, messages: [{ role: 'system', content: 'S' }, { role: 'user', content: 'Q' }], tools, auditContext,
+        model: callModel, messages: [{ role: 'system', content: 'S' }, { role: 'user', content: 'Q' }], tools, auditContext,
         // The evidence gate is on, as in the app (THY-18).
         evidence: buildEvidenceGate({ offered: tools.map((tool) => tool.name) })
     })) events.push(event);

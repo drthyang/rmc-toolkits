@@ -11,7 +11,7 @@ import { READ_SKILL, skillIndex } from './copilot/skills';
 import { compactAnswer, explainModelError } from './copilot/robustness';
 import { pointGroupFacts } from './context/pointGroups';
 import { buildCopilotMessages, COPILOT_PROMPT_NO_TOOLS, shownContext } from './prompts/copilot';
-import { streamCopilotChat } from './provider/contextGuard';
+import { providerModel } from './provider/model';
 
 // Conversation state for the Copilot page: the finished turns, the turn in
 // progress, Stop, and which models proved unable to call tools (so later
@@ -44,8 +44,6 @@ const now = () => (typeof performance !== 'undefined' ? performance.now() : Date
 const abortError = () => new DOMException('Aborted', 'AbortError');
 // The longest earlier answer re-sent whole as memory.
 export const MEMORY_ANSWER_CHARS = 2000;
-// The temperature a request asked again after a loop runs at, at least.
-export const ANTI_REPEAT_TEMPERATURE = 0.6;
 
 /**
  * Earlier turns as model memory: each question with its final answer, a long
@@ -145,21 +143,13 @@ export const useCopilot = ({
         // The agent moves on: the last answer's highlight ends.
         focus?.clear('question');
         const model = settings.model;
-        const callModel = ({ antiRepeat = false, ...request }) => streamCopilotChat({
-            baseUrl: settings.baseUrl,
-            model,
-            temperature: antiRepeat ? Math.max(Number(settings.temperature) || 0, ANTI_REPEAT_TEMPERATURE) : settings.temperature,
-            apiKey: settings.apiKey,
-            session: contextSessionRef.current,
-            ...request
-        });
 
         setTurns((current) => [...current, { role: 'user', content: text }]);
         let turn = newAssistantTurn(now());
         setLive(turn);
         try {
             for await (const event of runCopilotTurn({
-                callModel,
+                model: providerModel(settings, { session: contextSessionRef.current }),
                 messages,
                 tools,
                 signal: controller.signal,
@@ -208,7 +198,7 @@ export const useCopilot = ({
             }
             setLive(null);
         }
-    }, [turns, context, tools, toolsOn, focus, askUser, clarifier, skills, settings.baseUrl, settings.model, settings.temperature, settings.apiKey]);
+    }, [turns, context, tools, toolsOn, focus, askUser, clarifier, skills, settings]);
 
     const clear = useCallback(() => {
         generationRef.current += 1;
