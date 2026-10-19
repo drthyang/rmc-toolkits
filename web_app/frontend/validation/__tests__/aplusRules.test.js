@@ -164,7 +164,7 @@ describe('the lower group\'s tolerance as A+ applies it (NOISE_FLOOR_MARGIN × t
         ].map(([el, frac], index) => ({ el, frac, referenceNumber: index + 1, dispA: 0.1, count: 450 }))
     });
 
-    it('is 1.25 × the floor at two digits, the tool\'s default, and 0.025 Å without counts', () => {
+    it('is 1.25 × the floor at two digits, and 0.025 Å without counts', () => {
         expect(symmetryNoiseFloor(perovskite(0).basis)).toBeCloseTo(0.02, 6);
         expect(lowerGroupTolerance(perovskite(0).basis)).toBe(0.025);
         expect(lowerGroupTolerance([{ dispA: 0.2, count: 400 }])).toBe(0.053);
