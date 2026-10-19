@@ -106,6 +106,8 @@ Copilot is experimental: trust its step cards' checks over its own verdict.
 - [docs/ALGORITHMS.md](docs/ALGORITHMS.md): the math of every page, anchored to the code, with the
   approximations stated.
 - [AI Copilot guide](web_app/frontend/src/llm/README.md): how it works, its tools, privacy, setup.
+- [docs/AGENT_PLAN.md](docs/AGENT_PLAN.md): the Copilot's architecture, tool and skill plan before
+  the validation's live runs (waiting for the user's decisions).
 - [docs/ROADMAP.md](docs/ROADMAP.md) · [docs/CHANGELOG.md](docs/CHANGELOG.md) · [AGENTS.md](AGENTS.md)
   (contributor guide).
 
