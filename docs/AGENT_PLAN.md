@@ -299,6 +299,13 @@ Beyond single contradictions:
     (`contextGuard.js:41`).
   - **The total.** Two skills read then come to about 27k of qwen3.8-27b's 32k: a third skill, or
     a long reasoning round, is refused by the context guard.
+  - **Measured (5.5's budget test, 2026-10-19).** The guard counts tool messages (skills and
+    analyses) at 1.4 characters a token, not 2.5, so the worst turn does not fit today. The dock on
+    the Demo: prompt 4,762 + tool JSON 6,752 + context 2,213 + question 70 + the two largest
+    skills 7,814 + analyses at the 12k budget 8,724 = 30,333, plus the 8,192 reserve = 38,525,
+    5,757 over 32,768 (1,661 over under LM Studio's 4,096-token rule). Arm B on its largest dev
+    case (dev-symmetry-lowering): 26,889 + 8,192 = 35,081, 2,313 over (1,783 to spare under LM
+    Studio's rule). `src/__tests__/contextBudget.test.js` pins these numbers.
 - **No outline drops the gate numbers.** Unlike MATERIA, the Copilot never shrinks a skill to an
   outline: a read skill stays whole for the question. The risk runs the other way: kept whole, the
   skills crowd the window (above).
@@ -369,7 +376,7 @@ change what A+ sweeps are noted.
 | 5.2 | **(approval)** The user's review of PR #71 (batch 1's skill drafts and the new local-order draft). | — |
 | 5.3 | **(approval; each draft goes to the user before it merges)** The three disagreements left after #71 (split site, cluster elements, what "no order" needs), in the same PR as candidate 8 and the gate change. | S |
 | 5.4 | **(approval; each draft goes to the user before it merges)** Method out of the tool descriptions and the prompt for arm B too: a description says what a tool does; the window advice and the evidence sentence move to the skills. Arm C already drops them structurally (1.8). | M |
-| 5.5 | **(approval)** Size for a 32k window: a budget test (prompt + two skills + the turn's analyses + the reply reserve within 32k); long reference material moves to on-demand references. | S |
+| 5.5 | **(approval)** Size for a 32k window: a budget test (prompt + two skills + the turn's analyses + the reply reserve within 32k); long reference material moves to on-demand references. The budget test is built (`contextBudget.test.js`: today's overflow pinned, the fit an expected failure); the on-demand references wait for the user's skill review. | S |
 | 5.6 | SKILL_INTERVIEWS brought up to date when #71 merges; the validation report says which skills are the user's method and which are drafts. | S |
 
 ### Phase 6 — Freeze and re-baseline
