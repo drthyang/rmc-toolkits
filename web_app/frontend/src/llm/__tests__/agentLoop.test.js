@@ -2,7 +2,8 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_LIMITS, assistantContent, isToolsUnsupportedError, runCopilotTurn } from '../copilot/agentLoop';
+import { DEFAULT_LIMITS, assistantContent, runCopilotTurn } from '../copilot/agentLoop';
+import { ToolsUnsupportedError } from '../provider/model';
 import { ASK_USER, buildAskUserTool } from '../copilot/askUser';
 import { budgetJson, fitToBudget, stepStatus, usableTools } from '../copilot/tools';
 import { buildEvidenceGate } from '../copilot/evidence';
@@ -187,31 +188,63 @@ describe('runCopilotTurn', () => {
         expect(events.at(-1).outcome.status).toBe('partial');
     });
 
-    it('retries once without tools when the model cannot call them', async () => {
-        const unsupported = Object.assign(new Error('HTTP 400: registry.ollama.ai/library/gemma3 does not support tools'), { status: 400 });
+    it('retries once without tools when the port says the model cannot call them (ToolsUnsupportedError)', async () => {
+        const unsupported = new ToolsUnsupportedError('HTTP 400: registry.ollama.ai/library/gemma3 does not support tools', { status: 400, server: 'ollama' });
         const { callModel, requests } = scriptedModel([unsupported, { text: 'Plain answer.' }]);
         const events = await collect(runCopilotTurn({
             model: callModel, messages: baseMessages, tools: [echoTool()], noToolsSystemPrompt: 'PLAIN'
         }));
-        expect(events.some((event) => event.type === 'tools_unsupported')).toBe(true);
+        expect(events.find((event) => event.type === 'tools_unsupported'))
+            .toEqual({ type: 'tools_unsupported', error: 'HTTP 400: registry.ollama.ai/library/gemma3 does not support tools' });
         expect(requests[1].tools).toBeUndefined();
         expect(requests[1].toolChoice).toBeUndefined();
         expect(requests[1].messages[0].content).toBe('PLAIN');
         expect(events.at(-1)).toMatchObject({ type: 'done', text: 'Plain answer.' });
     });
 
-    it('does not mistake other HTTP failures for missing tool support', async () => {
+    it('reacts to the failure\'s type, not its text: other failures are thrown, whatever they say', async () => {
         const quota = Object.assign(new Error('HTTP 429: quota'), { status: 429 });
-        const { callModel } = scriptedModel([quota]);
-        await expect(collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool()] })))
+        await expect(collect(runCopilotTurn({ model: scriptedModel([quota]).callModel, messages: baseMessages, tools: [echoTool()] })))
             .rejects.toThrow('HTTP 429: quota');
-        const err = (message, status = 400) => Object.assign(new Error(message), { status });
-        expect(isToolsUnsupportedError(err('HTTP 500: model does not support tools', 500))).toBe(false);
-        expect(isToolsUnsupportedError(err('HTTP 400: tools are not supported by this model'))).toBe(true);
-        expect(isToolsUnsupportedError(err('HTTP 400: function calling is not supported'))).toBe(true);
-        // A schema problem is a real error, never "this model has no tools".
-        expect(isToolsUnsupportedError(err("HTTP 400: Invalid schema for function 'list_sites'"))).toBe(false);
-        expect(isToolsUnsupportedError(err('HTTP 400: tools.0.function.parameters is invalid'))).toBe(false);
+        // The text alone is the port's to read (provider/model.js), never the loop's.
+        const untyped = Object.assign(new Error('HTTP 400: gemma3 does not support tools'), { status: 400 });
+        const { callModel, requests } = scriptedModel([untyped, { text: 'never asked' }]);
+        await expect(collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool()] })))
+            .rejects.toBe(untyped);
+        expect(requests).toHaveLength(1);
+        // A later request's failure is a real one, typed or not: tools already went through.
+        const late = new ToolsUnsupportedError('HTTP 400: does not support tools', { status: 400 });
+        const later = scriptedModel([{ calls: [{ name: 'echo', args: { value: 1 } }] }, late]);
+        await expect(collect(runCopilotTurn({ model: later.callModel, messages: baseMessages, tools: [echoTool()] })))
+            .rejects.toBe(late);
+    });
+
+    it('a request the port refuses in prepare (the context guard) has no request event, and is thrown', async () => {
+        const refusal = Object.assign(new Error('This request needs about 30,000 tokens of context. Nothing was sent.'), { name: 'ContextLimitError' });
+        const stream = vi.fn();
+        const seen = [];
+        await expect((async () => {
+            for await (const event of runCopilotTurn({ model: { prepare: async () => { throw refusal; }, stream }, messages: baseMessages, tools: [echoTool()] })) {
+                seen.push(event.type);
+            }
+        })()).rejects.toBe(refusal);
+        expect(seen).toEqual(['round']);
+        expect(stream).not.toHaveBeenCalled();
+    });
+
+    it('stops a request whose preparation hangs (a server probe), as a stalled reply', async () => {
+        let aborted = false;
+        const model = {
+            prepare: (intent, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => {
+                aborted = true;
+                reject(new DOMException('Aborted', 'AbortError'));
+            })),
+            stream: vi.fn()
+        };
+        const failure = await collect(runCopilotTurn({ model, messages: baseMessages, tools: [echoTool()], limits: { stallMs: 20 } })).catch((error) => error);
+        expect(failure).toMatchObject({ name: 'ModelTimeoutError', kind: 'stall' });
+        expect(aborted).toBe(true);
+        expect(model.stream).not.toHaveBeenCalled();
     });
 
     it('surfaces a tool-schema 400 instead of falling back', async () => {
@@ -294,8 +327,10 @@ describe('runCopilotTurn', () => {
         expect(assistantContent('')).toBeNull();
     });
 
-    it('says so when the last round comes back with tool calls only (Ollama ignores tool_choice)', async () => {
+    it('says so when the last round comes back with tool calls only (a provider that ignores tool_choice \'none\')', async () => {
         // The last round's calls are not run; it is reminded once, then said so.
+        // Ollama can no longer do this (the port sends it no tools); a server
+        // that takes the field but does not honour it still could.
         const { callModel, requests } = scriptedModel([
             { calls: [{ name: 'echo', args: { value: 1 } }] },
             { calls: [{ name: 'echo', args: { value: 2 } }] },

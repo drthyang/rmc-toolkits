@@ -137,13 +137,17 @@ inputs on its page, stays the *user's* action.
      unchanged.
    - Each fragment's provider data (`extra_content`, where Gemini puts its `thought_signature`)
      is kept, because it must be echoed back.
-   - An HTTP failure carries its `status`.
-   - **`provider/contextGuard.js` + `provider/ollama.js`**: every Copilot request goes through
-     `streamCopilotChat()`, which never sends a request the model would cut (*The context window*
-     below). Ollama's requests use its native `/api/chat` (NDJSON) with a fitting `num_ctx`.
+   - An HTTP failure carries its `status` and its parsed error body (`httpError`).
+   - **`provider/contextGuard.js` + `provider/ollama.js`**: the context guard decides each request
+     before it is sent (`planCopilotChat()`: the server kind, Ollama's `num_ctx` and `num_predict`,
+     LM Studio's loaded context, or a refusal), and `streamCopilotChat()` sends it under that plan,
+     never a request the model would cut (*The context window* below). Ollama's requests use its
+     native `/api/chat` (NDJSON) with a fitting `num_ctx`.
    - **`provider/model.js`**: the model port, the one seam between a turn and whatever answers it
-     (*The turn* below). `providerModel(settings, { session })` is the production port over
-     `streamCopilotChat()`.
+     (*The turn* below). `providerModel(settings, { session })` is the production port. Every
+     provider quirk sits behind it: the server kind, the form each server takes `tool_choice` in,
+     the guard's plan in the request as sent, and the typed failures (`ContextLimitError`,
+     `ToolsUnsupportedError`).
    - `checkConnection()` turns failures into actionable hints: a bare `TypeError` means "server
      down **or** CORS blocked", and 401 / 429 name the key and quota problems.
 4. **`copilot/toolCalls.js`** turns streamed fragments into calls.
@@ -167,11 +171,17 @@ inputs on its page, stays the *user's* action.
      their checks first, so a small local context window keeps the run context and the rules.
    - **Duplicate calls.** An identical call (same validated arguments) returns the cached result
      with a note.
-   - **Final round.** When the budget is used, a last request goes out with `tool_choice: 'none'`.
-     If it still answers with tool calls only (Ollama ignores `tool_choice`), a fixed
-     "budget used" answer with `Outcome: not achieved` closes the turn.
-   - **No tool support.** A 4xx saying the model "does not support tools" retries the turn once
-     without tools, under the tool-free prompt. Other 400s, such as a schema error, are shown.
+   - **Final round.** When the budget is used, a last request goes out with `tool_choice: 'none'`
+     (the port enforces it on Ollama by sending no tools). Its calls are never run. If it still
+     answers with tool calls only (a server that takes the field but does not honour it: LM Studio,
+     Gemini and Anthropic are not verified), a fixed "budget used" answer with `Outcome: not
+     achieved` closes the turn.
+   - **No tool support.** The port's `ToolsUnsupportedError` on the turn's first request retries
+     the turn once without tools, under the tool-free prompt. The loop reacts to the type only:
+     other errors, a schema 400 among them, are shown, whatever their text says.
+   - **Preparing.** A request the port refuses in `prepare` (the context guard, a spend cap) is
+     thrown before its `request` event. `prepare` may probe the server, so it runs under the stall
+     clock (`beforeStall`).
    - **Message rules.** Every listed call gets exactly one `tool` message. Arguments are echoed as
      valid JSON (`'{}'` when unparseable). Whitespace-only assistant content is sent as `null`
      (Anthropic rejects empty text blocks).
@@ -268,8 +278,10 @@ describeTurn(spec) → { offered: { tools, skills, askUser, view }, prompt: 'too
     (`describeTurn` for this question);
   - `request { round, why, sent }`: before each model call, after the port's `prepare`; `sent` is
     the request as sent (after the notes, the gate's send-backs, compaction, the Workbench's
-    appended answer and the retry temperature); `why` is `first`, `tools`, `reminder`, `gate`,
-    `final` or `no_tools`;
+    appended answer and the retry temperature; from `providerModel`, with the context guard's
+    plan); `why` is `first`, `tools`, `reminder`, `gate`, `final` or `no_tools`. A request the
+    port refuses in `prepare` (the guard, a spend cap) was never sent and has no `request` event:
+    `round` is followed by `failed`;
   - exactly one terminal event, always last: `done` (the loop's), `stopped { error }` (an abort) or
     `failed { error, message, hint }` (`explainModelError`: a context-limit refusal or a spend cap
     lands here too).
@@ -283,14 +295,62 @@ describeTurn(spec) → { offered: { tools, skills, askUser, view }, prompt: 'too
 - **State.** None between calls: the caller passes the history, the clock and whether tools are on.
 
 **The model port** (`provider/model.js`): `{ prepare?(intent, { signal }) → sent, stream(sent,
-{ signal }) → fragments }`, a bare function being `stream` with an identity `prepare`. The intent
-is `{ messages, tools, toolChoice, retry }`, `retry` null or `'warmer'` (the request asked again
-after a looping reply). `providerModel(settings, { session })` is the production port: `sent` is
-`{ baseUrl, model, temperature, messages, tools, toolChoice }` (a `'warmer'` retry at
-`ANTI_REPEAT_TEMPERATURE` = 0.6 or above; the API key joins only as the request goes out, so no
-event or record holds it), sent through `streamCopilotChat()`. The validation meters it
-(`validation/spend.js` `meteredModel`: a request that could cross the spend cap is refused in
-`prepare`, so it is never sent). Provider quirks belong behind this port, not in the turn.
+{ signal }) → fragments }`, a bare function being `stream` with an identity `prepare`; either may
+return a promise. The intent is `{ messages, tools, toolChoice, retry }`, `retry` null or
+`'warmer'` (the request asked again after a looping reply). Every provider quirk sits behind this
+port, none in the turn or the loop.
+
+`providerModel(settings, { session })` is the production port:
+- **`prepare`** (async) detects the server (`detectServer`: only `localhost` or port 11434 is
+  probed), puts the tool choice in that server's form, and asks the context guard for its plan
+  (`planCopilotChat`). It returns the request exactly as it goes out:
+  `{ baseUrl, model, temperature, messages, tools, toolChoice, plan }`. A `'warmer'` retry runs at
+  `ANTI_REPEAT_TEMPERATURE` = 0.6 or above. The plan is plain JSON:
+  - Ollama: `{ server: 'ollama', version, estimate, needed, numCtx, numPredict, loadedContext,
+    maxContext }`;
+  - LM Studio: `{ server: 'lmstudio', estimate, needed, loadedContext }` (`loadedContext` null:
+    not loaded; the request loads it and its window is checked at the reply's first fragment);
+  - any other server: `{ server: 'openai' }`.
+
+  With tools, the plan adds `toolChoice`, the form. A request the guard refuses throws
+  `ContextLimitError` here, before anything is sent. `sent` never holds the API key, which joins
+  the request only as it goes out, so no event or record carries it.
+- **`stream`** sends `sent` under its plan, through `streamCopilotChat(request, { plan })`. Its
+  first argument keeps the request's own fields, which the model-visible snapshots capture. It
+  throws a `ToolsUnsupportedError` when the model cannot take the request's tools. It throws
+  `ContextLimitError` only after sending: Ollama read under 0.4 of the prompt, or a model LM
+  Studio loaded for the request (JIT) has too small a window, so the reply is stopped unseen.
+
+**Typed failures.** The loop reacts to these by type, never by text:
+
+| Error | Raised by | When | The loop |
+| --- | --- | --- | --- |
+| `ContextLimitError` (`needed`, `available`) | `prepare`; `stream` after sending | The request would not fit the model's window | Thrown: the turn's `failed` |
+| `ToolsUnsupportedError` (`status`, `server`, `cause`; the provider's message) | `stream`, before any fragment, only for a request with tools | The provider's response says the model cannot take tools | First request: retried without tools (`tools_unsupported`); later: thrown |
+
+`isToolsUnsupported(error, { server })` reads the provider's response by its shape first:
+- Ollama: HTTP 400 with `{ "error": "<model> does not support tools" }`;
+- OpenAI: HTTP 400 with `{ "error": { "param": "tools", "code": "unsupported_parameter" } }`.
+
+The text pattern is the fallback for providers with no known shape (LM Studio, Gemini,
+Anthropic), and this is its one place: a 4xx saying tools, tool calling or function calling are
+not supported. A schema 400, a 5xx, a failure after the reply began, an abort and a request
+without tools are never read as one.
+
+**The tool choice, per provider** (`toolChoiceForm`, `TOOL_CHOICE_FORMS`):
+
+| Server | `'auto'` (every round but the last) | `'none'` (the final round) |
+| --- | --- | --- |
+| OpenAI, Gemini, Anthropic (OpenAI-compatible), LM Studio | `body`: `"tool_choice": "auto"` beside the tools | `body`: `"tool_choice": "none"` beside the tools |
+| Ollama (native `/api/chat`) | `omitted`: no field (the native API has none; its default is auto), the tools sent | `tools_withheld`: no tools sent, so the model cannot call one |
+
+The Ollama final round changed with the model port (protocol 2026-10-19.7). Before it the tools
+were still offered there, and a reply of calls only ended on the loop's "budget used" answer.
+The earlier calls and results still travel as messages, and the plan's estimate counts what is
+sent (no tool schemas).
+
+The validation meters the port (`validation/spend.js` `meteredModel`): a request that could cross
+the spend cap is refused in `prepare`, after the guard's plan, so it is never sent.
 
 **What stays in the adapters.** The dock: React state, Stop, the question card (its ask-user port),
 the card-focus effects (it maps events to focus), the unsupported-model memory, the `runKey`
@@ -558,7 +618,9 @@ each analysis adds up to 3,000 characters more.
   estimate errs high there too and `num_predict` never reaches into the prompt.
 - **It refuses rather than cuts.** When the request cannot fit even the model's maximum, the turn
   stops before anything is sent, with the sizes and what to do (a new conversation, analyses off,
-  a model with a longer context). LM Studio fixes the context when a model is loaded: when the
+  a model with a longer context). The decision is made in the model port's `prepare`
+  (`planCopilotChat`), so the refused request has no `request` event, and every request that is
+  sent carries the plan it was sized by (`sent.plan`). LM Studio fixes the context when a model is loaded: when the
   loaded model's window (`GET /api/v0/models`) cannot hold the prompt and 4,096 tokens of reply,
   the turn stops with the context length to load it with. A model not loaded yet is loaded by the
   request itself (JIT), with LM Studio's default context: its window is read at the reply's first
@@ -886,10 +948,21 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   whole calls with `extra_content`; tool-call assembly and argument validation.
 - **The context window** (`contextGuard.test.js`): the estimate errs high; the plan keeps a loaded
   context that fits, asks for a fitting one over a 4,096 default, keeps it across the
-  conversation, caps it at the model's maximum and refuses beyond it; server detection never
-  probes a cloud URL; the native NDJSON stream (thinking, content, whole tool calls, usage,
-  `length`, errors, a tools-unsupported 400) and the message conversion; LM Studio's refusal; a
-  reply whose server read only part of the prompt stops the turn.
+  conversation, caps it at the model's maximum and refuses beyond it; `planCopilotChat` decides
+  from the probes alone (the session written only when the request is sent, which then goes out
+  under that plan); server detection never probes a cloud URL; the native NDJSON stream
+  (thinking, content, whole tool calls, usage, `length`, errors, a tools-unsupported 400 with its
+  body) and the message conversion; LM Studio's refusal; a reply whose server read only part of
+  the prompt stops the turn.
+- **The model port** (`modelPort.test.js`, `providerModel` over fake servers, nothing mocked above
+  fetch): `prepare` per server (the plan, the tool choice's form, a cloud never probed, the key
+  never in `sent`), Ollama's final request without tools and its estimate without their schemas,
+  the refusal in `prepare` with nothing sent; `stream` under the plan (Ollama's `num_ctx` and
+  `num_predict`; LM Studio and the cloud with the body as before); `ToolsUnsupportedError` from
+  Ollama's and OpenAI's shapes and the fallback text, and never from a schema 400, a 5xx, a request
+  without tools, a failure mid-reply or an abort; the loop over the port (an Ollama turn whose
+  final reply is the answer; a model without tools asked again without them). In `turn.test.js`,
+  a refused request has no `request` event.
   `copilotChat.test.jsx` runs a turn on a mocked Ollama loaded at 4,096 (native requests with
   `num_ctx` ≥ 16,384 and no `/v1` call), a refused turn, and a cut reply.
 - **The agent loop, against a scripted model:**
@@ -900,7 +973,10 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
     limit and the wait off the turn clock; one question per step, two per request, never cached;
   - unknown tools, thrown errors, duplicate calls, the per-step limit;
   - the final `tool_choice: 'none'` round and an empty last round;
-  - the tools-unsupported fallback, and a schema 400 that must surface;
+  - the tools-unsupported fallback on the port's typed error only (an untyped error with the same
+    text is thrown), and a schema 400 that must surface;
+  - a request refused in `prepare` (no `request` event) and a `prepare` that hangs (the stall
+    clock);
   - abort and timeout, which also abort the tool's signal;
   - per-result and per-turn budgets.
 - **Skills:** skill files (front matter, references, a misnamed skill), `read_skill` (its budget,

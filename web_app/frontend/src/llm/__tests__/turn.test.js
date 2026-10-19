@@ -3,14 +3,15 @@
 
 // The turn module (copilot/turn.js) at its interface: runTurn and
 // describeTurn, with a scripted model port, a fake ask-user and a fake clock.
-// No model runs and nothing is fetched (streamCopilotChat is replaced where
-// providerModel is under test). The first requests of a dock-shaped and a
+// No model runs and no server is contacted: where providerModel is under
+// test, streamCopilotChat is replaced and fetch is a fake (the port's prepare
+// probes the server and asks the context guard). The first requests of a dock-shaped and a
 // harness-shaped spec against the model-visible snapshot files need the
 // host's run module and the validation cases, so they sit beside those files
 // (src/__tests__/modelVisible/turnRequests.test.js): this folder imports
 // nothing from the host.
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ASK_USER, buildAskUserTool } from '../copilot/askUser';
 import { READ_SKILL, buildReadSkillTool } from '../copilot/skills';
 import { MEMORY_ANSWER_CHARS, TURN_METHODS, describeTurn, runTurn } from '../copilot/turn';
@@ -18,8 +19,8 @@ import { configurationBreaks, turnHistory } from '../useCopilot';
 import {
     ASK_RULES, COPILOT_PROMPT, COPILOT_PROMPT_NO_TOOLS, COPILOT_PROMPT_VIEW, HISTORY_MESSAGES, copilotSystemPrompt
 } from '../prompts/copilot';
-import { ContextLimitError } from '../provider/contextGuard';
-import { ANTI_REPEAT_TEMPERATURE, providerModel } from '../provider/model';
+import { ContextLimitError, forgetServers } from '../provider/contextGuard';
+import { ANTI_REPEAT_TEMPERATURE, ToolsUnsupportedError, providerModel } from '../provider/model';
 
 const provider = vi.hoisted(() => ({ calls: [], replies: [] }));
 vi.mock('../provider/contextGuard', async (importOriginal) => ({
@@ -203,7 +204,8 @@ describe('runTurn: the events and their order', () => {
     });
 
     it('a model without tools: tools_unsupported once, before any step, then a round and request under the no-tools prompt', async () => {
-        const unsupported = Object.assign(new Error('qwen does not support tools'), { status: 400 });
+        // The port's typed failure (provider/model.js reads it from the provider's response).
+        const unsupported = new ToolsUnsupportedError('HTTP 400: qwen does not support tools', { status: 400 });
         const { port } = scriptedPort([unsupported, answer('Plain answer.')]);
         const events = await collect(runTurn(spec({ model: port })));
         expect(types(events).filter((type) => type !== 'text')).toEqual(['start', 'round', 'request', 'tools_unsupported', 'round', 'request', 'done']);
@@ -523,9 +525,34 @@ describe('the production model port (providerModel)', () => {
     const LOOP = 'Wait, let me reconsider the Ta–Se window once more: the first shell spans 2.4 to 2.9 Å, '
         + 'so the coordination number should be six, but the cut at 2.65 Å splits it, so let me check again. ';
     const settings = { baseUrl: 'http://localhost:1234/v1', model: 'local-model', temperature: 0.2, apiKey: 'secret-key' };
+    const json = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
+    // No server answers at the base URL: the port finds none, so the request
+    // goes out as an OpenAI-compatible one, unchanged (kind 'openai').
+    const noServer = () => vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('fetch failed'); }));
+    // An Ollama whose model holds `max` tokens (the guard's probes only:
+    // streamCopilotChat is replaced, so /api/chat is never reached).
+    const ollama = (max) => {
+        const paths = [];
+        vi.stubGlobal('fetch', vi.fn(async (url) => {
+            const path = new URL(url).pathname;
+            paths.push(path);
+            if (path === '/api/version') return json({ version: '0.40.2' });
+            if (path === '/api/ps') return json({ models: [] });
+            if (path === '/api/show') return json({ model_info: { 'gemma4.context_length': max } });
+            return json({ error: 'not found' }, 404);
+        }));
+        return paths;
+    };
+    const onOllama = { baseUrl: 'http://localhost:11434/v1', model: 'gemma4:26b', temperature: 0.2, apiKey: '' };
+
+    beforeEach(() => {
+        forgetServers();
+        provider.calls.length = 0;
+    });
+    afterEach(() => vi.unstubAllGlobals());
 
     it('asks again after a loop at a temperature of 0.6 or more, and never shows the API key', async () => {
-        provider.calls.length = 0;
+        noServer();
         let pieces = 0;
         provider.replies.splice(0, provider.replies.length,
             () => (async function* stream() { for (; pieces < 1000; pieces += 1) yield { reasoning: LOOP }; }()),
@@ -535,7 +562,9 @@ describe('the production model port (providerModel)', () => {
 
         expect(pieces).toBeLessThan(40);
         const [first, again] = requestsOf(events);
-        expect(first).toMatchObject({ why: 'first', sent: { temperature: 0.2, model: 'local-model', baseUrl: 'http://localhost:1234/v1' } });
+        expect(first).toMatchObject({
+            why: 'first', sent: { temperature: 0.2, model: 'local-model', baseUrl: 'http://localhost:1234/v1', plan: { server: 'openai', toolChoice: 'body' } }
+        });
         expect(again.why).toBe('reminder');
         expect(again.sent.temperature).toBe(ANTI_REPEAT_TEMPERATURE);
         expect(again.sent.temperature).toBeGreaterThanOrEqual(0.6);
@@ -548,12 +577,39 @@ describe('the production model port (providerModel)', () => {
         expect(events.at(-1)).toMatchObject({ type: 'done', stoppedBy: 'answer' });
     });
 
-    it('keeps a temperature above 0.6 as it is, and maps the intent field by field', () => {
+    it('keeps a temperature above 0.6 as it is, and maps the intent field by field, with the guard\'s plan', async () => {
+        noServer();
         const port = providerModel({ ...settings, temperature: 0.9 });
         const intent = { messages: [{ role: 'user', content: 'q' }], tools: [{ type: 'function' }], toolChoice: 'none', retry: 'warmer' };
-        expect(port.prepare(intent)).toEqual({
-            baseUrl: settings.baseUrl, model: 'local-model', temperature: 0.9, messages: intent.messages, tools: intent.tools, toolChoice: 'none'
+        expect(await port.prepare(intent)).toEqual({
+            baseUrl: settings.baseUrl, model: 'local-model', temperature: 0.9, messages: intent.messages, tools: intent.tools, toolChoice: 'none',
+            plan: { server: 'openai', toolChoice: 'body' }
         });
-        expect(providerModel(settings).prepare({ ...intent, retry: null }).temperature).toBe(0.2);
+        expect((await providerModel(settings).prepare({ ...intent, retry: null })).temperature).toBe(0.2);
+    });
+
+    it('the request event carries the guard\'s plan; the provider gets the request\'s own fields, the plan beside them', async () => {
+        const paths = ollama(262144);
+        provider.replies.splice(0, provider.replies.length, answer());
+        const events = await collect(runTurn(spec({ model: providerModel(onOllama, { session: {} }) })));
+        const [request] = requestsOf(events);
+        const { plan } = request.sent;
+        expect(plan).toMatchObject({ server: 'ollama', version: '0.40.2', loadedContext: null, maxContext: 262144, toolChoice: 'omitted' });
+        expect(plan.numCtx).toBeGreaterThanOrEqual(plan.needed);
+        expect(plan.numPredict).toBe(plan.numCtx - plan.estimate);
+        // What the provider is called with keeps its fields (the model-visible snapshots capture them).
+        expect(Object.keys(provider.calls[0]).sort()).toEqual(['apiKey', 'baseUrl', 'messages', 'model', 'session', 'signal', 'temperature', 'toolChoice', 'tools']);
+        expect(paths).toEqual(['/api/version', '/api/ps', '/api/show']);
+        expect(events.at(-1)).toMatchObject({ type: 'done', stoppedBy: 'answer' });
+    });
+
+    it('a request the context guard refuses is never sent and has no request event (as a spend cap)', async () => {
+        const paths = ollama(8192);
+        const events = await collect(runTurn(spec({ model: providerModel(onOllama, { session: {} }) })));
+        expect(types(events)).toEqual(['start', 'round', 'failed']);
+        expect(events.at(-1).error).toBeInstanceOf(ContextLimitError);
+        expect(events.at(-1).message).toMatch(/but gemma4:26b holds at most 8,192\. .* Nothing was sent/);
+        expect(provider.calls).toEqual([]);
+        expect(paths).not.toContain('/api/chat');
     });
 });

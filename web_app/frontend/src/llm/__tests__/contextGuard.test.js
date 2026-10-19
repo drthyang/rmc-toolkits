@@ -2,11 +2,11 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { isToolsUnsupportedError } from '../copilot/agentLoop';
 import {
-    CHARS_PER_TOKEN, CONTEXT_STEP, ContextLimitError, JSON_CHARS_PER_TOKEN, MIN_CONTEXT, REPLY_RESERVE_TOKENS,
-    detectServer, estimatePromptTokens, forgetServers, planContext, streamCopilotChat
+    CHARS_PER_TOKEN, CONTEXT_STEP, ContextLimitError, JSON_CHARS_PER_TOKEN, LMSTUDIO_REPLY_MIN_TOKENS, MIN_CONTEXT, REPLY_RESERVE_TOKENS,
+    detectServer, estimatePromptTokens, forgetServers, planContext, planCopilotChat, streamCopilotChat
 } from '../provider/contextGuard';
+import { isToolsUnsupported } from '../provider/model';
 import { serverOrigin, streamOllamaChat, toOllamaMessages } from '../provider/ollama';
 
 const encoder = new TextEncoder();
@@ -141,6 +141,65 @@ describe('detectServer', () => {
         await detectServer('http://localhost:11434/v1');
         await detectServer('http://localhost:11434/v1');
         expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe('planCopilotChat: the guard decides before anything is sent (the model port\'s prepare)', () => {
+    it('Ollama: the plan the request goes out under, read from the probes only, the session untouched', async () => {
+        const { calls } = ollamaServer({ loaded: 4096 });
+        const request = bigRequest();
+        const estimate = estimatePromptTokens(request);
+        const session = {};
+        const plan = await planCopilotChat({ baseUrl: 'http://localhost:11434/v1', model: 'gemma4:26b', ...request }, { session });
+        const numCtx = Math.max(MIN_CONTEXT, Math.ceil((estimate + REPLY_RESERVE_TOKENS) / CONTEXT_STEP) * CONTEXT_STEP);
+        expect(plan).toEqual({
+            server: 'ollama', version: '0.40.2', estimate, needed: estimate + REPLY_RESERVE_TOKENS,
+            numCtx, numPredict: numCtx - estimate, loadedContext: 4096, maxContext: 262144
+        });
+        expect(calls.map((call) => call.path)).toEqual(['/api/version', '/api/ps', '/api/show']);
+        // The session keeps what was sent: a plan alone is not a request.
+        expect(session).toEqual({});
+        // Sent under that plan: no probe again, the plan's num_ctx and num_predict.
+        calls.length = 0;
+        await collect(streamCopilotChat({ baseUrl: 'http://localhost:11434/v1', model: 'gemma4:26b', session, ...request }, { plan }));
+        expect(calls.map((call) => call.path)).toEqual(['/api/chat']);
+        expect(calls[0].body.options).toMatchObject({ num_ctx: plan.numCtx, num_predict: plan.numPredict });
+        expect(session['http://localhost:11434/v1|gemma4:26b']).toBe(plan.numCtx);
+    });
+
+    it('Ollama: refuses a request the model cannot hold, with the same message, and sends nothing', async () => {
+        const { calls } = ollamaServer({ max: 8192 });
+        const failure = await planCopilotChat({ baseUrl: 'http://localhost:11434/v1', model: 'gemma4:26b', ...bigRequest() }).catch((error) => error);
+        expect(failure).toBeInstanceOf(ContextLimitError);
+        expect(failure.message).toMatch(/needs about [\d,]+ tokens of context .* but gemma4:26b holds at most 8,192\. .* Nothing was sent/);
+        expect(failure).toMatchObject({ available: 8192 });
+        expect(calls.some((call) => call.path === '/api/chat')).toBe(false);
+    });
+
+    it('LM Studio: the loaded window and the 4,096-token room; too small refused; not loaded left to the JIT check', async () => {
+        const request = bigRequest();
+        const estimate = estimatePromptTokens(request);
+        const studio = (entry) => vi.stubGlobal('fetch', vi.fn(async (url) => (new URL(url).pathname === '/api/v0/models'
+            ? json({ data: [{ id: 'qwen/qwen3.8-27b', ...entry }] })
+            : json({ error: 'Unexpected endpoint or method. (GET /api/version)' }))));
+        studio({ state: 'loaded', loaded_context_length: 80000 });
+        await expect(planCopilotChat({ baseUrl: 'http://localhost:1234/v1', model: 'qwen/qwen3.8-27b', ...request }))
+            .resolves.toEqual({ server: 'lmstudio', estimate, needed: estimate + LMSTUDIO_REPLY_MIN_TOKENS, loadedContext: 80000 });
+        forgetServers();
+        studio({ state: 'loaded', loaded_context_length: 4096 });
+        await expect(planCopilotChat({ baseUrl: 'http://localhost:1234/v1', model: 'qwen/qwen3.8-27b', ...request }))
+            .rejects.toThrow(/LM Studio runs qwen\/qwen3\.8-27b with a 4,096-token context, .* Nothing was sent/);
+        forgetServers();
+        studio({ state: 'not-loaded' });
+        await expect(planCopilotChat({ baseUrl: 'http://localhost:1234/v1', model: 'qwen/qwen3.8-27b', ...request }))
+            .resolves.toMatchObject({ server: 'lmstudio', loadedContext: null });
+    });
+
+    it('any other server: sent unchanged, never probed', async () => {
+        const fetchMock = vi.fn(async () => { throw new Error('probed'); });
+        vi.stubGlobal('fetch', fetchMock);
+        await expect(planCopilotChat({ baseUrl: 'https://api.openai.com/v1', model: 'gpt', ...bigRequest() })).resolves.toEqual({ server: 'openai' });
+        expect(fetchMock).not.toHaveBeenCalled();
     });
 });
 
@@ -339,10 +398,13 @@ describe('Ollama native chat', () => {
         await expect(collect(streamOllamaChat({ baseUrl: 'http://x:11434', model: 'm', messages: [] })))
             .rejects.toThrow('The server stopped the reply: model runner has unexpectedly stopped');
 
-        // A model without tool calling: the agent loop's fallback must recognise it.
+        // A model without tool calling: the failure keeps its status and body,
+        // which the model port reads as "tools unsupported" (provider/model.js).
         vi.stubGlobal('fetch', vi.fn(async () => json({ error: 'registry.ollama.ai/library/gemma3:latest does not support tools' }, 400)));
         const failure = await collect(streamOllamaChat({ baseUrl: 'http://x:11434', model: 'gemma3', messages: [], tools: [{}] })).catch((error) => error);
         expect(failure.status).toBe(400);
-        expect(isToolsUnsupportedError(failure)).toBe(true);
+        expect(failure.body).toEqual({ error: 'registry.ollama.ai/library/gemma3:latest does not support tools' });
+        expect(failure.message).toBe('HTTP 400: registry.ollama.ai/library/gemma3:latest does not support tools');
+        expect(isToolsUnsupported(failure, { server: 'ollama' })).toBe(true);
     });
 });

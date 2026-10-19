@@ -34,6 +34,9 @@ import { bundledSkills, jsonFile, loadDemoAssistantRun, promptVariants, recordin
 const provider = vi.hoisted(() => ({ current: null }));
 vi.mock('../../llm/provider/contextGuard', async (importOriginal) => ({
     ...(await importOriginal()),
+    // The port's prepare probes the server: no server is contacted here, so
+    // the request goes out as to an OpenAI-compatible one, unchanged.
+    detectServer: async () => ({ kind: 'openai' }),
     streamCopilotChat: (request) => provider.current.callModel(request)
 }));
 
