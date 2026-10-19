@@ -232,7 +232,7 @@ describe('the live harness, scripted model', () => {
 });
 
 // The harness runs on the turn module, as the dock does (protocol
-// 2026-10-19.3). Four things changed in what it sends or records; each is
+// 2026-10-19.4). Four things changed in what it sends or records; each is
 // pinned here.
 describe('the harness on the turn module: what changed', () => {
     // A passage a looping reasoning model writes again and again.
