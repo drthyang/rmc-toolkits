@@ -1,8 +1,8 @@
 [
  {
   "id": "test-offcentre__A",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-offcentre",
   "split": "test",
   "arm": "A",
@@ -205,8 +205,8 @@
  },
  {
   "id": "test-offcentre__A+",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-offcentre",
   "split": "test",
   "arm": "A+",
@@ -421,8 +421,8 @@
  },
  {
   "id": "test-offcentre__D",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-offcentre",
   "split": "test",
   "arm": "D",
@@ -508,8 +508,8 @@
  },
  {
   "id": "test-zone-boundary__A",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-zone-boundary",
   "split": "test",
   "arm": "A",
@@ -727,8 +727,8 @@
  },
  {
   "id": "test-zone-boundary__A+",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-zone-boundary",
   "split": "test",
   "arm": "A+",
@@ -941,8 +941,8 @@
  },
  {
   "id": "test-zone-boundary__D",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-zone-boundary",
   "split": "test",
   "arm": "D",
@@ -1041,8 +1041,8 @@
  },
  {
   "id": "test-breathing__A",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-breathing",
   "split": "test",
   "arm": "A",
@@ -1060,7 +1060,7 @@
    "features": [
     {
      "kind": "cluster_breathing",
-     "element": "Nb",
+     "element": "Fe",
      "found": false
     }
    ],
@@ -1080,106 +1080,106 @@
    },
    {
     "page": "PCA Ellipsoid",
-    "what": "site 1 Se",
+    "what": "site 1 Cl",
     "value": {
      "rms_A": [
-      0.0511,
-      0.0485,
-      0.0477
+      0.0513,
+      0.0478,
+      0.0468
      ],
-     "pc1_over_pc2": 1.05,
-     "pc1_excess_kurtosis": -0.0144,
+     "pc1_over_pc2": 1.07,
+     "pc1_excess_kurtosis": -0.0331,
      "pc1_uvw": [
-      0.47,
-      -0.41,
-      1
-     ]
-    },
-    "reading": "thermal ellipsoid"
-   },
-   {
-    "page": "PCA Ellipsoid",
-    "what": "site 2 Nb",
-    "value": {
-     "rms_A": [
-      0.0829,
-      0.0511,
-      0.0503
-     ],
-     "pc1_over_pc2": 1.62,
-     "pc1_excess_kurtosis": -0.218,
-     "pc1_uvw": [
-      1,
-      0.85,
-      0.83
-     ]
-    },
-    "reading": "thermal ellipsoid"
-   },
-   {
-    "page": "PCA Ellipsoid",
-    "what": "site 3 Nb",
-    "value": {
-     "rms_A": [
-      0.0792,
-      0.0522,
-      0.0493
-     ],
-     "pc1_over_pc2": 1.52,
-     "pc1_excess_kurtosis": -0.12,
-     "pc1_uvw": [
-      1,
-      -0.94,
-      -0.84
-     ]
-    },
-    "reading": "thermal ellipsoid"
-   },
-   {
-    "page": "PCA Ellipsoid",
-    "what": "site 4 Nb",
-    "value": {
-     "rms_A": [
-      0.0754,
-      0.0511,
-      0.0467
-     ],
-     "pc1_over_pc2": 1.48,
-     "pc1_excess_kurtosis": 0.0425,
-     "pc1_uvw": [
-      -1,
-      1,
-      -0.98
-     ]
-    },
-    "reading": "thermal ellipsoid"
-   },
-   {
-    "page": "PCA Ellipsoid",
-    "what": "site 5 Nb",
-    "value": {
-     "rms_A": [
       0.08,
-      0.051,
-      0.0476
+      1,
+      -0.27
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 2 Fe",
+    "value": {
+     "rms_A": [
+      0.077,
+      0.0495,
+      0.0472
      ],
-     "pc1_over_pc2": 1.57,
-     "pc1_excess_kurtosis": 0.117,
+     "pc1_over_pc2": 1.55,
+     "pc1_excess_kurtosis": 0.00286,
      "pc1_uvw": [
       0.96,
       1,
-      -0.92
+      0.96
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 3 Fe",
+    "value": {
+     "rms_A": [
+      0.0762,
+      0.0521,
+      0.0483
+     ],
+     "pc1_over_pc2": 1.46,
+     "pc1_excess_kurtosis": 0.0856,
+     "pc1_uvw": [
+      -0.95,
+      1,
+      0.97
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 4 Fe",
+    "value": {
+     "rms_A": [
+      0.0787,
+      0.05,
+      0.0489
+     ],
+     "pc1_over_pc2": 1.57,
+     "pc1_excess_kurtosis": 0.366,
+     "pc1_uvw": [
+      1,
+      -0.75,
+      0.89
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 5 Fe",
+    "value": {
+     "rms_A": [
+      0.0787,
+      0.0492,
+      0.0473
+     ],
+     "pc1_over_pc2": 1.6,
+     "pc1_excess_kurtosis": 0.0208,
+     "pc1_uvw": [
+      -0.97,
+      -0.97,
+      1
      ]
     },
     "reading": "thermal ellipsoid"
    }
   ],
   "truth": {
-   "summary": "Nb4 tetrahedra (edge 2.95 Å) that breathe: each cluster scaled by 1 + ε, sd(ε) = 0.035 (edge sd 0.103 Å from breathing); their shape stays regular",
+   "summary": "Fe4 tetrahedra (edge 2.75 Å) that breathe: each cluster scaled by 1 + ε, sd(ε) = 0.035 (edge sd 0.096 Å from breathing); their shape stays regular",
    "features": [
     {
      "kind": "cluster_breathing",
-     "element": "Nb",
+     "element": "Fe",
      "accept": [
       "cluster_breathing"
      ]
@@ -1194,8 +1194,8 @@
  },
  {
   "id": "test-breathing__A+",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-breathing",
   "split": "test",
   "arm": "A+",
@@ -1204,7 +1204,7 @@
    "features": [
     {
      "kind": "cluster_breathing",
-     "element": "Nb"
+     "element": "Fe"
     }
    ],
    "space_group": "P-43m",
@@ -1221,7 +1221,7 @@
      "found": true,
      "claim_index": 0,
      "kind": "cluster_breathing",
-     "element": "Nb",
+     "element": "Fe",
      "accurate": true
     }
    ],
@@ -1235,101 +1235,101 @@
   "readings": [
    {
     "page": "detect_symmetry at the noise floor",
-    "what": "space group at 0.021 Å",
+    "what": "space group at 0.02 Å",
     "value": "P-43m",
     "point_group": "-43m"
    },
    {
     "page": "PCA Ellipsoid",
-    "what": "site 1 Se",
+    "what": "site 1 Cl",
     "value": {
      "rms_A": [
-      0.0511,
-      0.0485,
-      0.0477
+      0.0513,
+      0.0478,
+      0.0468
      ],
-     "pc1_over_pc2": 1.05,
-     "pc1_excess_kurtosis": -0.0144,
+     "pc1_over_pc2": 1.07,
+     "pc1_excess_kurtosis": -0.0331,
      "pc1_uvw": [
-      0.47,
-      -0.41,
-      1
-     ]
-    },
-    "reading": "thermal ellipsoid"
-   },
-   {
-    "page": "PCA Ellipsoid",
-    "what": "site 2 Nb",
-    "value": {
-     "rms_A": [
-      0.0829,
-      0.0511,
-      0.0503
-     ],
-     "pc1_over_pc2": 1.62,
-     "pc1_excess_kurtosis": -0.218,
-     "pc1_uvw": [
-      1,
-      0.85,
-      0.83
-     ]
-    },
-    "reading": "thermal ellipsoid"
-   },
-   {
-    "page": "PCA Ellipsoid",
-    "what": "site 3 Nb",
-    "value": {
-     "rms_A": [
-      0.0792,
-      0.0522,
-      0.0493
-     ],
-     "pc1_over_pc2": 1.52,
-     "pc1_excess_kurtosis": -0.12,
-     "pc1_uvw": [
-      1,
-      -0.94,
-      -0.84
-     ]
-    },
-    "reading": "thermal ellipsoid"
-   },
-   {
-    "page": "PCA Ellipsoid",
-    "what": "site 4 Nb",
-    "value": {
-     "rms_A": [
-      0.0754,
-      0.0511,
-      0.0467
-     ],
-     "pc1_over_pc2": 1.48,
-     "pc1_excess_kurtosis": 0.0425,
-     "pc1_uvw": [
-      -1,
-      1,
-      -0.98
-     ]
-    },
-    "reading": "thermal ellipsoid"
-   },
-   {
-    "page": "PCA Ellipsoid",
-    "what": "site 5 Nb",
-    "value": {
-     "rms_A": [
       0.08,
-      0.051,
-      0.0476
+      1,
+      -0.27
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 2 Fe",
+    "value": {
+     "rms_A": [
+      0.077,
+      0.0495,
+      0.0472
      ],
-     "pc1_over_pc2": 1.57,
-     "pc1_excess_kurtosis": 0.117,
+     "pc1_over_pc2": 1.55,
+     "pc1_excess_kurtosis": 0.00286,
      "pc1_uvw": [
       0.96,
       1,
-      -0.92
+      0.96
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 3 Fe",
+    "value": {
+     "rms_A": [
+      0.0762,
+      0.0521,
+      0.0483
+     ],
+     "pc1_over_pc2": 1.46,
+     "pc1_excess_kurtosis": 0.0856,
+     "pc1_uvw": [
+      -0.95,
+      1,
+      0.97
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 4 Fe",
+    "value": {
+     "rms_A": [
+      0.0787,
+      0.05,
+      0.0489
+     ],
+     "pc1_over_pc2": 1.57,
+     "pc1_excess_kurtosis": 0.366,
+     "pc1_uvw": [
+      1,
+      -0.75,
+      0.89
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 5 Fe",
+    "value": {
+     "rms_A": [
+      0.0787,
+      0.0492,
+      0.0473
+     ],
+     "pc1_over_pc2": 1.6,
+     "pc1_excess_kurtosis": 0.0208,
+     "pc1_uvw": [
+      -0.97,
+      -0.97,
+      1
      ]
     },
     "reading": "thermal ellipsoid"
@@ -1338,34 +1338,34 @@
     "page": "analyze_modulations",
     "what": "zone-boundary points and general modes",
     "value": null,
-    "reading": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, Se at (0, ½, 0), is 2.8× the median, -0.83σ after the correction)."
+    "reading": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, Fe at (½, ½, 0), is 2.2× the median, -0.62σ after the correction)."
    },
    {
     "page": "analyze_clusters",
-    "what": "Nb clusters in 2.58–3.38 Å",
+    "what": "Fe clusters in 2.38–3.17 Å",
     "value": {
      "ladder_width": {
-      "obs": 0.162,
-      "null": 0.161,
-      "z": 0.82,
-      "change": 0.01
+      "obs": 0.152,
+      "null": 0.154,
+      "z": -0.83,
+      "change": -0.011
      },
      "breathing_sd": {
       "obs": 0.107,
-      "null": 0.0649,
-      "z": 22,
-      "change": 0.65
+      "null": 0.0635,
+      "z": 30,
+      "change": 0.69
      }
     },
-    "reading": "The average cluster is regular within its sampling error: edges 2.939–2.944 Å (± 0.0044 Å each). No cluster shape distortion beyond independent atoms (at each cluster's own size): the edge spread (0.162 Å) matches the shuffle null (0.161 Å; change 1 %, z = 0.82). The clusters breathe: their size (mean edge) fluctuates 65 % more than for independent atoms (breathing sd 0.107 vs 0.0649 Å, z = 22) — a collective size fluctuation, not a shape distortion."
+    "reading": "The average cluster is regular within its sampling error: edges 2.753–2.759 Å (± 0.0043 Å each). No cluster shape distortion beyond independent atoms (at each cluster's own size): the edge spread (0.152 Å) matches the shuffle null (0.154 Å; change -1 %, z = -0.83). The clusters breathe: their size (mean edge) fluctuates 69 % more than for independent atoms (breathing sd 0.107 vs 0.0635 Å, z = 30) — a collective size fluctuation, not a shape distortion."
    }
   ],
   "truth": {
-   "summary": "Nb4 tetrahedra (edge 2.95 Å) that breathe: each cluster scaled by 1 + ε, sd(ε) = 0.035 (edge sd 0.103 Å from breathing); their shape stays regular",
+   "summary": "Fe4 tetrahedra (edge 2.75 Å) that breathe: each cluster scaled by 1 + ε, sd(ε) = 0.035 (edge sd 0.096 Å from breathing); their shape stays regular",
    "features": [
     {
      "kind": "cluster_breathing",
-     "element": "Nb",
+     "element": "Fe",
      "accept": [
       "cluster_breathing"
      ]
@@ -1380,8 +1380,8 @@
  },
  {
   "id": "test-breathing__D",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-breathing",
   "split": "test",
   "arm": "D",
@@ -1390,7 +1390,7 @@
    "features": [
     {
      "kind": "cluster_breathing",
-     "element": "Nb"
+     "element": "Fe"
     }
    ],
    "space_group": null,
@@ -1407,7 +1407,7 @@
      "found": true,
      "claim_index": 0,
      "kind": "cluster_breathing",
-     "element": "Nb",
+     "element": "Fe",
      "accurate": true
     }
    ],
@@ -1420,11 +1420,11 @@
   },
   "readings": [],
   "truth": {
-   "summary": "Nb4 tetrahedra (edge 2.95 Å) that breathe: each cluster scaled by 1 + ε, sd(ε) = 0.035 (edge sd 0.103 Å from breathing); their shape stays regular",
+   "summary": "Fe4 tetrahedra (edge 2.75 Å) that breathe: each cluster scaled by 1 + ε, sd(ε) = 0.035 (edge sd 0.096 Å from breathing); their shape stays regular",
    "features": [
     {
      "kind": "cluster_breathing",
-     "element": "Nb",
+     "element": "Fe",
      "accept": [
       "cluster_breathing"
      ]
@@ -1439,8 +1439,8 @@
  },
  {
   "id": "test-jahn-teller__A",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-jahn-teller",
   "split": "test",
   "arm": "A",
@@ -1739,8 +1739,8 @@
  },
  {
   "id": "test-jahn-teller__A+",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-jahn-teller",
   "split": "test",
   "arm": "A+",
@@ -2073,8 +2073,8 @@
  },
  {
   "id": "test-jahn-teller__D",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-jahn-teller",
   "split": "test",
   "arm": "D",
@@ -2170,8 +2170,8 @@
  },
  {
   "id": "test-cell-wrap__A",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-cell-wrap",
   "split": "test",
   "arm": "A",
@@ -2277,8 +2277,8 @@
  },
  {
   "id": "test-cell-wrap__A+",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-cell-wrap",
   "split": "test",
   "arm": "A+",
@@ -2416,8 +2416,8 @@
  },
  {
   "id": "test-cell-wrap__D",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-cell-wrap",
   "split": "test",
   "arm": "D",
@@ -2486,8 +2486,8 @@
  },
  {
   "id": "test-thermal-null__A",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-thermal-null",
   "split": "test",
   "arm": "A",
@@ -2637,8 +2637,8 @@
  },
  {
   "id": "test-thermal-null__A+",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-thermal-null",
   "split": "test",
   "arm": "A+",
@@ -2800,8 +2800,8 @@
  },
  {
   "id": "test-thermal-null__D",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-thermal-null",
   "split": "test",
   "arm": "D",
@@ -2849,8 +2849,8 @@
  },
  {
   "id": "test-symmetry-lowering__A",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-symmetry-lowering",
   "split": "test",
   "arm": "A",
@@ -3026,8 +3026,8 @@
  },
  {
   "id": "test-symmetry-lowering__A+",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-symmetry-lowering",
   "split": "test",
   "arm": "A+",
@@ -3248,8 +3248,8 @@
  },
  {
   "id": "test-symmetry-lowering__D",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-symmetry-lowering",
   "split": "test",
   "arm": "D",
@@ -3336,8 +3336,8 @@
  },
  {
   "id": "test-chirality-trap__A",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-chirality-trap",
   "split": "test",
   "arm": "A",
@@ -3543,8 +3543,8 @@
  },
  {
   "id": "test-chirality-trap__A+",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-chirality-trap",
   "split": "test",
   "arm": "A+",
@@ -3762,8 +3762,8 @@
  },
  {
   "id": "test-chirality-trap__D",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-chirality-trap",
   "split": "test",
   "arm": "D",
@@ -3810,8 +3810,8 @@
  },
  {
   "id": "test-chiral__A",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-chiral",
   "split": "test",
   "arm": "A",
@@ -4017,8 +4017,8 @@
  },
  {
   "id": "test-chiral__A+",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-chiral",
   "split": "test",
   "arm": "A+",
@@ -4242,8 +4242,8 @@
  },
  {
   "id": "test-chiral__D",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.2",
+  "commit": "4ab9eab004cbee9629a1e6c14add8ac898ae064e",
   "case": "test-chiral",
   "split": "test",
   "arm": "D",
