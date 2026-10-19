@@ -1,0 +1,33 @@
+{
+  "tool": "assess_convergence",
+  "arguments": {},
+  "content_chars": 435,
+  "content": {
+    "ref": "r1",
+    "checks": [
+      {
+        "level": "note",
+        "text": "Judged on the X_ray_(R)1 term only, not the total chi^2."
+      },
+      {
+        "level": "note",
+        "text": "Still improving over the recent window."
+      }
+    ],
+    "data": {
+      "column": "X_ray_(R)1",
+      "quantity": "ln(chi^2), natural log; lower is better",
+      "status": "improving",
+      "n_steps": 2262,
+      "first": 0.0953,
+      "last": -8.87,
+      "min": -8.87,
+      "total_drop": 8.96,
+      "slope_per_step": {
+        "last_10pct": -0.00052,
+        "last_25pct": -0.00062,
+        "last_50pct": -0.00089
+      }
+    }
+  }
+}

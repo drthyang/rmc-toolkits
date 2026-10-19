@@ -3,7 +3,8 @@
 Onboarding for AI agents and new contributors. Human users want [README.md](README.md) /
 [QuickStart.md](QuickStart.md). This file is the "pick up where we left off" record: architecture,
 key files, conventions, and current state. Full chronological history lives in
-[docs/CHANGELOG.md](docs/CHANGELOG.md); forward plans in [docs/ROADMAP.md](docs/ROADMAP.md).
+[docs/CHANGELOG.md](docs/CHANGELOG.md); forward plans in [docs/ROADMAP.md](docs/ROADMAP.md), and the
+Copilot's plan before the validation's live runs in [docs/AGENT_PLAN.md](docs/AGENT_PLAN.md).
 Per-page math and data flow — every formula, default, threshold, and approximation, anchored to the
 function that implements it — lives in [docs/ALGORITHMS.md](docs/ALGORITHMS.md); read the relevant
 page section before changing an engine, and update it when the math changes.

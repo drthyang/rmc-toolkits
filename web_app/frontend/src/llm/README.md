@@ -791,6 +791,10 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   page clears it. The `ask_user` card: it waits on one request, takes focus, moves with the arrow
   keys, sends the option picked by its number key back to the model, which computes in that window;
   *Other…*; Stop while waiting; a run change drops the question; a collapsed dock marks the rail.
+- **What the model sees** (`src/__tests__/modelVisible/`): snapshot files of every system-prompt
+  variant, the dock's and the validation harness's first request and tool list, and one tool
+  message per tool on the Demo. A diff there is a change to what the model sees: call it out in
+  the PR ([copilot-validation.md](../../../../docs/algorithms/copilot-validation.md#what-the-model-sees-snapshot-tests)).
 - **Pointing:** the focus controller (`focus.test.js`: levels, page switch and wait, clearing,
   undo callbacks, re-rendered cards), card references (`cardRefs.test.js`), `highlight_cards`
   (`viewTools.test.js`), the dock's size rules (`dockLayout.test.js`), and list/object arguments

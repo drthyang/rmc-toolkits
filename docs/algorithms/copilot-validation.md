@@ -208,6 +208,30 @@ reduces to whether B *matches* A+ — reaches the engines' conclusions, no over-
 the score does not measure (the answer checks, the evidence gate, number provenance,
 reproducibility). B − A (0.81) is still where the Copilot's value over the default pages shows.
 
+## What the model sees (snapshot tests)
+
+A run means something only while the model is sent the same thing. The tests in
+`web_app/frontend/src/__tests__/modelVisible/` write it to readable files in its `__snapshots__/`
+folder, with no model and no network:
+
+- `system-prompt/<variant>.txt`: every system prompt `copilotSystemPrompt` builds (tools off; tools
+  on with or without the view tools, `ask_user` and the skills' index), with a line break after each
+  sentence for reading, and the exact length and hash of the string sent;
+- `dock/first-request.txt` and `dock/tools.json`: the dock's first request on the Demo run
+  (CopilotChat → useCopilot, captured at `streamCopilotChat`): its fields, its messages and the
+  `tools` field exactly as sent;
+- `harness/first-request.arm-B.txt`, `harness/first-request.arm-C.txt` and
+  `harness/tools.arm-B.json`: the same for `runLiveCase` on `dev-offcentre`, captured at its
+  `callModel`;
+- `tool-results/<tool>.json`: one result of every run tool and engine tool on the Demo, plus an
+  `ask_user` answer, a `read_skill` and a window that cuts the Ta–Se shell, as the `tool` message
+  the agent loop appends (budget applied, checks, `ref`, note).
+
+A change to any of these files is a change to what the model sees: say so in the PR, and bump
+`PROTOCOL_VERSION` when it changes what a run means. Refresh them with
+`npx vitest run src/__tests__/modelVisible -u` and read the diff before committing; CI never writes
+them, so a stale file fails there.
+
 ## Running the live arms (later, on the Mac)
 
 From `web_app/frontend`, with the model loaded in LM Studio or Ollama:

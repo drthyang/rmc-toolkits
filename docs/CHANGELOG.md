@@ -27,6 +27,14 @@ Chronological record of notable changes, newest first. For current architecture 
   eigenspace (a degenerate one, where LAPACK and the JS Jacobi solver pick different bases, by its
   projector). No engine changed.
 
+### Copilot: snapshots of what the model sees
+
+- `web_app/frontend/src/__tests__/modelVisible/` pins, as readable files, every system-prompt
+  variant, the first request and tool list of the dock (Demo run) and of the validation harness
+  (`dev-offcentre`, arms B and C), and one tool message per tool on the Demo. Tests only; a diff in
+  them is a change to what the model sees, to be called out in the PR
+  ([copilot-validation.md](algorithms/copilot-validation.md#what-the-model-sees-snapshot-tests)).
+
 ### Copilot: no conclusion without its evidence; numbers by reference; the verdict computed (THY-18)
 
 - **Evidence gate:** an answer that concludes order between cells, a split site as disorder, a

@@ -1,0 +1,34 @@
+{
+  "tool": "ask_user",
+  "arguments": {
+    "question": "Which Ta–Se window?",
+    "options": [
+      {
+        "label": "Whole first shell",
+        "description": "2.21–3.23 Å, both Ta–Se peaks"
+      },
+      {
+        "label": "First peak only",
+        "description": "2.3–2.7 Å"
+      }
+    ],
+    "default": "Whole first shell"
+  },
+  "workbench_asked": ["Which Ta–Se window?"],
+  "user_reply": "option",
+  "content_chars": 294,
+  "content": {
+    "ref": "r1",
+    "checks": [
+      {
+        "level": "ok",
+        "text": "The user chose \"Whole first shell\" (2.21–3.23 Å, both Ta–Se peaks). Use exactly this choice and say in the answer which one you used."
+      }
+    ],
+    "data": {
+      "question": "Which Ta–Se window?",
+      "answer": "Whole first shell",
+      "means": "2.21–3.23 Å, both Ta–Se peaks"
+    }
+  }
+}

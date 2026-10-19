@@ -1,0 +1,406 @@
+# Copilot plan: architecture, tools and skills before the live runs
+
+The validation ([copilot-validation.md](algorithms/copilot-validation.md)) measures the AI Copilot
+as it ships. Before arms B and C run on the test set, this plan fixes what would make the numbers
+measure the harness instead of the Copilot, puts each piece of science in one place, and brings the
+skills into line with the tools. Then the code is frozen, arms A and A+ are run again, and the
+validation runs as written.
+
+It builds on the [tool and skill review](algorithms/copilot-review.md) (2026-10-14), validation
+batch 1 and THY-18 (PRs #69 and #70, merged), and a survey of `web_app/frontend/src` (the Copilot,
+its tools and the workers), `web_app/frontend/validation`, `rmc_toolkits` and `.claude/skills` on
+`main` at `b5b3820` (2026-10-18). Every `file:line` below is on that commit. Sections B and C
+summarise the architecture review of 2026-10-18 and the user's decisions of 2026-10-19. The skill
+drafts of batch 1 wait in PR #71 for the user's review.
+
+## Ground rules
+
+- **The test set stays held out.** Every change here is designed and checked on the dev set, the
+  scripted replays and CI. Arms B and C do not run on a test case until the freeze (phase 6). Arms
+  A and A+ are deterministic and are re-run at the freeze, since several items change the engines
+  A+ sweeps.
+- **Approval.** A new tool, a skill change, a tool description or prompt rule that restates a
+  skill, and a threshold change that alters the science all need the user's approval. Items waiting
+  for it are marked **(approval)**.
+- **No API spend.** Local models and scripted CI only, until the user says otherwise. The
+  Sonnet arm's $12 share stays unspent.
+- **Each PR** passes CI (Python on 3.9 floors, 3.11, 3.13; frontend lint, vitest, build), updates
+  its docs, and leaves the app working. A refactor PR keeps the model-visible text unchanged: a
+  snapshot of the prompt, the tool list and the descriptions (phase 1.7) shows any change in the
+  diff.
+
+## What is wrong now
+
+### A. The validation would partly measure the harness
+
+- **The engine path is the app's; three things around it are not.**
+  - **The engine.** The harness runs the engines through the same message handler as the
+    Copilot's worker, in-thread (`validation/runFolder.js:28`).
+  - **The tools.** The same tool builders (`validation/harness.js:82-87`).
+  - **The THY-18 checks.** The evidence gate and the reference fill are built as the app builds
+    them (`harness.js:130-131`, `src/llm/useCopilot.js:175-180`).
+  - **The context.** It differs from what a user's Copilot sees: `pcaSites`, `runSettings` and
+    `rValueFile` are null in the harness (`harness.js:77-78`). In the app the PCA table joins the
+    context once the PCA Ellipsoid page has loaded (`src/App.jsx:687,739`), and the Detected SG
+    tolerance is the user's ladder pick (`src/components/Dashboard.jsx:423`), not the harness's
+    0.2 Å (`runFolder.js:15,24-27`).
+  - **The prompt and history.** The harness offers no view tools, so the model reads the
+    compute-only rules instead of `VIEW_RULES` (`harness.js:90-92`,
+    `src/llm/prompts/copilot.js:151`), and it never has earlier turns (`harness.js:91`); the
+    app sends up to 8 (`copilot.js:125`, `useCopilot.js:137`). These are known and documented
+    choices; the record does not say them.
+- **The harness tells the model the case kind.** The run is named after the case id
+  (`validation/runFolder.js:30`), and the name reaches the model as `context.run` in the first
+  message (`src/llm/context/runContext.js:422`, `src/llm/prompts/copilot.js:109,163`). So every
+  arm B and C run is told which kind of case it is ("dev-zone-boundary"). `harness.js:13-14`
+  promises the opposite, and the holdout scan reads only source text, so it cannot see this.
+  Fixed first (B and C, item a).
+- **The warmer retry is lost in the harness.** After a looping reply the loop asks again with
+  `antiRepeat` (`src/llm/copilot/agentLoop.js:374`).
+  - **The app** raises the temperature to at least 0.6 for that request (`useCopilot.js:48,148-151`).
+  - **The harness** passes the flag into `streamCopilotChat` (`validation/run.js:159-160`), whose
+    signature has no such field (`src/llm/provider/contextGuard.js:220-221`), so the retry runs at
+    0.2.
+  - **The effect:** a model that loops recovers in the app and not in the validation.
+- **Arm C still gets much of the method.**
+  - **The ablation itself is structural.** No `read_skill` and no skills index
+    (`harness.js:81,86,92`); no skill name in any model-visible tool text (the one mention is a
+    comment, `src/copilotTools.js:355`).
+  - **But the method travels in the prompt and the tools:**
+    - **The prompt.** `EVIDENCE_RULES` states which analysis each conclusion needs, the
+      local-order method in prose (`copilot.js:32-39`). `TOOL_RULES` names the tools for a
+      distortion (`copilot.js:55-58`).
+    - **The tool descriptions** restate coordination-shells: "use the whole first coordination
+      shell (find_gr_peaks' first_shell.window_A)" (`copilotTools.js:1165`), "take the window from
+      find_gr_peaks" (`copilotTools.js:1242-1243`).
+    - **The gate's send-backs** spell out what to run (`src/llm/copilot/evidence.js:162`).
+  - **So** C measures the skills' text over a prompt that already carries most of their rules.
+    That is a legitimate arm, "skills as written", but not "no method", and the doc does not say
+    which it is.
+  - **Decided (1.8, 2026-10-19):** arm C removes the whole method, as MATERIA's 1.3 does. With
+    skills off, the model sees no skill names, stage lists, `EVIDENCE_RULES`, method sentences in
+    `TOOL_RULES` or method advice in tool descriptions. It is a structural switch in the turn
+    module (B and C, item C), not text edits.
+- **Models run under different rules,** so a model comparison is partly a comparison of these:
+  - **Context sizing.** Ollama gets a sized `num_ctx` and a `num_predict` (`contextGuard.js:15-19`,
+    `src/llm/provider/ollama.js:82`). LM Studio is refused a turn its loaded window cannot hold
+    (`contextGuard.js:20-24`). Cloud servers are sent unchanged, with no reply cap
+    (`contextGuard.js:25`).
+  - **The limits and the guards are the same for all.** The temperature (0.2, `validation/models.js:53`,
+    `src/llm/settings.js:18`), the round, time and character budgets (`agentLoop.js:87`, `DEFAULT_LIMITS`),
+    the stall and loop guards, and dropping earlier reasoning (assistant messages carry `content`
+    only, `agentLoop.js:487,504-505`).
+  - **The final round** sends `tool_choice: 'none'` (`agentLoop.js:372`). No test or run shows
+    that the Anthropic endpoint (`models.js:33`) accepts it.
+  - **No record states the policy it ran under.** Context size, reply cap or server kind are
+    missing from the run record.
+- **State outlives what it describes.**
+  - **Live Data.** A save bumps `configEpoch` but not the Copilot's `runKey` (`App.jsx:85,104`), so
+    the conversation keeps up to 8 earlier answers about the previous configuration
+    (`useCopilot.js:57,137,222-227`) while the context describes the new one.
+  - **The Detected SG pick** (`App.jsx:92`, set at `src/components/ModelSummary.jsx:356`) is never
+    reset when another run opens, so a tolerance chosen for one run sets the next run's context.
+  - The validation runs one question per fresh run, so neither shows there. Both shape what users
+    get.
+- **The holdout scan is narrow.**
+  - **What it checks.** Only the test-case ids, only in `src` (js/jsx), `.claude/skills` and
+    `rmc_toolkits` (`validation/__tests__/split.test.js:53-59`).
+  - **What it misses.** The test cases' materials, formulas, magnitudes and directions, `docs/`,
+    and the llm README.
+  - **Today there are no hits;** nothing keeps it that way. One overlap is by design and worth
+    stating: the test breathing case's motif (Nb₄ tetrahedra in a selenide,
+    `validation/cases.js:509`) is the skills' reference compound, whose published Nb₄ distortion
+    they describe (`.claude/skills/coordination-shells/lacunar-spinel-shells.md:31-32`). A model
+    may expect a distortion there.
+
+### The A+ ceiling: what the validation can still measure
+
+The engines alone now score 0.99 on dev and on test
+(`validation/baseline/arm-a-test.json`; [copilot-validation.md](algorithms/copilot-validation.md),
+"Batch 1"):
+
+- **Where B can still gain.** The case score lets arm B gain at most 0.01 over A+, on the one
+  component A+ misses: the Jahn–Teller long-axis family (`validation/armA.js:171,223` give no
+  direction).
+- **Why A+ is so high.** The score is dominated by deterministic facts: a perovskite case has
+  four symmetry components beside one feature and the spurious-claim test
+  (`validation/scoring.js:145-147`), and the point-group facts are exact.
+
+What the live runs can still measure:
+
+1. **B against A** (0.81): the Copilot against the default pages, which is the user-facing
+   question.
+2. **Whether B matches A+:** reaching the engines' conclusions without dropping one or adding an
+   over-claim. A drop below 1 on a case A+ gets right is a model failure the score shows.
+3. **What the score does not see:**
+   - the gate's send-backs and the evidence still missing at the end;
+   - numbers written by reference against typed ones;
+   - the computed verdict against the score (earned / over);
+   - reproducibility over 3 runs;
+   - questions asked;
+   - time and tokens.
+4. **B against C** on the same measures: what the method adds, the skills together with the
+   prompt's method rules, since C removes both (1.8, decided).
+
+Item 1.6 proposes making the comparison with A+ informative on the dev set **(approval)**.
+
+### B and C. Architecture: the deepening candidates and the user's decisions
+
+An architecture review on 2026-10-18 used the improve-codebase-architecture method (Matt Pocock).
+It read five areas:
+
+- the agent loop and its guards;
+- the tool specs and their dispatch;
+- the evidence, reference and verdict modules;
+- the engines against their browser ports;
+- the harness against the app.
+
+It works in codebase-design's terms: module, interface, depth, seam, adapter, leverage and locality,
+plus the deletion test. The plan's earlier sections B (the same science in more than one place) and
+C (one tool's facts spread across files) are its evidence. Their findings, such as the duplicated
+thresholds, the three shell readings and the side lists, now sit under the candidates below. The
+user decided on 2026-10-19:
+
+| # | Deepening | Strength · dependency | Decision |
+| --- | --- | --- | --- |
+| a | **The case-id leak** (a bug, not a deepening). The harness names the run after the case id (`validation/runFolder.js:30`), which reaches the model as `context.run` in the first message (`src/llm/context/runContext.js:422`). Every arm B and C run is told its case kind. | — | Start, first |
+| 2 | **The run as the Copilot sees it.** One module turns a run's files and the view state into the Copilot's run. Today App, Dashboard and useAssistant each hold a piece, and the harness copies them (`runFolder.js:15-38`). The browser and the harness become its two adapters. | Strong · local-substitutable | Start, second |
+| 1 | **The turn.** One module runs one question. Today `useCopilot.js:126,137-181` and `harness.js:75-132` each assemble the turn, and they have drifted apart: the harness loses the warmer retry, the no-tools prompt and the tools-on rule, and the gate setup is copied in both. The dock and the harness become its two adapters, and the module emits each request as it was sent. | Strong · mock (model port) | Start, third |
+| C | **Arm C's "method off" switch** in the turn module (1.8). | — | Start, after 1 |
+| 3 | **Provider quirks behind the model port.** `streamCopilotChat` takes over the retry temperature, honours or enforces `tool_choice: 'none'`, and reports "tools unsupported" as a typed failure instead of a regex over error text. | Strong · mock | Start, fourth |
+| 4 | **One verification module: is this answer verified?** It owns the claim catalogue (phrasing, the analysis that backs a claim, the fact that contradicts it), reference filling, the facts schema, the gate's bookkeeping and the order the checks run in. The prompt's evidence sentence is generated from the catalogue. This replaces the side lists in `evidence.js:86-148`, `verdict.js:61` / `turnState.js:161` and `prompts/copilot.js:32-39`. | Strong · in-process | Start, fifth |
+| 7 | **Generated golden fixtures at the orientation and site seams.** The 3σ direction verdict and the split-site statistics are pinned by one generated fixture, not by twin hand-copied pins. | Strong · ports & adapters | Start, in parallel |
+| 5 | **The engines return their own verdicts** (clusters, modulations), with the row that decided each, so the tool only renders them. | Strong · ports & adapters | Waits **(approval)**: A+ results change, and the verdict becomes part of the library output |
+| 6 | **One shell reading per pair, per run** (find_gr_peaks, the clarifier, the context, the audit and A+), and a coordination reading in the triplets payload. | Strong · in-process | Waits **(approval)**: a context flag and the cut rule change |
+| 8 | **Arm A+ reads the app's rules** for the split site, the cluster elements and the symmetry floor (A+ uses the floor; the tool and the clarifier use 1.25 × the floor). | Worth exploring · in-process | Waits **(approval)**: the A+ baseline moves |
+| 9 | **One request contract for the worker and Flask adapters**: names, defaults, caps, normalisation, error modes, cancelling. | Worth exploring · ports & adapters | Waits |
+| 10 | **Turn policy: what ends a turn.** One owner for the counters, and one `done` shape. | Worth exploring · in-process | Waits |
+| 11 | **Tool transcript: what the model is told about a result.** One store for the loop and the UI. Result statuses (old 3.2) attach here. | Speculative · in-process | Waits |
+
+**Rejected by the deletion test:**
+
+- **A thresholds constants module (old 2.1).** Its interface would be as wide as its
+  implementation: it moves numbers, not decisions. Callers should use the function that already
+  decides, for example `isIdealCoordination` (`pairCorrelations.js:130-132`) or
+  `facts.direction.significant` (`copilotTools.js:41`).
+- **One file per tool in `copilotTools.js` (old 3.4), done before 5 and 6.** It would only spread
+  the shallowness over seven files.
+- **The two `verdict.js` modules** are different concepts: the validation's case claims and the
+  app's computed Outcome. Rename one; don't merge them.
+
+**How each started piece is built:**
+
+- **Design.** Two subagents each propose an interface (design-it-twice) and the lead picks one.
+- **PRs.** One PR per piece, stacked a → 2 → 1 → C → 3 → 4. Each targets `main`, so CI runs on it.
+  #7 is cut from `main`.
+- **What stays fixed.** Each PR keeps the science and the model-visible snapshot (1.7) unchanged,
+  with two exceptions: the leak fix (a neutral run name, plus a test that no case id reaches the
+  model) and arm C with skills off. Arms A and A+ in `arms.test.js` stay unchanged.
+- **Drift between copies.** Where two copies disagree, the PR names the behaviour it keeps and why,
+  and pins it with a test.
+- **The user.** The user is asked only about choices that change the science, a verdict, a score
+  or what the model sees.
+
+**Science items from the old sections B and C that stay open:**
+
+- **The page and the tool read a site at different settings** **(approval, old 2.5).** Arm A reads
+  the Displacement Directions page at ν = 10 with smoothing 2 (`armA.js:38-39`); the tool lets the
+  engine choose (`copilotTools.js:1149`). On the dev thermal case's O site the map test reads 2.3σ
+  against 7.2σ.
+- **PCA above 20,000 points draws different subsamples in Flask and in the browser** (old 2.6;
+  `rmc_toolkits/pca_kde.py:72,570-576` against `src/workers/pcaKde.js:317-331`). It affects the
+  KDE, not a Copilot tool.
+- **No test pins the shape of a live tool's output** (old 3.3). With numbers by reference, the data
+  paths a result exposes are an interface the model writes against.
+- **No corpus of real answers** tests the claim regexes of the checks and the gate (old 3.5).
+
+### D. Tool gaps
+
+These come from the review's tool table that batch 1 left open, plus the survey:
+
+- **`list_sites` leaves out what tells a split site.** The per-axis kurtosis, the axis resolution
+  and the PC directions are computed (`pcaKde.js:534`) but not returned (`copilotTools.js:60-70`;
+  the review's tool table).
+- **No tool returns the static displacement of a split site.**
+  - **What the model does now.** It derives δ ≈ √(rms₁² − rms⊥²) itself, a number written by
+    hand that provenance flags as unsourced and that numbers by reference cannot carry.
+  - **What the scoring accepts.** The scoring's tolerance is built for that estimator
+    (`validation/scoring.js:20-21`).
+- **The Jahn–Teller bond split is not returned.** `find_gr_peaks` gives the two peaks of a joined
+  shell, not their difference (`runTools.js:191`).
+- **`analyze_modulations` gives the wavevector, not the displacement direction of the mode.** A+
+  takes it from the most prolate site's PC1 (`armA.js:208-211`).
+- **Short-range order between cells shows only as a single strong mode.** The general-wavevector
+  test (batch 1, L4) reads the strongest modes (`copilotTools.js:836,881`), at most 5 per element
+  (`rmc_toolkits/modulations.py:51`). A broad diffuse enhancement over many q is untested.
+- **The symmetry tools need a basis** (`copilotTools.js:1303`), which only browser-loaded runs
+  have. In Flask mode `detect_symmetry` and `measure_symmetry_lowering` are absent (AGENTS.md,
+  next step 4).
+- **No validation case has fit data,** so `assess_convergence`, `compare_fit` and the
+  rmc-fit-assessment skill are not exercised (the review's skills table).
+
+### E. Skills disagree with the tools
+
+On `main` the skills are the 2026-10-11 drafts: batch 1's skill changes wait in PR #71. Against
+the tools on `main`:
+
+- **displacement-anisotropy:**
+  - "Preferred direction only with a significance ≥ 3σ" (`SKILL.md:59`) and its list of
+    significances (`SKILL.md:34`) count the map test, while the tool calls a direction preferred
+    on its peak test only (batch 1, L3).
+  - "Name the family only when the angle is small" has no number (`SKILL.md:40`); the shift tool
+    uses 15° (`copilotTools.js:978`).
+  - The Ta₄ "23 % less distorted" (`significance-reading.md:29`) is 20 % since the shape null.
+- **coordination-shells:**
+  - The same outdated 23 % (`SKILL.md:85`, `lacunar-spinel-shells.md:19`).
+  - Nothing on `first_shell.first_peak_only`, which the tool returns since L1.
+- **local-symmetry:**
+  - "Which tolerance is the group" is left open (`SKILL.md:57`).
+  - `measure_symmetry_lowering` is not mentioned, while the prompt's evidence rule requires it
+    for a lowering (`prompts/copilot.js:32-39`).
+- **rmc-fit-assessment:** "The verdict is a self-assessment" (`SKILL.md:79`) has been untrue since
+  THY-18.
+- **No local-order skill.** The method lives in the prompt and the gate instead
+  (`prompts/copilot.js:32-39`, `evidence.js:132-148`), a prompt rule that restates a skill.
+
+PR #71 fixes each of these. Three disagreements remain after it:
+
+- **Split sites.** The skill's split site is a negative kurtosis; the tools' is a PC1 kurtosis
+  ≤ −0.5 three errors below zero; `list_sites` shows neither (candidates 8 and 4.1).
+- **Which elements need clusters.** The local-order draft says "every element whose own first
+  shell is short and closed"; the gate says CN ≤ 4.5 and A+ says a peak below 3.6 Å.
+- **What "no order" needs.** The local-order draft requires the polyhedra (`find_gr_peaks`) and
+  the ladder; the gate's no-order rule requires neither (`evidence.js:132-148`).
+
+Beyond single contradictions:
+
+- **No skill lint.** The skills test checks the sections and the draft line
+  (`src/__tests__/copilotSkills.test.js:24-26`). Nothing checks that a named tool exists, that a
+  number matches its constant, or that a firm rule the skill claims is in the code.
+- **Size against a 32k window.**
+  - **Before any analysis** the dev Jahn–Teller question's prompt estimates at about 9.8k tokens
+    (the contextGuard's 2.5 characters per token): an 11.0k-character system prompt, 10.0k of
+    tool JSON for 11 tools, 2.9k of context.
+  - **The other claims on the window.** A skill is 4.7–5.4k characters (about 2k tokens) and is
+    kept whole once read (`src/llm/copilot/skills.js:21,121`; `agentLoop.js:618`). Analyses take
+    up to 12k characters (about 4.8k tokens). 8,192 tokens are reserved for the reply
+    (`contextGuard.js:41`).
+  - **The total.** Two skills read then come to about 27k of qwen3.8-27b's 32k: a third skill, or
+    a long reasoning round, is refused by the context guard.
+- **No outline drops the gate numbers.** Unlike MATERIA, the Copilot never shrinks a skill to an
+  outline: a read skill stays whole for the question. The risk runs the other way: kept whole, the
+  skills crowd the window (above).
+
+## Phases
+
+### Phase 1 — Make the validation measure the Copilot
+
+| PR | Change | Size |
+| --- | --- | --- |
+| 1.1 | **The warmer retry in the harness.** Now part of the turn module (1) and the model port (3): both adapters get the same retry, and a test at the port asserts it. | — |
+| 1.2 | **One run policy, recorded.** A `RunPolicy` states the limits, temperature, server kind, context size, reply cap and the context-guard decisions; each record and transcript keeps it; the report lists what a comparison across models also compares. One scripted check that the final round's `tool_choice: 'none'` is sent in the form each provider accepts. | M |
+| 1.3 | **Context parity, stated.** The record says which context sections the run had (no PCA table, no run settings, the 0.2 Å card) and that it is one fresh question; the harness gets an option for a PCA-table context, as after a visit to the PCA page, for a dev check of its effect. | S |
+| 1.4 | **State lifecycle.** A Live Data save that changes the configuration starts a new conversation, as a new run does, or marks earlier answers as about the previous configuration; the Detected SG pick resets with the run. | S |
+| 1.5 | **Holdout scan widened**: test-case materials, formulas, magnitudes and directions (from `cases.js`) across `src`, `.claude/skills`, `rmc_toolkits` and `docs/` except the validation docs. The overlap with the skills' reference compound is listed in copilot-validation.md as a known risk. | S |
+| 1.6 | **An informative comparison with A+** **(approval)**. Dev set only. (i) The report gives feature-only scores, B against A+ per component, and every disagreement with the planted truth beside it, with no change to the case score. (ii) A "judgment" dev subset, designed and tried on dev only: cases where A+'s fixed joining rules are ambiguous or wrong — two features at once, a signal at 2.5–4σ, evidence that two tools read differently, a choice only the user can make — so the model has room to add. The test set gets matching cases only through a new, pinned test version authored without reference to the dev results, decided by the user. | M |
+| 1.7 | **Snapshots of what the model sees.** A test snapshots the system prompt (every variant), the tool list, every description and schema, the first request as the dock and the harness send it, and a sample of each tool's result text, so a refactor that changes them shows in the diff. Arm C's snapshot is checked for skill names. First of the started set. | S |
+| 1.8 | **What arm C ablates: decided 2026-10-19.** C removes the whole method: no skill names, stage lists, `EVIDENCE_RULES`, method sentences in `TOOL_RULES` or method advice in tool descriptions. It is a structural switch in the turn module, after 1 (B and C, item C). | M |
+
+### Phase 2 — The started set (decided 2026-10-19)
+
+The candidates of B and C, in this order. Each is one PR, stacked on the one before.
+
+| PR | Change | Size |
+| --- | --- | --- |
+| a | **The case-id leak.** The harness gives the run a neutral name; a test asserts that no case id or kind reaches the model. The model-visible snapshot changes by the run name only. | S |
+| 2 | **The run module** (candidate 2). The browser and the harness are its two adapters; the harness records the view state it chose. | M |
+| 1 | **The turn module** (candidate 1). The dock and the harness are its two adapters; it emits each request as sent. | L |
+| C | **Arm C's "method off" switch** in the turn module (1.8). Arm C's snapshot is checked for skill names and the method sentences. | M |
+| 3 | **The model port** (candidate 3): the retry temperature, `tool_choice: 'none'`, "tools unsupported" as a typed failure. | S |
+| 4 | **The verification module** (candidate 4). The prompt's evidence sentence is generated from its claim catalogue. | L |
+| 7 | **Golden fixtures** at the orientation and site seams (candidate 7), in parallel, cut from `main`. | S |
+
+### Phase 3 — Waiting for the user's approval batch
+
+| PR | Change | Size |
+| --- | --- | --- |
+| 5 | **The engines return their own verdicts** (clusters, modulations) **(approval)**. | M |
+| 6 | **One shell reading per pair, per run** **(approval)**. Changes the numbers a question quotes (by < 0.05 atom), a context flag and the cut rule. | M |
+| 8 | **Arm A+ reads the app's rules** for the split site, the cluster elements and the symmetry floor **(approval)**. It covers old 2.3 and 2.4, which land with 5.3, since the rule and the skill change together. Arm A's rule is part of the frozen protocol and changes only with a dated note. | S |
+| 9 | One request contract for the worker and Flask adapters. | M |
+| 10 | Turn policy: what ends a turn. | M |
+| 11 | Tool transcript; result statuses (old 3.2). | M |
+| 2.5 | **The page and the tool at the same settings** **(approval)**: the directions tool also reports at the page's ν and smoothing, or the page defaults to the engine's choice. Changes arm A's reading. | S |
+| 2.6 | PCA subsamples identical in both runtimes (AGENTS.md next step 8). | M |
+| 3.3 | **Output-shape contracts** for every live tool: a schema of its `data` (the paths references name), checked on the demo and on each dev case. Before any tool output changes in phase 4. | M |
+| 3.5 | A small corpus of real answers for the claim regexes of the checks and the gate. | S |
+
+### Phase 4 — Tool science
+
+Each item ends with a known-answer test on the dev cases or synthetic configurations. Items that
+change what A+ sweeps are noted.
+
+| PR | Change | Size |
+| --- | --- | --- |
+| 4.1 | **`list_sites` shows the split** **(approval)**: per-axis kurtosis on resolved axes, PC1 as [u v w], and the static displacement of a split site (√(rms₁² − rms⊥²) with its sampling error), so the model quotes it by reference. | S |
+| 4.2 | **The Jahn–Teller split by number** **(approval)**: `find_gr_peaks` returns the long − short bond of a joined shell and the share in each part. | S |
+| 4.3 | **The polarisation of an ordered mode** **(approval)**: `analyze_modulations` returns each ordered point's displacement direction (the mode's eigenvector over the element's sites). Changes A+ (it reads the tool, not PC1). | M |
+| 4.4 | **Diffuse order between cells** **(approval; new statistic)**: a calibrated test of excess power spread over many q (not one mode), against the same independent-displacement null, with a false-positive test over many seeds of thermal-only configurations. | L |
+| 4.5 | **The symmetry tools in Flask mode**: the basis (with its moments) from `/api/structure`, so `detect_symmetry` and `measure_symmetry_lowering` exist for server folders (AGENTS.md next step 4). | M |
+| 4.6 | **A fit-data dev case** for rmc-fit-assessment: a configuration with a synthetic fit and χ² history, so `assess_convergence` and `compare_fit` are exercised. Dev only. | M |
+
+### Phase 5 — Skills
+
+| PR | Change | Size |
+| --- | --- | --- |
+| 5.1 | **Skill lint in CI.** Every tool a skill names exists; every gate number is bound to the constant of the module that decides it; every "*Firm rule in the app:*" names a check or refusal that exists. It lands with an allow-list of today's violations, which 5.2 to 5.4 empty. | M |
+| 5.2 | **(approval)** The user's review of PR #71 (batch 1's skill drafts and the new local-order draft). | — |
+| 5.3 | **(approval; each draft goes to the user before it merges)** The three disagreements left after #71 (split site, cluster elements, what "no order" needs), in the same PR as candidate 8 and the gate change. | S |
+| 5.4 | **(approval; each draft goes to the user before it merges)** Method out of the tool descriptions and the prompt for arm B too: a description says what a tool does; the window advice and the evidence sentence move to the skills. Arm C already drops them structurally (1.8). | M |
+| 5.5 | **(approval)** Size for a 32k window: a budget test (prompt + two skills + the turn's analyses + the reply reserve within 32k); long reference material moves to on-demand references. | S |
+| 5.6 | SKILL_INTERVIEWS brought up to date when #71 merges; the validation report says which skills are the user's method and which are drafts. | S |
+
+### Phase 6 — Freeze and re-baseline
+
+1. CI green; the scripted replays and the harness tests green.
+2. The local tier (qwen3.8-27b, gemma4:26b, meta/muse-glimmer) on the dev set, arms B and C, one
+   run per case first (the smoke run), then three: no silent cut, no context refusal, no turn
+   lost to the gate.
+3. A dry run of the pipeline on the dev set: records, transcripts, scoring, findings, the report's
+   THY-18 table.
+4. Arms A and A+ again at the freeze; their tables in copilot-validation.md and the pins in
+   `arms.test.js` updated.
+5. The freeze tagged and its commit written into copilot-validation.md. Then the test set runs
+   once, as copilot-validation.md describes. The paid model runs only with the user's go-ahead.
+
+## Order
+
+- **Start together** (2026-10-19): the snapshot test (1.7), then the started set in order (a → 2 →
+  1 → C → 3 → 4), with #7 alongside. Phase 1's other items (1.2–1.5) and 5.1 can follow on top.
+- **Phase 3** waits for the user's approval batch. 3.3 goes before any tool output changes in phase
+  4, so the shape contract shows each change.
+- **Phase 4** needs the started set and 3.3.
+- **Phase 5's content** (5.3–5.5) waits for phase 4, so the skills describe the final tools; 5.2
+  (the review of #71) can happen any time.
+- **Phase 6** is last.
+
+The core goes first: 1.7, the started set, 1.2–1.5, 3.3, 4.1 and 5.1–5.3. These change what the
+validation would find. The rest is upkeep that follows, before or after the validation.
+
+## Risks
+
+- **A refactor changes behaviour silently.** The snapshot of what the model sees (1.7), the shape
+  contracts (3.3), the replays and the engine parity fixtures (with #7's goldens) catch changes in
+  what the model sees and in the numbers.
+- **The holdout erodes.** Improving the tools for the test cases' kinds is what the dev cases are
+  for. The wider scan (1.5) and the dev-only checks keep the test cases themselves unseen; a
+  "judgment" test version (1.6) is authored only on the user's decision, without the dev results.
+- **The A+ ceiling hides what the model adds.** On the case score alone, B can at best tie A+.
+  Unless 1.6 is decided, the report must lead with B against A and the process measures, and say
+  so.
+- **Local-model robustness regresses.** The loop guards, the gate and the context guard were tuned
+  on the local tier. The turn, model-port and verification modules move them without changing
+  them; phase 6 runs the local tier again before the test set.
+- **The gate shapes the answers it checks.** A send-back costs a round and steers the model toward
+  the listed analyses. The record keeps every send-back (THY-18), and 3.5's corpus counts false
+  ones before the freeze.
