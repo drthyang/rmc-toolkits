@@ -14,11 +14,21 @@ import { describeSymmetry, toleranceLadder } from '../src/symmetryModel';
 // The Detected SG card's default tolerance (Å), as the Dashboard starts.
 export const CARD_TOLERANCE_A = 0.2;
 
+// The run's name and its files' names, the same for every case. The model
+// reads the run name in its context (`run`), and a case id names the case's
+// kind ("dev-zone-boundary"), so no case id goes into a name or a path here;
+// the record keeps the id, and the model never sees the record.
+export const RUN_NAME = 'rmc_run';
+export const RUN_FILES = Object.freeze({
+    rmc6f: `${RUN_NAME}.rmc6f`,
+    partials: `${RUN_NAME}_PDFpartials.csv`
+});
+
 export const loadRun = (built, { ladder = true } = {}) => {
-    const structure = structureFromRmc6f({ path: `${built.id}/${built.rmc6fName}`, text: built.rmc6f });
+    const structure = structureFromRmc6f({ path: `${RUN_NAME}/${RUN_FILES.rmc6f}`, text: built.rmc6f });
     const plotFiles = [];
     if (built.partials) {
-        const file = { name: built.partialsName, path: `${built.id}/${built.partialsName}`, plotKind: 'pdf_partials', text: built.partials };
+        const file = { name: RUN_FILES.partials, path: `${RUN_NAME}/${RUN_FILES.partials}`, plotKind: 'pdf_partials', text: built.partials };
         plotFiles.push({ ...file, text: undefined, plotData: plotDataFromText(file) });
     }
     const detected = describeSymmetry(structure, CARD_TOLERANCE_A);
@@ -27,7 +37,7 @@ export const loadRun = (built, { ladder = true } = {}) => {
         : null;
     const request = (kind, params = {}) => handlePcaMessage({ kind, ...params }, async () => built.rmc6f);
     return {
-        runName: built.id,
+        runName: RUN_NAME,
         structure,
         plotFiles,
         rValueFile: null,

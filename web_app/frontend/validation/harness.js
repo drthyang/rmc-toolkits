@@ -10,8 +10,11 @@
 //
 // The view tools (highlight_cards, orient_3d_view) need a screen and are left
 // out of both arms; every tool offered only computes. The simulated user
-// skips every question (the model must use its stated default), so nothing
-// about the planted truth reaches the model except through the tools.
+// skips every question (the model must use its stated default), and the run
+// and its files have one neutral name for every case (runFolder.js RUN_NAME:
+// a case id names its kind), so nothing about the planted truth reaches the
+// model except through the tools. The record keeps the case id; the model
+// never sees the record.
 //
 // One run gives one record: every decision (round, tool, arguments, the
 // reasoning and text the model wrote before it, the result it read), the
@@ -43,8 +46,10 @@ import { shownValues, traceNumbers } from './provenance';
 
 // Bumped when the cases, question, scoring, harness, tools or skills change what
 // a run means (2026-10-17.1: validation batch 1's tools; 2026-10-17.2:
-// THY-18's evidence gate, numbers by reference and computed verdict).
-export const PROTOCOL_VERSION = '2026-10-17.2';
+// THY-18's evidence gate, numbers by reference and computed verdict;
+// 2026-10-19.1: the run is named RUN_NAME, no longer after the case id, which
+// told the model the case's kind).
+export const PROTOCOL_VERSION = '2026-10-19.1';
 
 export const ARMS = Object.freeze({
     B: { skills: true, label: 'Copilot with skills and guardrails' },

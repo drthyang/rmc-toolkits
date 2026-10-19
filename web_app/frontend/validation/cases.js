@@ -539,9 +539,10 @@ export const casesOf = (split) => {
 const elementsInOrder = (sites) => [...new Set(sites.map((site) => site.el))];
 
 /**
- * A case built: the .rmc6f text, its partial g(r) CSV, the truth, and the
- * file names a run folder uses. Built lazily (a perovskite case is ~2,500
- * atoms; its g(r) takes about a second).
+ * A case built: the .rmc6f text, its partial g(r) CSV and the truth. Built
+ * lazily (a perovskite case is ~2,500 atoms; its g(r) takes about a second).
+ * Its run folder's names are runFolder.js's RUN_NAME and RUN_FILES, the same
+ * for every case: no name is built from the case id, which names its kind.
  */
 export const buildCase = (item, { partials = true } = {}) => {
     const make = KINDS[item.kind];
@@ -557,8 +558,6 @@ export const buildCase = (item, { partials = true } = {}) => {
         truth,
         elements,
         rmc6f: config.text,
-        rmc6fName: `${item.id}.rmc6f`,
-        partialsName: `${item.id}_PDFpartials.csv`,
         partials: partials ? partialsCsv(config.atoms, config.box, elements) : null
     };
 };

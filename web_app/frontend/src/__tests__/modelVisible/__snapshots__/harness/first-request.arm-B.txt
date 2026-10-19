@@ -25,7 +25,7 @@ tools: 11, in the order sent (each definition in full: harness/tools.arm-B.json)
 Context for this RMC modeling run:
 ```json
 {
- "run": "dev-offcentre",
+ "run": "rmc_run",
  "live_mode": false,
  "structure": {
   "cell_A": [4, 4, 4],
