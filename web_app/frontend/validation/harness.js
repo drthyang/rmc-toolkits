@@ -42,6 +42,13 @@
 // numbers may be written by reference (the record keeps the answer as written
 // and as filled; the VERDICT is parsed from the filled text), and the Outcome
 // is the app's computed verdict, recorded beside the case score.
+//
+// The run policy (plan item 1.2, protocol 2026-10-19.5; runPolicy.js): the
+// record keeps the rules the run ran under (`record.policy`: the server and
+// the window it read before the run, the limits, the temperature, the reply
+// cap, the context guard's decisions, the final round's tool_choice form),
+// and each request the num_ctx Ollama was sent. validation/run.js runs the
+// pre-run check (runPolicy.js preflight) and passes what it read as `server`.
 
 import { ASK_USER } from '../src/llm/copilot/askUser';
 import { READ_SKILL } from '../src/llm/copilot/skills';
@@ -51,6 +58,7 @@ import { HARNESS_VIEW, loadRun } from './runFolder';
 import { parseVerdict, VERDICT_INSTRUCTIONS, VERDICT_MARK } from './verdict';
 import { outcomeAgreement, scoreVerdict } from './scoring';
 import { shownValues, traceNumbers } from './provenance';
+import { buildRunPolicy, noteContextUsed } from './runPolicy';
 
 // Bumped when the cases, question, scoring, harness, tools or skills change what
 // a run means (2026-10-17.1: validation batch 1's tools; 2026-10-17.2:
@@ -64,8 +72,11 @@ import { shownValues, traceNumbers } from './provenance';
 // 2026-10-19.4: runs through the turn module, as the dock:
 // the request asked again after a loop at a temperature of 0.6 or more, the
 // no-tools prompt for a model that refuses tools, provenance against the
-// context as shown, every request recorded).
-export const PROTOCOL_VERSION = '2026-10-19.4';
+// context as shown, every request recorded;
+// 2026-10-19.5: the run policy — an LM Studio model runs only when loaded
+// with at least 48k, checked before every run; the record keeps the policy
+// and the window it ran under; what the model is sent is unchanged).
+export const PROTOCOL_VERSION = '2026-10-19.5';
 
 export const ARMS = Object.freeze({
     B: { skills: true, label: 'Copilot with skills and guardrails' },
@@ -111,11 +122,14 @@ export const contextRecord = (context) => ({
  * the model, metered for an API model; tests give a scripted fake); `skills`
  * is `{ files, references, load }` as copilotSkills.js gives the app (read in
  * arm B only). `view` (merged over HARNESS_VIEW) and `pcaTable` set what is
- * "on screen" (runFolder.js loadRun); the defaults change nothing.
+ * "on screen" (runFolder.js loadRun); the defaults change nothing. `server`
+ * is what the pre-run check read (runPolicy.js preflight; null: not read) and
+ * `contextUsed` the num_ctx log of runPolicy.js observeContext over `port`:
+ * both go into the record's run policy.
  */
 export const runLiveCase = async ({
     built, arm, model, runIndex = 0, port, skills = null, commit = null, limits = {}, signal = null, now = () => Date.now(),
-    view = HARNESS_VIEW, pcaTable = false
+    view = HARNESS_VIEW, pcaTable = false, server = null, contextUsed = null
 }) => {
     if (!ARMS[arm]) throw new Error(`unknown arm '${arm}' (B or C)`);
     const startedAt = now();
@@ -134,6 +148,9 @@ export const runLiveCase = async ({
         model: { name: model.name, label: model.label, id: model.model, base_url: model.baseUrl, temperature: model.temperature },
         run_index: runIndex + 1,
         started_at: new Date(startedAt).toISOString(),
+        // The rules the run ran under (runPolicy.js): what a comparison
+        // across models also compares.
+        policy: buildRunPolicy({ model, limits, server }),
         question,
         // What the turn offered (its `start`): the tools and the skills.
         tools_offered: [],
@@ -232,18 +249,20 @@ export const runLiveCase = async ({
             record.error = { name: failure?.name || 'Error', message: failure?.message || String(failure) };
             if (failure?.name === 'SpendCapError') {
                 record.finished_at = new Date(now()).toISOString();
-                throw Object.assign(failure, { record: finishRecord(record, built, shown, asked, startedAt, now) });
+                throw Object.assign(failure, { record: finishRecord(record, built, shown, asked, startedAt, now, contextUsed) });
             }
         }
     }
-    return finishRecord(record, built, shown, asked, startedAt, now);
+    return finishRecord(record, built, shown, asked, startedAt, now, contextUsed);
 };
 
-// `shown` is the run context as the model read it (trimmed to its budget).
-const finishRecord = (record, built, shown, asked, startedAt, now) => {
+// `shown` is the run context as the model read it (trimmed to its budget);
+// `contextUsed` the num_ctx log of the observed port, or null.
+const finishRecord = (record, built, shown, asked, startedAt, now, contextUsed) => {
     record.finished_at = new Date(now()).toISOString();
     record.wall_ms = now() - startedAt;
     record.questions = asked;
+    noteContextUsed(record, contextUsed);
     const text = record.final?.text || '';
     const { verdict, error } = parseVerdict(text);
     record.verdict = verdict;

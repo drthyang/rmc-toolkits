@@ -271,6 +271,18 @@ Changes 1 and 2 change what a run sends, so the protocol moves. Live runs under 
 protocol that looped or met a model without tools are not comparable; arms A, A+ and D have no
 model and are unaffected.
 
+**Protocol 2026-10-19.5 (the run policy, plan item 1.2).** What the model is sent is unchanged:
+the model-visible snapshots did not move. Two things change, both [below](#the-run-policy-plan-item-12):
+1. **An LM Studio run starts only at 48k or more.** The pre-run check reads the loaded window
+   and refuses a run below 49,152 tokens. A turn that a 32k window would refuse, a score of 0 for
+   the harness's window rather than the model, can no longer happen in a run.
+2. **Each record states its run policy** and the window it ran under (`record.policy`, and each
+   request's `num_ctx` on Ollama).
+
+The protocol moves because the run's conditions are now part of it: a record under an earlier
+protocol does not say which window it ran under, so it cannot be set beside one under this. No arm
+B or C run exists under an earlier protocol; arms A, A+ and D have no model and are unaffected.
+
 ## Records, transcripts, findings
 
 Each live run writes:
@@ -293,8 +305,10 @@ harness, so each record states it:
   `configuration_optimization` (no move counters), `run_settings`, `partial_weights` or
   `convergence`, and no `pca_displacements` unless the PCA table is on. Read from the context as
   the model was shown it (the turn's `start`);
-- `requests` (since protocol 2026-10-19.3): every model request as it was sent, in order, as
-  `{ round, why, sent }`: `why` is `first`, `tools` (the results of the round before), `reminder`
+- `requests` (since protocol 2026-10-19.4): every model request as it was sent, in order, as
+  `{ round, why, sent }`, and since 2026-10-19.5 `num_ctx`, the context the guard sent Ollama for
+  it (null on other servers, or when the guard refused it): `why` is `first`, `tools` (the
+  results of the round before), `reminder`
   (after an empty or looping reply), `gate` (an answer the evidence gate sent back), `final` (the
   analysis budget used: `tool_choice` 'none') or `no_tools` (the retry of a model that refuses
   tools); `sent` is the request as the port prepared it (`providerModel`: base URL, model id,
@@ -303,15 +317,20 @@ harness, so each record states it:
   window) is there, followed by the run's `error`: the guard decides as the request goes out, not
   when it is prepared (the model-port PR, candidate 3, moves that decision into `prepare`).
 
-The transcript prints both under its header. **The PCA-table option** (`run.js live --pca-table`,
+**What the run ran under (plan item 1.2).** `policy` (since protocol 2026-10-19.5): the run policy,
+the server and the window the run ran under, the limits, the temperature, the reply cap, the context
+guard's decisions and the final round's form ([The run policy](#the-run-policy-plan-item-12)).
+
+The transcript prints the view, the context and the policy under its header. **The PCA-table option** (`run.js live --pca-table`,
 dev set only; `runLiveCase({ pcaTable: true })`) gives each run the PCA table from its own engine,
 the rows `list_sites` reads, as after a visit to the PCA Ellipsoid page. It is a dev check of what
 that section changes and is off by default. Such runs write to their own folder (`…_pca-table`),
 and `report` gives them their own column (`<model> · <arm> + PCA table`). It changes the context the
 model reads, so those runs are not comparable with the default runs.
 
-`report` puts every record side by side (case × model·arm), keeps failed runs as score 0, and
-lists every run used.
+`report` puts every record side by side (case × model·arm), keeps failed runs as score 0, sets
+the columns' run policies side by side ([what a comparison across models also
+compares](#what-a-comparison-across-models-also-compares)), and lists every run used.
 
 Supervisor findings (`findings.js`, `run.js findings <file.jsonl>` validates them) take the form
 `{case, run, step, kind: bug | missing-tool | skill-gap | orchestration | science-error, evidence,
@@ -388,12 +407,106 @@ live runs' records are what will exercise them.
 **A change to a claim regex** must keep every pin, or update the entry in the same PR with a
 judgement for each new reading. A new false alarm or miss shows in the test's lists.
 
+## The run policy (plan item 1.2)
+
+The cases, the question, the prompt, the tools and the scoring are the same for every model. The
+rest of what a run runs under is its **run policy** (`validation/runPolicy.js`). Each record keeps
+it (`record.policy`), each transcript prints it under its header, and the report sets the columns'
+policies side by side.
+
+| Field | What it states |
+| --- | --- |
+| `server` | The kind the context guard detects (`detectServer`: `lmstudio`, `ollama`, or `openai` for any other server, the cloud providers among them), Ollama's version, and the kind the model expects (`models.js` `server`) |
+| `temperature` | The model's (0.2), and the floor of a request asked again after a looping reply (0.6) |
+| `limits` | The agent loop's budgets as the run used them (`DEFAULT_LIMITS`): 6 rounds of at most 4 calls, 10 minutes, 3,000 characters a result and 12,000 a turn, 2 questions, 2 gate send-backs, the stall and no-progress guards |
+| `context` | The minimum window for the server kind; how the window is sized; the window read before the run (and after it, on LM Studio); the model's maximum (Ollama); every `num_ctx` an Ollama request was sent (`num_ctx_used`; each request in `requests` keeps its own) |
+| `reply_cap` | Ollama: `num_predict`, the num_ctx minus the prompt estimate. LM Studio: none sent (the guard needs 4,096 tokens of room). Cloud: none sent |
+| `context_guard` | The guard's decisions: a request that would not fit is refused, never cut; 2.5 characters a token, 1.4 for tool JSON, 8 tokens a message; 8,192 tokens reserved for the reply; 4,096 of room on LM Studio; contexts in steps of 8,192, at least 16,384; the 0.4 read-share backstop |
+| `final_round` | What the last request sends for `tool_choice: 'none'` ([below](#the-final-rounds-tool_choice)) |
+| `history` | One fresh question; earlier reasoning is never re-sent |
+| `spend` | An API model's cap, and the reply each request is priced at |
+| `warnings` | A window that changed during the run |
+
+**The decision (2026-10-19, the manager on the user's delegation).** The context guard, its
+estimate, the 8,192-token reply reserve, the loop's budgets and the prompt stay as they are:
+refusing a request rather than cutting it is the behaviour wanted. Instead, the live runs give
+each model a window that holds the worst turn (`MIN_CONTEXT_TOKENS`):
+
+| Server | Minimum window | Sized by |
+| --- | --- | --- |
+| LM Studio | **49,152 tokens (48k)** | The window the model is loaded with; read before and after each run |
+| Ollama | None | The guard, per request (`num_ctx`: at least 16,384, at most the model's maximum); recorded |
+| Cloud | None | The provider; never probed |
+
+48k holds the worst realistic turn of the dock and of arm B (two skills read whole, a full round of
+analyses, the 8,192-token reply reserve; `src/__tests__/contextBudget.test.js`), with 10,590 and
+14,033 tokens to spare.
+
+**The pre-run check.** `run.js live` calls `preflight` before every run. It reads the model's
+server the way the guard does: `detectServer`, then LM Studio's `GET /api/v0/models`
+(`loaded_context_length` of the entry whose id is the model's). It refuses the run when:
+- the server at the model's URL is another kind, or nothing answers there;
+- an LM Studio model is not loaded under its id (a request would load it at LM Studio's default);
+- an LM Studio model is loaded below 48k.
+
+Nothing is sent and no record is written, so the same command resumes once the model is
+reloaded. The message says what was found, what is needed and how to reload:
+
+> LM Studio runs qwen3.8-27b with a 32,768-token context, but the run policy needs at least 49,152
+> (48k) for an LM Studio model, so the run was not started. In LM Studio, eject qwen3.8-27b and
+> load it again with a Context Length of 49,152 or more (its load settings), or from a terminal:
+> lms unload qwen3.8-27b && lms load qwen3.8-27b --context-length 49152. Then run the same
+> command again: the runs already recorded are kept.
+
+After the run the window is read again. If it changed (the model reloaded, or loaded again by a
+request at LM Studio's default), the record, the transcript and the report carry a warning.
+
+**The dock at 32k.** The decision fixes the validation, not the dock. A user who loads
+qwen3.8-27b in LM Studio at 32k can have the worst two-skill turn refused. The budget test pins the
+dock's worst turn 1,698 tokens over by LM Studio's rule (5,794 by `planContext`'s), and arm B's
+2,351 over by `planContext`'s. The fix is on-demand skill references (plan item 5.5, second half):
+the skills' long reference material leaves what `read_skill` returns whole. That is skill text, so
+it waits for the user.
+
+### The final round's tool_choice
+
+When the analysis budget is used, the loop asks for the answer with `tool_choice: 'none'`. The
+scripted check (`__tests__/runPolicy.test.js`) sends a final round through the production port
+(`providerModel` → `streamCopilotChat` → `client.js` or `ollama.js`) to each provider preset, with
+a fake server, and pins what goes out today:
+
+| Provider | Endpoint | The final request sends | Honoured? |
+| --- | --- | --- | --- |
+| OpenAI | `/v1/chat/completions` | `"tool_choice": "none"`, the tools still sent | Documented by OpenAI |
+| Gemini (OpenAI-compatible) | `/v1beta/openai/chat/completions` | The same | Not verified (no live call) |
+| Anthropic (OpenAI-compatible) | `/v1/chat/completions` | The same | Not verified (no live call) |
+| LM Studio | `/v1/chat/completions` | The same | Not verified; the smoke run shows it |
+| Ollama | `/api/chat` (native) | No `tool_choice` (the native API has none), the tools still sent | **No**: the model may still call tools. The loop ignores those calls and, with no text, ends on its empty-final answer |
+
+Ollama's form does not enforce the final round. Changing a form is the model port's job (plan
+candidate 3), not the policy's; the check records the forms so that change shows.
+
+### What a comparison across models also compares
+
+The report adds a table with one row per column: the server, the window, the reply cap, the final
+round's form, the temperature, the limits and the policy warnings. It says whether the limits, the
+temperature and the context guard are the same in every run, and lists what no policy sets. Today
+a comparison across the four models also compares:
+- **the context sizing:** Ollama gets a sized `num_ctx` and a `num_predict`; LM Studio a loaded
+  window of 48k or more and no reply cap; the API model its own window and no reply cap;
+- **the final round:** `tool_choice: 'none'` on the OpenAI-compatible servers, honoured where the
+  server honours it, and nothing on Ollama;
+- **what no policy sets:** sampling beyond the temperature (top_p, top_k, min_p, the repetition
+  penalty), the reasoning mode and its effort, the tokenizer (the guard's estimate of a request is
+  the same for every model, the real count is not), the quantization and the server's release.
+
 ## Models and spend
 
-Each model gets the same cases, prompt, tools and scoring, and the results are reported side by side:
-- qwen3.8-27b (LM Studio, 32k);
-- gemma4:26b (Ollama);
-- meta/muse-glimmer (LM Studio, 28B, tool use, up to 128k);
+Each model gets the same cases, prompt, tools and scoring, and the results are reported side by
+side, each under its run policy:
+- qwen3.8-27b (LM Studio, loaded with a context of 48k or more);
+- gemma4:26b (Ollama; the guard sizes `num_ctx`);
+- meta/muse-glimmer (LM Studio, 28B, tool use, up to 128k; loaded with 48k or more);
 - Claude Sonnet 5.5 (API).
 
 The API model (`claude-sonnet-5-5`) runs the test set only, arm B, 3 runs per case, under RMC's
@@ -517,7 +630,9 @@ A change to a tool's output changes its `dataShape` in the same PR, so it shows 
 
 ## Running the live arms (later, on the Mac)
 
-From `web_app/frontend`, with the model loaded in LM Studio or Ollama:
+From `web_app/frontend`, with the model loaded in LM Studio (with a context of 48k or more:
+`lms load <model> --context-length 49152`) or Ollama. Each run starts with the pre-run check
+([The run policy](#the-run-policy-plan-item-12)):
 
 ```bash
 # smoke pass: one run per dev case
@@ -538,6 +653,16 @@ npx vite-node validation/run.js -- report --in validation/runs/<dir> --in valida
 A rerun keeps runs already recorded in its folder, so an interrupted batch resumes. Merge the
 local-model hardening (`fix/local-model-robustness`) first: its deadlines and loop guards keep a
 stalled run from holding the batch.
+
+**Go/no-go before the live runs.**
+- **Each LM Studio model at 48k.** Whether the Mac can hold each model with a 48k context (its
+  memory, and the model's own maximum context) is checked at the go/no-go, one model at a time:
+  load it with `lms load <model> --context-length 49152`, run the smoke pass's first case, and read
+  the window in its record. The pre-run check refuses anything less, so a model the Mac cannot hold
+  at 48k does not run under this protocol.
+- **The final round on each local server.** In the smoke records, a run whose last request came
+  back as tool calls only ends on the loop's empty-final answer. On LM Studio that would mean
+  `tool_choice: 'none'` is not honoured; Ollama is known not to take it.
 
 **Time.** Each run is bounded by the agent loop: 6 rounds, 10 minutes plus the final reply. Since
 protocol 2026-10-17.2 the evidence gate can add up to two answer requests to a run (an answer sent

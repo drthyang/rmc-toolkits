@@ -569,6 +569,13 @@ each analysis adds up to 3,000 characters more.
 - **A cut reply says so.** A reply that stops at the length limit (`done_reason` /
   `finish_reason` `length`) ends with a warning in the turn's footer instead of passing as a
   whole answer.
+- **How large a window.** The worst realistic turn (two skills read whole, a full round of
+  analyses, the reply reserve) does not fit 32k: at 32k the guard can refuse it
+  (`src/__tests__/contextBudget.test.js`; the fix, on-demand skill references, waits for the
+  user's skill review). 48k holds it. The validation's live runs keep the guard as it is and load
+  every LM Studio model with at least 48k, refusing a run below it before anything is sent
+  (`validation/runPolicy.js`; [copilot-validation.md](../../../../docs/algorithms/copilot-validation.md),
+  *The run policy*).
 
 ## Robust on local models
 
@@ -715,8 +722,9 @@ terminates. A server folder goes to Flask with the request cancelled on abort.
 
   The Copilot sets the context length of its own requests through Ollama's native API (*The
   context window* above), so `OLLAMA_CONTEXT_LENGTH` is not needed for it.
-- **LM Studio** (local): <https://lmstudio.ai>. Load a tool-capable model with a large context (the
-  Copilot refuses a turn the loaded context cannot hold, and says how large to load it), enable
+- **LM Studio** (local): <https://lmstudio.ai>. Load a tool-capable model with a large context, 48k
+  or more for a turn that reads two skills (the Copilot refuses a turn the loaded context cannot
+  hold, and says how large to load it), enable
   **CORS** in the Developer/server settings, and start the local server
   (default `http://localhost:1234/v1`).
 - **OpenAI / Gemini / Anthropic** (cloud): pick the provider and paste an API key. There is no server
