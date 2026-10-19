@@ -914,7 +914,11 @@ subset moves: its weak order is now ordered, A+ claims it and its score rises (i
 other records stay as recorded. The test set was not run. What the model sees changes in the
 modulation tool's result only (`tool-results/analyze_modulations.json` and
 `analyze_modulations.element.json`: the σ of the zone-boundary rows, the note, the diffuse rows and
-the Demo's in-phase note); no tool description, prompt or first request changes. Approved by the
+the Demo's in-phase note); no tool description, prompt or first request changes. The scripted runs'
+record files that call it move with it (`fitCase.in-the-harness`, `harness.gate-split-site`,
+`harness.over-claim`, `judgment.edge-above`, `judgment.edge-below`: the tool's rows and checks, and each
+request's length and hash); the edge-of-significance harness test now finds its below-the-bar case at
+a smaller amplitude by the weak pair's own rule, since both dev weak orders are above the bar. Approved by the
 manager on the user's delegation, 2026-10-19 (`validation/findings/decisions/2026-10-19-modulation-null.json`,
 `2026-10-19-diffuse-order.json`).
 

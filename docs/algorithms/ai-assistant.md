@@ -2126,8 +2126,9 @@ strongest modes are box-scale waves — GaNb₄Se₈ 5 K: q = (0.1, −0.2, −0
 carries neither the orthorhombic cell doubling nor a cluster distortion beyond independent atoms
 (Step 18), where diffraction finds both: the RMC started from, and stayed near, the cubic model.
 
-**Cost.** One 3-D transform per site and component: 0.02 s (numpy) and 0.04 s (port) for 52 sites
-on a 10³ grid.
+**Cost.** One 3-D transform per site and component, and per element the null's eigenvalues (a 3m × 3m
+matrix) and the diffuse regression: 0.02 s (numpy) and 0.1 s (port; 0.05 s before F1 and 4.4) for
+52 sites on a 10³ grid.
 
 ---
 
