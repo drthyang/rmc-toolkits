@@ -502,7 +502,7 @@ each model a window that holds the worst turn (`MIN_CONTEXT_TOKENS`):
 
 48k holds the worst realistic turn of the dock and of arm B (two skills read whole, a full round of
 analyses, the 8,192-token reply reserve; `src/__tests__/contextBudget.test.js`), with 10,590 and
-14,033 tokens to spare.
+13,246 tokens to spare (arm B's worst is dev-fit-unconverged since protocol 2026-10-19.6).
 
 **The pre-run check.** `run.js live` calls `preflight` before every run. It reads the model's
 server the way the guard does: `detectServer`, then LM Studio's `GET /api/v0/models`
