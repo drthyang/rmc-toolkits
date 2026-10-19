@@ -165,8 +165,18 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // description and result change; nothing else the model is sent does), arm
 // A+ takes PC1 over a significant peak whose cell is wider than 15°
 // (directionResolved), arm A reads the page as a user would, and both record
-// the radius; the page's map opens unsmoothed (UI only).
-export const PROTOCOL_VERSION = '2026-10-19.17';
+// the radius; the page's map opens unsmoothed (UI only);
+// 2026-10-19.18: compute_bond_angles refuses on the one cut rule, the
+// Workbench's (shells.js windowCut, approved by the user): a window that meets
+// its first shell is cut when it holds fewer partner atoms than the shell by
+// at least max(0.5, 15 % of its CN), whatever its coordination counts, which
+// decide only where the run reads no shell to compare (as before); the
+// refusal names the CN shortfall by path (shell_ab.cn_in_window against
+// shell_ab.cn), and every result adds the shell reading (shell_ab, shell_bc)
+// and the counts' modal, modal_share and unbonded_share. A whole shell is
+// never refused (dev-offcentre's Nb–Nb), a sub-shell first peak always unless
+// the user chose it (the Demo's Ta–Se, dev-jahn-teller's Cu–F).
+export const PROTOCOL_VERSION = '2026-10-19.18';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one
 // follows the full method.

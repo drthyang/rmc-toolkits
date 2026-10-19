@@ -97,7 +97,9 @@ describe('tool results as the model reads them (the Demo run)', () => {
         const skills = bundledSkills();
         const tools = [
             ...buildRunTools(run, { cards }),
-            ...buildCopilotTools({ request, structure: run.structure, elements: Object.keys(run.structure.elementCounts || {}).sort() }),
+            ...buildCopilotTools({
+                request, structure: run.structure, elements: Object.keys(run.structure.elementCounts || {}).sort(), plotFiles: run.plotFiles, runSettings: run.runSettings
+            }),
             buildAskUserTool(),
             buildReadSkillTool(skills, { load: copilotSkills.load })
         ];
