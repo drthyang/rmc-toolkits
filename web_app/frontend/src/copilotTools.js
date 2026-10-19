@@ -1007,36 +1007,102 @@ export const summarizeClusters = (payload) => {
 
 // --- analyze_modulations ---------------------------------------------------------
 
+// analyze_modulations' own result budget (characters): the rows of four
+// elements with an ordered point's polarisation, and its checks.
+export const MODULATION_RESULT_BUDGET = 4000;
+
 const qLabel = (q) => `(${q.map((value) => {
     const rounded = Math.round(value * 1000) / 1000;
     return rounded === 0.5 ? '½' : String(rounded + 0);
 }).join(', ')})`;
 
 // A mode row is [q label, ratio, percentile, sigma]; sigma reads '>8' where
-// the engine reports σ = +∞ (as its rules' sigmaMax).
-const MODE_ROW = ['string', 'number|null', 'number|null', 'number|string|null'];
+// the engine reports σ = +∞ (as its rules' sigmaMax), and a ratio or σ that
+// sits below its bar closer than six significant digits reads '<3' (F2).
+const MODE_ROW = ['string', 'number|string|null', 'number|null', 'number|string|null'];
+// An ordered point's displacement direction (plan item 4.3): the engine's
+// polarisation as a [u v w] to two decimals and its share of the power;
+// nearest_low_index only within LOW_INDEX_CONE_DEG of <100>, <110> or <111>.
+const POLARISATION_ROW = {
+    q: 'string',
+    uvw: ['number', 'number', 'number'],
+    share: 'number',
+    'nearest_low_index?': { uvw: ['number', 'number', 'number'], off_deg: 'number|null' }
+};
 const MODULATIONS_SHAPE = {
     note: 'string',
     supercell: ['number', 'number', 'number'],
     wavevectors: 'number',
-    elements: [{ element: 'string', sites: 'number', zone_boundary: [MODE_ROW], strongest: [MODE_ROW] }],
+    elements: [{
+        element: 'string', sites: 'number', zone_boundary: [MODE_ROW], strongest: [MODE_ROW], 'polarisation?': [POLARISATION_ROW]
+    }],
     'untestable_zone_boundary?': ['string']
 };
 
-// σ in a row and in a sentence. A null σ in a sentence is σ = −∞ (an
-// undefined one is said in words), written as the tool always wrote it.
-const sigmaCell = (sigma, rules) => (sigma == null ? null : (sigma >= rules.sigmaMax ? '>8' : roundFixed(sigma, 1)));
+// F2 (2026-10-19): a ratio or σ below its bar (ratio 3, 3σ: the order rule
+// the note states) is never printed rounded onto it — "3σ" beside "≥ 3 is
+// order" and a "no order" verdict. Where its usual rounding reads at or above
+// the bar, it is shown with the fewest significant digits (3 up to
+// BAR_DIGITS_MAX) that stay below it (2.96, not 3), and nearer than that as
+// below the bar ('<3'). A value at or above its bar rounds to at or above it.
+const BAR_DIGITS_MAX = 6;
+const shownBelowBar = (value, bar, usual) => {
+    if (!(Number.isFinite(value) && value < bar && Number.isFinite(usual) && usual >= bar)) return { shown: usual, near: false };
+    for (let digits = 3; digits <= BAR_DIGITS_MAX; digits += 1) {
+        const finer = round(value, digits);
+        if (finer < bar) return { shown: finer, near: true };
+    }
+    return { shown: null, near: true };
+};
+// A row cell: the shown value, or '<bar' when no digits keep it below.
+const barCell = (value, bar, usual) => {
+    const { shown, near } = shownBelowBar(value, bar, usual);
+    return near && shown == null ? `<${bar}` : shown;
+};
+
+// The ratio and σ in a row. A null σ in a sentence is σ = −∞ (an undefined
+// one is said in words), written as the tool always wrote it.
+const ratioCell = (ratio, rules) => barCell(ratio, rules.ratio, round(ratio, 2));
+const sigmaCell = (sigma, rules) => (sigma == null ? null : (sigma >= rules.sigmaMax ? '>8' : barCell(sigma, rules.sigma, roundFixed(sigma, 1))));
 const sigmaText = (sigma) => (sigma > 8 ? '> 8σ' : `${round(sigma, 2)}σ`);
 const sameQ = (a, b) => a.length === b.length && a.every((value, axis) => value === b[axis]);
 
 // No element has an ordered zone-boundary point: one sentence for all of
-// them, naming the nearest miss (the largest σ over every element tested).
-const noCellDoubling = ({ best }) => ({
-    level: 'ok',
-    text: 'No order that doubles the cell: no zone-boundary point stands out of the diffuse background'
-        + (best ? ` (the strongest, ${best.element} at ${qLabel(best.point.q)}, is ${round(best.point.ratio, 2)}× the median, `
-            + `${best.point.because === 'undefined_statistic' ? 'significance undefined' : sigmaText(best.point.sigma)} after the correction).` : '.')
-});
+// them, naming the nearest miss (the largest σ over every element tested). A
+// ratio or σ just below its bar says so (F2): "2.96σ after the correction:
+// below the 3σ bar".
+const noCellDoubling = ({ best, rules }) => {
+    if (!best) return { level: 'ok', text: 'No order that doubles the cell: no zone-boundary point stands out of the diffuse background.' };
+    const { point } = best;
+    const ratio = shownBelowBar(point.ratio, rules.ratio, round(point.ratio, 2));
+    const sigma = point.because === 'undefined_statistic' || !(point.sigma <= 8)
+        ? { near: false } : shownBelowBar(point.sigma, rules.sigma, round(point.sigma, 2));
+    let significance = 'significance undefined';
+    if (point.because !== 'undefined_statistic') significance = sigma.near ? `${sigma.shown ?? `< ${rules.sigma}`}σ` : sigmaText(point.sigma);
+    const bars = [ratio.near ? `${rules.ratio}×` : null, sigma.near ? `${rules.sigma}σ` : null].filter(Boolean);
+    return {
+        level: 'ok',
+        text: 'No order that doubles the cell: no zone-boundary point stands out of the diffuse background '
+            + `(the strongest, ${best.element} at ${qLabel(point.q)}, is ${ratio.shown ?? `< ${rules.ratio}`}× the median, `
+            + `${significance} after the correction${bars.length ? `: below the ${bars.join(' and ')} bar${bars.length > 1 ? 's' : ''}` : ''}).`
+    };
+};
+
+// An ordered point's polarisation as a row: its [u v w] to two decimals, its
+// share, and the nearest low-index direction within LOW_INDEX_CONE_DEG.
+const polarisationRow = (point, unitCell) => {
+    const { direction, uvw, share } = point.polarisation;
+    const family = lowIndexOf(direction, unitCell);
+    return { q: qLabel(point.q), uvw: uvw.map((value) => roundFixed(value, 2)), share: roundFixed(share, 2), ...(family ? { nearest_low_index: family } : {}) };
+};
+// ", polarised along [0 0 1] (2.1° off; 99 % of the power at q)" (plan item 4.3).
+const polarisedText = (row) => {
+    if (!row) return '';
+    const share = `${Math.round(row.share * 100)} % of the power at q`;
+    return row.nearest_low_index
+        ? `, polarised along [${row.nearest_low_index.uvw.join(' ')}] (${row.nearest_low_index.off_deg}° off; ${share})`
+        : `, polarised along [${row.uvw.join(' ')}] (${share})`;
+};
 
 /**
  * How analyze_modulations says each element finding of the modulation
@@ -1047,12 +1113,12 @@ const noCellDoubling = ({ best }) => ({
  */
 export const MODULATION_SENTENCES = {
     cellDoubling: {
-        ordered_point: ({ element, point, family }) => ({
+        ordered_point: ({ element, point, family, polarisation }) => ({
             level: 'ok',
             text: `Ordered ${element} displacements at q = ${qLabel(point.q)}: ${round(point.ratio, 3)}× the median power, `
                 + `${sigmaText(point.sigma)} against independent displacements (corrected over ${family} zone-boundary points) `
                 + '— a superstructure doubling the cell along '
-                + `${['a', 'b', 'c'].filter((_, axis) => point.q[axis]).join(', ')}.`
+                + `${['a', 'b', 'c'].filter((_, axis) => point.q[axis]).join(', ')}${polarisedText(polarisation)}.`
         }),
         no_ordered_point: noCellDoubling,
         undefined_statistic: noCellDoubling,
@@ -1060,11 +1126,11 @@ export const MODULATION_SENTENCES = {
         no_displacements: null
     },
     generalOrder: {
-        ordered_mode: ({ element, mode, family }) => ({
+        ordered_mode: ({ element, mode, family, polarisation }) => ({
             level: 'ok',
             text: `Correlated ${element} displacements between cells at q = ${qLabel(mode.q)}: ${round(mode.ratio, 3)}× the median power, `
                 + `${sigmaText(mode.sigma)} against independent displacements (corrected over ${family} compared modes) — order at a `
-                + 'general wavevector (incommensurate, or short-range correlation between cells), not a cell doubling.'
+                + `general wavevector (incommensurate, or short-range correlation between cells), not a cell doubling${polarisedText(polarisation)}.`
         }),
         no_ordered_mode: null,
         undefined_statistic: null,
@@ -1085,23 +1151,41 @@ export const MODULATION_SENTENCES = {
 };
 
 /**
- * The modulation result the model reads: the engine's points as compact rows
- * and its verdict said through MODULATION_SENTENCES. The significance family
- * is the elements this call tested (the engine's `family`).
+ * The modulation result the model reads: the engine's points as compact rows,
+ * each ordered point's polarisation, and its verdict said through
+ * MODULATION_SENTENCES. The significance family is every element of the
+ * configuration, whichever this call names (the engine's `family`, F3).
+ * `unitCell` (rows a, b, c in Å) names a polarisation's nearest low-index
+ * direction.
  */
-export const summarizeModulations = (payload) => {
+export const summarizeModulations = (payload, { unitCell = null } = {}) => {
     const checks = [...parseWarningCheck(payload)];
     const tested = (payload.elements || []).filter((entry) => entry.sites);
     const { family, rules } = payload;
+    const familyElements = family.elements ?? tested.map((entry) => entry.element);
+    // The ordered points (a zone-boundary point, or a general mode) and their polarisation rows.
+    const orderedPoints = (entry) => [
+        ...(entry.zoneBoundary || []).filter((point) => point.ordered === true),
+        ...(entry.strongest || []).filter((mode) => mode.kind === 'general' && mode.ordered === true)
+    ].filter((point) => point.polarisation);
+    const polarisations = new Map(tested.map((entry) => [entry.element, orderedPoints(entry).map((point) => polarisationRow(point, unitCell))]));
+    const polarisationOf = (element, q) => polarisations.get(element).find((row) => row.q === qLabel(q)) ?? null;
+    const anyPolarisation = [...polarisations.values()].some((rows) => rows.length);
     const data = {
         note: 'zone_boundary rows are [q, ratio, percentile, sigma]: an element\'s displacement power at wavevector q (fractions '
             + 'of the cell\'s reciprocal axes) over its median across all q of the supercell grid (the diffuse background), the '
             + 'share of the compared modes (one per ±q pair, long waves with every |q_i| ≤ 0.25 left out) with less power, and '
             + `the calibrated one-sided significance against independent displacements, corrected over all ${family.zoneBoundaryPoints} zone-boundary `
-            + 'points tested (≥ 3 with ratio ≥ 3 is order). strongest rows are [q, ratio, percentile, sigma]: the sigma of a '
-            + 'general q (neither zone boundary nor long wave; a complex sum, corrected over the compared modes), null otherwise. '
+            + `points of the configuration's ${familyElements.length} elements, whichever the call names (≥ 3 with ratio ≥ 3 is order). `
+            + 'strongest rows are [q, ratio, percentile, sigma]: the sigma of a general q (neither zone boundary nor long wave; a '
+            + 'complex sum, corrected over the compared modes of every element), null otherwise. '
             + 'A ½ component is order that doubles the cell along that axis; order at a general q is correlation between cells '
-            + '(incommensurate or short-range) that does not.',
+            + '(incommensurate or short-range) that does not.'
+            + (anyPolarisation
+                ? ' polarisation: each ordered point\'s displacement direction (the leading axis of the element\'s power tensor at '
+                    + 'q) as a direct-lattice [u v w], an axis, and share, the fraction of the power at q along it (1: one '
+                    + 'direction; ⅓: none).'
+                : ''),
         supercell: payload.supercell,
         wavevectors: payload.wavevectors,
         elements: tested.map((entry) => ({
@@ -1109,11 +1193,12 @@ export const summarizeModulations = (payload) => {
             sites: entry.sites,
             // [q, ratio to the median, percentile, σ] — compact rows: 7 points × elements.
             zone_boundary: entry.zoneBoundary.map((point) => [
-                qLabel(point.q), round(point.ratio, 2), roundFixed(point.percentile, 1), sigmaCell(point.sigma, rules)
+                qLabel(point.q), ratioCell(point.ratio, rules), roundFixed(point.percentile, 1), sigmaCell(point.sigma, rules)
             ]),
             strongest: entry.strongest.slice(0, 3).map((mode) => [
-                qLabel(mode.q), round(mode.ratio, 2), roundFixed(mode.percentile, 1), sigmaCell(mode.sigma, rules)
-            ])
+                qLabel(mode.q), ratioCell(mode.ratio, rules), roundFixed(mode.percentile, 1), sigmaCell(mode.sigma, rules)
+            ]),
+            ...(polarisations.get(entry.element).length ? { polarisation: polarisations.get(entry.element) } : {})
         }))
     };
     if (payload.untestable?.length) data.untestable_zone_boundary = payload.untestable.map((flags) => qLabel(flags.map((flag) => flag / 2)));
@@ -1125,7 +1210,10 @@ export const summarizeModulations = (payload) => {
     const doubling = tested.filter((entry) => entry.verdict.cellDoubling.answer === true);
     if (doubling.length) {
         doubling.forEach((entry) => entry.verdict.cellDoubling.decidedBy.forEach((q) => say('cellDoubling', entry.verdict.cellDoubling, {
-            element: entry.element, point: entry.zoneBoundary.find((point) => sameQ(point.q, q)), family: family.zoneBoundaryPoints
+            element: entry.element,
+            point: entry.zoneBoundary.find((point) => sameQ(point.q, q)),
+            family: family.zoneBoundaryPoints,
+            polarisation: polarisationOf(entry.element, q)
         })));
     } else {
         // Each element's nearest miss; the largest σ of them, the first element on a tie.
@@ -1133,7 +1221,7 @@ export const summarizeModulations = (payload) => {
             .map((entry) => ({ element: entry.element, point: entry.verdict.cellDoubling.nearest }))
             .filter((item) => item.point)
             .reduce((top, item) => (top == null || (item.point.sigma ?? -Infinity) > (top.point.sigma ?? -Infinity) ? item : top), null);
-        say('cellDoubling', tested[0].verdict.cellDoubling, { best });
+        say('cellDoubling', tested[0].verdict.cellDoubling, { best, rules });
     }
     // Correlation between cells at a general wavevector: each element's first ordered mode.
     tested.forEach((entry) => {
@@ -1141,7 +1229,8 @@ export const summarizeModulations = (payload) => {
         say('generalOrder', finding, {
             element: entry.element,
             mode: finding.answer === true ? entry.strongest.find((mode) => sameQ(mode.q, finding.decidedBy[0])) : null,
-            family: family.comparedModes
+            family: family.comparedModes,
+            polarisation: finding.answer === true ? polarisationOf(entry.element, finding.decidedBy[0]) : null
         });
     });
     tested.forEach((entry) => say('longWave', entry.verdict.longWave, { element: entry.element, mode: entry.strongest[0] }));
@@ -1584,8 +1673,13 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
             },
             dataShape: MODULATIONS_SHAPE,
             label: ({ element }) => `Superstructure test${element ? ` · ${element}` : ''}`,
+            // Three elements with an ordered point and its polarisation run to
+            // ~2.9k characters with the checks (dev-zone-boundary), a fourth
+            // element past 3k: within the default budget the rows would be cut.
+            resultBudget: MODULATION_RESULT_BUDGET,
             run: async ({ element }, { signal } = {}) => summarizeModulations(
-                await request('modulations', element ? { element } : {}, { signal })
+                await request('modulations', element ? { element } : {}, { signal }),
+                { unitCell: unitCellFrom(null) }
             )
         });
     }
