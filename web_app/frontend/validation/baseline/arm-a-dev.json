@@ -7796,8 +7796,8 @@
  },
  {
   "id": "dev-weak-order-b__A+",
-  "protocol": "2026-10-19.14",
-  "commit": "6305217117aed2efcba8a002f97771b5f439e302",
+  "protocol": "2026-10-19.16",
+  "commit": "303e68e195d4c0e883cb3358f2c9b258a5d01c86",
   "case": "dev-weak-order-b",
   "split": "dev",
   "arm": "A+",
