@@ -7,10 +7,11 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-    AXIS_TIE_RTOL, LONG_WAVE_Q, MODE_KINDS, MODULATION_BECAUSE, MODULATION_RULES, MODULATION_SIGMA, SIGMA_MAX,
-    displacementModulations, elementSpectrum, generalModeSigma, isLongWave, modePolarisation, tensorAt, zoneBoundaryPoints,
-    zoneBoundarySigma
+    AXIS_TIE_RTOL, DIFFUSE_CORRELATION, DIFFUSE_PHASES, DIFFUSE_RANK_RTOL, DIFFUSE_SIGMA, LONG_WAVE_Q, MODE_KINDS, MODULATION_BECAUSE,
+    MODULATION_RULES, MODULATION_SIGMA, NULL_EQUAL_RTOL, SIGMA_MAX, diffuseOrder, displacementModulations, elementSpectrum,
+    generalModeSigma, independentCellNull, isLongWave, modePolarisation, nullTail, tensorAt, zoneBoundaryPoints, zoneBoundarySigma
 } from '../modulations';
+import { evidenceClears as evidenceClearsOf } from '../clusters';
 import { siteDisplacementsFromRmc6f } from '../pcaKde';
 import { buildCase, buildConfiguration, DEV_CASES } from '../../../validation/cases';
 import { TOLERANCES } from '../../../validation/scoring';
@@ -252,7 +253,7 @@ describe('the polarisation of a mode (plan item 4.3; mode_polarisation is the re
 describe('the Šidák family is every element of the configuration (F3)', () => {
     const atQ = (result, element, q) => result.elements.find((entry) => entry.element === element).zoneBoundary.find((point) => point.q.join() === q.join());
 
-    it('the fixture\'s weak doubling: 2.98σ over every element\'s points, the same point and verdict with Nb named', () => {
+    it('the fixture\'s weak doubling: 2.99σ over every element\'s points, the same point and verdict with Nb named', () => {
         const weak = fixture.cases.find((entry) => entry.name.startsWith('weak doubling'));
         const parsed = siteDisplacementsFromRmc6f(weak.text);
         const every = displacementModulations(parsed);
@@ -267,10 +268,12 @@ describe('the Šidák family is every element of the configuration (F3)', () => 
         expect(named.elements[0].verdict.cellDoubling.answer).toBe(false);
         // Nb's own 7 points (the family before F3) would have called it ordered.
         const nb = named.elements[0];
-        expect(zoneBoundarySigma(point.ratio * nb.medianPower, nb.sites, 7)).toBeGreaterThanOrEqual(MODULATION_SIGMA);
+        expect(zoneBoundarySigma(point.ratio * nb.medianPower, independentCellNull(parsed, 'Nb'), 7)).toBeGreaterThanOrEqual(MODULATION_SIGMA);
     });
 
-    it('dev-weak-order-b (the finding\'s case): 2.96σ, "no order", whether or not the call names its element', () => {
+    it('dev-weak-order-b (F3\'s case): the same point and verdict whether or not the call names its element', () => {
+        // Against the independent-cell null (F1) the weak order is 5.6σ,
+        // ordered; the bound χ²₁ the null took until F1 read it at 2.96σ.
         const item = DEV_CASES.find((entry) => entry.id === 'dev-weak-order-b');
         const parsed = siteDisplacementsFromRmc6f(buildCase(item, { partials: false }).rmc6f);
         const element = item.params.elements[1];
@@ -280,9 +283,117 @@ describe('the Šidák family is every element of the configuration (F3)', () => 
         expect(every.family.zoneBoundaryPoints).toBe(21);
         const point = atQ(named, element, item.params.q);
         expect(point).toEqual(atQ(every, element, item.params.q));
-        expect(point.sigma).toBeCloseTo(2.959, 3);
-        expect(point.ordered).toBe(false);
-        expect(named.elements[0].verdict.cellDoubling).toMatchObject({ answer: false, because: 'no_ordered_point' });
+        expect(point.sigma).toBeCloseTo(5.647, 3);
+        expect(point.ordered).toBe(true);
+        expect(named.elements[0].verdict.cellDoubling).toMatchObject({ answer: true, because: 'ordered_point' });
+        expect(zoneBoundarySigma(point.ratio * named.elements[0].medianPower, 1, 21)).toBeCloseTo(2.959, 3);
+    });
+});
+
+// --- F1 (2026-10-19): the independent-cell null -----------------------------------
+
+describe('the independent-cell null (F1; independent_cell_null and null_tail are the reference)', () => {
+    const builtCase = (id) => siteDisplacementsFromRmc6f(buildCase(DEV_CASES.find((entry) => entry.id === id), { partials: false }).rmc6f);
+
+    it('pins the null\'s tolerances to the Python engine\'s', () => {
+        expect(NULL_EQUAL_RTOL).toBe(fixture.enums.nullEqualRtol);
+        expect(DIFFUSE_RANK_RTOL).toBe(fixture.enums.diffuseRankRtol);
+        expect([...DIFFUSE_PHASES]).toEqual(fixture.enums.diffusePhases);
+    });
+
+    it('equal weights are the exact gamma; an integer m is the bound the null took until F1', () => {
+        expect(nullTail(9, 1, true)).toBeCloseTo(0.0026997960632601866, 15);
+        expect(nullTail(9, [0.5, 0.5], false)).toBeCloseTo(Math.exp(-18) * 19, 15);
+        expect(nullTail(9, 2, false)).toBe(nullTail(9, [0.5, 0.5], false));
+        expect(nullTail(0, 3, true)).toBeNull();
+        expect(nullTail(1, [], true)).toBeNull();
+    });
+
+    it('the weights sum to the mean power over q ≠ 0, N/(N − 1)', () => {
+        const parsed = builtCase('dev-jahn-teller');
+        const nQ = parsed.supercell.reduce((product, n) => product * n, 1);
+        ['K', 'Cu', 'F'].forEach((name) => {
+            const { power } = elementSpectrum(parsed, name);
+            const mean = Array.from(power.subarray(1)).reduce((sum, value) => sum + value, 0) / (nQ - 1);
+            expect(mean, name).toBeCloseTo(nQ / (nQ - 1), 12);
+            expect(independentCellNull(parsed, name).reduce((sum, value) => sum + value, 0), name).toBeCloseTo(nQ / (nQ - 1), 12);
+        });
+    });
+
+    it('sites that share a cell-level variable read no order, and carry fewer independent components', () => {
+        // The six F of a Jahn-Teller octahedron share its long axis, the six
+        // W of an octahedral cluster its elongation, the three Mo of a
+        // triangle its breathing: their power has about 3, 2.5 and 4.3
+        // independent components where independent isotropic sites give 18,
+        // 18 and 9, and the null of independent sites assumed 6, 6 and 3 (it
+        // found order in such configurations).
+        for (const [id, element, sites, most] of [['dev-jahn-teller', 'F', 6, 4], ['dev-jt-off-centre', 'F', 6, 4], ['dev-octahedral-clusters', 'W', 6, 4], ['dev-breathing', 'Mo', 3, 5]]) {
+            const result = displacementModulations(builtCase(id));
+            const entry = result.elements.find((item) => item.element === element);
+            expect(entry.sites, id).toBe(sites);
+            expect(entry.nullDof, id).toBeLessThan(most);
+            result.elements.forEach((item) => ['cellDoubling', 'generalOrder', 'diffuseOrder'].forEach((name) => {
+                expect(item.verdict[name].answer, `${id} ${item.element} ${name}`).not.toBe(true);
+            }));
+        }
+    });
+
+    it('dev-weak-order-a and -b: one isotropic site has three components, so the weak order reads 6.4σ and 5.6σ', () => {
+        for (const [id, sigma] of [['dev-weak-order-a', 6.413], ['dev-weak-order-b', 5.647]]) {
+            const item = DEV_CASES.find((entry) => entry.id === id);
+            const result = displacementModulations(builtCase(id));
+            const entry = result.elements.find((candidate) => candidate.element === item.params.elements[1]);
+            const point = entry.zoneBoundary.find((candidate) => candidate.q.join() === item.params.q.join());
+            expect(point.sigma, id).toBeCloseTo(sigma, 2);
+            expect(entry.verdict.cellDoubling.decidedBy, id).toEqual([item.params.q]);
+            expect(entry.nullDof, id).toBeCloseTo(3, 1);
+        }
+    });
+});
+
+// --- plan item 4.4: diffuse order between cells -------------------------------------
+
+describe('diffuse order between cells (plan item 4.4; diffuse_order is the reference)', () => {
+    const fixtureCase = (prefix) => siteDisplacementsFromRmc6f(fixture.cases.find((entry) => entry.name.startsWith(prefix)).text);
+
+    it('the planted short-range order is found, in antiphase along a and in phase along c, with no single mode ordered', () => {
+        for (const [prefix, lag, phase] of [['diffuse order in antiphase', [1, 0, 0], 'antiphase'], ['diffuse order in phase', [0, 0, 1], 'in_phase']]) {
+            const result = displacementModulations(fixtureCase(prefix));
+            const nb = result.elements.find((entry) => entry.element === 'Nb');
+            expect(nb.verdict.diffuseOrder).toMatchObject({ answer: true, because: `correlated_${phase}` });
+            expect(nb.diffuse).toMatchObject({ lag, phase, df: 13 });
+            expect(Math.abs(nb.diffuse.correlation)).toBeGreaterThan(DIFFUSE_CORRELATION);
+            expect(nb.diffuse.sigma).toBeGreaterThan(DIFFUSE_SIGMA);
+            expect(nb.verdict.cellDoubling.answer).toBe(false);
+            expect(nb.verdict.generalOrder.answer).toBe(false);
+            const [record] = nb.verdict.diffuseOrder.evidence;
+            expect(record.clears).toBe(evidenceClearsOf(record));
+        }
+    });
+
+    it('no dev case has order between cells, and none reads as diffuse order', () => {
+        for (const item of DEV_CASES) {
+            const result = displacementModulations(siteDisplacementsFromRmc6f(buildCase(item, { partials: false }).rmc6f));
+            result.elements.filter((entry) => entry.sites).forEach((entry) => {
+                expect(entry.verdict.diffuseOrder.answer, `${item.id} ${entry.element}`).not.toBe(true);
+            });
+        }
+    });
+
+    it('the statistic reads ranks: any increasing function of the power, and one spiked mode, give the same χ²', () => {
+        const q = [];
+        for (let h = 0; h < 8; h += 1) for (let k = -3; k < 5; k += 1) for (let l = -3; l < 5; l += 1) q.push([h / 8, k / 8, l / 8]);
+        const modes = q.slice(0, 150);
+        let state = 7;
+        const power = modes.map(() => {
+            state = (state * 16807) % 2147483647;
+            return -Math.log(state / 2147483647);
+        });
+        const base = diffuseOrder(power, modes, 3);
+        expect(diffuseOrder(power.map((value) => Math.log(value) + 10), modes, 3).chiSquare).toBeCloseTo(base.chiSquare, 9);
+        const spiked = [...power];
+        spiked[power.indexOf(Math.max(...power))] = 1e6;
+        expect(diffuseOrder(spiked, modes, 3).chiSquare).toBeCloseTo(base.chiSquare, 9);
     });
 });
 
