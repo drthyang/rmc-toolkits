@@ -299,7 +299,7 @@ describe('where a finding stands, and validation batch 1', () => {
     };
 
     it('decision records: one JSON file per record, read in id order, each validated by the findings schema', () => {
-        expect(Object.keys(decisions())).toEqual(['2026-10-19-list-sites-split', '2026-10-19-test-breathing-recomposed']);
+        expect(Object.keys(decisions())).toEqual(['2026-10-19-engine-verdicts', '2026-10-19-list-sites-split', '2026-10-19-test-breathing-recomposed']);
         expect(existsSync(join(FRONTEND, 'validation/findings/decisions.jsonl'))).toBe(false);
         const record = readFileSync(join(DECISIONS, '2026-10-19-test-breathing-recomposed.json'), 'utf8');
         const read = parseFindingFiles([
@@ -320,6 +320,18 @@ describe('where a finding stands, and validation batch 1', () => {
         const recomposed = decisions()['2026-10-19-test-breathing-recomposed'];
         expect(recomposed).toMatchObject({ case: 'test-breathing', kind: 'bug' });
         delegated(recomposed);
+    });
+
+    it('decisions: the engines return their own verdicts (candidate 5), approved on the user\'s delegation, implemented with its tests', () => {
+        const verdicts = decisions()['2026-10-19-engine-verdicts'];
+        expect(verdicts).toMatchObject({ case: 'dev-jahn-teller', kind: 'bug' });
+        delegated(verdicts);
+        // Every test it names exists, by its title as written in the source.
+        expect(verdicts.tests.length).toBeGreaterThan(0);
+        verdicts.tests.forEach((test) => {
+            const [path, title] = test.split(' › ');
+            expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+        });
     });
 
     it('decisions: list_sites shows the split (plan 4.1), approved on the user\'s delegation, implemented with its known-answer tests', () => {

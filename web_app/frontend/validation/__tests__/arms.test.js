@@ -69,4 +69,17 @@ describe('the model-free arms on the dev cases (the bar)', () => {
         expect(shell.value.peaks_A).toHaveLength(2);
         expect(jt.a.verdict.features).toContainEqual(expect.objectContaining({ kind: 'jahn_teller', element: 'Cu' }));
     });
+
+    it('A+ reads the cluster and modulation engines\' own verdicts (candidate 5, 2026-10-19)', async () => {
+        const breathing = await runBoth(DEV_CASES.find((item) => item.id === 'dev-breathing'));
+        const clusters = breathing.sweep.readings.find((r) => r.page === 'analyze_clusters');
+        expect(clusters.value).toMatchObject({ breathing: 'true (above_null)', distorted: 'false (within_null)', rigid: 'false (within_null)' });
+        expect(breathing.sweep.verdict.features).toEqual([{ kind: 'cluster_breathing', element: 'Mo' }]);
+        const zone = await runBoth(DEV_CASES.find((item) => item.id === 'dev-zone-boundary'));
+        const modulations = zone.sweep.readings.find((r) => r.page === 'analyze_modulations');
+        expect(modulations.reading).toBe('cell doubling: Ti at (0, 0, 0.5); order at a general q: none; long wave: Sr at (0.125, 0, 0)');
+        const jt = await runBoth(DEV_CASES.find((item) => item.id === 'dev-jahn-teller'));
+        expect(jt.sweep.readings.find((r) => r.page === 'analyze_clusters').value)
+            .toMatchObject({ distorted: 'true (axis_family)', splitMemberSites: 'true (half_or_more_split)', rigid: 'false (split_sites)' });
+    });
 });

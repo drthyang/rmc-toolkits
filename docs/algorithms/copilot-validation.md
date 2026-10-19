@@ -11,7 +11,7 @@ that went with it is [copilot-review.md](copilot-review.md).
 | Arm | What answers | Code |
 | --- | --- | --- |
 | **A** | The default Workbench, no agent: the Detected SG card (0.2 Å), the PCA Ellipsoid table, the Displacement Directions page (ν = 10, smoothing 2) and the partial g(r), read by fixed rules (`ARM_A_RULES`). The cluster and superstructure engines have no page, so A cannot use them | `armA.js` `runArmA` |
-| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules (`SWEEP_RULES`); no model. **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
+| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules (`SWEEP_RULES`); no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
 | **B** | The Copilot as the app assembles it: tools, skills, guardrails (refusals, the Workbench's window questions, answer checks) | `harness.js` |
 | **C** | B without the skills (no `read_skill`, no skills index): the ablation | `harness.js` |
 | **D** | The planted truth, scored as a verdict; it must score 1 (a test checks this) | `verdict.js` `truthVerdict` |
@@ -367,6 +367,26 @@ What the model sees in every first request is unchanged (the model-visible snaps
 were). No arm B or C run exists under an earlier protocol; arms A, A+ and D have no model and are
 unaffected.
 
+**Engine verdicts (2026-10-19, architecture candidate 5; not a protocol change).** The cluster and
+modulation engines decide what their statistics show and return it (`verdict`; ai-assistant.md
+Steps 18–19); `analyze_clusters` and `analyze_modulations` only render it, and what the model sees
+is byte-identical (the model-visible snapshots), so live runs under protocol 2026-10-19.7 stay
+comparable. A+ now calls the engines (`run.engine('clusters' | 'modulations')`) and maps their
+answers: distorted → `cluster_distortion`, breathing → `cluster_breathing`, rigid →
+`rigid_cluster`, a cell doubling or order at a general q → `modulation` at the q that decided it.
+A+ now reads clusters by the tool's rules, where it had its own: trigonality counts as a
+distortion of tetrahedra; rigid is blocked by the engine's split member sites (at least half of
+the cluster's sites split by `isSplitSite`) instead of arm A's split site (a prolate PC1 with
+κ₁ ≤ −0.5 on any site of the element), and by a pattern (an axis family, a trigonal lean) beside a
+narrower edge spread; collective breathing no longer blocks it (the edge spread is read against the
+shape null, which keeps each cluster's breathing). On the dev set every score and every claim is
+unchanged (the `arms.test.js` pins hold); only the ten A+ records' cluster and modulation readings
+change, from the tool's sentences to the engines' answers; they are re-recorded in
+`arm-a-dev.json` (at 3f90a80; the A and D records stay as recorded). Only a held-out case would
+exercise the rule changes; the test set was not run, and its A+ records are re-recorded at the
+freeze. Approved
+by the manager on the user's delegation, 2026-10-19 (`validation/findings/decisions/2026-10-19-engine-verdicts.json`).
+
 ## Records, transcripts, findings
 
 Each live run writes:
@@ -619,7 +639,8 @@ cache hits $0.10, cache writes $2.50, so prompts are charged at $2.50. `RMC_EVAL
 `npx vite-node validation/run.js -- arm-a --split dev` (and `--split test --final`). Records:
 `validation/baseline/arm-a-{dev,test}.json` (re-recorded after batch 1 at commit 5780c50, below;
 the 2026-10-14 records are in git at b4fe09f; the test records again at 4ab9eab for protocol
-2026-10-19.2, with the same scores).
+2026-10-19.2, with the same scores; the dev A+ records again at 3f90a80 for the engine verdicts,
+their cluster and modulation readings only, with the same scores and claims).
 
 | Kind | A dev / test | A+ dev / test | Where the default analyses mislead |
 | --- | --- | --- | --- |
