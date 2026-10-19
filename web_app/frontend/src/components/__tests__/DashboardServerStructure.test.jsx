@@ -22,7 +22,7 @@ import fixture from '../../__tests__/fixtures/structure_basis_fixture.json';
 
 const state = vi.hoisted(() => ({
     structure: null,
-    calls: { files: 0, metadata: 0, structure: 0 },
+    calls: { files: 0, metadata: 0, structure: 0, data: 0 },
     // Set: each /api/structure call waits for its resolver in `pending`
     // (each /api/files call in `pendingFiles` with `deferFiles`).
     defer: false,
@@ -32,9 +32,20 @@ const state = vi.hoisted(() => ({
     downloads: [],
 }));
 
+// /api/plot/data for the F(Q) fit: what the published run fetches for the
+// Copilot (the chart itself is a stub here).
+const PLOT_DATA = vi.hoisted(() => ({
+    kind: 'xray_sq', title: 'F(Q)', metrics: { rwp: 0.1 }, xLabel: 'Q (Å^{-1})', yLabel: 'F(Q)',
+    series: [{ label: 'F(Q)_RMC', x: [1, 2], y: [0.1, 0.2] }, { label: 'F(Q)_Expt', x: [1, 2], y: [0.1, 0.25] }],
+}));
+
 vi.mock('axios', () => ({
     default: {
         get: vi.fn(async (url) => {
+            if (url.endsWith('/api/plot/data')) {
+                state.calls.data += 1;
+                return { data: PLOT_DATA };
+            }
             if (url.endsWith('/api/files')) {
                 state.calls.files += 1;
                 const listing = {
@@ -79,6 +90,7 @@ vi.mock('../../llm', async (importOriginal) => ({ ...(await importOriginal()), W
 const { default: Dashboard } = await import('../Dashboard');
 const { structureFromRmc6f } = await import('../../browserData');
 const { copilotRun } = await import('../../copilotRun');
+const { clearPlotDataCache } = await import('../../plotDataCache');
 
 // /api/structure for the demo run in a server folder: the model as the parsers
 // read it and the basis Flask computes (the golden's demo rows).
@@ -100,7 +112,8 @@ describe('Dashboard: a server folder\'s structure', () => {
     beforeEach(() => {
         globalThis.IS_REACT_ACT_ENVIRONMENT = true;
         state.structure = serverStructure;
-        state.calls = { files: 0, metadata: 0, structure: 0 };
+        state.calls = { files: 0, metadata: 0, structure: 0, data: 0 };
+        clearPlotDataCache();
         state.defer = false;
         state.pending = [];
         state.deferFiles = false;
@@ -154,7 +167,8 @@ describe('Dashboard: a server folder\'s structure', () => {
 
     it('re-reads the structure on a new configuration, not the plots', async () => {
         await render({ dataEpoch: 0 });
-        expect(state.calls).toEqual({ files: 1, metadata: 1, structure: 1 });
+        // The plot data the published run carries for the Copilot: once.
+        expect(state.calls).toEqual({ files: 1, metadata: 1, structure: 1, data: 1 });
 
         // Another render with the same epoch reads nothing.
         await render({ dataEpoch: 0, cardMarks: {} });
@@ -163,14 +177,14 @@ describe('Dashboard: a server folder\'s structure', () => {
         // A new configuration caught mid-write: the previous complete read stays.
         state.structure = { ...withoutBasis, parseReport: { ...model.parseReport, parsedAtoms: 30000 } };
         await render({ dataEpoch: 1 });
-        expect(state.calls).toEqual({ files: 1, metadata: 1, structure: 2 });
+        expect(state.calls).toEqual({ files: 1, metadata: 1, structure: 2, data: 1 });
         expect(headline()).toMatch(/^F-43m/);
         expect(modelCard().textContent).toContain('previous read');
 
         // The complete file: its structure, here with no basis (no card).
         state.structure = withoutBasis;
         await render({ dataEpoch: 2 });
-        expect(state.calls).toEqual({ files: 1, metadata: 1, structure: 3 });
+        expect(state.calls).toEqual({ files: 1, metadata: 1, structure: 3, data: 1 });
         expect(card()).toBeNull();
         expect(modelCard()).not.toBeNull();
         expect(modelCard().textContent).not.toContain('previous read');
