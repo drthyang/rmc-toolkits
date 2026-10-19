@@ -70,7 +70,7 @@ import { toolBudgetNote } from '../prompts/copilot';
 // `done` has one shape on every path, built only here:
 //   { type: 'done', text, rawText, outcome, rounds, stoppedBy, cut, reason, audit, references, gates }
 //   - an answer (the verification's done): reason null; rawText the answer as
-//     the model wrote it (text, with its references filled, when they are the same);
+//     the model wrote it (the text itself when no reference changed it);
 //   - the request that asked for the answer came back empty, with nothing
 //     standing: a fixed answer (`say`), Outcome 'not achieved' with its note and
 //     body only, rawText = text, references null, gates [];
@@ -93,11 +93,11 @@ import { toolBudgetNote } from '../prompts/copilot';
 //   - canSendBack = tools on ∧ this request is not the last ∧ turn time left
 //     (and the verification's own cap);
 //   - exactly one 'end' a turn.
-// Errors: a TypeError for bad configuration or an event out of order or
-// malformed (calls on a request that allowed none, a send-back the policy did
-// not allow, a judge that returns something else than its three answers);
-// judge's own errors propagate (the turn ends as `failed`); judge returning
-// null gives the empty ending. Pure, no React.
+// Errors: a TypeError for bad configuration, or for an event out of order or
+// malformed (calls on a request that allowed none, no_tools after tools ran),
+// a send-back the policy did not allow, or a judge that answers otherwise than
+// { sendBack }, { done } or null; judge's own errors propagate (the turn ends
+// as `failed`); judge returning null gives the empty ending. Pure, no React.
 
 /** The endings a turn can have: every `stoppedBy` the dock and the harness read. */
 export const STOPPED_BY = Object.freeze({
