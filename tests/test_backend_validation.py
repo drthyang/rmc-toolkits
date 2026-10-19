@@ -310,30 +310,20 @@ class StructureValidationTests(_ValidationCase):
         self.assertLessEqual(payload["sampledAtoms"], 100)
 
 
-class PcaValidationTests(_ValidationCase):
-    def test_sites_probability_errors_are_bad_requests(self):
-        # Used to be a 500 here while /api/pca/kde answered 400 for the same value.
-        for raw in ("nan", "1.5", "0", "abc"):
-            with self.subTest(probability=raw):
-                self.assertBadRequest(self.get("/api/pca/sites", probability=raw), "probability")
+# The analysis routes' request rules (each parameter's range and refusal, on
+# /api/pca/sites, /api/pca/kde, /api/pca/orientation, /api/triplets,
+# /api/clusters and /api/modulations) are the request contract,
+# web_app/frontend/src/__tests__/fixtures/analysis_requests.json, replayed by
+# tests/test_analysis_requests.py. What stays here: valid JSON, the non-finite
+# results and the triplets work budget.
 
+
+class PcaValidationTests(_ValidationCase):
     def test_kde_baseline_is_valid_json(self):
         payload = self.assertOk(
             self.get("/api/pca/kde", referenceNumber=1, grid=12, projections="false")
         )
         self.assertTrue(np.isfinite(payload["mass"]))
-
-    def test_kde_non_finite_and_non_positive_parameters_are_rejected(self):
-        base = {"referenceNumber": 1, "grid": 12, "projections": "false"}
-        cases = [
-            ("extent", "nan"), ("extent", "inf"), ("extent", "0"), ("extent", "-1"),
-            ("bwScale", "nan"), ("bwScale", "inf"), ("bwScale", "0"),
-            ("bw", "nan"), ("bw", "inf"), ("bw", "0"), ("bw", "-0.5"), ("bw", "wide"),
-            ("probability", "nan"), ("grid", "abc"), ("referenceNumber", "1.5"),
-        ]
-        for key, raw in cases:
-            with self.subTest(key=key, raw=raw):
-                self.assertBadRequest(self.get("/api/pca/kde", **{**base, key: raw}), key)
 
     def test_kde_extreme_finite_parameters_are_an_error_not_a_nan_volume(self):
         base = {"referenceNumber": 1, "grid": 12, "projections": "false"}
@@ -342,12 +332,6 @@ class PcaValidationTests(_ValidationCase):
                 self.assertBadRequest(
                     self.get("/api/pca/kde", **{**base, key: raw}), "NaN or Infinity"
                 )
-
-    def test_kde_accepts_named_and_numeric_bandwidths(self):
-        base = {"referenceNumber": 1, "grid": 12, "projections": "false"}
-        for raw in ("scott", "Silverman", "0.4"):
-            with self.subTest(bw=raw):
-                self.assertOk(self.get("/api/pca/kde", **{**base, "bw": raw}))
 
 
 class OrientationValidationTests(_ValidationCase):
@@ -359,16 +343,6 @@ class OrientationValidationTests(_ValidationCase):
     def test_baseline_is_valid_json(self):
         self.assertOk(self.orientation())
 
-    def test_bad_values_are_rejected_with_the_parameter_name(self):
-        cases = [
-            ("smoothing", "-5"), ("smoothing", "1000"), ("smoothing", "1.5"),
-            ("minAmplitude", "nan"), ("minAmplitude", "-0.1"),
-            ("minAmplitudeQuantile", "nan"), ("frequency", "2.5"),
-        ]
-        for key, raw in cases:
-            with self.subTest(key=key, raw=raw):
-                self.assertBadRequest(self.orientation(**{key: raw}), key)
-
 
 class TripletsValidationTests(_ValidationCase):
     BASE = {"end1": "Se", "apex": "Nb", "end2": "Se", "r12Min": 6.0, "r12Max": 7.5}
@@ -378,12 +352,6 @@ class TripletsValidationTests(_ValidationCase):
 
     def test_baseline_is_valid_json(self):
         self.assertGreater(self.assertOk(self.triplets())["angleCount"], 0)
-
-    def test_non_finite_window_and_bin_width_are_rejected_by_name(self):
-        for key in ("r12Min", "r12Max", "binWidth"):
-            for raw in ("nan", "inf", "abc"):
-                with self.subTest(key=key, raw=raw):
-                    self.assertBadRequest(self.triplets(**{key: raw}), key)
 
 
 @unittest.skipUnless(

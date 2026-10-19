@@ -23,7 +23,7 @@ import { copilotRun, DEFAULT_VIEW } from '../../copilotRun';
 import { copilotSkills } from '../../copilotSkills';
 import { parseSkillFiles } from '../../llm/copilot/skills';
 import { copilotSystemPrompt } from '../../llm/prompts/copilot';
-import { handlePcaMessage } from '../../workers/pcaKdeWorker';
+import { inProcessEngine } from '../../workers/pcaKdeWorker';
 import { handleStructureMessage } from '../../workers/localStructureWorker';
 
 // --- the system prompt -----------------------------------------------------------
@@ -97,9 +97,6 @@ export const demoEntries = () => readdirSync(DEMO).sort().map((name) => ({
     file: new File([readFileSync(join(DEMO, name))], name, { lastModified: DEMO_TIME })
 }));
 
-/** An engine over .rmc6f text: the Copilot worker's handler in-thread, with the worker's message. */
-export const inThreadEngine = (rmc6fText) => (kind, params = {}) => handlePcaMessage({ ...params, kind }, async () => rmc6fText);
-
 /**
  * A browser-loaded run as the Dashboard holds it once everything is parsed,
  * as a LoadedRun (copilotRun.js): its files with each plot file parsed
@@ -114,7 +111,7 @@ export const dashboardLoadedRun = async (localRun) => {
     const rmc6fText = await localRun.structureFile.sourceFile.text();
     return {
         loaded: {
-            name: localRun.name, files, structure, structurePath: localRun.structureFile.path, settings, engine: inThreadEngine(rmc6fText)
+            name: localRun.name, files, structure, structurePath: localRun.structureFile.path, settings, engine: inProcessEngine(rmc6fText)
         },
         rmc6fText
     };

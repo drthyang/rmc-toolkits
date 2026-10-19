@@ -203,6 +203,20 @@ const announcementFor = (turn) => {
     return step.status === 'running' ? `Running: ${step.label}` : `${step.label}: ${step.status}`;
 };
 
+// The divider the dock draws where a new configuration of the run was saved
+// (configKey, useCopilot.js configurationBreaks): the answers above it are
+// not sent to the model with the next question.
+const CONFIGURATION_DIVIDER_TEXT = 'New configuration saved — earlier answers were about the previous one';
+
+const ConfigurationDivider = () => (
+    <p
+        className="llm-config-divider"
+        title="The run's .rmc6f changed. The answers above are kept on screen but are not sent to the model with the next question."
+    >
+        <span>{CONFIGURATION_DIVIDER_TEXT}</span>
+    </p>
+);
+
 const UserMessage = ({ content }) => (
     <div className="llm-message is-user">
         <span className="llm-message-avatar" aria-hidden="true"><UserGlyph /></span>
@@ -214,10 +228,12 @@ const UserMessage = ({ content }) => (
 );
 
 const CopilotView = ({
-    context, run, settings, connected, tools, toolsEnabled, pages, onOpenPage, runKey,
+    context, run, settings, connected, tools, toolsEnabled, pages, onOpenPage, runKey, configKey = null,
     cards = null, focus = null, onTurnEnd = null, onBusyChange = null, onQuestion = null, skills = null
 }) => {
-    const copilot = useCopilot({ settings, run, tools, toolsEnabled, runKey, focus, onTurnEnd, onQuestion, skills });
+    const copilot = useCopilot({
+        settings, run, tools, toolsEnabled, runKey, configKey, focus, onTurnEnd, onQuestion, skills
+    });
     useEffect(() => { onBusyChange?.(copilot.busy); }, [copilot.busy, onBusyChange]);
     const showCard = useCallback((id) => { focus?.show([id], { source: 'user' }); }, [focus]);
     const previewCard = useCallback((id) => { focus?.preview(id); }, [focus]);
@@ -228,10 +244,13 @@ const CopilotView = ({
     const logRef = useRef(null);
     const textareaRef = useRef(null);
     const hasConversation = copilot.turns.length > 0 || copilot.busy;
-    const announcement = useMemo(
-        () => announcementFor(copilot.live || copilot.turns.at(-1)),
-        [copilot.live, copilot.turns]
-    );
+    // The newest turn's line, then the divider's once a new configuration
+    // ends the conversation (after the running answer, if any).
+    const configurationChanged = copilot.breaks.after;
+    const announcement = useMemo(() => {
+        const line = announcementFor(copilot.live || copilot.turns.at(-1));
+        return configurationChanged && !copilot.live ? `${line} ${CONFIGURATION_DIVIDER_TEXT}.`.trim() : line;
+    }, [copilot.live, copilot.turns, configurationChanged]);
 
     // Keep the newest message in view as turns, steps and tokens arrive — but
     // never scroll a waiting question's top out of view (a short sheet on a
@@ -316,9 +335,12 @@ const CopilotView = ({
         <div className="llm-chat">
             {hasConversation ? (
                 <div className="llm-chat-log" ref={logRef}>
-                    {copilot.turns.map((turn, index) => (turn.role === 'user'
-                        ? <UserMessage key={index} content={turn.content} />
-                        : <AssistantTurn key={index} turn={turn} pages={pages} onOpenPage={onOpenPage} cardLinks={cardLinks} />))}
+                    {copilot.turns.flatMap((turn, index) => [
+                        ...(copilot.breaks.before.includes(index) ? [<ConfigurationDivider key={`configuration-${index}`} />] : []),
+                        turn.role === 'user'
+                            ? <UserMessage key={index} content={turn.content} />
+                            : <AssistantTurn key={index} turn={turn} pages={pages} onOpenPage={onOpenPage} cardLinks={cardLinks} />
+                    ])}
                     {copilot.live && (
                         <AssistantTurn
                             turn={copilot.live}
@@ -329,6 +351,7 @@ const CopilotView = ({
                             onAnswer={copilot.answerQuestion}
                         />
                     )}
+                    {configurationChanged && <ConfigurationDivider />}
                 </div>
             ) : (
                 <div className="llm-chat-empty">

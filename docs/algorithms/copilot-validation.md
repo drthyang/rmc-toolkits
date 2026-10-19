@@ -232,6 +232,10 @@ Reported beside the score, per run:
   achieved, score below 1: the verdict warned). The Outcome is the app's, computed from its checks;
   the model only explains it.
 
+Per split, the report also takes the case score apart: its parts (the feature-only score among
+them), every component against A+, and every disagreement with the planted truth
+([below](#the-report-beside-the-case-score-plan-item-16-part-i)).
+
 **Protocol 2026-10-17.2 (THY-18).** The live arms run with the evidence gate, numbers by reference
 and the computed verdict, exactly as the app does. The case score is unchanged; the three are
 reported beside it (`report.js`: one more table per split) and in each transcript (the answers the
@@ -387,6 +391,78 @@ exercise the rule changes; the test set was not run, and its A+ records are re-r
 freeze. Approved
 by the manager on the user's delegation, 2026-10-19 (`validation/findings/decisions/2026-10-19-engine-verdicts.json`).
 
+### The report beside the case score (plan item 1.6, part i)
+
+The engines alone (A+) score 0.99, because most components of a case are facts they get right every
+time: a perovskite case has four symmetry fields and the spurious-claim test beside one planted
+feature. On the case score alone B can at best tie A+ ([the bar after batch 1](#arm-a-results-no-model-2026-10-14-commit-b4fe09f)).
+So under each split's tables, `report` takes the case score apart (`comparison.js`, from the run
+records). It adds three sections:
+
+1. **The case score's parts.** For each column, the case score restricted to one group of its
+   components (`scoring.js` `scoreComponents`, `restrictedScore`):
+   - the **feature-only score**: the planted-feature components alone (1 found and accurate,
+     0.5 a quantity off, 0 missed). A case with no planted feature has none and is left out, so
+     the cell says over how many cases it is taken;
+   - **no spurious claim**: the share of runs with no claim beyond the planted and tolerated ones;
+   - **the symmetry fields** (a case whose truth defines none is left out).
+
+   Each case weighs once. Under each live column, a row gives its difference from A+, taken on
+   the cases both have.
+2. **Component by component, against A+.** Every component of every case, with arm A's value,
+   A+'s, each live column's (its mean over the runs) and the live column minus A+. A non-zero
+   difference is bold, and a line per live column counts the components higher, lower and the
+   same.
+3. **Every disagreement with the planted truth.** For each case, each feature or fact a run got
+   wrong, with the answer, the truth (with its tolerance) and the columns that made it, with
+   their runs (2/3):
+   - a missed feature, with what took its place: another kind on its element ("wrong kind",
+     an ordered mode read as off-centring) or its kind on another element ("wrong element");
+   - a direction, magnitude or q off;
+   - a spurious claim;
+   - a symmetry field wrong or unanswered;
+   - no parseable verdict.
+
+   Tolerated claims (true partial descriptions) are not disagreements. Each disagreement costs a
+   component, and each component below 1 has at least one. The cases where no run disagrees are
+   listed after the table.
+
+**How to read it.**
+- B − A+ on the feature-only score is what the model adds or loses on the planted order.
+- A lower "no spurious claim" is an over-claim the engines did not make.
+- A disagreement that A+ and B share is the engines' limit (the JT long axis on dev). One that
+  B makes alone is the model's own. One that A+ makes alone is where the model added something.
+
+**On the dev baselines** (`arm-a-dev.json`; no B run yet, so the report says so and shows A
+beside A+):
+
+| Column | Case score | Feature-only score (6 cases) | No spurious claim | Symmetry fields (9 cases) |
+| --- | --- | --- | --- | --- |
+| A | 0.825 | 0.25 | 0.90 | 0.92 |
+| A+ | 0.99 | 0.92 | 1 | 1 |
+| D | 1 | 1 | 1 | 1 |
+
+A+ has one disagreement: the Cu long axis in dev-jahn-teller is not given (A has the same one).
+A's other disagreements:
+- dev-zone-boundary: modulation Ti missed, read as off_centre Ti (wrong kind), which is also a
+  spurious claim;
+- dev-breathing: cluster_breathing Mo missed;
+- dev-cell-wrap: rigid_cluster V missed;
+- dev-symmetry-lowering: symmetry_lowering Ta missed; Pm-3m given for P4mm, and called
+  centrosymmetric and non-polar.
+
+On dev, B can gain over A+ at most 0.08 on the feature-only score (the JT axis is half of one of
+six features), against 0.008 on the case score.
+
+**What does not change.** The case score, every existing export of `scoring.js` and the arm A/A+
+pins (`arms.test.js`) are unchanged. `scoreComponents` reads the components back from
+`scoreVerdict`'s result, and `__tests__/comparison.test.js` checks three things on every dev
+baseline record, the truth and no verdict: their mean is the case score; the baseline re-scores
+exactly as recorded; and the listing matches the components. **Not a protocol change.** The report
+reads records: it changes no record, no score and nothing a run sends, so `PROTOCOL_VERSION`
+stays 2026-10-19.7, and records under every protocol go through it. Plan item 1.6's part (ii),
+the judgment cases, is a separate change.
+
 ## Records, transcripts, findings
 
 Each live run writes:
@@ -439,8 +515,10 @@ that section changes and is off by default. Such runs write to their own folder 
 and `report` gives them their own column (`<model> · <arm> + PCA table`). It changes the context the
 model reads, so those runs are not comparable with the default runs.
 
-`report` puts every record side by side (case × model·arm), keeps failed runs as score 0, sets
-the columns' run policies side by side ([what a comparison across models also
+`report` puts every record side by side (case × model·arm), keeps failed runs as score 0, takes
+each split's case score apart against A+ ([the report beside the case
+score](#the-report-beside-the-case-score-plan-item-16-part-i)), sets the columns' run policies
+side by side ([what a comparison across models also
 compares](#what-a-comparison-across-models-also-compares)), and lists every run used.
 
 Supervisor findings (`findings.js`, `run.js findings <file.jsonl>` validates them) take the form
@@ -694,6 +772,10 @@ more than 0.01 on the case score: on these cases the question "does the model ad
 reduces to whether B *matches* A+ — reaches the engines' conclusions, no over-claim — and to what
 the score does not measure (the answer checks, the evidence gate, number provenance,
 reproducibility). B − A (0.81) is still where the Copilot's value over the default pages shows.
+The report shows where B matches, adds or loses beside the case score: the feature-only score,
+B against A+ component by component and every disagreement with the truth
+([The report beside the case score](#the-report-beside-the-case-score-plan-item-16-part-i); on
+dev the engines' feature-only score is 0.92, not 0.99).
 
 The dev-only fit-data case (protocol 2026-10-19.6) is not in these tables, whose means are over the
 nine paired kinds: A and A+ both score 1 on it, so over all ten dev cases the means are A 0.825

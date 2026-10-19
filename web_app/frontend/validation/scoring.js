@@ -171,6 +171,53 @@ export const scoreVerdict = (truth, verdict) => {
 };
 
 /**
+ * The case score's components one by one, read back from scoreVerdict's
+ * result (plan item 1.6, part i): each planted feature (1 found and accurate,
+ * 0.5 a quantity off, 0 missed), "no spurious claim" (1 or 0) and each
+ * symmetry field the truth defines (1 right, 0 wrong or unanswered); a
+ * missing verdict scores 0 on every one. Their mean is the case score, to its
+ * four decimals (validation/__tests__/comparison.test.js checks it). Each is
+ * `{ id, group: 'feature' | 'spurious' | 'symmetry', value }`, a feature with
+ * its planted kind and element (from `truth` when given, else from the
+ * score). Reported beside the case score, never folded into it: nothing here
+ * changes scoreVerdict.
+ */
+export const scoreComponents = (score, truth = null) => {
+    if (!score) return [];
+    const ids = new Map();
+    const unique = (id) => {
+        const seen = (ids.get(id) || 0) + 1;
+        ids.set(id, seen);
+        return seen === 1 ? id : `${id} (${seen})`;
+    };
+    const components = (score.features || []).map((feature, index) => {
+        const planted = truth?.features?.[index];
+        const kind = planted?.kind ?? feature.planted ?? feature.kind;
+        const element = planted?.element ?? feature.element ?? null;
+        return {
+            id: unique(`feature ${kind}${element ? ` ${element}` : ''}`), group: 'feature', kind, element,
+            value: feature.found ? (feature.accurate ? 1 : 0.5) : 0
+        };
+    });
+    components.push({ id: 'no spurious claim', group: 'spurious', value: score.format_ok !== false && !(score.spurious || []).length ? 1 : 0 });
+    Object.entries(score.symmetry || {}).forEach(([field, result]) => components.push({
+        id: `symmetry ${field}`, group: 'symmetry', field, value: result === 'right' ? 1 : 0
+    }));
+    return components;
+};
+
+/**
+ * The case score restricted to one group of its components: their mean, or
+ * null when the case has none. 'feature' is the feature-only score (the
+ * planted features alone, without the spurious-claim test and the symmetry
+ * fields); null for a case with no planted feature.
+ */
+export const restrictedScore = (components, group) => {
+    const values = components.filter((component) => component.group === group).map((component) => component.value);
+    return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+};
+
+/**
  * The app's computed verdict against the case score (THY-18), reported beside
  * the score, never mixed into it: 'earned' — achieved, and the case right
  * (score 1); 'over' — achieved, but the case score below 1 (the checks passed

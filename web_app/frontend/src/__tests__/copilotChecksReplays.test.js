@@ -29,12 +29,12 @@ import { pointGroupFacts } from '../llm/context/pointGroups';
 import { buildRunContext } from '../llm/context/runContext';
 import { shownContext } from '../llm/prompts/copilot';
 import { describeSymmetry, toleranceLadder } from '../symmetryModel';
-import { handlePcaMessage } from '../workers/pcaKdeWorker';
+import { inProcessEngine } from '../workers/pcaKdeWorker';
 
 const read = (name) => readFileSync(new URL(`../../public/demo/${name}`, import.meta.url), 'utf8');
 const RMC6F = read('GTS_250K.rmc6f');
 const structure = structureFromRmc6f({ path: 'Demo/GTS_250K.rmc6f', text: RMC6F });
-const request = (kind, params) => handlePcaMessage({ kind, ...params }, async () => RMC6F);
+const request = inProcessEngine(RMC6F);
 const partialsName = 'GTS_250K_PDFpartials.csv';
 const plotFiles = [{
     name: partialsName,

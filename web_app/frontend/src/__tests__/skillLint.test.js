@@ -38,7 +38,7 @@ import { buildReadSkillTool } from '../llm/copilot/skills';
 import { buildRunTools } from '../llm/copilot/runTools';
 import { buildFocusTools } from '../llm/copilot/viewTools';
 import { shellCatalogue } from '../llm/context/shells';
-import { handlePcaMessage } from '../workers/pcaKdeWorker';
+import { inProcessEngine } from '../workers/pcaKdeWorker';
 import { bundledSkills, COPILOT_PAGES, loadDemoAssistantRun } from './modelVisible/helpers';
 import {
     classifyIdentifier, compareAllowList, describeFinding, evaluateBinding, evaluateValue, firmRuleSentences, flatten, gateNumberCandidates,
@@ -60,7 +60,7 @@ const SNAPSHOTS = join(HERE, 'modelVisible/__snapshots__');
  */
 const offeredTools = async () => {
     const { run, rmc6fText } = await loadDemoAssistantRun();
-    const request = (kind, params) => handlePcaMessage({ kind, ...params }, async () => rmc6fText);
+    const request = inProcessEngine(rmc6fText);
     const cards = buildCopilotCards({ plotFiles: run.plotFiles, rValueFile: run.rValueFile, symmetry: run.symmetry });
     const tools = [
         ...buildRunTools(run, { cards }),

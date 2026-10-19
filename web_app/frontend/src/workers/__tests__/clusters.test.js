@@ -223,11 +223,6 @@ describe('the worker\'s clusters request', () => {
         expect(result.element).toBe('Nb');
         expect(result.kind).toMatchObject({ members: 4, edges: 6, clusters: 64 });
     });
-
-    it('rejects missing, inverted and oversized windows with the route\'s messages', async () => {
-        await expect(ask({ element: 'Nb', rMin: 2.5 })).rejects.toThrow('rMax required');
-        await expect(ask({ element: 'Nb', rMin: 2.5, rMax: 20 })).rejects.toThrow('rMax must be <= 8, got 20');
-        await expect(ask({ element: 'Nb', rMin: 3.5, rMax: 2.5 })).rejects.toThrow('window must be 0 <= min < max');
-        await expect(ask({ element: 'Xx', rMin: 2.5, rMax: 3.5 })).rejects.toThrow('no site holds Xx');
-    });
+    // Its missing, inverted and oversized windows: the request contract
+    // (fixtures/analysis_requests.json, src/__tests__/analysisRequests.test.js).
 });
