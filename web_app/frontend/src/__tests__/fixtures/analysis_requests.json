@@ -1,0 +1,2067 @@
+{
+ "about": [
+  "The analysis request contract (architecture candidate 9): what each kind of requestAnalysis",
+  "(useSiteCloud.js) accepts and refuses, replayed against every adapter. Hand-written; not generated.",
+  "routes: the kinds (requestGuards.js ANALYSIS_ROUTES) and their Flask routes.",
+  "limits: each numeric parameter's range; gt/ge/lt/le bound it, integer requires an integral value,",
+  "clamp clamps it; tool names the AI Copilot tool property that sends it (copilotTools.js).",
+  "cases: params are flat JSON scalars (null = absent). expect is 'ok', 'aborted', {error: name}",
+  "(the refusal's message names it) or, where the adapters differ, {flask, worker}, each 'ok',",
+  "{error: name} or {fields: {...}}; fields are payload values (dotted paths, .length of a list)",
+  "the accepted request shows on both. kept says why a difference stays. probe: the cancel cases.",
+  "Replayed by src/__tests__/analysisRequests.test.js (worker, in-process) and",
+  "tests/test_analysis_requests.py (Flask); tests/test_backend_contract.py checks the limits",
+  "against docs/REFERENCE.md."
+ ],
+ "rmc6f": "Supercell dimensions 4 4 4\nLattice vectors (Ang):\n32.0 0.0 0.0\n0.0 32.0 0.0\n0.0 0.0 32.0\nAtoms:\n1 Nb [1] 0.0001367711 0.0054389902 0.0048988843 1 0 0 0\n2 Se [2] 0.1229587717 0.1238081220 0.1228904632 2 0 0 0\n3 Nb [1] 0.0022789054 0.9997757422 0.2529875425 1 0 0 1\n4 Se [2] 0.1176107008 0.1312661951 0.3746142714 2 0 0 1\n5 Nb [1] 0.0027215138 0.9994537347 0.4984836057 1 0 0 2\n6 Se [2] 0.1268524406 0.1282980541 0.6241898805 2 0 0 2\n7 Nb [1] 0.9993888553 0.0027427944 0.7465186374 1 0 0 3\n8 Se [2] 0.1189424660 0.1265799275 0.8723177367 2 0 0 3\n9 Nb [1] 0.9923186376 0.2467437853 0.9981296098 1 0 1 0\n10 Se [2] 0.1202271901 0.3690301445 0.1251465513 2 0 1 0\n11 Nb [1] 0.0035889970 0.2490674717 0.2470256159 1 0 1 1\n12 Se [2] 0.1265399752 0.3778689432 0.3737999576 2 0 1 1\n13 Nb [1] 0.0021786712 0.2541715019 0.4991721743 1 0 1 2\n14 Se [2] 0.1217459378 0.3763906024 0.6259901830 2 0 1 2\n15 Nb [1] 0.0043952511 0.2448616769 0.7473535483 1 0 1 3\n16 Se [2] 0.1216473322 0.3680639406 0.8755057382 2 0 1 3\n17 Nb [1] 0.0021112168 0.4970448399 0.0055425883 1 0 2 0\n18 Se [2] 0.1282876973 0.6275095059 0.1266068284 2 0 2 0\n19 Nb [1] 0.0038226783 0.4946720806 0.2524557186 1 0 2 1\n20 Se [2] 0.1274111073 0.6179291257 0.3763881204 2 0 2 1\n21 Nb [1] 0.9989983146 0.5031260908 0.4982437512 1 0 2 2\n22 Se [2] 0.1249270366 0.6263714061 0.6214949532 2 0 2 2\n23 Nb [1] 0.0023943866 0.4995801472 0.7519699305 1 0 2 3\n24 Se [2] 0.1229126500 0.6293448062 0.8774208079 2 0 2 3\n25 Nb [1] 0.9992878999 0.7525278286 0.0050390206 1 0 3 0\n26 Se [2] 0.1321647021 0.8687056945 0.1285325272 2 0 3 0\n27 Nb [1] 0.0018602740 0.7496245569 0.2459733403 1 0 3 1\n28 Se [2] 0.1300287545 0.8699530480 0.3772677819 2 0 3 1\n29 Nb [1] 0.0052074720 0.7436013228 0.4987899286 1 0 3 2\n30 Se [2] 0.1197631327 0.8759762164 0.6310575005 2 0 3 2\n31 Nb [1] 0.0080942241 0.7428875422 0.7477002040 1 0 3 3\n32 Se [2] 0.1278141804 0.8813174906 0.8766848426 2 0 3 3\n33 Nb [1] 0.2470153920 0.0011885260 0.9999335232 1 1 0 0\n34 Se [2] 0.3741850371 0.1220621156 0.1265490390 2 1 0 0\n35 Nb [1] 0.2512315185 0.9996280635 0.2491132482 1 1 0 1\n36 Se [2] 0.3698603337 0.1230552973 0.3798257987 2 1 0 1\n37 Nb [1] 0.2492377670 0.9942412107 0.5053377712 1 1 0 2\n38 Se [2] 0.3771210616 0.1334323481 0.6252500487 2 1 0 2\n39 Nb [1] 0.2481544617 0.9942094212 0.7552953535 1 1 0 3\n40 Se [2] 0.3852780461 0.1217162603 0.8724116494 2 1 0 3\n41 Nb [1] 0.2523847552 0.2466786183 0.9989177665 1 1 1 0\n42 Se [2] 0.3736006492 0.3757678355 0.1293792738 2 1 1 0\n43 Nb [1] 0.2500882704 0.2536756404 0.2483204444 1 1 1 1\n44 Se [2] 0.3763111941 0.3664470976 0.3692002077 2 1 1 1\n45 Nb [1] 0.2531836537 0.2476394024 0.5023196597 1 1 1 2\n46 Se [2] 0.3771693770 0.3802891154 0.6282474362 2 1 1 2\n47 Nb [1] 0.2540679654 0.2495533147 0.7472068593 1 1 1 3\n48 Se [2] 0.3720737649 0.3730478242 0.8704806835 2 1 1 3\n49 Nb [1] 0.2478102257 0.4996297238 0.0010064478 1 1 2 0\n50 Se [2] 0.3736444368 0.6173052685 0.1247108682 2 1 2 0\n51 Nb [1] 0.2509013831 0.5043379024 0.2523114556 1 1 2 1\n52 Se [2] 0.3724257573 0.6221048938 0.3830423901 2 1 2 1\n53 Nb [1] 0.2530265518 0.5073257593 0.5085177781 1 1 2 2\n54 Se [2] 0.3717276653 0.6265410772 0.6268326680 2 1 2 2\n55 Nb [1] 0.2522384489 0.5021676089 0.7508082185 1 1 2 3\n56 Se [2] 0.3756965170 0.6189900002 0.8743383953 2 1 2 3\n57 Nb [1] 0.2470095212 0.7505043492 0.9981298150 1 1 3 0\n58 Se [2] 0.3774740830 0.8782763028 0.1262347695 2 1 3 0\n59 Nb [1] 0.2512646726 0.7503717867 0.2482088084 1 1 3 1\n60 Se [2] 0.3743419949 0.8730174157 0.3765519485 2 1 3 1\n61 Nb [1] 0.2500564536 0.7523251648 0.4946854068 1 1 3 2\n62 Se [2] 0.3785511157 0.8719492151 0.6220628713 2 1 3 2\n63 Nb [1] 0.2492102281 0.7477464616 0.7511645008 1 1 3 3\n64 Se [2] 0.3727033409 0.8707220898 0.8716167888 2 1 3 3\n65 Nb [1] 0.5052479333 0.0001770333 0.9953298789 1 2 0 0\n66 Se [2] 0.6250335096 0.1187762143 0.1321582662 2 2 0 0\n67 Nb [1] 0.4939020874 0.0019150108 0.2521745027 1 2 0 1\n68 Se [2] 0.6191999690 0.1262011061 0.3789886882 2 2 0 1\n69 Nb [1] 0.5018703011 0.0010440651 0.5037963867 1 2 0 2\n70 Se [2] 0.6256436182 0.1263457012 0.6244931538 2 2 0 2\n71 Nb [1] 0.5025272229 0.9962344634 0.7531670530 1 2 0 3\n72 Se [2] 0.6229787939 0.1206373865 0.8764609958 2 2 0 3\n73 Nb [1] 0.5067718222 0.2538467128 0.9979374007 1 2 1 0\n74 Se [2] 0.6277922387 0.3731831635 0.1245039222 2 2 1 0\n75 Nb [1] 0.5003581140 0.2407311271 0.2507664591 1 2 1 1\n76 Se [2] 0.6208815632 0.3722104055 0.3691024384 2 2 1 1\n77 Nb [1] 0.4939337671 0.2462269424 0.5033023892 1 2 1 2\n78 Se [2] 0.6316641654 0.3748991796 0.6293671637 2 2 1 2\n79 Nb [1] 0.4989440774 0.2423521087 0.7505996665 1 2 1 3\n80 Se [2] 0.6267825931 0.3732855338 0.8762088969 2 2 1 3\n81 Nb [1] 0.5022902250 0.4965463697 0.9940926636 1 2 2 0\n82 Se [2] 0.6241149833 0.6241557578 0.1235893471 2 2 2 0\n83 Nb [1] 0.5039489870 0.5069023552 0.2483334119 1 2 2 1\n84 Se [2] 0.6277955468 0.6287637245 0.3778526257 2 2 2 1\n85 Nb [1] 0.5041899451 0.4984430241 0.5029592254 1 2 2 2\n86 Se [2] 0.6330979277 0.6282146622 0.6225204253 2 2 2 2\n87 Nb [1] 0.5024308500 0.5050495212 0.7514759451 1 2 2 3\n88 Se [2] 0.6227463972 0.6311723223 0.8700009318 2 2 2 3\n89 Nb [1] 0.5020137002 0.7499352977 0.9952253371 1 2 3 0\n90 Se [2] 0.6298777987 0.8763915504 0.1203328073 2 2 3 0\n91 Nb [1] 0.5024069134 0.7482735983 0.2423888460 1 2 3 1\n92 Se [2] 0.6222443795 0.8760542058 0.3775428115 2 2 3 1\n93 Nb [1] 0.5006622596 0.7501806600 0.5018799600 1 2 3 2\n94 Se [2] 0.6241560956 0.8797078184 0.6255945666 2 2 3 2\n95 Nb [1] 0.5011756862 0.7521631960 0.7457713246 1 2 3 3\n96 Se [2] 0.6221630925 0.8811143165 0.8763412348 2 2 3 3\n97 Nb [1] 0.7488695357 0.0013659341 0.9980735111 1 3 0 0\n98 Se [2] 0.8761142652 0.1223365158 0.1261040753 2 3 0 0\n99 Nb [1] 0.7436891898 0.0053236792 0.2479481685 1 3 0 1\n100 Se [2] 0.8686750352 0.1241046332 0.3735160152 2 3 0 1\n101 Nb [1] 0.7506095937 0.9954189976 0.5015898624 1 3 0 2\n102 Se [2] 0.8894942708 0.1198853291 0.6263508623 2 3 0 2\n103 Nb [1] 0.7487571246 0.0007704332 0.7427527638 1 3 0 3\n104 Se [2] 0.8703959624 0.1268386381 0.8748463279 2 3 0 3\n105 Nb [1] 0.7565409527 0.2471808104 0.0006979981 1 3 1 0\n106 Se [2] 0.8866524858 0.3719377543 0.1213846660 2 3 1 0\n107 Nb [1] 0.7498594797 0.2498217493 0.2533766691 1 3 1 1\n108 Se [2] 0.8755183035 0.3719730428 0.3758456862 2 3 1 1\n109 Nb [1] 0.7605543870 0.2550870947 0.4888713235 1 3 1 2\n110 Se [2] 0.8744319323 0.3714996379 0.6274890501 2 3 1 2\n111 Nb [1] 0.7493069461 0.2577307830 0.7537249423 1 3 1 3\n112 Se [2] 0.8785616116 0.3757462842 0.8748388094 2 3 1 3\n113 Nb [1] 0.7513607197 0.5051811192 0.0021375591 1 3 2 0\n114 Se [2] 0.8735954697 0.6301003386 0.1257684415 2 3 2 0\n115 Nb [1] 0.7496895397 0.4968344926 0.2477360309 1 3 2 1\n116 Se [2] 0.8724558129 0.6138305714 0.3790673848 2 3 2 1\n117 Nb [1] 0.7522659103 0.4991429176 0.5041839350 1 3 2 2\n118 Se [2] 0.8767519511 0.6264862699 0.6151009458 2 3 2 2\n119 Nb [1] 0.7490679363 0.5021287565 0.7564387473 1 3 2 3\n120 Se [2] 0.8823611795 0.6307033530 0.8703535619 2 3 2 3\n121 Nb [1] 0.7412093145 0.7522818783 0.0001104633 1 3 3 0\n122 Se [2] 0.8788502130 0.8744964625 0.1258790199 2 3 3 0\n123 Nb [1] 0.7440000439 0.7517920386 0.2482204062 1 3 3 1\n124 Se [2] 0.8763999414 0.8768376240 0.3745311114 2 3 3 1\n125 Nb [1] 0.7512672045 0.7499455719 0.5030367980 1 3 3 2\n126 Se [2] 0.8770069718 0.8728111345 0.6226483925 2 3 3 2\n127 Nb [1] 0.7569749551 0.7495936180 0.7539672311 1 3 3 3\n128 Se [2] 0.8765735429 0.8727435500 0.8720041048 2 3 3 3\n",
+ "routes": {
+  "sites": "/api/pca/sites",
+  "kde": "/api/pca/kde",
+  "orientation": "/api/pca/orientation",
+  "triplets": "/api/triplets",
+  "clusters": "/api/clusters",
+  "modulations": "/api/modulations"
+ },
+ "limits": [
+  {
+   "kind": "sites",
+   "param": "probability",
+   "gt": 0,
+   "lt": 1
+  },
+  {
+   "kind": "kde",
+   "param": "probability",
+   "gt": 0,
+   "lt": 1
+  },
+  {
+   "kind": "kde",
+   "param": "referenceNumber",
+   "integer": true
+  },
+  {
+   "kind": "kde",
+   "param": "bw",
+   "gt": 0
+  },
+  {
+   "kind": "kde",
+   "param": "bwScale",
+   "gt": 0
+  },
+  {
+   "kind": "kde",
+   "param": "grid",
+   "integer": true,
+   "clamp": [
+    8,
+    128
+   ]
+  },
+  {
+   "kind": "kde",
+   "param": "extent",
+   "gt": 0
+  },
+  {
+   "kind": "orientation",
+   "param": "referenceNumber",
+   "integer": true,
+   "tool": "analyze_displacement_directions.site_ref"
+  },
+  {
+   "kind": "orientation",
+   "param": "frequency",
+   "integer": true,
+   "ge": 1,
+   "le": 64,
+   "tool": "analyze_displacement_directions.frequency"
+  },
+  {
+   "kind": "orientation",
+   "param": "smoothing",
+   "integer": true,
+   "ge": 0,
+   "le": 64
+  },
+  {
+   "kind": "orientation",
+   "param": "minAmplitude",
+   "ge": 0
+  },
+  {
+   "kind": "orientation",
+   "param": "minAmplitudeQuantile",
+   "ge": 0,
+   "lt": 1
+  },
+  {
+   "kind": "triplets",
+   "param": "r12Min",
+   "ge": 0,
+   "tool": "compute_bond_angles.r12_min"
+  },
+  {
+   "kind": "triplets",
+   "param": "r12Max",
+   "le": 15,
+   "tool": "compute_bond_angles.r12_max"
+  },
+  {
+   "kind": "triplets",
+   "param": "r23Min",
+   "ge": 0,
+   "tool": "compute_bond_angles.r23_min"
+  },
+  {
+   "kind": "triplets",
+   "param": "r23Max",
+   "le": 15,
+   "tool": "compute_bond_angles.r23_max"
+  },
+  {
+   "kind": "triplets",
+   "param": "binWidth",
+   "ge": 0.05,
+   "tool": "compute_bond_angles.bin_width"
+  },
+  {
+   "kind": "clusters",
+   "param": "rMin",
+   "ge": 0,
+   "tool": "analyze_clusters.r_min"
+  },
+  {
+   "kind": "clusters",
+   "param": "rMax",
+   "gt": 0,
+   "le": 8,
+   "tool": "analyze_clusters.r_max"
+  }
+ ],
+ "cases": [
+  {
+   "name": "an unknown kind is refused before any work",
+   "kind": "bogus",
+   "params": {},
+   "expect": {
+    "error": "kind"
+   }
+  },
+  {
+   "name": "a missing kind is refused, never a silent KDE",
+   "kind": null,
+   "params": {},
+   "expect": {
+    "error": "kind"
+   }
+  },
+  {
+   "name": "an already aborted signal rejects before anything runs",
+   "kind": "sites",
+   "params": {},
+   "probe": "aborted-before",
+   "expect": "aborted"
+  },
+  {
+   "name": "a request aborted while it runs rejects with AbortError, in-process too",
+   "kind": "sites",
+   "params": {},
+   "probe": "aborted-during",
+   "expect": "aborted"
+  },
+  {
+   "name": "sites default",
+   "kind": "sites",
+   "params": {},
+   "expect": "ok",
+   "fields": {
+    "totalAtoms": 128,
+    "probability": 0.5
+   }
+  },
+  {
+   "name": "sites probability inside",
+   "kind": "sites",
+   "params": {
+    "probability": 0.9
+   },
+   "expect": "ok",
+   "fields": {
+    "totalAtoms": 128,
+    "probability": 0.9
+   }
+  },
+  {
+   "name": "sites probability 0",
+   "kind": "sites",
+   "params": {
+    "probability": 0
+   },
+   "expect": {
+    "error": "probability"
+   }
+  },
+  {
+   "name": "sites probability 1",
+   "kind": "sites",
+   "params": {
+    "probability": 1
+   },
+   "expect": {
+    "error": "probability"
+   }
+  },
+  {
+   "name": "sites probability 1.5",
+   "kind": "sites",
+   "params": {
+    "probability": 1.5
+   },
+   "expect": {
+    "error": "probability"
+   }
+  },
+  {
+   "name": "sites probability nan",
+   "kind": "sites",
+   "params": {
+    "probability": "nan"
+   },
+   "expect": {
+    "error": "probability"
+   }
+  },
+  {
+   "name": "sites probability abc",
+   "kind": "sites",
+   "params": {
+    "probability": "abc"
+   },
+   "expect": {
+    "error": "probability"
+   }
+  },
+  {
+   "name": "sites probability null",
+   "kind": "sites",
+   "params": {
+    "probability": null
+   },
+   "expect": {
+    "flask": {
+     "fields": {
+      "probability": 0.5
+     }
+    },
+    "worker": {
+     "error": "probability"
+    }
+   },
+   "kept": "Transport: axios drops a null parameter, so Flask reads the default; the worker is posted null and its engine refuses it. Callers leave probability out or send a number."
+  },
+  {
+   "name": "sites clusterThreshold",
+   "kind": "sites",
+   "params": {
+    "clusterThreshold": 0.5
+   },
+   "expect": "ok",
+   "fields": {
+    "totalAtoms": 128,
+    "probability": 0.5
+   },
+   "kept": "Only the worker reads clusterThreshold: it reconstructs the sites of a coordinates-only file (Flask always reads the file's own site columns). On this full-column file it is inert on both."
+  },
+  {
+   "name": "kde site 1",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false
+   },
+   "expect": "ok",
+   "fields": {
+    "grid": 12,
+    "count": 64,
+    "element": "Nb",
+    "referenceNumber": 1,
+    "bw": "scott"
+   }
+  },
+  {
+   "name": "kde grid 8",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 8,
+    "projections": false
+   },
+   "expect": "ok",
+   "fields": {
+    "grid": 8,
+    "count": 64,
+    "element": "Nb"
+   }
+  },
+  {
+   "name": "kde grid 7 is clamped to 8",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 7,
+    "projections": false
+   },
+   "expect": "ok",
+   "fields": {
+    "grid": 8,
+    "count": 64,
+    "element": "Nb"
+   }
+  },
+  {
+   "name": "kde grid 128",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 128,
+    "projections": false
+   },
+   "expect": "ok",
+   "fields": {
+    "grid": 128,
+    "count": 64,
+    "element": "Nb"
+   }
+  },
+  {
+   "name": "kde grid 129 is clamped to 128",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 129,
+    "projections": false
+   },
+   "expect": "ok",
+   "fields": {
+    "grid": 128,
+    "count": 64,
+    "element": "Nb"
+   }
+  },
+  {
+   "name": "kde grid '16'",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": "16",
+    "projections": false
+   },
+   "expect": "ok",
+   "fields": {
+    "grid": 16,
+    "count": 64,
+    "element": "Nb"
+   }
+  },
+  {
+   "name": "kde grid abc",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": "abc",
+    "projections": false
+   },
+   "expect": {
+    "error": "grid"
+   }
+  },
+  {
+   "name": "kde grid 12.5",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12.5,
+    "projections": false
+   },
+   "expect": {
+    "flask": {
+     "error": "grid"
+    },
+    "worker": {
+     "fields": {
+      "grid": 13
+     }
+    }
+   },
+   "kept": "Flask's _number refuses a fractional grid; the worker's engine rounds it (pcaKdeVolume's Math.round). Changing either changes an accepted request or a documented refusal; no caller sends a fraction."
+  },
+  {
+   "name": "kde grid blank",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": "",
+    "projections": false
+   },
+   "expect": {
+    "flask": {
+     "fields": {
+      "grid": 48
+     }
+    },
+    "worker": {
+     "fields": {
+      "grid": 8
+     }
+    }
+   },
+   "kept": "The only accepted pair that differs: blank is the default (48) on Flask, and Number('') = 0, clamped to 8, in the worker. No caller sends a blank grid."
+  },
+  {
+   "name": "kde bwScale 0",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "bwScale": 0
+   },
+   "expect": {
+    "error": "bwScale"
+   }
+  },
+  {
+   "name": "kde bwScale 0.5",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "bwScale": 0.5
+   },
+   "expect": "ok",
+   "fields": {
+    "grid": 12,
+    "count": 64,
+    "element": "Nb",
+    "bwScale": 0.5
+   }
+  },
+  {
+   "name": "kde bwScale nan",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "bwScale": "nan"
+   },
+   "expect": {
+    "error": "bwScale"
+   }
+  },
+  {
+   "name": "kde bwScale inf",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "bwScale": "inf"
+   },
+   "expect": {
+    "error": "bwScale"
+   }
+  },
+  {
+   "name": "kde bwScale '2'",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "bwScale": "2"
+   },
+   "expect": {
+    "flask": {
+     "fields": {
+      "bwScale": 2
+     }
+    },
+    "worker": {
+     "error": "bwScale"
+    }
+   },
+   "kept": "Transport: a query string carries every value as text, and Flask reads text; the worker is posted the value itself and its engine needs a number. Every caller sends numbers."
+  },
+  {
+   "name": "kde extent 0",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "extent": 0
+   },
+   "expect": {
+    "error": "extent"
+   }
+  },
+  {
+   "name": "kde extent -1",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "extent": -1
+   },
+   "expect": {
+    "error": "extent"
+   }
+  },
+  {
+   "name": "kde extent 2",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "extent": 2
+   },
+   "expect": "ok",
+   "fields": {
+    "grid": 12,
+    "count": 64,
+    "element": "Nb",
+    "extent": 2
+   }
+  },
+  {
+   "name": "kde extent nan",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "extent": "nan"
+   },
+   "expect": {
+    "error": "extent"
+   }
+  },
+  {
+   "name": "kde extent inf",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "extent": "inf"
+   },
+   "expect": {
+    "error": "extent"
+   }
+  },
+  {
+   "name": "kde extent '3'",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "extent": "3"
+   },
+   "expect": {
+    "flask": {
+     "fields": {
+      "extent": 3
+     }
+    },
+    "worker": {
+     "error": "extent"
+    }
+   },
+   "kept": "Transport: a query string carries every value as text, and Flask reads text; the worker is posted the value itself and its engine needs a number. Every caller sends numbers."
+  },
+  {
+   "name": "kde bw 0",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "bw": 0
+   },
+   "expect": {
+    "flask": {
+     "error": "bw"
+    },
+    "worker": {
+     "error": "numeric bandwidth"
+    }
+   },
+   "kept": "Naming only: both refuse; the worker's engine names its own argument ('numeric bandwidth'), the route the query parameter."
+  },
+  {
+   "name": "kde bw -0.5",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "bw": -0.5
+   },
+   "expect": {
+    "flask": {
+     "error": "bw"
+    },
+    "worker": {
+     "error": "numeric bandwidth"
+    }
+   },
+   "kept": "Naming only: both refuse; the worker's engine names its own argument ('numeric bandwidth'), the route the query parameter."
+  },
+  {
+   "name": "kde bw 0.25",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "bw": 0.25
+   },
+   "expect": "ok",
+   "fields": {
+    "grid": 12,
+    "count": 64,
+    "element": "Nb",
+    "bw": 0.25,
+    "factor": 0.25
+   }
+  },
+  {
+   "name": "kde bw ' 0.25 ' reads as the number",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "bw": " 0.25 "
+   },
+   "expect": "ok",
+   "fields": {
+    "grid": 12,
+    "count": 64,
+    "element": "Nb",
+    "bw": 0.25,
+    "factor": 0.25
+   }
+  },
+  {
+   "name": "kde bw 0.4",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "bw": 0.4
+   },
+   "expect": "ok",
+   "fields": {
+    "grid": 12,
+    "count": 64,
+    "element": "Nb",
+    "bw": 0.4
+   }
+  },
+  {
+   "name": "kde bw scott",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "bw": "scott"
+   },
+   "expect": "ok",
+   "fields": {
+    "grid": 12,
+    "count": 64,
+    "element": "Nb",
+    "bw": "scott"
+   }
+  },
+  {
+   "name": "kde bw Silverman",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "bw": "Silverman"
+   },
+   "expect": "ok",
+   "fields": {
+    "grid": 12,
+    "count": 64,
+    "element": "Nb",
+    "bw": "silverman"
+   }
+  },
+  {
+   "name": "kde bw nan",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "bw": "nan"
+   },
+   "expect": {
+    "error": "bw"
+   }
+  },
+  {
+   "name": "kde bw inf",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "bw": "inf"
+   },
+   "expect": {
+    "error": "bw"
+   }
+  },
+  {
+   "name": "kde bw wide",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "bw": "wide"
+   },
+   "expect": {
+    "error": "bw"
+   }
+  },
+  {
+   "name": "kde probability 0",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "probability": 0
+   },
+   "expect": {
+    "error": "probability"
+   }
+  },
+  {
+   "name": "kde probability 1",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "probability": 1
+   },
+   "expect": {
+    "error": "probability"
+   }
+  },
+  {
+   "name": "kde probability inside",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "probability": 0.9
+   },
+   "expect": "ok",
+   "fields": {
+    "grid": 12,
+    "count": 64,
+    "element": "Nb",
+    "probability": 0.9
+   }
+  },
+  {
+   "name": "kde probability nan",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1,
+    "grid": 12,
+    "projections": false,
+    "probability": "nan"
+   },
+   "expect": {
+    "error": "probability"
+   }
+  },
+  {
+   "name": "kde referenceNumber 1.5",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 1.5,
+    "grid": 12,
+    "projections": false
+   },
+   "expect": {
+    "flask": {
+     "error": "referenceNumber"
+    },
+    "worker": {
+     "error": "reference number"
+    }
+   },
+   "kept": "Naming only: both refuse; the worker's engine names its own argument ('reference number'), the route the query parameter."
+  },
+  {
+   "name": "kde referenceNumber '1'",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": "1",
+    "grid": 12,
+    "projections": false
+   },
+   "expect": {
+    "flask": {
+     "fields": {
+      "referenceNumber": 1
+     }
+    },
+    "worker": {
+     "error": "reference number"
+    }
+   },
+   "kept": "Transport: a query string carries every value as text, and Flask reads text; the worker is posted the value itself and its engine needs a number. Every caller sends numbers."
+  },
+  {
+   "name": "kde referenceNumber 9",
+   "kind": "kde",
+   "params": {
+    "referenceNumber": 9,
+    "grid": 12,
+    "projections": false
+   },
+   "expect": {
+    "error": "reference number"
+   }
+  },
+  {
+   "name": "kde element blank pools every atom",
+   "kind": "kde",
+   "params": {
+    "element": "",
+    "grid": 12,
+    "projections": false
+   },
+   "expect": "ok",
+   "fields": {
+    "grid": 12,
+    "count": 128,
+    "element": null
+   }
+  },
+  {
+   "name": "kde element all pools every atom",
+   "kind": "kde",
+   "params": {
+    "element": "all",
+    "grid": 12,
+    "projections": false
+   },
+   "expect": "ok",
+   "fields": {
+    "grid": 12,
+    "count": 128,
+    "element": null
+   }
+  },
+  {
+   "name": "kde element ALL",
+   "kind": "kde",
+   "params": {
+    "element": "ALL",
+    "grid": 12,
+    "projections": false
+   },
+   "expect": {
+    "error": "element"
+   }
+  },
+  {
+   "name": "kde element se",
+   "kind": "kde",
+   "params": {
+    "element": "se",
+    "grid": 12,
+    "projections": false
+   },
+   "expect": "ok",
+   "fields": {
+    "grid": 12,
+    "count": 64,
+    "element": "se"
+   }
+  },
+  {
+   "name": "kde element Xx",
+   "kind": "kde",
+   "params": {
+    "element": "Xx",
+    "grid": 12,
+    "projections": false
+   },
+   "expect": {
+    "error": "element"
+   }
+  },
+  {
+   "name": "orientation site 1",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": 4,
+    "geometry": false
+   },
+   "expect": "ok",
+   "fields": {
+    "frequency": 4,
+    "smoothing": 0,
+    "totalPoints": 64,
+    "element": "Nb",
+    "referenceNumber": 1,
+    "cellCount": 162
+   }
+  },
+  {
+   "name": "orientation frequency 1",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": 1,
+    "geometry": false
+   },
+   "expect": "ok",
+   "fields": {
+    "frequency": 1,
+    "smoothing": 0,
+    "totalPoints": 64,
+    "element": "Nb"
+   }
+  },
+  {
+   "name": "orientation frequency 0",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": 0,
+    "geometry": false
+   },
+   "expect": {
+    "error": "frequency"
+   }
+  },
+  {
+   "name": "orientation frequency 64",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": 64,
+    "geometry": false
+   },
+   "expect": "ok",
+   "fields": {
+    "frequency": 64,
+    "smoothing": 0,
+    "totalPoints": 64,
+    "element": "Nb",
+    "cellCount": 40962
+   }
+  },
+  {
+   "name": "orientation frequency 65",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": 65,
+    "geometry": false
+   },
+   "expect": {
+    "error": "frequency"
+   }
+  },
+  {
+   "name": "orientation frequency 2.5",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": 2.5,
+    "geometry": false
+   },
+   "expect": {
+    "error": "frequency"
+   }
+  },
+  {
+   "name": "orientation frequency many",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": "many",
+    "geometry": false
+   },
+   "expect": {
+    "error": "frequency"
+   }
+  },
+  {
+   "name": "orientation frequency '3'",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": "3",
+    "geometry": false
+   },
+   "expect": "ok",
+   "fields": {
+    "frequency": 3,
+    "smoothing": 0,
+    "totalPoints": 64,
+    "element": "Nb"
+   }
+  },
+  {
+   "name": "orientation smoothing 0",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": 4,
+    "geometry": false,
+    "smoothing": 0
+   },
+   "expect": "ok",
+   "fields": {
+    "frequency": 4,
+    "smoothing": 0,
+    "totalPoints": 64,
+    "element": "Nb"
+   }
+  },
+  {
+   "name": "orientation smoothing 64",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": 4,
+    "geometry": false,
+    "smoothing": 64
+   },
+   "expect": "ok",
+   "fields": {
+    "frequency": 4,
+    "smoothing": 64,
+    "totalPoints": 64,
+    "element": "Nb"
+   }
+  },
+  {
+   "name": "orientation smoothing 65",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": 4,
+    "geometry": false,
+    "smoothing": 65
+   },
+   "expect": {
+    "error": "smoothing"
+   }
+  },
+  {
+   "name": "orientation smoothing -1",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": 4,
+    "geometry": false,
+    "smoothing": -1
+   },
+   "expect": {
+    "error": "smoothing"
+   }
+  },
+  {
+   "name": "orientation smoothing 1.5",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": 4,
+    "geometry": false,
+    "smoothing": 1.5
+   },
+   "expect": {
+    "error": "smoothing"
+   }
+  },
+  {
+   "name": "orientation smoothing 1e9",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": 4,
+    "geometry": false,
+    "smoothing": 1000000000
+   },
+   "expect": {
+    "error": "smoothing"
+   }
+  },
+  {
+   "name": "orientation minAmplitude 0",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": 4,
+    "geometry": false,
+    "minAmplitude": 0
+   },
+   "expect": "ok",
+   "fields": {
+    "frequency": 4,
+    "smoothing": 0,
+    "totalPoints": 64,
+    "element": "Nb"
+   }
+  },
+  {
+   "name": "orientation minAmplitude -0.1",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": 4,
+    "geometry": false,
+    "minAmplitude": -0.1
+   },
+   "expect": {
+    "flask": {
+     "error": "minAmplitude"
+    },
+    "worker": "ok"
+   },
+   "kept": "Flask's _number refuses a negative cutoff; the worker's engine takes any finite one (a negative cutoff keeps every vector, as 0 does). Changing either changes an accepted request or a documented refusal."
+  },
+  {
+   "name": "orientation minAmplitude nan",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": 4,
+    "geometry": false,
+    "minAmplitude": "nan"
+   },
+   "expect": {
+    "error": "minAmplitude"
+   }
+  },
+  {
+   "name": "orientation minAmplitudeQuantile 0",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": 4,
+    "geometry": false,
+    "minAmplitudeQuantile": 0
+   },
+   "expect": "ok",
+   "fields": {
+    "frequency": 4,
+    "smoothing": 0,
+    "totalPoints": 64,
+    "element": "Nb"
+   }
+  },
+  {
+   "name": "orientation minAmplitudeQuantile 0.5",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": 4,
+    "geometry": false,
+    "minAmplitudeQuantile": 0.5
+   },
+   "expect": "ok",
+   "fields": {
+    "frequency": 4,
+    "smoothing": 0,
+    "totalPoints": 64,
+    "element": "Nb"
+   }
+  },
+  {
+   "name": "orientation minAmplitudeQuantile 1",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": 4,
+    "geometry": false,
+    "minAmplitudeQuantile": 1
+   },
+   "expect": {
+    "error": "minAmplitudeQuantile"
+   }
+  },
+  {
+   "name": "orientation minAmplitudeQuantile -0.1",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": 4,
+    "geometry": false,
+    "minAmplitudeQuantile": -0.1
+   },
+   "expect": {
+    "error": "minAmplitudeQuantile"
+   }
+  },
+  {
+   "name": "orientation minAmplitudeQuantile nan",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": 4,
+    "geometry": false,
+    "minAmplitudeQuantile": "nan"
+   },
+   "expect": {
+    "error": "minAmplitudeQuantile"
+   }
+  },
+  {
+   "name": "orientation element all pools every atom",
+   "kind": "orientation",
+   "params": {
+    "element": "all",
+    "frequency": 4,
+    "geometry": false
+   },
+   "expect": "ok",
+   "fields": {
+    "frequency": 4,
+    "smoothing": 0,
+    "totalPoints": 128,
+    "element": null
+   }
+  },
+  {
+   "name": "orientation element blank pools every atom",
+   "kind": "orientation",
+   "params": {
+    "element": "",
+    "frequency": 4,
+    "geometry": false
+   },
+   "expect": "ok",
+   "fields": {
+    "frequency": 4,
+    "smoothing": 0,
+    "totalPoints": 128,
+    "element": null
+   }
+  },
+  {
+   "name": "orientation weight bogus",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1,
+    "frequency": 4,
+    "geometry": false,
+    "weight": "bogus"
+   },
+   "expect": {
+    "error": "weight"
+   }
+  },
+  {
+   "name": "orientation referenceNumber 1.5",
+   "kind": "orientation",
+   "params": {
+    "referenceNumber": 1.5,
+    "frequency": 4,
+    "geometry": false
+   },
+   "expect": {
+    "flask": {
+     "error": "referenceNumber"
+    },
+    "worker": {
+     "error": "reference number"
+    }
+   },
+   "kept": "Naming only: both refuse; the worker's engine names its own argument ('reference number'), the route the query parameter."
+  },
+  {
+   "name": "triplets Se-Nb-Se",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": 6,
+    "r12Max": 7.5
+   },
+   "expect": "ok",
+   "fields": {
+    "angleCount": 1792,
+    "apexCount": 64,
+    "binWidth": 1,
+    "bond12": [
+     6,
+     7.5
+    ]
+   }
+  },
+  {
+   "name": "triplets elements in any case",
+   "kind": "triplets",
+   "params": {
+    "end1": "se",
+    "apex": "nb",
+    "end2": "se",
+    "r12Min": 6,
+    "r12Max": 7.5
+   },
+   "expect": "ok",
+   "fields": {
+    "angleCount": 1792,
+    "apexCount": 64,
+    "binWidth": 1
+   }
+  },
+  {
+   "name": "triplets numeric strings",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": "6",
+    "r12Max": "7.5",
+    "binWidth": "1"
+   },
+   "expect": "ok",
+   "fields": {
+    "angleCount": 1792,
+    "apexCount": 64,
+    "binWidth": 1,
+    "bond12": [
+     6,
+     7.5
+    ]
+   }
+  },
+  {
+   "name": "triplets r12Min 0",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": 0,
+    "r12Max": 7.5
+   },
+   "expect": "ok",
+   "fields": {
+    "angleCount": 1792,
+    "apexCount": 64,
+    "binWidth": 1
+   }
+  },
+  {
+   "name": "triplets r12Min -0.1",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": -0.1,
+    "r12Max": 7.5
+   },
+   "expect": {
+    "error": "bond12"
+   }
+  },
+  {
+   "name": "triplets r12Max 15",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": 13,
+    "r12Max": 15
+   },
+   "expect": "ok",
+   "fields": {
+    "angleCount": 15370,
+    "apexCount": 64,
+    "binWidth": 1
+   }
+  },
+  {
+   "name": "triplets r12Max 15.1",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": 13,
+    "r12Max": 15.1
+   },
+   "expect": {
+    "error": "r12Max"
+   }
+  },
+  {
+   "name": "triplets r23Min 0",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": 6,
+    "r12Max": 7.5,
+    "r23Min": 0,
+    "r23Max": 7.5
+   },
+   "expect": "ok",
+   "fields": {
+    "angleCount": 1792,
+    "apexCount": 64,
+    "binWidth": 1
+   }
+  },
+  {
+   "name": "triplets r23Min -0.1",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": 6,
+    "r12Max": 7.5,
+    "r23Min": -0.1,
+    "r23Max": 7.5
+   },
+   "expect": {
+    "error": "bond23"
+   }
+  },
+  {
+   "name": "triplets r23Max 15",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": 6,
+    "r12Max": 7.5,
+    "r23Min": 13,
+    "r23Max": 15
+   },
+   "expect": "ok",
+   "fields": {
+    "angleCount": 11456,
+    "apexCount": 64,
+    "binWidth": 1
+   }
+  },
+  {
+   "name": "triplets r23Max 15.1",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": 6,
+    "r12Max": 7.5,
+    "r23Min": 13,
+    "r23Max": 15.1
+   },
+   "expect": {
+    "error": "r23Max"
+   }
+  },
+  {
+   "name": "triplets binWidth 0.05",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": 6,
+    "r12Max": 7.5,
+    "binWidth": 0.05
+   },
+   "expect": "ok",
+   "fields": {
+    "angleCount": 1792,
+    "apexCount": 64,
+    "binWidth": 0.05
+   }
+  },
+  {
+   "name": "triplets binWidth 0.04",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": 6,
+    "r12Max": 7.5,
+    "binWidth": 0.04
+   },
+   "expect": {
+    "error": "binWidth"
+   }
+  },
+  {
+   "name": "triplets binWidth blank",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": 6,
+    "r12Max": 7.5,
+    "binWidth": ""
+   },
+   "expect": {
+    "flask": {
+     "fields": {
+      "binWidth": 1
+     }
+    },
+    "worker": {
+     "error": "binWidth"
+    }
+   },
+   "kept": "Blank is the default (1°) on Flask, as for every query parameter; the worker refuses a blank bin width rather than bin at 0 (a cleared box is never a number). Changing either changes an accepted request or a documented refusal."
+  },
+  {
+   "name": "triplets binWidth null is the default",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": 6,
+    "r12Max": 7.5,
+    "binWidth": null
+   },
+   "expect": "ok",
+   "fields": {
+    "angleCount": 1792,
+    "apexCount": 64,
+    "binWidth": 1
+   }
+  },
+  {
+   "name": "triplets r12Min null",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": null,
+    "r12Max": 7.5
+   },
+   "expect": {
+    "error": "r12Min"
+   }
+  },
+  {
+   "name": "triplets r12Min blank",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": "",
+    "r12Max": 7.5
+   },
+   "expect": {
+    "error": "r12Min"
+   }
+  },
+  {
+   "name": "triplets r12Min spaces",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": "   ",
+    "r12Max": 7.5
+   },
+   "expect": {
+    "error": "r12Min"
+   }
+  },
+  {
+   "name": "triplets r12Max blank",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": 6,
+    "r12Max": ""
+   },
+   "expect": {
+    "error": "r12Max"
+   }
+  },
+  {
+   "name": "triplets r23Min blank",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": 6,
+    "r12Max": 7.5,
+    "r23Min": "",
+    "r23Max": 7.5
+   },
+   "expect": {
+    "error": "r23Min"
+   }
+  },
+  {
+   "name": "triplets r23Min spaces",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": 6,
+    "r12Max": 7.5,
+    "r23Min": "  ",
+    "r23Max": 7.5
+   },
+   "expect": {
+    "error": "r23Min"
+   }
+  },
+  {
+   "name": "triplets r12Min nan",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": "nan",
+    "r12Max": 7.5
+   },
+   "expect": {
+    "flask": {
+     "error": "r12Min"
+    },
+    "worker": {
+     "error": "bond12"
+    }
+   },
+   "kept": "Naming only: both refuse; the worker's engine names its own argument (the window, 'bond12'), the route the query parameter."
+  },
+  {
+   "name": "triplets r12Min inf",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": "inf",
+    "r12Max": 7.5
+   },
+   "expect": {
+    "flask": {
+     "error": "r12Min"
+    },
+    "worker": {
+     "error": "bond12"
+    }
+   },
+   "kept": "Naming only: both refuse; the worker's engine names its own argument (the window, 'bond12'), the route the query parameter."
+  },
+  {
+   "name": "triplets r12Min abc",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": "abc",
+    "r12Max": 7.5
+   },
+   "expect": {
+    "flask": {
+     "error": "r12Min"
+    },
+    "worker": {
+     "error": "bond12"
+    }
+   },
+   "kept": "Naming only: both refuse; the worker's engine names its own argument (the window, 'bond12'), the route the query parameter."
+  },
+  {
+   "name": "triplets r12Max nan",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": 6,
+    "r12Max": "nan"
+   },
+   "expect": {
+    "flask": {
+     "error": "r12Max"
+    },
+    "worker": {
+     "error": "bond12"
+    }
+   },
+   "kept": "Naming only: both refuse; the worker's engine names its own argument (the window, 'bond12'), the route the query parameter."
+  },
+  {
+   "name": "triplets r12Max inf",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": 6,
+    "r12Max": "inf"
+   },
+   "expect": {
+    "flask": {
+     "error": "r12Max"
+    },
+    "worker": {
+     "error": "bond12"
+    }
+   },
+   "kept": "Naming only: both refuse; the worker's engine names its own argument (the window, 'bond12'), the route the query parameter."
+  },
+  {
+   "name": "triplets r12Max abc",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": 6,
+    "r12Max": "abc"
+   },
+   "expect": {
+    "flask": {
+     "error": "r12Max"
+    },
+    "worker": {
+     "error": "bond12"
+    }
+   },
+   "kept": "Naming only: both refuse; the worker's engine names its own argument (the window, 'bond12'), the route the query parameter."
+  },
+  {
+   "name": "triplets binWidth nan",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": 6,
+    "r12Max": 7.5,
+    "binWidth": "nan"
+   },
+   "expect": {
+    "error": "binWidth"
+   }
+  },
+  {
+   "name": "triplets binWidth inf",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": 6,
+    "r12Max": 7.5,
+    "binWidth": "inf"
+   },
+   "expect": {
+    "error": "binWidth"
+   }
+  },
+  {
+   "name": "triplets binWidth abc",
+   "kind": "triplets",
+   "params": {
+    "end1": "Se",
+    "apex": "Nb",
+    "end2": "Se",
+    "r12Min": 6,
+    "r12Max": 7.5,
+    "binWidth": "abc"
+   },
+   "expect": {
+    "error": "binWidth"
+   }
+  },
+  {
+   "name": "clusters Nb",
+   "kind": "clusters",
+   "params": {
+    "element": "Nb",
+    "rMin": 7.5,
+    "rMax": 8
+   },
+   "expect": "ok",
+   "fields": {
+    "element": "Nb",
+    "extended": true,
+    "window": [
+     7.5,
+     8
+    ]
+   }
+  },
+  {
+   "name": "clusters element in any case, numeric strings",
+   "kind": "clusters",
+   "params": {
+    "element": "nb",
+    "rMin": "7.5",
+    "rMax": 8
+   },
+   "expect": "ok",
+   "fields": {
+    "element": "Nb",
+    "extended": true
+   }
+  },
+  {
+   "name": "clusters rMin 0",
+   "kind": "clusters",
+   "params": {
+    "element": "Nb",
+    "rMin": 0,
+    "rMax": 8
+   },
+   "expect": "ok",
+   "fields": {
+    "element": "Nb",
+    "extended": true
+   }
+  },
+  {
+   "name": "clusters rMin -0.1",
+   "kind": "clusters",
+   "params": {
+    "element": "Nb",
+    "rMin": -0.1,
+    "rMax": 8
+   },
+   "expect": {
+    "error": "rMin"
+   }
+  },
+  {
+   "name": "clusters rMax 8",
+   "kind": "clusters",
+   "params": {
+    "element": "Nb",
+    "rMin": 7.5,
+    "rMax": 8
+   },
+   "expect": "ok",
+   "fields": {
+    "element": "Nb",
+    "extended": true
+   }
+  },
+  {
+   "name": "clusters rMax 8.1",
+   "kind": "clusters",
+   "params": {
+    "element": "Nb",
+    "rMin": 7.5,
+    "rMax": 8.1
+   },
+   "expect": {
+    "error": "rMax"
+   }
+  },
+  {
+   "name": "clusters rMax 20",
+   "kind": "clusters",
+   "params": {
+    "element": "Nb",
+    "rMin": 7.5,
+    "rMax": 20
+   },
+   "expect": {
+    "error": "rMax"
+   }
+  },
+  {
+   "name": "clusters rMax 0",
+   "kind": "clusters",
+   "params": {
+    "element": "Nb",
+    "rMin": 0,
+    "rMax": 0
+   },
+   "expect": {
+    "error": "rMax"
+   }
+  },
+  {
+   "name": "clusters rMax 3",
+   "kind": "clusters",
+   "params": {
+    "element": "Nb",
+    "rMin": 0,
+    "rMax": 3
+   },
+   "expect": "ok",
+   "fields": {
+    "element": "Nb",
+    "extended": false
+   }
+  },
+  {
+   "name": "clusters missing rMax",
+   "kind": "clusters",
+   "params": {
+    "element": "Nb",
+    "rMin": 7.5
+   },
+   "expect": {
+    "error": "rMax"
+   }
+  },
+  {
+   "name": "clusters missing element",
+   "kind": "clusters",
+   "params": {
+    "rMin": 7.5,
+    "rMax": 8
+   },
+   "expect": {
+    "error": "element"
+   }
+  },
+  {
+   "name": "clusters inverted window",
+   "kind": "clusters",
+   "params": {
+    "element": "Nb",
+    "rMin": 8,
+    "rMax": 7.5
+   },
+   "expect": {
+    "error": "window"
+   }
+  },
+  {
+   "name": "clusters element Xx",
+   "kind": "clusters",
+   "params": {
+    "element": "Xx",
+    "rMin": 7.5,
+    "rMax": 8
+   },
+   "expect": {
+    "error": "element"
+   }
+  },
+  {
+   "name": "modulations every element by default",
+   "kind": "modulations",
+   "params": {},
+   "expect": "ok",
+   "fields": {
+    "elements.length": 2,
+    "elements.0.element": "Nb",
+    "elements.1.element": "Se"
+   }
+  },
+  {
+   "name": "modulations all",
+   "kind": "modulations",
+   "params": {
+    "element": "all"
+   },
+   "expect": "ok",
+   "fields": {
+    "elements.length": 2
+   }
+  },
+  {
+   "name": "modulations ALL pools every element (the worker used to refuse it)",
+   "kind": "modulations",
+   "params": {
+    "element": "ALL"
+   },
+   "expect": "ok",
+   "fields": {
+    "elements.length": 2
+   }
+  },
+  {
+   "name": "modulations ' all ' pools every element (the worker used to refuse it)",
+   "kind": "modulations",
+   "params": {
+    "element": " all "
+   },
+   "expect": "ok",
+   "fields": {
+    "elements.length": 2
+   }
+  },
+  {
+   "name": "modulations nb",
+   "kind": "modulations",
+   "params": {
+    "element": "nb"
+   },
+   "expect": "ok",
+   "fields": {
+    "elements.length": 1,
+    "elements.0.element": "Nb"
+   }
+  },
+  {
+   "name": "modulations element Xx",
+   "kind": "modulations",
+   "params": {
+    "element": "Xx"
+   },
+   "expect": {
+    "error": "element"
+   }
+  }
+ ]
+}

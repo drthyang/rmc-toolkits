@@ -19,27 +19,6 @@ import {
 } from './browserData';
 import { copilotRun, DEFAULT_VIEW, normalizeView } from './copilotRun';
 
-const abortError = () => new DOMException('Aborted', 'AbortError');
-
-/**
- * An engine over one .rmc6f file: the PCA worker's own handler, in-thread,
- * with the message the Copilot's worker is posted ({ ...params, kind }, the
- * text read once on the first request). An already aborted request rejects
- * before it starts, as useSiteCloud's requestAnalysis does; one under way runs
- * to its end (there is no thread to stop).
- */
-const inProcessEngine = (handlePcaMessage, sourceFile) => {
-    let text = null;
-    const readText = () => {
-        text = text || sourceFile.text();
-        return text;
-    };
-    return async (kind, params = {}, { signal } = {}) => {
-        if (signal?.aborted) throw abortError();
-        return handlePcaMessage({ ...params, kind }, readText);
-    };
-};
-
 /**
  * A run folder as a LoadedRun ({ name, files, structure, structurePath,
  * settings, engine }), resolved once every plot file and the structure are
@@ -49,7 +28,7 @@ const inProcessEngine = (handlePcaMessage, sourceFile) => {
  * keeps its parseError, as on the Dashboard, and an unreadable .dat gives null.
  */
 export const readRunFolder = async (entries) => {
-    const [{ handlePcaMessage }, { handleStructureMessage }] = await Promise.all([
+    const [{ inProcessEngine }, { handleStructureMessage }] = await Promise.all([
         import('./workers/pcaKdeWorker'),
         import('./workers/localStructureWorker')
     ]);
@@ -58,6 +37,9 @@ export const readRunFolder = async (entries) => {
     const structure = run.structureFile
         ? await handleStructureMessage({ file: run.structureFile, maxPoints: DASHBOARD_MAX_POINTS })
         : null;
+    // The PCA worker's own handler in-thread, behind requestAnalysis's
+    // interface (pcaKdeWorker's inProcessEngine), the text read once.
+    const sourceFile = run.structureFile?.sourceFile;
     let settings = null;
     if (run.settingsFile?.sourceFile) {
         try {
@@ -72,7 +54,7 @@ export const readRunFolder = async (entries) => {
         structure,
         structurePath: run.structureFile?.path ?? null,
         settings,
-        engine: run.structureFile ? inProcessEngine(handlePcaMessage, run.structureFile.sourceFile) : null
+        engine: run.structureFile ? inProcessEngine(() => sourceFile.text()) : null
     };
 };
 
