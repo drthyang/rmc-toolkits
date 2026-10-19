@@ -275,7 +275,8 @@ const grPeaksTool = (run, cardIds) => {
             + 'window from onset to the first deep minimum (it holds '
             + 'the whole shell, split shells included), mean distance and spread from r²g(r), coordination numbers in '
             + 'both directions with their sensitivity to the cut, whether the shell is separated from the next, '
-            + 'and whether the pair\'s hard minimum-distance constraint cuts the distribution.',
+            + 'for a split shell joined across a deep trough its parts (CN, share, mean distance) and the long − short '
+            + 'bond difference, and whether the pair\'s hard minimum-distance constraint cuts the distribution.',
         // The method advice (method.js), inside the window's parenthesis: sent with method 'full'.
         method: [{ after: 'to the first deep minimum (', text: 'use first_shell.window_A for compute_bond_angles: ' }],
         parameters: {
@@ -290,7 +291,10 @@ const grPeaksTool = (run, cardIds) => {
         // No peak below r_max and no shell: pair, r_max_A and peaks_A [] only. The cn keys name the
         // count each way, <partner>_per_<centre> (Se_per_Ta). The first peak
         // alone (first_peak_only) only for a shell of two or more resolved
-        // peaks; its cn only with the cell.
+        // peaks; its cn only with the cell. The split (plan item 4.2) only for
+        // a shell joined across a deep trough (shells.js): its parts, short
+        // to long, each one's cn in the direction the join decided (one key),
+        // and long − short with its sampling error.
         dataShape: {
             pair: 'string',
             r_max_A: 'number',
@@ -307,6 +311,17 @@ const grPeaksTool = (run, cardIds) => {
                     window_A: ['number|null', 'number|null'],
                     'cn?': { '*_per_*': 'number|null' },
                     trough_g_fraction: 'number|null'
+                },
+                'split?': {
+                    parts: [{
+                        window_A: ['number|null', 'number|null'],
+                        mean_d_A: 'number|null',
+                        sd_d_A: 'number|null',
+                        cn: { '*_per_*': 'number|null' },
+                        share: 'number|null'
+                    }],
+                    long_minus_short_A: 'number|null',
+                    long_minus_short_se_A: 'number|null'
                 }
             },
             'min_distance_constraint_A?': 'number',
@@ -361,20 +376,41 @@ const grPeaksTool = (run, cardIds) => {
                         trough_g_fraction: roundSig(shell.firstPeak.troughRatio, 2)
                     };
                 }
+                // A shell joined across a deep trough: its split by number
+                // (shells.js, plan item 4.2), each part's count in the
+                // direction the join decided — the one whose sum is ideal.
+                const { split } = shell;
+                const forward = split?.direction !== 'reverse';
+                const [counted, around] = forward ? [b, a] : [a, b];
+                const splitKey = `${counted}_per_${around}`;
+                if (split) {
+                    block.split = {
+                        parts: split.parts.map((part) => ({
+                            window_A: [...part.window],
+                            mean_d_A: roundSig(part.meanR, 4),
+                            sd_d_A: roundSig(part.sdR, 2),
+                            cn: { [splitKey]: roundSig(forward ? part.cn : part.reverseCn) },
+                            share: roundSig(part.share, 3)
+                        })),
+                        long_minus_short_A: roundSig(split.longMinusShort, 3),
+                        long_minus_short_se_A: roundSig(split.longMinusShortSe, 2)
+                    };
+                }
                 data.first_shell = block;
                 const inShell = shell.peaksInShell.map((r) => roundSig(r, 4));
-                if (shell.joined && Number.isFinite(shell.cn) && Number.isFinite(shell.firstPeak?.cn)) {
-                    // Said in the direction whose summed count is the ideal one.
-                    const forward = shell.ideal != null || !Number.isFinite(shell.reverseCn);
-                    const ratio = forward ? 1 : shell.reverseCn / shell.cn;
-                    const [counted, around] = forward ? [b, a] : [a, b];
+                if (block.split && shell.firstPeak) {
+                    const { parts, long_minus_short_A: longMinusShort, long_minus_short_se_A: se } = block.split;
+                    const counts = parts.map((part, k) => `${part.cn[splitKey]} ${k ? '' : `${counted} per ${around} `}at ${part.mean_d_A} Å`);
+                    const bonds = parts.length === 2 ? 'the short and long bonds' : `the ${parts.length} bond lengths, short to long,`;
                     // Which window to use is method (method.js): arm C's method 'off' sends the reading alone.
                     checks.push(methodCheck('note',
-                        `One split shell across a deep trough: the peaks at ${inShell.join(' and ')} Å `
-                            + `(${roundSig(shell.peaksInShell.at(-1) - shell.peaksInShell[0], 2)} Å apart) hold ${roundSig(shell.firstPeak.cn * ratio)} ${counted} per ${around} `
-                            + `in the first peak alone (to ${roundSig(shell.firstPeak.window[1], 3)} Å) and ${roundSig(shell.cn * ratio)} together, an ideal `
-                            + 'polyhedral count: first_shell.window_A holds both, the short and long bonds of one distorted polyhedron (e.g. '
-                            + 'Jahn–Teller). The first peak alone (first_peak_only) cuts the polyhedron',
+                        `One split shell across a deep trough: ${counts.join(' + ')} (first_shell.split.parts), `
+                            + `${roundSig(forward ? shell.cn : shell.reverseCn)} together, an ideal polyhedral count: ${bonds} of one distorted `
+                            + `polyhedron (e.g. Jahn–Teller). Long − short ${longMinusShort}${se != null ? ` ± ${se}` : ''} Å `
+                            + `(first_shell.split: long_minus_short_A${se != null ? ' ± long_minus_short_se_A, the configuration\'s sampling error' : ''}); `
+                            + `${parts.map((part) => `${Math.round(part.share * 100)} %`).join(' / ')} of the shell's count. `
+                            + 'first_shell.window_A holds every part; the first peak alone (first_peak_only, to '
+                            + `${roundSig(shell.firstPeak.window[1], 3)} Å) cuts the polyhedron`,
                         { method: '; use it only if the user chooses it' },
                         '.'));
                 }
