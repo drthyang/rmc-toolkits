@@ -93,6 +93,24 @@ describe('the model-free arms on the dev cases (the bar)', () => {
             .toMatchObject({ distorted: 'true (axis_family)', splitMemberSites: 'true (half_or_more_split)', rigid: 'false (split_sites)' });
     });
 
+    it('A+ reads a modulation\'s direction from the engine\'s polarisation, not the PC1 of a prolate site (plan item 4.3)', async () => {
+        // dev-zone-boundary: the Ti order's polarisation (5.5° from the planted
+        // [0 0 1], 5.9° as the claim's two decimals score; the most prolate
+        // site's PC1 it read before, [−0.03 0.1 1], scored 6.0°).
+        const zone = await runBoth(DEV_CASES.find((item) => item.id === 'dev-zone-boundary'));
+        expect(zone.sweep.verdict.features).toEqual([{ kind: 'modulation', element: 'Ti', q: [0, 0, 0.5], direction_uvw: [-0.05, 0.09, 1] }]);
+        expect(zone.scoreSweep.features[0]).toMatchObject({ direction_ok: true, q_ok: true, accurate: true });
+        expect(zone.scoreSweep.features[0].direction_error_deg).toBeCloseTo(5.88, 2);
+        const reading = zone.sweep.readings.find((r) => r.page === 'analyze_modulations');
+        expect(reading.value.Ti.polarisation).toEqual([{ q: '(0, 0, 0.5)', uvw: [-0.05, 0.09, 1], share: 1 }]);
+        expect(reading.value.Sr.polarisation).toBeUndefined();
+        // dev-weak-order-a: no Nb site is prolate (the order is far below the
+        // thermal width), so the claim had no direction; the polarisation gives
+        // one (10° from the planted axis, which the truth does not score).
+        const weak = await runBoth(DEV_CASES.find((item) => item.id === 'dev-weak-order-a'));
+        expect(weak.sweep.verdict.features).toEqual([{ kind: 'modulation', element: 'Nb', q: [0.5, 0.5, 0], direction_uvw: [0.17, 0.06, 1] }]);
+    });
+
     it('A+ reads the app\'s rules: the split site, the cluster elements, the lower group\'s tolerance (candidate 8, 2026-10-19)', async () => {
         // The split site: isSplitSite, with list_sites' δ. On dev-jahn-teller
         // two F sites (κ₁ −0.95 and −0.93 at 216 copies: 2.8 errors) are split

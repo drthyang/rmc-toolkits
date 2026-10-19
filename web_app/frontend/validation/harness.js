@@ -111,10 +111,14 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // 1.8) — no EVIDENCE_RULES, no method sentence in TOOL_RULES or ASK_RULES, the
 // domain rules' definitions and conduct without their inference, no method
 // advice in a tool description or a check, and an evidence-gate send-back
-// that names no analysis; arm B unchanged);
+// that names no analysis; arm B unchanged;
 // 2026-10-19.11: five held-out judgment cases join the test set, written
-// blind from judgment-spec.md).
-export const PROTOCOL_VERSION = '2026-10-19.11';
+// blind from judgment-spec.md;
+// 2026-10-19.12: analyze_modulations gives each ordered point's polarisation
+// (plan item 4.3), never prints a ratio or σ below its bar rounded onto it
+// (F2), and corrects over every element's points whichever the call names
+// (F3); arm A+ reads a modulation's direction from the polarisation).
+export const PROTOCOL_VERSION = '2026-10-19.12';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one
 // follows the full method.
