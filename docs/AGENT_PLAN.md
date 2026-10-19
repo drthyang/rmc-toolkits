@@ -64,19 +64,19 @@ PR, and a decision record in `validation/findings/decisions/` and here.
 | 9 | #92 | one request contract, checked against every adapter |
 | — | #93 | an App-level smoke test of the dock; two Live Data fixes |
 | 6 | #94 | one shell reading per pair, per run; the first peak at the inter-peak minimum (protocol 2026-10-19.8) |
+| 2.6 | #96 | one PCA fit subsample in both runtimes above the 20,000-copy cap |
+| 1.6 (ii) dev | #97 | five judgment dev cases; the spec for the blind held-out author (protocol 2026-10-19.9) |
+| 1.8 | #98 | arm C without the method: a structural switch; the gate names no analysis in C (protocol 2026-10-19.10) |
+| 8 (2.3, 2.4) | #99 | arm A+ reads the app's rules: the split site, the cluster elements, the lower group's tolerance |
 
 **In progress:**
-- 1.6 (ii), the judgment dev cases;
-- the arm C switch (1.8);
-- 2.6, PCA subsamples identical in both runtimes.
-
-**Then:**
+- 1.6 (ii) on the test set: five held-out cases written blind, with a disclosure (#100);
 - 4, the verification module;
-- 8, which carries 2.3 and 2.4 (code only; the skill mismatches are listed in the lint for the
-  user);
-- 2.5, 10, 11, 4.2–4.5;
-- 1.6 (ii) on the test set, written blind from `validation/judgment-spec.md` only;
-- phase 6.
+- 4.3, with F2 and F3: the polarisation of an ordered mode, an unrounded value at the 3σ bar, and
+  the Šidák family over every element.
+
+**Then:** 2.5, 10, 11, 4.2, 4.4 (with F1, the modulation null for sites that share a cell-level
+variable), 4.5, and phase 6.
 
 **Waiting for the user (preconditions for the freeze):**
 - the skill review. #71 (5.2), and the skill-lint mismatches #94 lists: the coordination-shells
@@ -450,7 +450,7 @@ The candidates of B and C, in this order. Each is one PR, stacked on the one bef
 | 10 | Turn policy: what ends a turn. | M |
 | 11 | Tool transcript; result statuses (old 3.2). | M |
 | 2.5 | **The page and the tool at the same settings** *(approved 2026-10-19)*: the directions tool also reports at the page's ν and smoothing, or the page defaults to the engine's choice. Changes arm A's reading. | S |
-| 2.6 | PCA subsamples identical in both runtimes (AGENTS.md next step 8). | M |
+| 2.6 | **Done (#96).** PCA subsamples identical in both runtimes (AGENTS.md next step 8). | M |
 | 3.3 | **Output-shape contracts** for every live tool: a schema of its `data` (the paths references name), checked on the demo and on each dev case. Before any tool output changes in phase 4. Built: each live tool's spec carries a `dataShape` (`llm/copilot/dataShape.js`, never sent to the model), and `toolDataShapes.test.js` checks every result on the demo and the dev cases against it, both ways (no undeclared key; every declared key returned by some call, the unreachable forms listed). | M |
 | 3.5 | A small corpus of real answers for the claim regexes of the checks and the gate. **Built (#83):** `answerCorpus.test.js`, 9 real answers (3 verbatim, 1 transcribed, 5 quoted), one adapter, pins with judgements; 0 false alarms in 4 readings, 1 miss (a negative cluster conclusion is not read). The dev live runs' answers join it before the freeze (6.3). | S |
 
