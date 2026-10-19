@@ -1,0 +1,32 @@
+{
+  "case": "dev-offcentre",
+  "run": "plan 4.1: list_sites on the dev cases and on planted splits (src/__tests__/listSitesSplit.test.js); arms A and A+ on the dev set, 2026-10-19",
+  "step": null,
+  "kind": "missing-tool",
+  "evidence": "Plan 4.1 (docs/AGENT_PLAN.md, section D): list_sites returned Mardia's kurtosis only, though the engine computes the per-axis kurtosis, the axis resolution and the PC directions, so the model could not apply the split-site rule analyze_clusters applies; and no tool returned a split site's static displacement, so the model worked out sqrt(rms1² − rms⊥²) by hand, a number provenance flags as unsourced and no reference can carry. Known answer after the change (listSitesSplit.test.js): five planted splits, 1,000 seeds each (equal wells at δ = 3.3σ and 1.5σ, 216 copies, unequal occupation, anisotropic thermal motion; cubic, hexagonal and monoclinic cells): (δ̂ − δ)/SE has a mean of −0.008 to 0.072, an sd of 0.985–1.036 and 95 % coverage of 0.939–0.958, and PC1 lies within 7.6° of the planted [u v w]; a prolate Gaussian is never called split (0 of 1,000); dev-offcentre reads 0.202 ± 0.0028 Å for the planted 0.2 along [0 0 1], dev-zone-boundary 0.0989 ± 0.0029 Å for 0.1, and dev-jahn-teller's split F sites are analyze_clusters' split member sites. Arms A and A+ on the dev set: every record identical before and after (they do not read list_sites). Approved by the manager on the user's delegation, 2026-10-19.",
+  "proposed_fix": "list_sites rows gain kurtosis_axes (the excess kurtosis on resolved axes only), pc1_uvw (PC1 as a direct-lattice [u v w], crystalOrientationRows, when PC1 is resolved) and, on a split site (isSplitSite, the one rule analyze_clusters' splitMemberSites now calls), delta_A = sqrt(λ1 − (λ2 + λ3)/2) with delta_se_A from the eigenvalues' sampling errors, (κ + 2)·m2²/n each, by the delta method (docs/algorithms/ai-assistant.md, Step 20). rms⊥ is the RMS of the two other axes: it equals arm A's rms2 for the uniaxial splits of the dev cases and avoids its eigenvalue-repulsion bias. Split sites come first in the table, a note check names them, and the description lists the new fields (what the model sees: the list_sites result and description snapshots). Approved by the manager on the user's delegation, 2026-10-19; the user may reverse it.",
+  "needs_user_approval": true,
+  "status": "implemented",
+  "approval": {
+    "by": "user",
+    "date": "2026-10-19",
+    "batch": 2
+  },
+  "commit": "548ac305fc1a9c92d5ec1b11138f7e0a95c03483",
+  "tests": [
+    "web_app/frontend/src/__tests__/listSitesSplit.test.js › %s: δ within its sampling error over many seeds, PC1 kurtosis ≤ −0.5, along the planted [u v w]",
+    "web_app/frontend/src/__tests__/listSitesSplit.test.js › [u v w] is a direct-lattice direction (not a plane normal), in the sense whose closest crystal axis is acute",
+    "web_app/frontend/src/__tests__/listSitesSplit.test.js › the sampling error is the two-well closed form, √((4δ²σ² + 3σ⁴)/n)/(2δ), on a large sample",
+    "web_app/frontend/src/__tests__/listSitesSplit.test.js › an anisotropic Gaussian ellipsoid is not split: no delta_A, PC1 kurtosis near 0, PC1 along its long axis",
+    "web_app/frontend/src/__tests__/listSitesSplit.test.js › an isotropic site resolves no axis: no per-axis kurtosis, no PC1 direction, no delta_A",
+    "web_app/frontend/src/__tests__/listSitesSplit.test.js › an oblate site (a flattened Gaussian): only PC3, the resolved axis, has its kurtosis; PC1 has no direction",
+    "web_app/frontend/src/__tests__/listSitesSplit.test.js › zero spread (an averaged configuration): no axes, kurtosis or delta_A, and the warning",
+    "web_app/frontend/src/__tests__/listSitesSplit.test.js › split sites come first, then |kurtosis|: trimming to the budget never drops a split site before another site",
+    "web_app/frontend/src/__tests__/listSitesSplit.test.js › dev-offcentre: the planted two-site disorder reads back (±0.2 Å along [0 0 1]), and nothing else is split",
+    "web_app/frontend/src/__tests__/listSitesSplit.test.js › dev-zone-boundary: the antiphase displacements give the same single-site split (±0.1 Å along [0 0 1])",
+    "web_app/frontend/src/__tests__/listSitesSplit.test.js › dev-jahn-teller: list_sites and the cluster summary call the same sites split (one rule)",
+    "web_app/frontend/src/__tests__/listSitesSplit.test.js › the dev cases without a split site have none: anisotropic Gaussians (breathing Mo, perovskite O) and thermal motion only",
+    "web_app/frontend/src/__tests__/toolDataShapes.test.js › every key a dataShape declares is returned by some call, except the forms NOT_REACHED lists",
+    "web_app/frontend/validation/__tests__/arms.test.js › %s: arm A %s, A+ %s"
+  ]
+}

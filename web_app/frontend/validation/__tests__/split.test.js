@@ -13,7 +13,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildCase, DEV_CASES, TEST_CASES } from '../cases';
-import { parseFindings, validateFinding } from '../findings';
+import { parseFindingFiles, parseFindings, validateFinding } from '../findings';
 import { guardSplit } from '../run';
 import { copilotSkills } from '../../src/copilotSkills';
 import { describeHit, holdoutTokens, readText, scanText } from './holdoutScan';
@@ -270,21 +270,57 @@ describe('where a finding stands, and validation batch 1', () => {
         }
     });
 
-    // Decisions on the validation itself, in the same form. The schema's
-    // approval is the user's; a decision taken on the user's delegation says
-    // so in its evidence and proposed fix.
-    it('decisions: the recomposed test breathing case, approved on the user\'s delegation and implemented with its commit', () => {
-        const results = parseFindings(readFileSync(join(FRONTEND, 'validation/findings/decisions.jsonl'), 'utf8'));
-        results.forEach((result) => expect(result.errors, `line ${result.line}`).toEqual([]));
-        const findings = results.map((result) => result.finding);
-        expect(findings).toHaveLength(1);
-        const [recomposed] = findings;
-        expect(recomposed).toMatchObject({
-            case: 'test-breathing', kind: 'bug', status: 'implemented', needs_user_approval: true,
-            approval: { by: 'user', date: '2026-10-19', batch: 2 }
-        });
+    // Decisions on the validation itself, in the same form, one JSON file per
+    // record (validation/findings/decisions/<id>.json), so that parallel PRs
+    // never edit the same file. The schema's approval is the user's; a
+    // decision taken on the user's delegation says so in its evidence and
+    // proposed fix.
+    const DECISIONS = join(FRONTEND, 'validation/findings/decisions');
+    const decisions = () => {
+        const results = parseFindingFiles(readdirSync(DECISIONS).map((name) => ({ name, text: readFileSync(join(DECISIONS, name), 'utf8') })));
+        results.forEach((result) => expect(result.errors, result.file).toEqual([]));
+        return Object.fromEntries(results.map((result) => [result.id, result.finding]));
+    };
+    const delegated = (decision) => {
+        expect(decision).toMatchObject({ status: 'implemented', needs_user_approval: true, approval: { by: 'user', date: '2026-10-19', batch: 2 } });
         for (const field of ['evidence', 'proposed_fix']) {
-            expect(recomposed[field], field).toMatch(/approved by the manager on the user's delegation, 2026-10-19/i);
+            expect(decision[field], field).toMatch(/approved by the manager on the user's delegation, 2026-10-19/i);
         }
+    };
+
+    it('decision records: one JSON file per record, read in id order, each validated by the findings schema', () => {
+        expect(Object.keys(decisions())).toEqual(['2026-10-19-list-sites-split', '2026-10-19-test-breathing-recomposed']);
+        expect(existsSync(join(FRONTEND, 'validation/findings/decisions.jsonl'))).toBe(false);
+        const record = readFileSync(join(DECISIONS, '2026-10-19-test-breathing-recomposed.json'), 'utf8');
+        const read = parseFindingFiles([
+            { name: 'README.md', text: 'not a record' },
+            { name: '2026-10-20-b.json', text: record },
+            { name: '2026-10-20-a.json', text: '{"case":' },
+            { name: 'Late Decision.json', text: record }
+        ]);
+        expect(read.map((result) => result.id)).toEqual(['2026-10-20-a', '2026-10-20-b', 'Late Decision']);
+        expect(read.map((result) => result.ok)).toEqual([false, true, false]);
+        expect(read[0].errors[0]).toMatch(/^not JSON/);
+        expect(read[2].errors).toEqual(['the file name is the record\'s id, YYYY-MM-DD-slug.json (lower-case words and dashes), got Late Decision.json']);
+        const extra = parseFindingFiles([{ name: '2026-10-20-c.json', text: JSON.stringify({ ...JSON.parse(record), id: 'x' }) }]);
+        expect(extra[0].errors).toEqual(['unknown field \'id\'']);
+    });
+
+    it('decisions: the recomposed test breathing case, approved on the user\'s delegation and implemented with its commit', () => {
+        const recomposed = decisions()['2026-10-19-test-breathing-recomposed'];
+        expect(recomposed).toMatchObject({ case: 'test-breathing', kind: 'bug' });
+        delegated(recomposed);
+    });
+
+    it('decisions: list_sites shows the split (plan 4.1), approved on the user\'s delegation, implemented with its known-answer tests', () => {
+        const split = decisions()['2026-10-19-list-sites-split'];
+        expect(split).toMatchObject({ case: 'dev-offcentre', kind: 'missing-tool' });
+        delegated(split);
+        // Every test it names exists, by its title as written in the source.
+        expect(split.tests.length).toBeGreaterThan(0);
+        split.tests.forEach((test) => {
+            const [path, title] = test.split(' › ');
+            expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+        });
     });
 });
