@@ -7,7 +7,6 @@ import {
     ModelTimeoutError, compactAnswer, explainModelError, keyNumbers, repeatsItself, textToolCalls, withDeadlines
 } from '../copilot/robustness';
 import { applyTurnEvent, newAssistantTurn } from '../copilot/turnState';
-import { conversationMemory } from '../useCopilot';
 
 const collect = async (generator) => {
     const events = [];
@@ -131,12 +130,7 @@ describe('keyNumbers and compactAnswer', () => {
         expect(compactAnswer('Short. Outcome: achieved.', 500)).toBe('Short. Outcome: achieved.');
     });
 
-    it('is applied to long answers in the conversation memory', () => {
-        const long = `${'Words without figures. '.repeat(200)}The mean is 2.52 Å.\nOutcome: achieved.`;
-        const memory = conversationMemory([{ role: 'user', content: 'q?' }, { role: 'assistant', text: long }]);
-        expect(memory[1].content.length).toBeLessThanOrEqual(2000);
-        expect(memory[1].content).toContain('2.52 Å');
-    });
+    // Applied to long answers in the conversation memory: turn.test.js (the history window).
 });
 
 describe('explainModelError', () => {
@@ -199,19 +193,8 @@ describe('runCopilotTurn on a local model', () => {
         expect(turn.items.filter((item) => item.kind === 'text').map((item) => item.text)).toEqual(['']);
     });
 
-    it('stops a looping reasoning stream early and asks again, warmer', async () => {
-        let pieces = 0;
-        const looping = () => (async function* stream() {
-            for (; pieces < 1000; pieces += 1) yield { reasoning: LOOP };
-        }());
-        const { callModel, requests } = scriptedModel([looping, { text: 'Six Se at 2.52 Å.\n\nOutcome: achieved.' }]);
-        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool()] }));
-        expect(pieces).toBeLessThan(40);
-        expect(requests[0].signal.aborted).toBe(true);
-        expect(requests[1].retry).toBe('warmer');
-        expect(requests[1].messages.at(-1).content).toMatch(/kept repeating the same passage/);
-        expect(events.at(-1)).toMatchObject({ stoppedBy: 'answer' });
-    });
+    // A looping stream stopped early and asked again warmer (temperature ≥ 0.6
+    // through the production port): turn.test.js, the production model port.
 
     it('ends with a reason when the model loops again after the reminder', async () => {
         const looping = () => (async function* stream() {

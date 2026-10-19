@@ -118,11 +118,12 @@ export const contextBlock = (context) => (
  */
 export const shownContext = (context) => (context ? JSON.parse(contextToJson(context)) : null);
 
-// Keep only the newest turns so long conversations stay inside small local
-// models' context windows; the run context is re-sent every call anyway.
-// Earlier turns travel as their question and final answer only — never their
-// tool exchanges, which are re-run when needed.
-export const CHAT_HISTORY_TURNS = 8;
+// Keep only the newest memory messages (8 messages: 4 exchanges) so long
+// conversations stay inside small local models' context windows; the run
+// context is re-sent every call anyway. Earlier turns travel as their
+// question and final answer only (copilot/turn.js) — never their tool
+// exchanges, which are re-run when needed.
+export const HISTORY_MESSAGES = 8;
 
 // With skills (copilot/skills.js): their names and one-line descriptions
 // only; the agent reads a skill's text with read_skill when it needs it.
@@ -166,7 +167,7 @@ export const buildCopilotMessages = ({
         content: 'Understood. I will answer questions about this RMC modeling run from the context above'
             + `${toolsEnabled ? ' and the analyses I run' : ''}.`
     },
-    ...(history || []).slice(-CHAT_HISTORY_TURNS).map(({ role, content }) => ({ role, content })),
+    ...(history || []).slice(-HISTORY_MESSAGES).map(({ role, content }) => ({ role, content })),
     { role: 'user', content: userText }
 ];
 

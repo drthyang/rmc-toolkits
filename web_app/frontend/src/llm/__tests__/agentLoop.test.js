@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_LIMITS, assistantContent, isToolsUnsupportedError, runCopilotTurn } from '../copilot/agentLoop';
 import { ASK_USER, buildAskUserTool } from '../copilot/askUser';
 import { budgetJson, fitToBudget, stepStatus, usableTools } from '../copilot/tools';
-import { ASK_RULES, buildCopilotMessages } from '../prompts/copilot';
 import { buildEvidenceGate } from '../copilot/evidence';
 
 // A scripted model: each request consumes the next reply. A reply is either
@@ -604,15 +603,8 @@ describe('ask_user: the agent asks instead of guessing a parameter', () => {
         expect(events.at(-1).stoppedBy).toBe('answer');
     });
 
-    it('tells the model when and when not to ask, in the system prompt', () => {
-        const [system] = buildCopilotMessages({ context: {}, userText: 'q', askUser: true });
-        expect(system.content).toContain(ASK_RULES);
-        expect(ASK_RULES).toMatch(/which coordination shell or r-window, which site or element\s+pair, which symmetry tolerance, which run or dataset/);
-        expect(ASK_RULES).toMatch(/Never ask when the question is clear, when the\s+context or an analysis answers it/);
-        expect(ASK_RULES).toMatch(/One question at a time, at most two per request/);
-        expect(ASK_RULES).toMatch(/default/);
-        expect(buildCopilotMessages({ context: {}, userText: 'q' })[0].content).not.toContain('ask_user');
-    });
+    // When and when not to ask, in the system prompt: turn.test.js (the turn
+    // adds the ask rules with its ask-user port).
 
     it('stops cleanly when the turn is cancelled while the question waits', async () => {
         const controller = new AbortController();
