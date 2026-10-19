@@ -89,7 +89,12 @@ snapshot files pass unchanged).
   `analyze_clusters`' window failures lose the `find_gr_peaks` window and its split-site note "Read
   the pattern …, the partial g(r) shell (find_gr_peaks) and the bond angles"; `find_gr_peaks`' two
   split-shell notes lose "Use first_shell.window_A, not the first peak alone" and "use it only if the
-  user chooses it".
+  user chooses it". Three reading hints that name no tool go too (decided by the manager on the
+  user's delegation, 2026-10-19): `find_gr_peaks`' unseparated-shell warning loses "Ask whether the
+  crystal has A–B distances there", `compute_bond_angles`' octahedron note "Read the shape from
+  histogram_10deg_sin_corrected (1 = random directions), not from the raw modes", and
+  `detect_symmetry`'s point-group note "Take inversion, chirality and polarity from this, not from
+  memory".
 - **The evidence gate** runs and checks the same rules (decided by the manager on the user's
   delegation, 2026-10-19), but its send-back names no analysis and no tool: "… Your answer concludes
   "no order beyond thermal motion", but this conclusion needs its evidence from an analysis run in
@@ -1031,8 +1036,9 @@ folder, with no model and no network:
   arm's model receives, beside the rule and the missing analyses the record keeps;
 - `tool-results/<tool>.json`: one result of every run tool and engine tool on the Demo, plus an
   `ask_user` answer, a `read_skill` and a window that cuts the Ta–Se shell, as the `tool` message
-  the agent loop appends (budget applied, checks, `ref`, note); `*.method-off.json`: the two whose
-  checks carry method advice (`find_gr_peaks` on Ta–Se, the refused cut window), as arm C reads them.
+  the agent loop appends (budget applied, checks, `ref`, note); `*.method-off.json`: the Demo's
+  results whose checks carry method advice (`find_gr_peaks` on Ta–Se and Ta–Ta, `compute_bond_angles`
+  on the whole shell and in the refused cut window, `detect_symmetry`), as arm C reads them.
 
 `turnRequests.test.js` (no snapshot file of its own) runs the turn module directly with a
 dock-shaped spec (the Demo run, the dock's tools, `providerModel`) and a harness-shaped one

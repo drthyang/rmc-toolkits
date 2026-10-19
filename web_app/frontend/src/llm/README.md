@@ -734,9 +734,10 @@ tool with either name is refused, and the dock says so in its error line.
   - a check built with `methodCheck(level, ...parts)` (parts: strings and `{ method: '…' }`) has the
     whole text in `text`, as the dock reads it and as the step cards, the record and arm A+ read it,
     and lists its advice in `method`; with `'off'` the turn sends `text` without it (`checkText`). A
-    refusal still refuses. In this repository: `compute_bond_angles`' cut-window refusal and
-    no-angles failure, the pooled-directions note, `analyze_clusters`' window failures and split-site
-    note, `find_gr_peaks`' split-shell notes.
+    refusal still refuses. In this repository: `compute_bond_angles`' cut-window refusal,
+    no-angles failure and octahedron note, the pooled-directions note, `analyze_clusters`' window
+    failures and split-site note, `find_gr_peaks`' split-shell notes and unseparated-shell warning,
+    `detect_symmetry`'s point-group note.
 - `signal` aborts on Stop or timeout. Stop the work if you can.
 - `focus` is the dock's card-focus controller, for view tools: `await focus.show(ids, { marks })`,
   `focus.onClear(undo)` (runs when the highlight ends), `focus.state()`.

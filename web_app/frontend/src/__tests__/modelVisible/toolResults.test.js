@@ -16,7 +16,7 @@
 // Ta–Se shell, once as the app runs it (the Workbench asks, the user skips:
 // the call runs in the whole shell, with a note) and once as the tool itself
 // refuses it (no Workbench question: no shell catalog, or its questions used).
-// And the two results whose checks carry method advice as the validation's
+// And the Demo's results whose checks carry method advice as the validation's
 // arm C reads them (*.method-off.json: the turn's method 'off', each tool
 // offered through toolAsSent as the turn offers it).
 //
@@ -73,12 +73,17 @@ const SAMPLES = [
 ];
 
 // As the validation's arm C reads them (method 'off', llm copilot/method.js,
-// plan item 1.8): the Demo's two results whose checks carry method advice,
-// each sent without it — the split-shell note keeps its reading, the cut
-// window is still refused. With method 'full' they are the files above.
+// plan item 1.8): the Demo's results whose checks carry method advice, each
+// sent without it — the split-shell note keeps its reading, the cut window is
+// still refused, the octahedron counts, the point group's facts and the
+// unseparated Ta–Ta shell keep their facts. With method 'full' the first four
+// are the files above (Ta–Ta has no full-method file).
 const METHOD_OFF_SAMPLES = [
     ['find_gr_peaks.method-off', 'find_gr_peaks', { pair: 'Ta-Se' }, { method: 'off' }],
-    ['compute_bond_angles.cut-window-refused.method-off', 'compute_bond_angles', CUT, { workbench: false, method: 'off' }]
+    ['find_gr_peaks.Ta-Ta.method-off', 'find_gr_peaks', { pair: 'Ta-Ta' }, { method: 'off' }],
+    ['compute_bond_angles.method-off', 'compute_bond_angles', { end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.21, r12_max: 3.23 }, { method: 'off' }],
+    ['compute_bond_angles.cut-window-refused.method-off', 'compute_bond_angles', CUT, { workbench: false, method: 'off' }],
+    ['detect_symmetry.method-off', 'detect_symmetry', { tolerance_A: 0.2 }, { method: 'off' }]
 ];
 
 describe('tool results as the model reads them (the Demo run)', () => {

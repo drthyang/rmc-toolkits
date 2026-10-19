@@ -238,7 +238,9 @@ describe('Copilot tools on the demo run', () => {
             {
                 level: 'note',
                 text: 'Point group -43m: cubic; no inversion centre; achiral (not a Sohncke group); non-polar. '
-                    + 'Take inversion, chirality and polarity from this, not from memory.'
+                    + 'Take inversion, chirality and polarity from this, not from memory.',
+                // The advice arm C's method 'off' leaves out (llm copilot/method.js).
+                method: [' Take inversion, chirality and polarity from this, not from memory.']
             }
         ]);
         expect(data.point_group_facts).toBe('-43m: cubic; no inversion centre; achiral (not a Sohncke group); non-polar');
@@ -627,6 +629,18 @@ describe('the engine tools\' method advice: what arm C reads without it', () => 
         expect(note.text).toMatch(/cluster distortion\. Test single sites \(site_ref\), or analyze_clusters for a cluster's shape\.$/);
         expect(checkText(note, 'off')).toBe('Pooled over 16 sites. Where their local axes differ (the four vertices of a tetrahedral cluster), a direction '
             + 'each site prefers in its own frame cancels here, so an isotropic pooled map is not evidence against a per-site or cluster distortion.');
+    });
+
+    it('the reading hints that name no tool are method too: arm C reads the point group\'s facts and the octahedron counts alone', async () => {
+        const symmetry = await tools.detect_symmetry.run({ tolerance_A: 0.2 });
+        const pointGroup = symmetry.checks.find((check) => /^Point group/.test(check.text));
+        expect(checkText(pointGroup, 'full')).toBe('Point group -43m: cubic; no inversion centre; achiral (not a Sohncke group); non-polar. '
+            + 'Take inversion, chirality and polarity from this, not from memory.');
+        expect(checkText(pointGroup, 'off')).toBe('Point group -43m: cubic; no inversion centre; achiral (not a Sohncke group); non-polar.');
+        const whole = await tools.compute_bond_angles.run({ end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.33, r12_max: 2.97 });
+        const octahedron = whole.checks.find((check) => /^Raw counts deplete/.test(check.text));
+        expect(octahedron.text).toMatch(/at 90°\. Read the shape from histogram_10deg_sin_corrected \(1 = random directions\), not from the raw modes\.$/);
+        expect(checkText(octahedron, 'off')).toMatch(/^Raw counts deplete angles near 180° \(as sin θ\): .* against an ideal octahedron's 20 % trans at 180° and 80 % cis at 90°\.$/);
     });
 
     it('analyze_clusters: the window\'s failures and the split sites\' caveat, without which window or analysis', () => {

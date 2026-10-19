@@ -635,13 +635,14 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
     if (reference?.trans_above_135_deg) {
         // A band with no angles has no mean: say "none", never "null°".
         const meanOf = (band) => (band.mean_deg == null ? 'none' : `${band.mean_deg}°`);
-        checks.push({
-            level: 'note',
-            text: `Raw counts deplete angles near 180° (as sin θ): ${Math.round(reference.trans_above_135_deg.share * 100)} % of these angles `
+        // Which histogram to read the shape from is method (llm copilot/method.js):
+        // arm C's method 'off' sends the counts against the ideal octahedron alone.
+        checks.push(methodCheck('note',
+            `Raw counts deplete angles near 180° (as sin θ): ${Math.round(reference.trans_above_135_deg.share * 100)} % of these angles `
                 + `lie above 135° (mean ${meanOf(reference.trans_above_135_deg)}) and ${Math.round(reference.cis_below_135_deg.share * 100)} % `
                 + `below (mean ${meanOf(reference.cis_below_135_deg)}), against an ideal octahedron's 20 % trans at 180° and 80 % cis `
-                + 'at 90°. Read the shape from histogram_10deg_sin_corrected (1 = random directions), not from the raw modes.'
-        });
+                + 'at 90°.',
+            { method: ' Read the shape from histogram_10deg_sin_corrected (1 = random directions), not from the raw modes.' }));
     }
     return { data, checks, facts };
 };
@@ -1212,11 +1213,12 @@ export const summarizeSymmetry = (described, tolerance) => {
     } else {
         checks.push({ level: 'ok', text: `${described.spaceGroup}${described.spaceGroupNumber ? ` (No. ${described.spaceGroupNumber})` : ''} holds at ${tolerance} Å.` });
     }
+    // Where to read inversion, chirality and polarity from is method (llm
+    // copilot/method.js): arm C's method 'off' sends the point group's facts alone.
     if (facts) {
-        checks.push({
-            level: 'note',
-            text: `Point group ${describePointGroup(described.pointGroup)}. Take inversion, chirality and polarity from this, not from memory.`
-        });
+        checks.push(methodCheck('note',
+            `Point group ${describePointGroup(described.pointGroup)}.`,
+            { method: ' Take inversion, chirality and polarity from this, not from memory.' }));
     }
     // For the answer check (llm/copilot/answerAudit.js): the group and what its
     // point group implies.
