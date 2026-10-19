@@ -11,7 +11,7 @@ that went with it is [copilot-review.md](copilot-review.md).
 | Arm | What answers | Code |
 | --- | --- | --- |
 | **A** | The default Workbench, no agent: the Detected SG card (0.2 Å), the PCA Ellipsoid table, the Displacement Directions page (ν = 10, smoothing 2) and the partial g(r), read by fixed rules (`ARM_A_RULES`). The cluster and superstructure engines have no page, so A cannot use them | `armA.js` `runArmA` |
-| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules (`SWEEP_RULES`); no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
+| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules; no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19). Where the app has a rule, A+ calls the app's function (`SWEEP_RULES`, since 2026-10-19: the split site, the cluster elements, the lower group's tolerance). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
 | **B** | The Copilot as the app assembles it: tools, skills, guardrails (refusals, the Workbench's window questions, answer checks) | `harness.js` |
 | **C** | B without the skills (no `read_skill`, no skills index): the ablation | `harness.js` |
 | **D** | The planted truth, scored as a verdict; it must score 1 (a test checks this) | `verdict.js` `truthVerdict` |
@@ -136,7 +136,7 @@ ambiguous or wrong, so a model that reads the tools with judgment has room to ad
   | --- | --- | --- | --- | --- |
   | Two features at once | dev-jt-off-centre | `jahn_teller`, `offCentre` | Jahn–Teller octahedra whose centre is also off-centred: both on the centre | A split centre explains its own split shell |
   | A signal at 2.5–4σ | dev-weak-order-a, dev-weak-order-b | `zone_boundary`, `weak: true`, `decoy: null` | A weak cell-doubling order of B, below half its thermal rms; the truth names q only. One seed on each side of the bar | The fixed 3σ bar |
-  | Two tools read differently | dev-eight-site | `offcentre`, `wells: 8` | Eight-site <111> off-centring of B | A split only from a prolate ellipsoid; the 3 + 3 shell it leaves unexplained |
+  | Two tools read differently | dev-eight-site | `offcentre`, `wells: 8` | Eight-site <111> off-centring of B | A split only from the ellipsoid (a resolved PC1, `isSplitSite`); the 3 + 3 shell it leaves unexplained |
   | A choice only the user can make | dev-octahedral-clusters | `elongated_clusters` (new) | M6 octahedra, each elongated along a random axis: a cluster distortion | None: the control (below) |
 
   `elongated_clusters` is the subset's one new kind: no other kind plants a cluster distortion. The
@@ -537,6 +537,58 @@ protocol has no judgment case, and its means are not comparable with one under t
 - Approved by the manager on the user's delegation, 2026-10-19
   (`validation/findings/decisions/2026-10-19-judgment-dev-cases.json`).
 
+**A+ reads the app's rules (2026-10-19, architecture candidate 8; not a protocol change).** A+ had
+three rules of its own where the app has one. It now calls the app's functions, which
+`SWEEP_RULES` holds, and a test checks they are the app's:
+
+| Rule | A+ before | The app's, which A+ now applies | Evidence |
+| --- | --- | --- | --- |
+| Split site | arm A's: PC1/PC2 ≥ 1.3, PC1 resolved, κ₁ ≤ −0.5; δ = √(rms1² − rms2²) | `isSplitSite`: PC1 resolved, κ₁ ≤ −0.5 and at least 3 sampling errors (√(24/n)) below zero; δ ± its error from `list_sites` (`splitDisplacement`, √(rms1² − rms⊥²)) | On synthetic prolate Gaussian sites arm A's rule called 3.6 % (216 copies) and 14 % (100 copies) split, `isSplitSite` none (2,000 seeds each). A planted ±0.15 Å split over a 0.05 Å width at 216 copies is found in all 300 seeds, its δ within 1.96 errors in 94 % of them. rms2 alone biases δ low (ai-assistant.md Step 20). |
+| Cluster elements | every same-element first shell peaking below 3.6 Å | the evidence gate's: the element's own first shell holds 0.5–4.5 neighbours (`clusterElementsOf`, `CLUSTER_CN_MAX`, now in `shells.js`; `evidence.js` imports it) | Dimers 1, trimers 2, tetrahedra 3, octahedra 4 are finite clusters; CN 6–12 is a network. On the ten paired dev cases the CN rule tries the planted V₂, Mo₃ and the F around Cu. The eight elements the old rule also tried there (the O of four perovskites, FeSi's Fe and Si, rock-salt Mg and O) are extended networks that the engine itself refuses. |
+| Lower group's tolerance | the noise floor | `lowerGroupTolerance`: `NOISE_FLOOR_MARGIN` (1.25) × the floor, `measure_symmetry_lowering`'s default; the Workbench's tolerance question counts a group only where it holds to the same margin (`clarify.js`, until now its own `NOISE_MARGIN`) | No dev group moves: every lower rung ends below 0.7 × the floor and every true group holds past 1.25 × it. The cost: a lowering whose group holds only to 1–1.25 × the floor is not read. A synthetic shift of 0.0147 Å, whose group holds to 1.18 × the floor, now reads Pm-3m, while one of 0.027 Å (2.2 ×) reads P4mm. The app chose the margin, and no dev case shows it wrong. |
+
+Arm A's rules are the frozen protocol's and are unchanged. What A+ keeps of its own is only how it
+joins the engines:
+- one claim per element;
+- an ordered mode explains its element's split sites;
+- an off-centred centre explains its own split shell;
+- a mode's polarisation is the PC1 of the element's most prolate site (PC1/PC2 ≥ 1.3); the app
+  has no polarisation rule (plan section D).
+
+**Arms A and A+ on dev** (`arm-a --split dev`: before at a2c5dad and after at 63569f3 on the ten
+paired cases; after again at 3de8fc5 with the judgment subset):
+- Every arm A and D record is identical, and so is every score and claim.
+- Every A+ record moves in its readings. On the ten paired cases:
+  - The group is read at 1.25 × the floor (0.026 → 0.032 Å on dev-symmetry-lowering), with the
+    same group in every case, and the shift tool names its lower group at that tolerance.
+  - The split-site readings say `list_sites`, with κ₁, its z and δ ± its error.
+  - The eight network cluster readings are gone (six records).
+  - dev-jahn-teller's F sites 5 and 6 (κ₁ −0.95 and −0.93 at 216 copies, z −2.84 and −2.78) are no
+    longer split. The F claim, from the site with the largest δ, stays.
+  - dev-offcentre's claim reads δ 0.202 Å, where it read 0.201 (planted 0.2).
+- The judgment subset's five A+ records move in the same ways, with every score unchanged. Their
+  readings are in `arm-a-dev.json` and the `arms.test.js` pins, not here, since the held-out
+  author may read this document.
+- The moved A+ records are re-recorded in `arm-a-dev.json`; the A and D records stay as recorded.
+- The test set was not run; its A+ records are re-recorded at the freeze.
+
+**The protocol does not move.** What the model sees is byte-identical (the model-visible snapshots
+pass without `-u`), so live runs under 2026-10-19.9 stay comparable. Arms A and A+ have no model,
+and each of their records carries its own commit and protocol.
+
+**The skills.** The skill lint gained a `rule` check (`RULES` in `skillLint/tables.js`). It flags
+a skill sentence that states one of these rules otherwise. Five such sentences sit on its
+allow-list with the skill's rule and the app's, awaiting the user's skill review (plan 5.3):
+- displacement-anisotropy SKILL.md:27 and significance-reading.md:17: a split site is a negative
+  Mardia kurtosis;
+- coordination-shells SKILL.md:51: any polyhedron distortion goes to `analyze_clusters`;
+- local-symmetry SKILL.md:38: a rung above the floor is a distortion;
+- local-symmetry SKILL.md:59: whether a rung just above the floor counts is left to the user.
+
+Approved by the manager on the user's delegation, 2026-10-19
+(`validation/findings/decisions/2026-10-19-aplus-app-rules.json`; known answers in
+`validation/__tests__/aplusRules.test.js`).
+
 ### The report beside the case score (plan item 1.6, part i)
 
 The engines alone (A+) score 0.99, because most components of a case are facts they get right every
@@ -872,7 +924,9 @@ cache hits $0.10, cache writes $2.50, so prompts are charged at $2.50. `RMC_EVAL
 `validation/baseline/arm-a-{dev,test}.json` (re-recorded after batch 1 at commit 5780c50, below;
 the 2026-10-14 records are in git at b4fe09f; the test records again at 4ab9eab for protocol
 2026-10-19.2, with the same scores; the dev A+ records again at 3f90a80 for the engine verdicts,
-their cluster and modulation readings only, with the same scores and claims).
+their cluster and modulation readings only, with the same scores and claims; and at 63569f3 for
+candidate 8, A+ reading the app's rules, with the same scores and claims apart from
+dev-offcentre's δ, 0.201 → 0.202 Å).
 
 | Kind | A dev / test | A+ dev / test | Where the default analyses mislead |
 | --- | --- | --- | --- |

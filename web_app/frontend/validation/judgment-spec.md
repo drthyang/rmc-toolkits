@@ -102,10 +102,10 @@ Read `validation/cases.js` for the generators: the kinds, their options and the 
 
 ### 3. Two tools read differently (`two_readings`)
 
-- **The rule at issue.** A+ calls a site split only from its ellipsoid: prolate
-  (`ARM_A_RULES.PROLATE_RATIO`), PC1 resolved, and PC1's excess kurtosis at or below
-  `ARM_A_RULES.SPLIT_KURTOSIS`. Wells arranged cubically average to a round ellipsoid. No axis is
-  resolved, nothing is called split, and the split coordination shell the wells cause is left
+- **The rule at issue.** A+ calls a site split only from its ellipsoid, by the app's one split rule
+  (`isSplitSite`, `workers/clusters.js`): PC1 resolved, and PC1's excess kurtosis at or below the
+  split bar and clearly below zero. Wells arranged cubically average to a round ellipsoid. No axis
+  is resolved, nothing is called split, and the split coordination shell the wells cause is left
   unexplained.
 - **The kind.** `offcentre` with `wells: 8` (`axis` a <111> direction): each B atom sits delta off
   its site along one of the eight <111> directions at random (eight-site disorder).

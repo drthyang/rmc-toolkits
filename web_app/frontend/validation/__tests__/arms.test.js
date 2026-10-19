@@ -29,6 +29,8 @@ const runBoth = async (item) => {
 // structure (no order, Fm-3m); its fit files change nothing the arms read.
 // Plan item 1.6 ii: the judgment subset (dev only), the last five; every pin
 // above them is unchanged.
+// Candidate 8 (2026-10-19, A+ reads the app's rules): no pin moved; only A+'s
+// readings (and dev-offcentre's δ, 0.201 → 0.202 Å) did, pinned below.
 const BAR = [
     ['dev-offcentre', 1, [], 1, []],
     ['dev-zone-boundary', 0.6667, ['off_centre Ti'], 1, []],
@@ -91,6 +93,30 @@ describe('the model-free arms on the dev cases (the bar)', () => {
             .toMatchObject({ distorted: 'true (axis_family)', splitMemberSites: 'true (half_or_more_split)', rigid: 'false (split_sites)' });
     });
 
+    it('A+ reads the app\'s rules: the split site, the cluster elements, the lower group\'s tolerance (candidate 8, 2026-10-19)', async () => {
+        // The split site: isSplitSite, with list_sites' δ. On dev-jahn-teller
+        // two F sites (κ₁ −0.95 and −0.93 at 216 copies: 2.8 errors) are split
+        // by arm A's rule, not by the app's; the F claim (the largest δ) stays.
+        const jt = await runBoth(DEV_CASES.find((item) => item.id === 'dev-jahn-teller'));
+        const site = (arm, n) => arm.readings.find((r) => /^(PCA Ellipsoid|list_sites)$/.test(r.page) && r.what === `site ${n} F`);
+        for (const n of [5, 6]) {
+            expect(site(jt.a, n).reading).toMatch(/^split site along PC1/);
+            expect(site(jt.sweep, n)).toMatchObject({ page: 'list_sites', reading: 'not a split site' });
+            expect(site(jt.sweep, n).value.pc1_kurtosis_z).toBeGreaterThan(-3);
+        }
+        expect(site(jt.sweep, 3).value).toMatchObject({ delta_A: 0.16, delta_se_A: 0.0043, pc1_kurtosis_z: -4.43 });
+        expect(jt.sweep.verdict.features[0]).toEqual({ kind: 'off_centre', element: 'F', direction_uvw: [1, 0, -0.01], magnitude_A: 0.16 });
+        const offcentre = await runBoth(DEV_CASES.find((item) => item.id === 'dev-offcentre'));
+        expect(offcentre.sweep.verdict.features).toEqual([{ kind: 'off_centre', element: 'Nb', direction_uvw: [0.1, 0.06, -1], magnitude_A: 0.202 }]);
+        expect(offcentre.a.verdict.features[0].magnitude_A).toBe(0.201);
+        // The cluster elements: the gate's (CN 0.5–4.5); perovskite O (CN 8) no longer tried.
+        expect(offcentre.sweep.readings.filter((r) => r.page === 'analyze_clusters')).toEqual([]);
+        // The lower group: 1.25 × the noise floor (0.026 Å → 0.032 Å), the tool's default.
+        const lowering = await runBoth(DEV_CASES.find((item) => item.id === 'dev-symmetry-lowering'));
+        expect(lowering.sweep.readings[0]).toMatchObject({ page: 'detect_symmetry at 1.25 × the noise floor', what: 'space group at 0.032 Å', value: 'P4mm', noise_floor_A: 0.026 });
+        expect(lowering.sweep.readings.find((r) => r.page === 'measure_symmetry_lowering').reading).toContain('(the lower group P4mm at 0.032 Å)');
+    });
+
     // The room a model has (plan 1.6 ii): on each judgment case, which of
     // A+'s fixed rules misses or misreads the planted truth, read from its
     // own readings, and that the engines hold the right answer.
@@ -109,10 +135,15 @@ describe('the model-free arms on the dev cases (the bar)', () => {
         // no split site; the 3 + 3 shell it leaves unexplained becomes a
         // Jahn–Teller claim. The direction map at a finer tiling has the
         // <111> lobe that the default one does not resolve.
+        // (Since candidate 8 A+ reads list_sites' split rule: the round
+        // ellipsoid resolves no PC1, so no split site, as arm A's page reads it.)
         const eight = await judged('dev-eight-site');
-        const nb = eight.sweep.readings.find((r) => r.page === 'PCA Ellipsoid' && r.what.endsWith('Nb'));
-        expect(nb.reading).toBe('thermal ellipsoid');
-        expect(nb.value.pc1_over_pc2).toBeLessThan(ARM_A_RULES.PROLATE_RATIO);
+        const nb = eight.sweep.readings.find((r) => r.page === 'list_sites' && r.what.endsWith('Nb'));
+        expect(nb.reading).toBe('not a split site');
+        expect(nb.value.pc1_resolved).toBe(false);
+        const nbPage = eight.a.readings.find((r) => r.page === 'PCA Ellipsoid' && r.what.endsWith('Nb'));
+        expect(nbPage.reading).toBe('thermal ellipsoid');
+        expect(nbPage.value.pc1_over_pc2).toBeLessThan(ARM_A_RULES.PROLATE_RATIO);
         expect(found(eight.scoreSweep)).toEqual(['off_centre:false']);
         const engine = (await eight.run).engine;
         const coarse = await engine('orientation', { referenceNumber: 2 });

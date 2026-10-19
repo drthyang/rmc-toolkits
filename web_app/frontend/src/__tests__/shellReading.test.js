@@ -87,13 +87,16 @@ describe('one shell reading per pair, per run', () => {
         expect(compared).toBeGreaterThan(0);
     });
 
+    // Since candidate 8 A+ tries the evidence gate's cluster elements (the
+    // element's own first shell holds 0.5–4.5 neighbours), not every
+    // same-element shell peaking below 3.6 Å.
     it.each(DEV_CASES.map((item) => item.id))('%s: arm A+ runs the cluster engine in the catalogue\'s windows', async (name) => {
         const { props, copilotRun } = runs.get(name);
         const catalogue = shellCatalogue(props);
         const { readings } = await runArmSweep(copilotRun);
         const windows = readings.filter((reading) => reading.page === 'analyze_clusters').map((reading) => reading.what);
-        const expected = catalogue.pairs
-            .filter((shell) => shell.centre === shell.partner && shell.window && shell.peaks[0].r <= 3.6)
+        const expected = buildEvidenceGate({ catalog: catalogue }).clusterElements
+            .map((element) => catalogue.shell(element, element))
             .map((shell) => `${shell.centre} clusters in ${shell.window[0]}–${shell.window[1]} Å (engine verdict)`);
         expect(windows).toEqual(expected);
     }, 60000);

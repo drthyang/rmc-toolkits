@@ -37,6 +37,7 @@
 // cuts a shell are the run's one shell reading (context/shells.js): the
 // clarifier asks on its CN-margin reading (window().cnMargin), as before.
 
+import { NOISE_FLOOR_MARGIN } from '../context/runContext';
 import { CN_MATCH_TOLERANCE, cnMatches, shellCatalogue } from '../context/shells';
 
 const roundTo = (value, digits = 2) => (Number.isFinite(value) ? Number(value.toFixed(digits)) + 0 : null);
@@ -46,8 +47,8 @@ const windowText = ([lo, hi]) => `${roundTo(lo)}–${roundTo(hi)} Å`;
 // A neighbour shell counts as bonded when it starts within this factor of the
 // nearest shell's start.
 export const BONDED_REACH = 1.4;
-// A ladder rung above the sampling noise floor must reach this factor of it.
-export const NOISE_MARGIN = 1.25;
+// A ladder rung above the sampling noise floor must reach NOISE_FLOOR_MARGIN
+// times it (runContext.js: the lower group's tolerance uses the same margin).
 
 // --- the shells the run's partial g(r) hold ------------------------------------
 
@@ -281,7 +282,7 @@ const toleranceQuestion = (run, noiseFloor) => {
     if (!Array.isArray(ladder) || ladder.length < 2) return null;
     const floor = Number.isFinite(noiseFloor) ? noiseFloor : 0;
     // A group counts when it holds clearly above the floor, not only up to it.
-    const above = ladder.filter((brick) => brick.to > NOISE_MARGIN * floor && brick.spaceGroup);
+    const above = ladder.filter((brick) => brick.to > NOISE_FLOOR_MARGIN * floor && brick.spaceGroup);
     if (above.length < 2) return null;
     const atDefault = above.find((brick) => brick.from <= 0.2 && 0.2 < brick.to) || above.at(-1);
     const choices = above.slice(-MAX_OPTIONS).reverse().map((brick) => choice(

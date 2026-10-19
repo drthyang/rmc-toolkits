@@ -17,13 +17,18 @@
 //   value      every value a skill quotes as measured on the Demo that
 //              tables.js VALUES binds equals what the tool shows there now
 //              (the shell readings: find_gr_peaks, the shell catalogue, the
-//              bond-angle counts summary).
+//              bond-angle counts summary);
+//   rule       every rule a skill states in words that the app and arm A+
+//              apply (tables.js RULES, candidate 8: the split site, the
+//              cluster elements, the lower group's tolerance) is stated as
+//              they apply it, and the code applies it (a probe).
 //
 // Today's violations are in ALLOW_LIST (tables.js), each with why: any new
 // one fails, and so does an entry no violation needs any more. A value entry
-// also names the line, the skill's value and the tool's, and fails when any
-// of them moves. The lint's logic is lint.js; its own tests are at the end of
-// this file.
+// also names the line, the skill's value and the tool's, a rule entry the
+// line, the skill's rule and the app's, and each fails when any of them
+// moves. The lint's logic is lint.js; its own tests are at the end of this
+// file.
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -41,10 +46,10 @@ import { shellCatalogue } from '../llm/context/shells';
 import { inProcessEngine } from '../workers/pcaKdeWorker';
 import { bundledSkills, COPILOT_PAGES, loadDemoAssistantRun } from './modelVisible/helpers';
 import {
-    classifyIdentifier, compareAllowList, describeFinding, evaluateBinding, evaluateValue, firmRuleSentences, flatten, gateNumberCandidates,
-    identifierMentions, lintSkills
+    classifyIdentifier, compareAllowList, describeFinding, evaluateBinding, evaluateRule, evaluateValue, firmRuleSentences, flatten,
+    gateNumberCandidates, identifierMentions, lintSkills
 } from './skillLint/lint';
-import { ALLOW_LIST, BINDINGS, FIRM_RULES, NOT_GATES, VALUES } from './skillLint/tables';
+import { ALLOW_LIST, BINDINGS, FIRM_RULES, NOT_GATES, RULES, VALUES } from './skillLint/tables';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = join(HERE, '..');
@@ -158,6 +163,7 @@ describe('the skill lint (AGENT_PLAN 5.1)', () => {
             notGates: NOT_GATES,
             firmRules: FIRM_RULES,
             values: VALUES,
+            rules: RULES,
             probeContext: offered.probes
         });
     }, 120000);
@@ -185,7 +191,8 @@ describe('the skill lint (AGENT_PLAN 5.1)', () => {
         ['tool', 'every tool a skill names is one the Copilot offers'],
         ['gate', 'every gate number a skill states equals the constant that decides it'],
         ['firm-rule', 'every firm rule names a check or refusal that exists'],
-        ['value', 'every value a skill quotes as measured on the Demo equals the tool\'s']
+        ['value', 'every value a skill quotes as measured on the Demo equals the tool\'s'],
+        ['rule', 'every rule a skill states in words is the one the app and arm A+ apply']
     ])('%s: %s (beyond the allow-list)', (check) => {
         const { unexpected } = compareAllowList(result.findings.filter((finding) => finding.check === check), ALLOW_LIST);
         expect(unexpected.map(describeFinding), `new ${check} violations: fix the skill or the code, or add an entry with why`).toEqual([]);
@@ -196,7 +203,7 @@ describe('the skill lint (AGENT_PLAN 5.1)', () => {
         expect(stale.map((entry) => `${entry.file} [${entry.check}] "${entry.fragment}"`), 'fixed: remove these allow-list entries').toEqual([]);
         for (const entry of ALLOW_LIST) {
             expect(entry.fragment.length, entry.fragment).toBeLessThanOrEqual(60);
-            expect(['tool', 'gate', 'firm-rule', 'value']).toContain(entry.check);
+            expect(['tool', 'gate', 'firm-rule', 'value', 'rule']).toContain(entry.check);
             expect(entry.why.length, entry.fragment).toBeGreaterThan(20);
         }
     });
@@ -210,9 +217,23 @@ describe('the skill lint (AGENT_PLAN 5.1)', () => {
         }
     });
 
+    it('names each rule mismatch it holds: the line, the skill\'s rule and the app\'s', () => {
+        for (const entry of ALLOW_LIST.filter((item) => item.check === 'rule')) {
+            const finding = result.findings.find((item) => item.check === 'rule' && item.file === entry.file && item.context.includes(entry.fragment));
+            expect(finding, entry.fragment).toBeDefined();
+            expect({ line: finding.line, skill: finding.skill, app: finding.app }, `${entry.file}: ${entry.fragment}`)
+                .toEqual({ line: entry.line, skill: entry.skill, app: entry.app });
+        }
+    });
+
     it.each(BINDINGS.filter((binding) => binding.verify).map((binding) => [`${binding.file}: ${binding.gate}`, binding]))(
         'the code applies the constant as bound — %s',
         (_, binding) => binding.verify()
+    );
+
+    it.each(RULES.map((entry) => [`${entry.file}: ${entry.rule}`, entry]))(
+        'the app and arm A+ apply the rule as the table says — %s',
+        (_, entry) => entry.verify()
     );
 });
 
@@ -308,6 +329,23 @@ describe('the lint itself', () => {
         });
         expect(findings.map((finding) => [finding.check, finding.kind, finding.line, finding.stated, finding.measured]))
             .toEqual([['value', 'differs', 3, '3.9', '3.25'], ['value', 'broken', 2, undefined, undefined]]);
+    });
+
+    it('reads a rule stated in words: as the app applies it, differently, or gone', async () => {
+        const entry = { rule: 'a split site', find: 'flat or split', before: 30, states: /\bPC1\b/, skill: 'a negative kurtosis', app: 'a PC1 kurtosis ≤ −0.5' };
+        const read = (text) => evaluateRule(entry, flatten(text).flat);
+        expect(read('Kurtosis: 0 Gaussian; negative, flat or split.')).toMatchObject({ problem: 'differs', context: 'rtosis: 0 Gaussian; negative, flat or split' });
+        expect(read('A negative PC1 kurtosis: flat or split.').problem).toBeNull();
+        expect(read('No such sentence.').problem).toBe('stale');
+        // In the lint: a finding on the phrase's line, with both rules.
+        const { findings } = await lintSkills({
+            files: { '.claude/skills/demo/SKILL.md': 'Line one.\nA negative kurtosis is\nflat or split.\n' },
+            tools: new Set(),
+            fields: new Set(),
+            rules: [{ ...entry, file: 'demo/SKILL.md' }, { ...entry, file: 'demo/SKILL.md', rule: 'x', find: 'gone' }]
+        });
+        expect(findings.map((finding) => [finding.check, finding.kind, finding.line, finding.skill, finding.app]))
+            .toEqual([['rule', 'differs', 3, 'a negative kurtosis', 'a PC1 kurtosis ≤ −0.5'], ['rule', 'stale', 1, undefined, undefined]]);
     });
 
     it('compares findings with the allow-list both ways', () => {
