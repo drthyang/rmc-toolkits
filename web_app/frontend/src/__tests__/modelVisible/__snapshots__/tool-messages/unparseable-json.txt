@@ -1,0 +1,4 @@
+# The tool messages the model reads: unparseable JSON
+# echo called with the text {value:1}, which is not JSON
+## messages[3] · tool · call_1_0
+{"error":"arguments are not valid JSON (<JSON.parse message>)"}

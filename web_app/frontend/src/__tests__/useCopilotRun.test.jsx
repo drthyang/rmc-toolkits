@@ -6,14 +6,16 @@
 // App hands CopilotChat. On the Demo, once the Copilot is open and the
 // Dashboard has published, it equals the pure core (copilotRun.js) over the
 // same run; before that it has the run's name and no data; each field keeps
-// its identity until its own inputs change; a Flask-shaped run has no
-// symmetry, no settings and no detect_symmetry tool; with no run open in the
+// its identity until its own inputs change; a server folder (a Flask-shaped
+// run) has no settings, and has the symmetry and the two symmetry tools when
+// /api/structure sent a basis, none without one; with no run open in the
 // static build there is no engine. No worker starts: no tool runs here.
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { copilotRun, DEFAULT_VIEW } from '../copilotRun';
+import basisFixture from './fixtures/structure_basis_fixture.json';
 import { loadDemoAssistantRun } from './modelVisible/helpers';
 
 const mode = vi.hoisted(() => ({ static: false }));
@@ -144,26 +146,44 @@ describe('useCopilotRun (the browser adapter)', () => {
         expect(hook.tools).toBe(afterTolerance.tools);
     });
 
-    it('a Flask-shaped run: the Flask engine, no symmetry, no settings, no detect_symmetry tool', async () => {
-        const { basis: _basis, ...flaskStructure } = demo.loaded.structure;
-        await render({
+    // What the Dashboard publishes for a server folder: /api/structure's model
+    // with the basis Flask computes (the golden's demo rows), or with none.
+    const renderServerFolder = (basis) => {
+        const { basis: _basis, ...model } = demo.loaded.structure;
+        return render({
             directory: '/runs/a',
             localRun: null,
             dashboard: {
                 files: [{ name: 'run_PDFpartials.csv', path: '/runs/a/run_PDFpartials.csv', type: 'file', plotKind: 'pdf_partials' }],
-                structure: flaskStructure,
+                structure: { ...model, basis },
                 structurePath: '/runs/a/run.rmc6f',
                 hiddenPlots: []
             },
             view: { toleranceA: DEFAULT_VIEW.toleranceA, pcaSites: null, liveData: true },
             enabled: true
         });
+    };
+
+    it('a server folder: the Flask engine, no settings, and the symmetry and both symmetry tools from its basis', async () => {
+        await renderServerFolder(basisFixture.cases[0].basis);
         await settle();
-        expect(hook.props).toMatchObject({ runName: '/runs/a', symmetry: null, runSettings: null, liveData: true });
+        expect(hook.props).toMatchObject({ runName: '/runs/a', runSettings: null, liveData: true });
+        expect(hook.props.symmetry).toMatchObject({ spaceGroup: 'F-43m', toleranceA: DEFAULT_VIEW.toleranceA });
         expect(hook.engine).toEqual(expect.any(Function));
         const names = hook.tools.map((tool) => tool.name);
         expect(names).toContain('list_sites');
+        expect(names).toContain('detect_symmetry');
+        expect(names).toContain('measure_symmetry_lowering');
+    });
+
+    it('a server folder with an empty basis (a coords-only file): no symmetry, no symmetry tool', async () => {
+        await renderServerFolder([]);
+        await settle();
+        expect(hook.props).toMatchObject({ runName: '/runs/a', symmetry: null, runSettings: null, liveData: true });
+        const names = hook.tools.map((tool) => tool.name);
+        expect(names).toContain('list_sites');
         expect(names).not.toContain('detect_symmetry');
+        expect(names).not.toContain('measure_symmetry_lowering');
     });
 
     it('the static build with no run open: named after the directory, no engine, no tools', async () => {

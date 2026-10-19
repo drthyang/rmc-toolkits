@@ -10,6 +10,7 @@
 // the checks' own facts is given here as the run context that yields them.
 
 import { describe, expect, it } from 'vitest';
+import { toolResult } from '../copilot/tools';
 import { createVerification, FACTS, normalizeSymbol } from '../copilot/verification';
 import { pointGroupFacts } from '../context/pointGroups';
 
@@ -17,7 +18,7 @@ import { pointGroupFacts } from '../context/pointGroups';
 const producer = (facts) => FACTS.find((row) => row.key in facts)?.from[0] ?? 'some_tool';
 const audit = (text, { facts = [], context = null } = {}) => {
     const verification = createVerification({ context, offered: [] });
-    facts.forEach((item) => verification.record({ name: producer(item), args: {}, status: 'ok', error: null, executed: true, facts: item }, () => ({ data: null })));
+    facts.forEach((item) => verification.record({ name: producer(item), ...toolResult({ facts: item }) }, () => ({ data: null })));
     return verification.judge(text).done.audit;
 };
 const rules = (text, options) => audit(text, options).map((finding) => finding.rule);

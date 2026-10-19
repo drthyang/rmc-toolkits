@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { describe, expect, it } from 'vitest';
-import { MAX_OPTIONS, answerResult, buildAskUserTool, normalizeAskRequest } from '../copilot/askUser';
+import { MAX_OPTIONS, answerResult, buildAskUserTool, normalizeAskRequest, replyChoice } from '../copilot/askUser';
 import { validateToolArguments } from '../copilot/toolCalls';
 
 describe('normalizeAskRequest', () => {
@@ -79,6 +79,21 @@ describe('answerResult', () => {
         const noDefault = answerResult(normalizeAskRequest({ question: 'q', options: ['a', 'b'] }), { source: 'skipped' });
         expect(noDefault.data.answer).toBeNull();
         expect(noDefault.checks[0].text).toMatch(/most standard option/);
+    });
+});
+
+describe('the reply as the step\'s choice (the tool transcript)', () => {
+    it('keeps where the reply came from and the option\'s index; a reply of no known source reads as an option', () => {
+        expect(replyChoice({ answer: 'A', source: 'option', index: 1 })).toEqual({ source: 'option', index: 1 });
+        expect(replyChoice({ answer: ' typed ', source: 'other', index: null })).toEqual({ source: 'other', index: null });
+        expect(replyChoice({ source: 'skipped' })).toEqual({ source: 'skipped', index: null });
+        expect(replyChoice(undefined)).toEqual({ source: 'option', index: null });
+    });
+
+    it('ask_user returns it beside the answer the model reads', async () => {
+        const reply = { answer: null, source: 'skipped', index: null };
+        const result = await buildAskUserTool().run({ question: 'Which?', options: ['a', 'b'], default: 'a' }, { askUser: async () => reply });
+        expect(result).toEqual({ ...answerResult(normalizeAskRequest({ question: 'Which?', options: ['a', 'b'], default: 'a' }), reply), choice: { source: 'skipped', index: null } });
     });
 });
 

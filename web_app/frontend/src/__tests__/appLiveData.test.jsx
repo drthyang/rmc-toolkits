@@ -11,7 +11,9 @@
 // with the .rmc6f signature in the /api/files listing; it is in the
 // dependencies of the pages' backend fetches, so they re-read everything from
 // the new file IN PLACE — never remounting, which would reset the user's
-// picks and leak a WebGL context per page per save.
+// picks and leak a WebGL context per page per save. The Dashboard takes it
+// too, for its structure (the model card, the Detected SG card and the basis
+// the Copilot's symmetry tools read: DashboardServerStructure.test.jsx).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
@@ -21,8 +23,8 @@ const state = vi.hoisted(() => ({
     files: [],
     // Mounts of each page (must stay at 1: no remount on a new configuration)
     // and the data loads it performs (one per distinct dataEpoch it is given).
-    mounts: { structure: 0, geometry: 0, ellipsoids: 0, orientation: 0 },
-    loads: { structure: 0, geometry: 0, ellipsoids: 0, orientation: 0 },
+    mounts: { dashboard: 0, structure: 0, geometry: 0, ellipsoids: 0, orientation: 0 },
+    loads: { dashboard: 0, structure: 0, geometry: 0, ellipsoids: 0, orientation: 0 },
 }));
 
 vi.mock('axios', () => ({
@@ -56,7 +58,7 @@ vi.mock('../components/StructurePage', () => countingPage('structure'));
 vi.mock('../components/BondGeometryPage', () => countingPage('geometry'));
 vi.mock('../components/PcaKdePage', () => countingPage('ellipsoids'));
 vi.mock('../components/OrientationPage', () => countingPage('orientation'));
-vi.mock('../components/Dashboard', () => ({ default: () => null }));
+vi.mock('../components/Dashboard', () => countingPage('dashboard'));
 vi.mock('../components/AutoStogPage', () => ({ default: () => null }));
 vi.mock('../llm', () => ({ CopilotChat: () => null }));
 
@@ -97,8 +99,8 @@ describe('App Flask-mode Live Data', () => {
         await act(async () => { await vi.advanceTimersByTimeAsync(WATCH_INTERVAL_MS); });
     };
 
-    const once = { structure: 1, geometry: 1, ellipsoids: 1, orientation: 1 };
-    const twice = { structure: 2, geometry: 2, ellipsoids: 2, orientation: 2 };
+    const once = { dashboard: 1, structure: 1, geometry: 1, ellipsoids: 1, orientation: 1 };
+    const twice = { dashboard: 2, structure: 2, geometry: 2, ellipsoids: 2, orientation: 2 };
 
     const openAnalysisPagesWithLiveData = async () => {
         await act(async () => { root.render(<App />); });
@@ -155,13 +157,17 @@ describe('App Flask-mode Live Data', () => {
         await click(load);
         expect(state.loads.ellipsoids).toBe(1);
 
-        // A configuration saved while Live Data is off is picked up by Load.
+        // A configuration saved while Live Data is off is picked up by Load,
+        // by the Dashboard's structure as by the analysis pages.
         state.files = listing({ modified: 200, size: 5100 }, { modified: 100, size: 10 });
         await poll();
         expect(state.loads.ellipsoids).toBe(1);
+        expect(state.loads.dashboard).toBe(1);
         await click(load);
         expect(state.loads.ellipsoids).toBe(2);
         expect(state.mounts.ellipsoids).toBe(1);
+        expect(state.loads.dashboard).toBe(2);
+        expect(state.mounts.dashboard).toBe(1);
     });
 
     it('does not reload the analysis pages when only the plot/log files change', async () => {

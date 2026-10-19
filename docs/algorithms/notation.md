@@ -482,7 +482,11 @@ triplet, typed windows and bin width. Only Bond Geometry's computed angle distri
 dropped, never recomputed unasked — a result from the previous configuration must not sit next
 to the new model — and the page says so (press Compute again). The pages are never remounted, and
 every Three.js view releases its WebGL context on teardown (`renderer.forceContextLoss()` after
-`dispose()`), so repeated saves do not pile up contexts. The AI Copilot receives the configuration
+`dispose()`), so repeated saves do not pile up contexts. The Dashboard takes the epoch as well and
+re-reads its **structure** in place (`/api/structure`, keeping the previous complete read when the
+new one lands mid-write): the Model information card, the Detected SG card with its CIF, and the
+average-structure basis the Copilot's `detect_symmetry` / `measure_symmetry_lowering` compute on
+follow the same configuration as the analysis pages and the Copilot's Flask analyses. The AI Copilot receives the configuration
 as `configKey` (`configEpoch` in Flask mode; for a browser-loaded run, static-mode Live Data
 included, the `fileSignature()` of its `.rmc6f` files, `configurationSignature()`). A new
 configuration is not a new run: the conversation stays on screen, a divider ends the earlier
@@ -494,9 +498,9 @@ across a save or a Load of the same run, and returns to the card's default when 
 **Limitation:** with
 Live Data *off*, nothing is polled — a configuration saved while you are on an analysis page is
 picked up by that page's *next* request only. Before comparing numbers across a save, press
-**Load** again (it re-checks the `.rmc6f` and refreshes the analysis pages only if it changed),
-switch Live Data on (which re-checks at once), or reload the browser page. Load does not refresh
-the Dashboard's plots; those follow Live Data or a browser reload.
+**Load** again (it re-checks the `.rmc6f` and refreshes the analysis pages and the Dashboard's
+structure only if it changed), switch Live Data on (which re-checks at once), or reload the browser
+page. Load does not refresh the Dashboard's plots; those follow Live Data or a browser reload.
 On the server side the parsed-file caches are keyed on a full file signature and never keep a
 parse of a file that changed while it was read (see the backend API notes in
 [REFERENCE.md](../REFERENCE.md)).

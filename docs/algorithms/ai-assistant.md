@@ -347,8 +347,10 @@ stem matches the `.rmc6f` — `KEY :: value` lines with `>`-prefixed sub-lines. 
 ### Step 5 — Symmetry and per-orbit displacement (`context.symmetry`)
 
 **Input:** the `symmetry` prop = `describeSymmetry(structure, tol)` merged with
-`toleranceLadder(structure, 1.0)` (`Dashboard.jsx`). Requires `structure.basis`, so this block exists in
-**static mode only**.
+`toleranceLadder(structure, 1.0)` (the run module, `copilotRun.js` `runSymmetry`). Requires
+`structure.basis`: a browser-loaded run's (`structureFromRmc6f`) or, since plan item 4.5, a server
+folder's (`/api/structure`, `structure_basis.py`). A coords-only file has none, and then the block is
+absent.
 
 **`tol` is a live, user-set control — not a fixed default.** It comes from `SymTolContext`
 ([`symTolContext.js`](../../web_app/frontend/src/symTolContext.js)), a `[value, setValue]` pair created in
@@ -721,6 +723,14 @@ quantity:
   only* and asks before an analysis runs in it. Bond-length splits of distorted polyhedra are
   0.1–0.4 Å; the next coordination shell lies a sizeable fraction of the bond further out, and a
   summed count that is no polyhedron (4 + 3) is never joined;
+- **Known limit (F5, decided 2026-10-19): a split M₃/M₄ cluster shell does not join.** A metal
+  triangle or tetrahedron whose edges a distortion splits (1 + 1, 2 + 1) sums to CN 2 or 3, and a
+  join needs an ideal polyhedral count, so the shell stays cut at its first trough and reads the
+  short edges only. Accepting 2 and 3 as ideal counts was tried on the Demo and every dev case and
+  left out. It helps no case and breaks one: on dev-cell-wrap it joins the V–V dimer bond
+  (2.245 Å) to the inter-dimer distance (2.775 Å), so the clusters read "no clusters: extended
+  network" instead of rigid V dimers, and arm A+ falls from 1.00 to 0.83 there
+  ([the evidence](#f5-evidence-accepting-cn-2-and-3-as-ideal-cluster-counts));
 - **a joined shell's split by number** (`split: {parts, longMinusShort, longMinusShortSe,
   direction}`, plan item 4.2, approved by the manager on the user's delegation, 2026-10-19), only
   for a joined shell (null otherwise). Its parts are cut at the minimum of $\tilde g$ between each
@@ -794,6 +804,28 @@ single-basis-site self-pairs of Step 7, where $d^{\,\mathrm{avg}}$ is a lattice 
 is meaningless.)
 
 **Code:** `pairCorrelations.js` → `pairCorrelationsContext()`, over `shells.js` → `shellCatalogue()`.
+
+#### F5 evidence: accepting CN 2 and 3 as ideal cluster counts
+
+This was an experiment on main at a24dfdd and was not committed. `shells.js` was given the ideal set
+{2, 3, 4, 6, 8, 12}. The shell of every cluster element was read on the Demo and the dev cases, and
+arms A, A+ and D were run on dev. The test split was not run. The manager decided on the user's
+delegation (2026-10-19) to leave the join as it is; the user may reopen it
+(`validation/findings/decisions/2026-10-19-f5-shell-join.json`).
+
+| Shell | Today (ideal 4, 6, 8, 12) | With 2 and 3 accepted | Is the join the cluster's edge? |
+| --- | --- | --- | --- |
+| dev-cell-wrap V–V | peaks 2.245 and 2.775 Å; window 2.17–2.35 Å, CN 1; clusters: V dimers, rigid (stiffer bonds) | **joins** both peaks: window 2.17–3.12 Å, CN 2, ideal 2; clusters: "no clusters: extended network" | **No.** The dimer bond is the 2.245 Å peak; 2.775 Å is the next V–V distance, between dimers. |
+| dev-breathing Mo–Mo | window 2.39–3.21 Å, CN 2.00, ideal none | ideal 2; no join; window unchanged | — (it reports the same) |
+| Demo Ta–Ta (Ta₄ tetrahedra) | window 2.65–3.33 Å, CN 2.75, ideal none | ideal 3; no join; window unchanged | — (it reports the same) |
+| dev-jahn-teller F–F, dev-symmetry-lowering Ta–Ta | CN 4.00 and 6.00, already ideal | unchanged | — |
+
+- **Arms on dev:** arm A and arm D are unchanged. Arm A+ changes once: dev-cell-wrap falls from 1.00
+  to 0.83, losing the rigid V cluster to the extended-network join. Every other cluster window is
+  identical.
+- **Disclosure:** the experiment's builder saw a structure helper in the generator library that only
+  a held-out case uses. That helper is sealed since #104. The table is evidence for a decision, not
+  a tuned rule.
 
 ---
 
@@ -1344,7 +1376,8 @@ What the loop guarantees:
 - **One run per conversation.** The tools and the context are captured when the question is asked.
   Opening another run (`runKey` = directory + run id) stops the turn and starts a new
   conversation. In Flask mode a Live Data save mid-question is *not* a new run: a later analysis in
-  that question reads the newer `.rmc6f`. A save between questions is a new configuration
+  that question reads the newer `.rmc6f` (the two symmetry tools keep the basis the question was
+  asked with). A save between questions is a new configuration
   (`configKey`): the conversation stays, a divider ends it, and the earlier answers are no longer
   sent as memory (*What "memory" contains*, Step 13).
 
@@ -1360,7 +1393,7 @@ not answer as asked". A tool is offered only when its inputs exist.
 | `list_sites(element?)` | a browser-loaded run or Flask mode | worker `sites` / `/api/pca/sites` | per site: ref, label (composition if mixed), count, U_iso, rms axes, anisotropy, Mardia kurtosis; `kurtosis_axes`, the excess kurtosis along each principal axis on resolved axes only (null elsewhere; absent when none has one); `pc1_uvw`, PC1 as a direct-lattice `[u v w]` (`crystalOrientationRows`) when PC1 is resolved; on a split site, `delta_A` ± `delta_se_A`, its static displacement and sampling error (Step 20); split sites first (largest `delta_A` first), then by \|kurtosis\| and U_iso; top-3 refs by \|kurtosis\|, U_iso and anisotropy; the note defines only the fields the result holds | warn: parse warning; note: reconstructed sites; warn: zero-spread sites; note: the split sites by ref and label (PC1 resolved, κ₁ ≤ −0.5 and ≤ −3√(24/n): `isSplitSite`, the rule `analyze_clusters` uses); fail: no site (holding that element) |
 | `analyze_displacement_directions(site_ref \| element, frequency?)` | same | worker `orientation` / `/api/pca/orientation`, `geometry: false` | used / rejected points; peak enhancement, count, expected and calibrated `peakSignificance`; peak direction as a Cartesian unit vector, as `[u v w]` (direct lattice, $M^{-T}d$ scaled to max \|component\| = 1, sign kept, since the map is not antipodally folded) and as angles to a, b, c; `mapSignificance`; antipodal asymmetry, its z and flag; orientation-tensor eigenvalues, anisotropy and its Bingham significance; the principal axis `[u v w]` (`crystalOrientationRows`) | warn: < 100 vectors; ok: peak ≥ 3σ; note: peak < 3σ; note: map test undefined; ok: map ≥ 3σ, said as *anisotropic* and, without a significant peak, "not a preferred direction" (any anisotropic Gaussian ellipsoid passes the map test: the validation's thermal-only O, peak 2.3σ, map 7.2σ; review L3); note: tied peak cells; note: significant ± asymmetry; warn: parse warning; note: an element pooled over > 1 site (the site count from the basis) — where their local axes differ, as for the four vertices of a tetrahedral cluster, a per-site preference cancels, so an isotropic pooled map is not evidence against a per-site or cluster distortion |
 | `compute_bond_angles(end1, apex, end2, r12_min, r12_max, r23_min?, r23_max?, bin_width = 1)` | same | worker `triplets` / `/api/triplets` (`APP_MAX_ANGLES` applies) | angle count, central atoms, mean ± sd; ≤ 3 modes (local maxima of a 5-bin running mean of the counts, each with the share of angles within ± 7.5°); the distribution in 18 bins of 10° (the engine's bins shared by overlap), raw and sin θ-corrected ($S_j = (N_j/N)\,/\,[(\cos\theta_j - \cos\theta_{j+1})/2]$, 1 for random directions); for an A–B–A triplet in one window that does not cut the shell and a mean coordination within half an atom of 6 (`cnMatches`), the share and mean angle below and above 135° against an ideal octahedron (80 % cis at 90°, 20 % trans at 180°), of 4, the share within 15° of 109.47°; mean bond length, its sd from the engine's 40-bin length histogram, and unique bonds per window; coordination histogram and mean (the engine's `coordinationSummary`) | fail: 0 angles ("widen the window": find_gr_peaks' first_shell.window_A); warn: > 50 % of central atoms have no A–B bond in the window; otherwise warn: < 60 % of central atoms have the most common A–B bond count (the window cuts a coordination shell; both the shell module's `countsCut`, unchanged on 2026-10-19) — **refused** (fail) unless `window_confirmed`, the modes, mean, sd and histograms withheld (the coordination-shells skill's firm rule), else a warn "kept: the user chose this window"; note: raw counts deplete 180° (with the octahedron split); warn: parse warning; ok otherwise. Refused before running: min ≥ max, an r23 bound without its pair |
-| `detect_symmetry(tolerance_A ∈ [0.001, 1])` | the structure has a `basis` (browser-loaded runs) | `describeSymmetry` (the Detected SG card's finder), *not* changing the card | group, number (only when certain), point group and its facts (`point_group_facts`, as in the context), n ops, max residual, every orbit with `orbitLabel` Wyckoff label, site symmetry and representative fractional coordinates (4 decimals) | ok: group holds; note: the point group's facts ("take inversion, chirality and polarity from this"); note: undetermined; note: "≥" lower bound; warn: not analysed (caps); fail: no basis |
+| `detect_symmetry(tolerance_A ∈ [0.001, 1])` | the structure has a `basis` (a browser-loaded run's `structureFromRmc6f`, or a server folder's `/api/structure`, `structure_basis.py`; not a coords-only file) | `describeSymmetry` (the Detected SG card's finder), *not* changing the card | group, number (only when certain), point group and its facts (`point_group_facts`, as in the context), n ops, max residual, every orbit with `orbitLabel` Wyckoff label, site symmetry and representative fractional coordinates (4 decimals) | ok: group holds; note: the point group's facts ("take inversion, chirality and polarity from this"); note: undetermined; note: "≥" lower bound; warn: not analysed (caps); fail: no basis |
 | `measure_symmetry_lowering(parent_tolerance_A = 0.2, tolerance_A = 1.25 × noise floor)` | the structure has a `basis` | `symmetryShifts` (`symmetryShift.js`): the parent group at `parent_tolerance_A` (`analyseSymmetry`), each orbit averaged over its operations (`averageOrbit`), each member's ideal position the nearest image of that average; a member's shift = its mean − its ideal position, the common part the least-squares origin leaves removed by the geometric median of all members' shifts (Weiszfeld: the parent on the majority of the atoms, the description that moves the fewest); the lower group by `describeSymmetry` at `tolerance_A` | the parent and lower groups (the lower with its point-group facts), the noise floor, up to 12 sites (largest first) with `shift_A`, `direction_uvw`, `nearest_low_index` (within 15°, `LOW_INDEX_CONE_DEG`), `se_A` (the mean's sampling error along the shift) and `above_noise_floor`; `facts.lowering` = `{parent, lower, shifted: [{element, shift_A, direction_uvw}]}` | ok: each element whose largest shift exceeds the noise floor ("Ta shifted 0.065 Å along [0 0 1] (3.7° off) from the Pm-3m positions … a coherent shift every copy shares"); note: the parent → lower change in inversion and polarity; ok: no site above the noise floor; note: the lower tolerance still gives the parent group; warn: not analysed; fail: no basis, or no parent operation (review L4: the shift had to be worked out by hand from the orbit positions) |
 | `compare_fit(dataset, n_ranges = 6)` | a fit file with a model and a measured column (`xpdf`, `npdf`, `xray_sq`, `neutron_sq`, `bragg`; repeated kinds keyed `npdf_2`, …) | `fitTool` in `runTools.js` (roles by label `/exp\|obs/` vs `/calc\|rmc\|fit/`, else column order — `rwpColumns`, duplicated) | the dataset's $R$ (Step 10) over its range; per equal-width range of r or Q: $R$ there and its share of $\sum (y^\mathrm{calc}-y^\mathrm{expt})^2$; the 5 largest local extrema of the 5-point mean residual (position, model − data, relative to the data's rms) | ok (the card's headline): the overall $R$ and where the misfit lives — one range holding ≥ 40 % of the squared residual (`MISFIT_CONCENTRATION`), else spread; note: another range's own $R$ ≥ 3× the dataset's (`RELATIVE_MISFIT_FACTOR`) — weak signal poorly fitted, e.g. high-Q F(Q); fail: < 10 points |
 | `analyze_clusters(element, r_min, r_max)` | a browser-loaded run with site/cell columns, or Flask mode | worker `clusters` / `/api/clusters` (Step 18) | the cluster kind (members, edges, count, templates; other sizes); the average cluster's sorted edges, spread, median edge sampling error and spread/SE; per statistic obs / null mean / z / change = obs/null − 1 — the shape rows (edge ladder, ladder width, shape rms; tetrahedra: E and T2 rms and T2 trigonality; the fractions of long / short gyration axes within 15° of <100>, <110>, <111>) against `shapeNull`, the size rows (breathing sd, mean edge) against independent atoms (Step 18; review L2); `split_member_sites`: the analysed kind's member sites whose PC1 is resolved and whose PC1 excess kurtosis is ≤ −0.5 (`SPLIT_SITE_KURTOSIS`: two equal wells δ = σ, the onset of bimodality) and ≤ −3√(24/n) (`SPLIT_SITE_SE`) — `isSplitSite`, the rule `list_sites` reports — from the engine's verdict (`splitMemberSites`: the engine reads its own member clouds; until 2026-10-19 the tool made a second `sites` request, and a failed one dropped the note silently); bonds outside the window, contacts between clusters per atom. `facts.cluster` = `{element, members, window, distorted, static, breathing, rigid, split, families}`, the verdict's answers, for the cluster answer check. Every check below is a finding of the engine's verdict said through `CLUSTER_SENTENCES` (Step 18, *The verdict*) | fail: extended network; fail: no clusters; warn: other sizes hold > 10 % of clusters; note: the average cluster is distorted (spread ≥ 5 SE, `STATIC_SPREAD_SE`) or regular; ok: dimers (one edge) — the shape is the bond length, read from the size row; ok: ladder width departs from the shape null (\|z\| ≥ 3 **and** \|change\| ≥ 5 %: more distorted — a correlated distortion — or less — rigid units, unless an axis family or the trigonality shows a pattern: then a distortion whose amplitude the null already holds), or matches it while the pattern does not (a correlated distortion held by the sites' own displacements), or matches it; note: breathing departs (same rule): more — collective breathing, a size fluctuation, not a shape distortion; less — stiffer bonds, the atoms move together; note: trigonality departs (\|z\| ≥ 3, \|Δ\| ≥ 0.02); note: an axis family enhanced (z ≥ 3, obs/null ≥ 1.1); note: split sites — at least half the member sites split: the null holds the amplitude, "no distortion" does not make the clusters regular; warn: > 5 % of bonds outside the window; warn: > 0.05 inter-cluster contacts per atom |
@@ -2105,8 +2138,8 @@ The Demo's 52 sites have none; three of the 13 rows its budget keeps resolve PC1
 ### Runtime-mode differences (static vs Flask) — read this before quoting the assistant
 
 The context is far richer in **static mode** (the browser parses the run itself) than in **Flask mode**,
-because the Flask endpoints return figures and metadata rather than series and basis data. What survives
-in each mode:
+because the Flask endpoints return figures and metadata rather than parsed series; the average-structure
+basis is the exception since plan item 4.5 (`/api/structure`'s `basis`). What survives in each mode:
 
 | Context block | Static mode (browser parsing) | Flask mode (backend) |
 |---|---|---|
@@ -2114,7 +2147,8 @@ in each mode:
 | `structure` (cell, angles, composition) | yes | yes (`/api/structure`) |
 | `configuration_optimization` | yes | yes — `/api/structure` returns the header's move counters (`moves`) |
 | `run_settings` | yes | **no** — the `.dat` is read only from a locally picked folder |
-| `symmetry` (+ per-site displacements, `frac`) | yes | **no** — `/api/structure` returns no `basis`, so `describeSymmetry()` returns `null` |
+| `symmetry` (+ per-site displacements, `frac`) | yes | yes — `/api/structure` returns the `basis` (`structure_basis.py`, the browser's rows to round-off; through 0.7.0 it had none and the block was absent); none for a coords-only file. Above the finder's 2000-site cap only `basisOmitted: {sites, cap}`: the same "not analysed" block as the browser's, without `noise_floor_A` (the browser's is null too when every site has one copy) |
+| `detect_symmetry`, `measure_symmetry_lowering` | yes (needs reference-site columns) | yes — on `/api/structure`'s `basis`, computed in the browser as for a picked folder; above the cap offered and answering "Not analysed", as the browser's are (the lowering's default tolerance assumes the 0.02 Å floor of one-copy sites) |
 | `pair_correlations` | yes (needs parsed partials) | **no** — plot files carry no `plotData.series` |
 | `datasets` | `kind` + `title` + `rwp` (never `stog`) | `kind` only (never `stog`) |
 | `convergence` + watchdog badge | yes | **no** — no parsed R-value series, so the badge stays hidden |
@@ -2129,7 +2163,11 @@ before the assistant sees anything, in **both** modes; and the Dashboard visibil
 
 A code comment in `symmetryContext()` says the block also works from a minimal `{spaceGroup}` object "in
 Flask mode"; that code path exists and is tested, but no caller currently supplies it — in Flask mode
-`Dashboard.jsx` passes `symmetry = null` and the block is absent entirely.
+the run module (`copilotRun.js` `runSymmetry`) builds the full card from `/api/structure`'s basis, as
+for a browser-loaded run, and passes `symmetry = null` only when the structure has no basis (a
+coords-only file). In Flask mode the Dashboard re-reads that structure when App's configuration epoch
+moves, so the symmetry block and the two symmetry tools describe the configuration the Copilot's
+Flask analyses read ([run-dashboard.md](run-dashboard.md), Step 9).
 
 ---
 

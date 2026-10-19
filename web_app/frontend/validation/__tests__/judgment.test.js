@@ -27,6 +27,7 @@ import { aggregate, renderJudgment, renderReport } from '../report';
 import { loadRun } from '../runFolder';
 import { renderTranscript } from '../transcript';
 import { holdoutTokens, readText, scanText } from './holdoutScan';
+import { pinRecord } from './recordFiles';
 
 const FRONTEND = resolve(__dirname, '../..');
 const REPO = resolve(FRONTEND, '../..');
@@ -131,6 +132,7 @@ describe('two situations through the live harness (scripted model, no model runs
         const { judgment, ...ordinary } = record.truth;
         expect(judgment).toEqual({ situation: 'user_choice' });
         expect(renderTranscript({ ...record, truth: ordinary })).not.toMatch(/judgment case/);
+        await pinRecord('judgment.user-choice', record);
     }, 60000);
 
     it('a signal at the edge of significance: a superstructure claimed below the bar scores as a claim, and the answer check flags it', async () => {
@@ -151,6 +153,8 @@ describe('two situations through the live harness (scripted model, no model runs
         expect(below.final.audit.map((finding) => finding.rule)).toContain('superstructure');
         expect(below.final.outcome.status).toBe('not verified');
         expect(above.final.audit.map((finding) => finding.rule)).not.toContain('superstructure');
+        await pinRecord('judgment.edge-below', below);
+        await pinRecord('judgment.edge-above', above);
     }, 60000);
 });
 
