@@ -798,7 +798,12 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   references on demand, never compacted) (`skills.test.js`); the repository's own skills parse,
   are drafts with every section, and reach the agent whole (`src/__tests__/copilotSkills.test.js`);
   one replay per skill on the Demo (`copilotSkillReplays.test.js`); the cut-shell refusal and its
-  confirmed escape (`copilotTools.test.js`).
+  confirmed escape (`copilotTools.test.js`). The skill lint (`src/__tests__/skillLint.test.js`,
+  tables in `skillLint/tables.js`) reads every skill and reference file and never edits them: every
+  tool a skill names is one the builders offer; every gate number equals the constant that decides
+  it (each number after a comparator is bound or listed as no gate); every "*Firm rule in the app:*"
+  is mapped to the check or refusal that enforces it, and that code is exercised. Today's
+  violations sit in its allow-list with why; a new one fails, and so does an entry a fix cleared.
 - **Checks and the Workbench's questions:** the answer checks with their negated and qualified
   phrasings (`answerAudit.test.js`); the evidence gate, numbers by reference and the computed
   verdict on their own (`evidence.test.js`) and in the loop (`agentLoop.test.js`); the clarifier on synthetic shells — split,
