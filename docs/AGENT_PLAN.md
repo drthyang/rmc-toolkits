@@ -110,15 +110,23 @@ drafts of batch 1 wait in PR #71 for the user's review.
   - The validation runs one question per fresh run, so neither shows there. Both shape what users
     get.
 - **The holdout scan is narrow.**
-  - **What it checks.** Only the test-case ids, only in `src` (js/jsx), `.claude/skills` and
-    `rmc_toolkits` (`validation/__tests__/split.test.js:53-59`).
-  - **What it misses.** The test cases' materials, formulas, magnitudes and directions, `docs/`,
+  - **What it checked.** Only the test-case ids, only in `src` (js/jsx), `.claude/skills` and
+    `rmc_toolkits` (`validation/__tests__/split.test.js` before 1.5).
+  - **What it missed.** The test cases' materials, formulas, magnitudes and directions, `docs/`,
     and the llm README.
-  - **Today there are no hits;** nothing keeps it that way. One overlap is by design and worth
-    stating: the test breathing case's motif (Nb₄ tetrahedra in a selenide,
-    `validation/cases.js:509`) is the skills' reference compound, whose published Nb₄ distortion
-    they describe (`.claude/skills/coordination-shells/lacunar-spinel-shells.md:31-32`). A model
-    may expect a distortion there.
+  - **One overlap is a leak, pending the user:** the test breathing case's cluster is the
+    cluster of the skills' reference compound, whose published distortion they describe
+    (`.claude/skills/coordination-shells/lacunar-spinel-shells.md:9,31-32`). `read_skill` loads
+    that file, so it reaches arm B, and a model may expect a distortion there. The skill text is
+    the user's, so the decision is too.
+  - **Widened (1.5, 2026-10-19).** The scan derives each test case's id, composition, cluster,
+    structure type, planted lengths, directions and wavevector from `cases.js` at run time, and
+    looks across `src`, every skill file, `rmc_toolkits`, `docs/` and the top-level docs. Only
+    text no model can read may be allow-listed (five test- or doc-only hits found that day). The
+    leak above is listed apart, printed on every run and pinned line by line; both lists are in
+    [copilot-validation.md](algorithms/copilot-validation.md#the-holdout-scan). PR #71's skill
+    drafts carry the same leak and nothing else. This plan is scanned too, so it points at the
+    leak without naming it.
 
 ### The A+ ceiling: what the validation can still measure
 
@@ -308,7 +316,7 @@ Beyond single contradictions:
 | 1.2 | **One run policy, recorded.** A `RunPolicy` states the limits, temperature, server kind, context size, reply cap and the context-guard decisions; each record and transcript keeps it; the report lists what a comparison across models also compares. One scripted check that the final round's `tool_choice: 'none'` is sent in the form each provider accepts. | M |
 | 1.3 | **Context parity, stated.** The record says which context sections the run had (no PCA table, no run settings, the 0.2 Å card) and that it is one fresh question; the harness gets an option for a PCA-table context, as after a visit to the PCA page, for a dev check of its effect. **Built with the run module (Phase 2, PR 2):** `record.view`, `record.context`, `run.js live --pca-table`. | S |
 | 1.4 | **State lifecycle.** A Live Data save that changes the configuration starts a new conversation, as a new run does, or marks earlier answers as about the previous configuration; the Detected SG pick resets with the run. | S |
-| 1.5 | **Holdout scan widened**: test-case materials, formulas, magnitudes and directions (from `cases.js`) across `src`, `.claude/skills`, `rmc_toolkits` and `docs/` except the validation docs. The overlap with the skills' reference compound is listed in copilot-validation.md as a known risk. | S |
+| 1.5 | **Holdout scan widened** (done, 2026-10-19): test-case materials, formulas, magnitudes and directions (from `cases.js`) across `src`, `.claude/skills`, `rmc_toolkits` and `docs/` except the validation docs. The overlap with the skills' reference compound reaches arm B through `read_skill`: copilot-validation.md lists it as an open leak pending the user. Only test- or doc-only hits are allow-listed, as known risks. | S |
 | 1.6 | **An informative comparison with A+** **(approval)**. Dev set only. (i) The report gives feature-only scores, B against A+ per component, and every disagreement with the planted truth beside it, with no change to the case score. (ii) A "judgment" dev subset, designed and tried on dev only: cases where A+'s fixed joining rules are ambiguous or wrong — two features at once, a signal at 2.5–4σ, evidence that two tools read differently, a choice only the user can make — so the model has room to add. The test set gets matching cases only through a new, pinned test version authored without reference to the dev results, decided by the user. | M |
 | 1.7 | **Snapshots of what the model sees.** A test snapshots the system prompt (every variant), the tool list, every description and schema, the first request as the dock and the harness send it, and a sample of each tool's result text, so a refactor that changes them shows in the diff. Arm C's snapshot is checked for skill names. First of the started set. | S |
 | 1.8 | **What arm C ablates: decided 2026-10-19.** C removes the whole method: no skill names, stage lists, `EVIDENCE_RULES`, method sentences in `TOOL_RULES` or method advice in tool descriptions. It is a structural switch in the turn module, after 1 (B and C, item C). | M |
