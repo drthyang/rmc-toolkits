@@ -47,15 +47,34 @@ const unreachableHint = (baseUrl) => (
     + 'See “How to connect a model”.'
 );
 
-export const describeHttpError = async (response) => {
-    let detail = '';
+const readErrorBody = async (response) => {
     try {
-        const payload = await response.json();
-        detail = payload?.error?.message || payload?.error || '';
+        return await response.json();
     } catch {
         // Non-JSON error bodies are fine; the status code is enough.
+        return null;
     }
-    return `HTTP ${response.status}${detail ? `: ${detail}` : ''}`;
+};
+
+const errorMessage = (status, payload) => {
+    const detail = payload?.error?.message || payload?.error || '';
+    return `HTTP ${status}${detail ? `: ${detail}` : ''}`;
+};
+
+export const describeHttpError = async (response) => errorMessage(response.status, await readErrorBody(response));
+
+/**
+ * An HTTP failure as an Error: the message (`HTTP <status>: <detail>`), its
+ * `status`, and `body`, the parsed error payload (null when it was not JSON),
+ * so the model port can tell a failure's kind by its shape
+ * (provider/model.js toolsUnsupportedFailure) rather than by its text.
+ */
+export const httpError = async (response) => {
+    const body = await readErrorBody(response);
+    const error = new Error(errorMessage(response.status, body));
+    error.status = response.status;
+    error.body = body;
+    return error;
 };
 
 const httpHint = (status) => {
@@ -68,11 +87,7 @@ const httpHint = (status) => {
 
 export const listModels = async (baseUrl, { signal, apiKey } = {}) => {
     const response = await fetch(`${trimBase(baseUrl)}/models`, { signal, headers: requestHeaders(baseUrl, apiKey) });
-    if (!response.ok) {
-        const error = new Error(await describeHttpError(response));
-        error.status = response.status;
-        throw error;
-    }
+    if (!response.ok) throw await httpError(response);
     const payload = await response.json();
     return (payload.data || []).map((entry) => entry.id).filter(Boolean);
 };
@@ -99,8 +114,8 @@ export const checkConnection = async (baseUrl, { signal, apiKey } = {}) => {
 
 // `tools` / `toolChoice` join the body only when given, so plain chat and
 // watchdog requests are byte-identical to servers that predate tool calling.
-// An HTTP failure carries its status, which lets the Copilot tell "this model
-// cannot call tools" (a 400) from a dead server.
+// An HTTP failure carries its status and its parsed body (httpError), which
+// lets the model port tell "this model cannot call tools" from a dead server.
 const postChat = async ({ baseUrl, model, messages, temperature, stream, signal, apiKey, tools, toolChoice }) => {
     const body = { model, messages, temperature, stream };
     if (Array.isArray(tools) && tools.length) {
@@ -113,11 +128,7 @@ const postChat = async ({ baseUrl, model, messages, temperature, stream, signal,
         body: JSON.stringify(body),
         signal
     });
-    if (!response.ok) {
-        const error = new Error(await describeHttpError(response));
-        error.status = response.status;
-        throw error;
-    }
+    if (!response.ok) throw await httpError(response);
     return response;
 };
 
