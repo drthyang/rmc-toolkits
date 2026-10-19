@@ -818,6 +818,38 @@ not run. What the model sees changes in the modulation tool's result only: its n
 32k budget pins hold. Approved by the manager on the user's delegation, 2026-10-19
 (`validation/findings/decisions/2026-10-19-mode-polarisation.json`).
 
+**Protocol 2026-10-19.14 (the independent-cell null, finding F1; diffuse order between cells, plan
+item 4.4).** What `analyze_modulations` returns changes for every arm that calls it:
+- **F1.** Both modulation engines test an element's power against its own cells placed at random,
+  which keeps every correlation inside a cell (the ligands of a Jahn–Teller octahedron, the
+  vertices of a cluster) and destroys every correlation between cells
+  ([ai-assistant.md, Step 19](ai-assistant.md#step-19--displacement-modulations-order-that-enlarges-the-cell-analyze_modulations)).
+  The null of independent sites it replaces found order in 9–32 % of the seeds of the dev
+  Jahn–Teller, two-feature and octahedral generator kinds (1,000 fresh seeds each); the calibrated
+  null finds it at the rate its bar allows. It also stops holding an independent site to the
+  one-component bound: an isotropic site has three, so a weak order on one is read as far more
+  significant than before.
+- **4.4.** Each element gains `verdict.diffuseOrder`: a rank test of whether the power over the
+  compared modes is spread in the pattern that correlation between neighbouring cells makes. The
+  tool shows a `diffuse` row per element and says antiphase correlation as short-range order and
+  in-phase correlation as neighbouring cells moving together (the Demo's three elements: in phase).
+- **The marginal situation.** Both dev weak orders are now far above the 3σ bar, so the dev pair
+  no longer straddles it; their amplitude was set from the null before F1. Re-setting it (and its
+  held-out match's, set by the same rule) is the user's call; the case definitions are unchanged.
+- **Arm A+** reads cellDoubling, generalOrder and longWave as before; the diffuse finding is not
+  among its readings (the verdict has no feature kind for it, and adding one changes the scoring).
+
+**Arms A and A+ on dev** (`arm-a --split dev` before at c4d8d83, after on this protocol's code):
+every arm A and D record is identical, and every score but one. One A+ record of the judgment
+subset moves: its weak order is now ordered, A+ claims it and its score rises (its values are in
+`arm-a-dev.json` and the `arms.test.js` pins, not here). It is re-recorded in `arm-a-dev.json`; the
+other records stay as recorded. The test set was not run. What the model sees changes in the
+modulation tool's result only (`tool-results/analyze_modulations.json` and
+`analyze_modulations.element.json`: the σ of the zone-boundary rows, the note, the diffuse rows and
+the Demo's in-phase note); no tool description, prompt or first request changes. Approved by the
+manager on the user's delegation, 2026-10-19 (`validation/findings/decisions/2026-10-19-modulation-null.json`,
+`2026-10-19-diffuse-order.json`).
+
 ### The report beside the case score (plan item 1.6, part i)
 
 The engines alone (A+) score 0.99, because most components of a case are facts they get right every

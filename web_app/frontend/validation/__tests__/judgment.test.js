@@ -137,12 +137,18 @@ describe('two situations through the live harness (scripted model, no model runs
         const answer = 'Nb shows a weak superstructure at q = (½, ½, 0), at the edge of significance: I am not confident it is real.'
             + '\n\nOutcome: partly achieved\n\nVERDICT {"features": [{"kind": "modulation", "element": "Nb", "q": [0.5, 0.5, 0]}], '
             + '"space_group": "Pm-3m", "chiral": false, "centrosymmetric": true, "polar": false}';
-        const run = (id) => runLiveCase({
-            built: judgedCase(id), arm: 'C', model: MODEL,
+        const run = (built) => runLiveCase({
+            built, arm: 'C', model: MODEL,
             port: scripted([{ calls: [['analyze_modulations', {}]] }, { text: answer }])
         });
-        const below = await run('dev-weak-order-b');
-        const above = await run('dev-weak-order-a');
+        // Against the independent-cell null (F1, protocol 2026-10-19.14) both
+        // dev weak orders are above the bar (6.4σ and 5.6σ): below it, the
+        // same kind at a smaller amplitude (2.8σ at q). Their seeds and
+        // amplitude were set from the null before F1 (the case definitions are
+        // the user's to re-set).
+        const weak = JUDGED.find((item) => item.id === 'dev-weak-order-b');
+        const below = await run(buildCase({ ...weak, params: { ...weak.params, delta: 0.012, seed: 173 } }));
+        const above = await run(judgedCase('dev-weak-order-a'));
         for (const record of [below, above]) {
             expect(record.error).toBeNull();
             // The verdict has no confidence field: the hedged claim counts in full.
