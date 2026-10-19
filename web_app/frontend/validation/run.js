@@ -18,6 +18,12 @@
 // The held-out test set: `--split test` also needs `--final` and a clean git
 // tree (its commit is recorded in every record), so its numbers always come
 // from committed code. API models run the test set only, under their spend cap.
+// Its cases are sealed: they load through holdoutLoader.js (casesFor, with
+// --final), the only module that may import them, and `write --split test`
+// needs --final too. Arms A, A+ and D on the test set are recorded with
+// `arm-a --split test --final --out validation/holdout/arm-a-test.json`: a
+// test-set record written inside the repository goes under validation/holdout/
+// (or the gitignored validation/runs/ and validation/cases-out/).
 //
 // `--pca-table` (live, dev set only) gives each run the PCA table, as after a
 // visit to the PCA Ellipsoid page, to check that context section's effect;
@@ -32,10 +38,11 @@
 
 import { execSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { providerModel } from '../src/llm/provider/model';
 import { buildCase, casesOf } from './cases';
+import { casesFor, HOLDOUT_DIR } from './holdoutLoader';
 import { caseFiles, loadRun, RUN_NAME } from './runFolder';
 import { openRunFolder } from '../src/openRunFolder';
 import { runArmA, runArmSweep } from './armA';
@@ -93,8 +100,11 @@ export const guardSplit = ({ split, final, clean }) => {
     if (!clean) throw new Error('the test set runs from a clean git tree, so every record names the commit it measured');
 };
 
-const selectCases = (split, only) => {
-    const cases = casesOf(split);
+// The cases of a split, the test set through the loader: from the command
+// line only with --final, whatever the environment (CI's flag opens the
+// sealed set for its tests, never for the CLI).
+export const selectCases = async (split, only, { final = false } = {}) => {
+    const cases = await casesFor(split, { final: final === true, env: {} });
     if (!only) return cases;
     const wanted = String(only).split(',').map((id) => id.trim());
     const unknown = wanted.filter((id) => !cases.some((item) => item.id === id));
@@ -144,14 +154,29 @@ export const liveRun = async ({
     return record;
 };
 
+// A test-set file written inside the repository goes under validation/holdout/
+// (committed, sealed) or a gitignored output folder; anywhere else it would
+// put the held-out cases where builders read.
+const TEST_OUTPUT_DIRS = [HOLDOUT_DIR, 'validation/runs', 'validation/cases-out'].map((dir) => `web_app/frontend/${dir}/`);
+export const guardTestOutput = (split, path) => {
+    if (split !== 'test') return;
+    const inside = relative(REPO, resolve(path));
+    if (inside.startsWith('..') || isAbsolute(inside)) return;
+    if (!TEST_OUTPUT_DIRS.some((dir) => `${inside}/`.startsWith(dir))) {
+        throw new Error(`a test-set file inside the repository goes under ${HOLDOUT_DIR}/ (or validation/runs/, validation/cases-out/), not ${inside}`);
+    }
+};
+
 const commands = {
     // Each case as <out>/<case>/rmc_run/, the run folder the Workbench opens
     // (Choose folder), named as the harness names every run: the Workbench
     // names a run after its folder, and a case id names the case's kind. The
     // truth sits beside the folder (<out>/<case>/truth.json), not in it.
     write: async (args) => {
+        const split = args.split || 'dev';
         const out = resolve(args.out || 'validation/cases-out');
-        for (const item of selectCases(args.split || 'dev', args.cases)) {
+        guardTestOutput(split, out);
+        for (const item of await selectCases(split, args.cases, { final: args.final })) {
             const built = buildCase(item);
             const dir = join(out, built.id);
             const runDir = join(dir, RUN_NAME);
@@ -166,9 +191,10 @@ const commands = {
     'arm-a': async (args) => {
         const split = args.split || 'dev';
         guardSplit({ split, final: args.final, clean: split === 'test' ? treeClean() : true });
+        if (args.out) guardTestOutput(split, args.out);
         const commit = commitOf();
         const records = [];
-        for (const item of selectCases(split, args.cases)) {
+        for (const item of await selectCases(split, args.cases, { final: args.final })) {
             const built = buildCase(item);
             const run = await loadRun(built, { ladder: false });
             for (const result of [await runArmA(run), await runArmSweep(run), { arm: 'D', readings: [], verdict: truthVerdict(built.truth) }]) {
@@ -201,6 +227,7 @@ const commands = {
         if (pcaTable && split !== 'dev') throw new Error('--pca-table is a dev check: --split dev only');
         const runs = Number(args.runs || model.runsPerCase || 3);
         const out = resolve(args.out || `validation/runs/${new Date().toISOString().slice(0, 10)}_${model.name.replace(/[^\w.-]+/g, '-')}_${arm}_${split}${pcaTable ? '_pca-table' : ''}`);
+        guardTestOutput(split, out);
         mkdirSync(out, { recursive: true });
         const commit = commitOf();
         const skills = arm === 'B' ? loadSkills() : null;
@@ -222,7 +249,7 @@ const commands = {
             });
             console.log(`API spend so far $${tracker.spent().toFixed(2)} of $${model.capUSD}`);
         }
-        for (const item of selectCases(split, args.cases)) {
+        for (const item of await selectCases(split, args.cases, { final: args.final })) {
             const built = buildCase(item);
             for (let index = 0; index < runs; index += 1) {
                 const id = `${built.id}__${arm}__${model.name}__r${index + 1}`.replace(/[^\w.-]+/g, '-');

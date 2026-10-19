@@ -2,16 +2,25 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { describe, expect, it } from 'vitest';
-import { ALL_CASES, buildCase } from '../cases';
+import { buildCase, DEV_CASES, TEST_CASE_IDS } from '../cases';
+import { holdoutEnabled, loadTestCases } from '../holdoutLoader';
 import {
     directionError, reproducibility, sameWavevector, scoreVerdict, TOLERANCES, verdictSignature
 } from '../scoring';
 import { normalizeVerdict, parseVerdict, truthVerdict } from '../verdict';
 
-const truths = Object.fromEntries(ALL_CASES.map((item) => [item.id, buildCase(item, { partials: false }).truth]));
+// Every case the suite may build: the dev set, and the sealed test set where
+// the loader may open it (CI's RMC_VALIDATION_HOLDOUT=1).
+const HOLDOUT = holdoutEnabled();
+const CASES = [...DEV_CASES, ...(HOLDOUT ? await loadTestCases() : [])];
+const truths = Object.fromEntries(CASES.map((item) => [item.id, buildCase(item, { partials: false }).truth]));
 const verdict = (raw) => normalizeVerdict({ features: [], space_group: null, chiral: null, centrosymmetric: null, polar: null, ...raw });
 
 describe('scoring against the planted truth', () => {
+    it.skipIf(!HOLDOUT)('arm D reaches every held-out case', () => {
+        expect(TEST_CASE_IDS.every((id) => id in truths)).toBe(true);
+    });
+
     it('the truth itself (arm D) scores 1 on every case, dev and test', () => {
         for (const [id, truth] of Object.entries(truths)) {
             const score = scoreVerdict(truth, truthVerdict(truth));
@@ -68,7 +77,7 @@ describe('scoring against the planted truth', () => {
     it('no order: any claim over-claims; a JT case tolerates true partial descriptions', () => {
         const nul = truths['dev-thermal-null'];
         expect(scoreVerdict(nul, verdict({ ...nul.symmetry })).score).toBe(1);
-        const over = scoreVerdict(nul, verdict({ features: [{ kind: 'off_centre', element: 'Ti', direction_uvw: [1, 1, 1] }], ...nul.symmetry }));
+        const over = scoreVerdict(nul, verdict({ features: [{ kind: 'off_centre', element: 'Ti', direction_uvw: [1, 1, 2] }], ...nul.symmetry }));
         expect(over.overclaim).toBe(true);
         expect(over.score).toBeLessThan(1);
         const jt = truths['dev-jahn-teller'];

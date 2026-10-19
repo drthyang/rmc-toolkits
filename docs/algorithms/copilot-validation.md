@@ -133,34 +133,75 @@ method adds: the skills together with the method in the prompt, the descriptions
 Nine kinds, each a **dev** case (for improving tools and skills) and a held-out **test** case (for
 reported numbers only): the same physics with other elements, directions, magnitudes or
 structures, plus one dev-only case with fit data ([below](#the-fit-data-dev-case)) and the
-dev-only judgment subset ([below](#the-judgment-subset-plan-item-16-part-ii)). Each case is
+judgment subset ([below](#the-judgment-subset-plan-item-16-part-ii)). Each case is
 an `.rmc6f` supercell (reference sites and cell indices; coordinates wrapped into [0, 1) as
 RMCProfile writes them) with its partial g(r). `run.js write` saves each as
 `<out>/<case>/rmc_run/`, a run folder the Workbench opens, named as the harness names every run
 (the Workbench names a run after its folder), with the truth beside it in `<out>/<case>/truth.json`.
 
-| Kind | Planted (dev / test) | The trap |
+The table gives each dev case. Its test case plants the same kind of order with other elements,
+directions, magnitudes or structures; those values are sealed ([the sealed test
+set](#the-sealed-test-set)) and appear nowhere else, this document included.
+
+| Kind | Planted (dev) | The trap |
 | --- | --- | --- |
-| offcentre | Two-site disorder: Nb ±0.20 Å along [001] in KNbO₃ / Ge ±0.16 Å along [110] | A split site looks like large thermal motion in the ellipsoid alone |
-| zone_boundary | Ordered antiphase Ti ±0.10 Å along c, q = (0,0,½) / Zr ±0.09 Å along a, q = (½,½,½); plus a stronger box-scale wave of the A cation | Identical single-site statistics to two-site disorder; the strongest mode is the decoy |
-| breathing | Mo₃ triangles / Fe₄ tetrahedra (Cl anion, edge 2.75 Å; since protocol 2026-10-19.2) whose size fluctuates collectively (sd 4 % / 3.5 %), shape regular | Size is not shape |
-| jahn_teller | Isolated CuF₆ (4 × 1.93 + 2 × 2.25 Å) / MnCl₆ (2.48 / 2.85 Å), long axis random over x, y, z | The first peak holds 4 neighbours; the average octahedron is regular |
-| cell_wrap | Rigid V₂ / Ti₂ dimers whose first site sits at fractional 0 (half its atoms written near 1) | The cell wrap |
-| thermal_null | BaTiO₃ / PbTiO₃ composition, thermal motion only (O flattened across its bond) | Literature off-centring; anisotropic but Gaussian O |
-| symmetry_lowering | Every Ta shifted 0.07 Å along [001] (P4mm) / Ti 0.06 Å along [111] (R3m) | The 0.2 Å card still says Pm-3m |
-| sites_only (achiral) | Zincblende CuBr, F-43m / sulvanite Cu₃VS₄, P-43m | No inversion does not make a structure chiral |
-| sites_only (chiral) | B20 FeSi / MnSi, P2₁3 | A genuinely chiral (Sohncke) group |
+| offcentre | Two-site disorder: Nb ±0.20 Å along [001] in KNbO₃ | A split site looks like large thermal motion in the ellipsoid alone |
+| zone_boundary | Ordered antiphase Ti ±0.10 Å along c, q = (0,0,½); plus a stronger box-scale wave of the A cation | Identical single-site statistics to two-site disorder; the strongest mode is the decoy |
+| breathing | Mo₃ triangles (O anion) whose size fluctuates collectively (sd 4 %), shape regular | Size is not shape |
+| jahn_teller | Isolated CuF₆ (4 × 1.93 + 2 × 2.25 Å), long axis random over x, y, z | The first peak holds 4 neighbours; the average octahedron is regular |
+| cell_wrap | Rigid V₂ dimers whose first site sits at fractional 0 (half its atoms written near 1) | The cell wrap |
+| thermal_null | BaTiO₃ composition, thermal motion only (O flattened across its bond) | Literature off-centring; anisotropic but Gaussian O |
+| symmetry_lowering | Every Ta shifted 0.07 Å along [001] (P4mm) | The 0.2 Å card still says Pm-3m |
+| sites_only (achiral) | Zincblende CuBr, F-43m | No inversion does not make a structure chiral |
+| sites_only (chiral) | B20 FeSi, P2₁3 | A genuinely chiral (Sohncke) group |
 
-Thermal rms: 0.05–0.09 Å. Supercells: 6–8 cells a side, 1,024–2,560 atoms.
+The paired dev cases: thermal rms 0.05–0.09 Å; supercells 6–8 cells a side, 1,024–2,560 atoms.
 
-**The split is enforced in code** (`__tests__/split.test.js`):
+**The split is enforced in code** (`__tests__/split.test.js`, `__tests__/holdoutGate.test.js`):
+- the test cases are sealed: only one loader may open them, on purpose
+  ([the sealed test set](#the-sealed-test-set));
 - the test set is pinned by a sha256 of its configurations, partials and truths;
 - every paired dev kind has a test case of the same kind; a dev-only case (`devOnly`) outside the
   judgment subset has a kind no test case has;
-- dev and test share no id, and no tool, skill, app source or doc names a test case, its
-  material, its planted lengths or its directions ([the holdout scan](#the-holdout-scan));
+- dev and test share no id, and no tool, skill, app source, doc or validation text names a test
+  case's material, its planted values, its directions or its seed
+  ([the holdout scan](#the-holdout-scan));
 - `--split test` needs `--final` and a clean git tree, and every record names its commit;
 - a supervisor finding on a test case may only report a bug, with the user's approval.
+
+### The sealed test set
+
+Since the holdout gate (2026-10-19) the test cases' definitions live in one sealed module,
+`web_app/frontend/validation/holdout/testCases.js`, beside the test set's arm A / A+ / D records
+(`holdout/arm-a-test.json`). Builders and agents never open, print, grep or import anything in
+that folder. Before the gate the definitions sat in `cases.js` and this document stated their
+values; git history keeps that text, and anyone who has read it is closed out of science,
+threshold and scoring work on the validation.
+- **The ids are public.** `cases.js` keeps `TEST_CASE_IDS` (ids only), so `splitOf`, the findings
+  schema and the records can name a test case; nothing else of it is written outside the folder.
+- **One loader.** `validation/holdoutLoader.js` `loadTestCases()` is the only module that imports
+  the folder, by a dynamic import that runs only when asked on purpose: on `run.js`'s `--final`
+  path (`arm-a`, `live` and `write` with `--split test`; the command line opens it with `--final`
+  only, whatever the environment), or when the environment sets `RMC_VALIDATION_HOLDOUT=1`. Any
+  other call throws `HoldoutSealedError` before importing. `casesFor(split)` is the async split
+  helper; `cases.js` `casesOf('test')` throws.
+- **CI opens it, locally it stays shut.** The frontend job's test step sets
+  `RMC_VALIDATION_HOLDOUT=1`, so the tests that need the definitions run there: the test-set hash,
+  the pairing with the dev set, the holdout scan's tokens, arm D on every case and the first
+  requests of `caseBlind.test.js`. Without the flag they are skipped (`it.skipIf`), and the holdout
+  scan looks for the public ids only.
+- **The gate's own checks** (`holdoutGate.test.js`): no module of `src/**` or `validation/**` but
+  the loader names the folder in code (a small lexer reads every string and template literal, so
+  static and dynamic imports, `require`, globs and file paths are all caught, while comments may
+  describe it); no test file and no model-visible snapshot writes a held-out id, and no test title
+  is built from the held-out list; the loader and the command line refuse without `--final` or the
+  flag.
+- **Records written by the CLI.** A test-set file written inside the repository goes under the
+  sealed folder (`run.js arm-a --split test --final --out validation/holdout/arm-a-test.json`) or
+  the gitignored `validation/runs/` and `validation/cases-out/`; `run.js` refuses anywhere else.
+- **Content-neutral.** The move changed no case: `buildCase` gives byte-identical output for every
+  case, dev and test, before and after, and `TEST_SET_SHA256` holds. Nothing a run sends changes,
+  so the protocol does not move.
 
 ### The fit-data dev case
 
@@ -209,9 +250,10 @@ The judgment subset holds dev cases where A+'s fixed joining rules (`armA.js` `r
 ambiguous or wrong, so a model that reads the tools with judgment has room to add.
 
 - **The cases.** Each has `judgment: true` and a `situation` (`cases.js` `JUDGMENT_SITUATIONS`).
-  They were `devOnly` until protocol 2026-10-19.11, when their held-out matches joined
-  `TEST_CASES` (one per dev case, the same situation and kind, written blind from
-  `validation/judgment-spec.md`); `split.test.js` pairs them by situation and kind. The dev cases'
+  They were `devOnly` until protocol 2026-10-19.11, when their held-out matches joined the test
+  set (one per dev case, the same situation and kind, written blind from
+  `validation/judgment-spec.md`; sealed since the holdout gate); `split.test.js` pairs them by
+  situation and kind (in CI, where the loader opens the test set). The dev cases'
   parameters sit apart in `validation/judgmentCases.js`; `cases.js` appends them to `DEV_CASES` and
   builds them with its kinds. Every case before them builds byte for byte as before.
 
@@ -248,8 +290,9 @@ ambiguous or wrong, so a model that reads the tools with judgment has room to ad
   [`validation/judgment-spec.md`](../../web_app/frontend/validation/judgment-spec.md) alone: the
   situations, the kinds and options, the knobs, and no value. They do not read `judgmentCases.js`,
   the dev records or the judgment pins. The lead checks their cases against the dev ones without
-  showing them. The matches join the test set as a new pinned version on the user's decision.
-  Until then:
+  showing them. The matches join the test set as a new pinned version on the user's decision
+  (done at protocol 2026-10-19.11; their values are sealed with the other test cases). Until
+  then:
   - no test case is a judgment case, and `TEST_SET_SHA256` is unchanged (`split.test.js`);
   - a judgment case never removes a test case's token from the holdout scan (`holdoutScan.js`);
   - `__tests__/judgment.test.js` scans the spec, this section and the change note for the dev
@@ -268,10 +311,13 @@ ambiguous or wrong, so a model that reads the tools with judgment has room to ad
 
 ## The holdout scan
 
-`__tests__/split.test.js` (with `__tests__/holdoutScan.js`) keeps the test cases out of what the
-tools, the skills and the docs say. It reads each test case's parameters from `cases.js` at run
-time, so no test-case value is written in the test, and a failure prints the line with what matched
-masked (■).
+`__tests__/split.test.js` (with `__tests__/holdoutScan.js` and its lists, `__tests__/holdoutLists.js`)
+keeps the test cases out of what the tools, the skills, the docs and the validation's own text
+say. It derives each test case's tokens at run time from its parameters, read through the loader
+([the sealed test set](#the-sealed-test-set)), so no test-case value is written in the test; a
+failure prints the line with what matched masked (■). Every kind of token needs the parameters,
+so the full scan runs where the loader opens them (CI's `RMC_VALIDATION_HOLDOUT=1`); without the
+flag it looks for the public ids only.
 
 - **Tokens, from the parameters:**
   - the id, anywhere;
@@ -279,30 +325,41 @@ masked (■).
     without subscripts, or, for three or more elements, an element-dash chain naming each once;
   - the cluster written as a formula of its own (a tetrahedron's M₄, a dimer's M₂);
   - a structure-type word that only a test case uses;
-  - each planted length in Å (displacement, bond lengths with their split and mean, cluster
-    edge, the dimers' shared shift, the lattice parameter) within six words of its element;
+  - each planted value within six words of its element: every length in Å (displacement, bond
+    lengths with their split and mean, cluster edge and elongation, the dimers' shared and own
+    shifts, the lattice parameter), a thermal width the case sets itself, and a breathing sd (as a
+    fraction and in per cent); a lattice parameter and a thermal width count next to a cation of
+    the case, not next to its anion (the perovskite cases share O);
+  - the supercell (N³, N × N × N, [N, N, N]) within six words of its element;
   - each planted direction family ([uvw] or <uvw>, any order and sign) and wavevector
-    (q ≡ −q ≡ q + G, any order) within six words of its element.
+    (q ≡ −q ≡ q + G, any order) within six words of its element;
+  - the seed, a whole number within six words of the word "seed".
 
-  Lengths, directions and wavevectors count only where they differ from the dev cases of the same
-  kind, and thermal widths never count: those are the kind's physics, not the test case. A judgment
-  dev case ([above](#the-judgment-subset-plan-item-16-part-ii)) is never that comparison: it cannot
-  remove a token.
+  Values, supercells, directions and wavevectors count only where they differ from the dev cases
+  of the same kind: those are the kind's physics, not the test case. A seed always counts. A
+  thermal width the kind fixes for every case (the perovskites') is no case's parameter and never a
+  token. A judgment dev case ([above](#the-judgment-subset-plan-item-16-part-ii)) is never that
+  comparison: it cannot remove a token. `split.test.js` checks that every test case yields its seed
+  and a token for each value and supercell its dev twins do not share.
 - **Not hits:** a bare element symbol (they are everywhere); a formula with more or fewer
   elements; a chain that repeats an element (A–X–A is a bond angle, which every study of that pair
-  writes); a number with more digits (0.371 is not 0.37) or more than six words from its element.
+  writes); a number with more digits (0.371 is not 0.37) or more than six words from its element;
+  a supercell next to the word "supercell" alone (a real run's, the Demo's among them, is not a
+  case).
 - **Where:** `web_app/frontend/src` (js, jsx, md, and the snapshots of what the model sees), every
-  file in `.claude/skills`, `rmc_toolkits` (py), `docs/` (md) and the top-level md files. Not
-  scanned: the validation itself (`web_app/frontend/validation/`) and this document, whose Cases
-  table names every test case. [AGENT_PLAN.md](../AGENT_PLAN.md) is scanned; it pointed at the
-  open leak below without naming it.
+  file in `.claude/skills`, `rmc_toolkits` (py), every md under `docs/` (this document, the change
+  notes in `docs/changes/unreleased/`, the CHANGELOG and [AGENT_PLAN.md](../AGENT_PLAN.md) among
+  them), the top-level md files, and the validation itself outside the sealed folder: its js and md
+  files (`validation/**`, tests and `judgment-spec.md` included) and its findings (the decision
+  records and the batches). The sealed folder is never read. A test asserts this coverage.
 - **Checks on the scanner:** every test case yields more than its id, and the scan finds every
   test case in its own truth (summary and traps, prose written from the same parameters). Its own
   rules are pinned on made-up cases (`holdoutScan.test.js`).
 
-Every hit must sit in one of two lists in `split.test.js`, and each entry pins its exact number of
-hits, so a new mention, or a removed one, fails until the entry is reviewed. Any hit in neither list
-fails the test.
+Every hit must sit in one of two lists in `holdoutLists.js`, and each entry pins its exact number
+of hits, so a new mention, or a removed one, fails until the entry is reviewed. Any hit in neither
+list fails the test. An id-only entry (`case: '*'`) covers every held-out id in its file together;
+it allows ids and nothing else.
 
 **Open leaks, pending the user** (`HOLDOUT_LEAKS_PENDING_USER`). Text the model can read in arm B
 (the system prompt, the tool descriptions and results, `read_skill`'s output, every skill file)
@@ -321,17 +378,23 @@ for any future skill-text hit.
 **Known risks: the allow-list** (`HOLDOUT_ALLOWED`). Only text no model can read, in any arm: the
 test checks that no allowed file is under `.claude/skills`, among the files `copilotSkills.js`
 bundles for the prompt and `read_skill`, or in the snapshots of what the model sees; that no app
-module (`src` outside `__tests__`) names it, so none can import it; and that no snapshot contains
-its matched text.
+module (`src` outside `__tests__`) names its path, so none can import it; and that no snapshot
+contains its matched text.
 
 | File | Case · token | Hits | Why it is not model-visible |
 | --- | --- | --- | --- |
-| `web_app/frontend/src/__tests__/fixtures/symmetryStructures.js` (65) | symmetry_lowering · composition | 1 | Test only: a symmetry-finder fixture of a real orthorhombic perovskite with the case's composition, imported only by the symmetry tests; unrelated to the planted shift |
+| `web_app/frontend/src/__tests__/fixtures/symmetryStructures.js` | test-symmetry-lowering · composition | 1 | Test only: a symmetry-finder fixture of a real compound, imported only by the symmetry tests; unrelated to the planted physics |
+| `docs/algorithms/copilot-validation.md` | every test case · id | 10 | This document names the cases by id; ids only |
+| `web_app/frontend/validation/cases.js` | every test case · id | 15 | `TEST_CASE_IDS`, the public manifest of the held-out ids (one id also sits inside another) |
+| `web_app/frontend/validation/findings/decisions/2026-10-19-test-breathing-recomposed.json` | every test case · id | 2 | A decision record on a test case names its case |
+| `web_app/frontend/validation/__tests__/holdoutLists.js` | every test case · id | 2 | The lists themselves: each entry names the case and the file it covers |
 
-It was found on 2026-10-19 and reviewed against that rule. Four entries found that day for the test
+The first entry was found on 2026-10-19 and reviewed against that rule; it points at a real
+compound, so it remains a known residual of the seal. Four entries found that day for the test
 breathing case's old cluster (the llm README, a triplets engine test, ai-assistant.md and
 bond-geometry.md, all doc or test only) left the list with protocol 2026-10-19.2: they name the
-skills' reference compound, which is no longer a test case.
+skills' reference compound, which is no longer a test case. The id-only entries came with the
+holdout gate, when the scan first read this document and the validation.
 
 ## The question and the verdict
 
@@ -413,27 +476,25 @@ context's `run`, in the first message, so every arm B and C run was told its cas
 under an earlier protocol, if any, are not comparable with later ones and must be run again. Arms
 A, A+ and D have no model and are unaffected; their records keep protocol 2026-10-17.1.
 
-**Protocol 2026-10-19.2 (test-breathing recomposed).** The held-out breathing case planted Nb₄
-tetrahedra with a Se anion: the skills' reference compound, whose published shells
+**Protocol 2026-10-19.2 (test-breathing recomposed).** The held-out breathing case planted the
+cluster and anion of the skills' reference compound, whose published shells
 `.claude/skills/coordination-shells/lacunar-spinel-shells.md` gives and `read_skill` serves to arm
 B. That leaked the case's kind to arm B only. The fix goes in the test case; the skill is the
-user's text and is unchanged.
-- **The new composition:** Fe₄ tetrahedra with a Cl anion, a = 6.90 Å, edge 2.75 Å (Fe–Fe
-  ≈ 2.73–2.78 Å in Fe₄S₄ cubane cores). Shape, breathing (sd 0.035), thermal sd (0.05 Å) and
-  supercell (8³) are unchanged, and a/edge = 2.509 keeps the old shell separation. The shortest
-  Fe–Fe between clusters is 5.32 Å (1.94 × edge). A fresh author chose it, without seeing dev
-  results, dev parameters or arm records. No Fe, Cl, Fe–Cl, Fe₄, iron or chlorine word appears in
-  any skill (main or PR #71's drafts) or in the model-visible snapshots.
-- **The seed, by a rule fixed before looking:** seeds 731, 732, … in order; the first whose drawn
-  ε sample sd over the 512 clusters (the generator's own `cellState` draws) lies in
-  [0.033, 0.037]; at most 20 tries. 731 gave 0.03273 (out) and 732 gave 0.03696 (in), so the seed
-  is 732, used by no other case. The rule depends only on the case's own draws, not on any model or
-  arm result.
-- **Difficulty, honestly:** the shorter edge makes the planted radius spread 7 % smaller
-  (0.035 R = 0.059 vs 0.063 Å). The realised spread goes the other way: seed 732's ε lie above the
-  planted sd (0.03696) and the old seed's below (0.03362), so the realised radius spread is
-  0.0622 Å against the old case's 0.0607 Å (2.5 % larger). A+'s cluster engine reads the breathing
-  at z = 30, against 22 before.
+user's text and is unchanged. Since the holdout gate the new case's values are sealed with the
+other test cases ([the sealed test set](#the-sealed-test-set)); see `TEST_SET_SHA256`.
+- **The new composition:** a cluster element and an anion a fresh author chose without seeing dev
+  results, dev parameters or arm records, with a lattice parameter and an edge that keep the old
+  shell separation; shape, breathing sd, thermal sd and supercell unchanged. Neither element, the
+  cluster's formula, the pair's chain nor the elements' names appears in any skill (main or PR
+  #71's drafts) or in the model-visible snapshots.
+- **The seed, by a rule fixed before looking:** the first seed of a fixed sequence whose drawn
+  breathing sample sd over the case's clusters (the generator's own `cellState` draws) lies in a
+  fixed window about the planted sd, at most 20 tries; the second seed tried was taken, and no
+  other case uses it. The rule depends only on the case's own draws, not on any model or arm
+  result.
+- **Difficulty, honestly:** the planted and the realised radius spreads stay within a few per cent
+  of the old case's, and A+'s cluster engine reads the breathing more strongly than before (the
+  numbers are sealed with the case).
 - **Approved by the manager on the user's delegation, 2026-10-19**
   (`validation/findings/decisions/2026-10-19-test-breathing-recomposed.json`). The user may reverse
   it: keep their compound in the test case and disclose it as a known arm-B advantage.
@@ -441,10 +502,10 @@ user's text and is unchanged.
   any result on the old test set would not be comparable.
 - **Arms A and A+ on the test set**, re-recorded with `--final` at 4ab9eab: only the three
   test-breathing records change (readings, the verdict's element, the truth), and no score moves.
-  A scores 0.50 (no page sees cluster breathing). A+ scores 1: Fe breathing found (breathing sd
-  0.107 vs 0.0635 Å for independent atoms, z = 30), no shape distortion (edge spread 0.152 vs
-  0.154 Å). D scores 1. The means stay A 0.81 and A+ 0.99. The dev records are unchanged: a re-run
-  equals `arm-a-dev.json` record for record, apart from protocol and commit.
+  A scores 0.50 (no page sees cluster breathing). A+ scores 1: the breathing found, no shape
+  distortion. D scores 1. The means stay A 0.81 and A+ 0.99. The records are in
+  `validation/holdout/arm-a-test.json` (sealed). The dev records are unchanged: a re-run equals
+  `arm-a-dev.json` record for record, apart from protocol and commit.
 - **The dev set overlaps the skills, and may.** dev-breathing (Mo₃ triangles, O anion) was checked
   against the same rule. No Mo₃, Mo–O or Mo appears in the skills on main or in the snapshots.
   PR #71's draft `local-order/order-signatures.md:25` reads "Breathing Mo₃ triangles (size sd
@@ -703,40 +764,35 @@ other snapshot file passes as it was. No arm C run exists under an earlier proto
 keeps the method its run followed (`method`).
 
 **Protocol 2026-10-19.11 (the judgment subset's held-out matches, plan item 1.6 ii).** Five
-judgment cases join `TEST_CASES`, one per dev judgment case, each with its situation, kind and
-option: test-two-features (two_features: Rb/Cr/Br Jahn–Teller octahedra, 4 × 2.53 + 2 × 2.97 Å,
-the Cr also ±0.11 Å along [0 1 0], thermal 0.055 Å, a = 10.6 Å, 7³), test-marginal-above and
-test-marginal-below (marginal: one Ba/Hf/O order at q = (½, 0, ½), 0.0128 Å along [1 1 0], 10³;
-the amplitude puts the expected B power at 3σ after the family-wise correction over 21 points,
-E[P] = 15.97), test-two-readings (two_readings: Ge in eight <111> wells 0.23 Å off, Cs/Ge/Cl,
-a = 5.43 Å, 8³) and test-user-choice (user_choice: Re₆ octahedra, Te anion, edge 2.62 Å,
-elongation 0.36 Å, thermal 0.035 Å, a = 8.4 Å, 7³). A fresh author wrote them from
+judgment cases join the test set, one per dev judgment case, each with its situation, kind and
+option: test-two-features (two_features: Jahn–Teller octahedra whose centre is also off-centred),
+test-marginal-above and test-marginal-below (marginal: one weak zone-boundary order at one
+amplitude, set from the spec's noncentral χ² so that the expected B power sits at 3σ after the
+family-wise correction, two seeds), test-two-readings (two_readings: eight-site <111> off-centring)
+and test-user-choice (user_choice: elongated octahedral clusters). A fresh author wrote them from
 `validation/judgment-spec.md` alone: no dev judgment parameter, dev record, arm pin, finding,
-transcript or PR description was opened, and no arm or model ran on them. The knobs were explored
-on scratch seeds 9001 and up only; each case seed is the first of its own sequence that a rule
-fixed beforehand accepts, from the case's engine readings:
-- **two_features**, seeds 211, 212, …: Cr split by `isSplitSite` and the Cr–Br shell read as two
-  peaks of CN 4 and 2. Seed 211 (first try): PC1 κ = −1.32 (z = −4.99); the shell joined at
-  6.00 over a 0.13 trough, first peak 3.96 at 2.52 Å, the second at 2.96 Å.
-- **marginal**, seeds 221, 222, …: B's σ at q in the default `analyze_modulations` call (every
-  element). The first in [3, 4] is 227 (3.33σ, ratio 20.5, rank 1); the first in [2.5, 3) is 223
-  (2.58σ, ratio 14.8, rank 1). Seeds 221–227 gave 1.52, 1.73, 2.58, 1.80, 2.99, 4.35, 3.33σ.
-- **two_readings**, seeds 231, 232, …: Ge not split and PC1 unresolved, Mardia ≤ −0.3, at the
-  default tiling the map test ≥ 3σ and the peak test < 3σ, the peak ≥ 3σ near a <111> on a finer
-  tiling, the Ge–Cl shell 3 + 3. Seed 231 (first try): Mardia −0.82, orientation tensor −0.24σ;
-  ν = 2 (default) map 6.82σ, peak 0.38σ; ν = 3 peak 4.25σ exactly on <111>; peaks 2.60 and
-  2.85 Å, first peak CN 3.02, shell 6.00.
-- **user_choice**, seeds 241, 242, …: the spec's four constraints. Seed 241 (first try): first
-  minimum 2.75 Å at 0.15 of the first peak; joined at CN 4.00 (peaks 2.62 and 2.89 Å); the
-  average edge 2.79 Å beyond the trough (the first peak alone, to 2.75 Å, holds CN 1.34, a cut
-  by the Workbench's CN margin); the long edges empty from 3.11 Å, the nearest Re–Re between
-  clusters 3.98 Å.
+transcript or PR description was opened, and no arm or model ran on them. Their values, the knob
+explorations (on scratch seeds outside every case's sequence) and the seed rules' readings are
+sealed with the other test cases since the holdout gate ([the sealed test
+set](#the-sealed-test-set)); see `TEST_SET_SHA256`. Each case seed is the first of its own
+sequence that a rule fixed beforehand accepts, from the case's engine readings, and each rule
+checks the property the spec gives its situation:
+- **two_features:** the centre split by `isSplitSite`, and the centre–ligand shell read as two
+  peaks of CN 4 and 2. The first seed tried was taken.
+- **marginal:** B's σ at q in the default `analyze_modulations` call (every element); the first
+  seed in [3, 4] and the first in [2.5, 3), as for the dev pair. Both at rank 1 among the modes.
+- **two_readings:** the centre not split and its PC1 unresolved, a clearly negative Mardia
+  kurtosis, at the default tiling the map test at 3σ or more and the peak test below 3σ, the peak
+  at 3σ or more near a <111> on a finer tiling, the centre–ligand shell 3 + 3. The first seed
+  tried was taken.
+- **user_choice:** the spec's four constraints (a deep trough, a joined shell at CN 4, the average
+  edge beyond the trough, so that the first peak alone is a cut by the Workbench's CN margin, and
+  an empty gap before the nearest contact between clusters). The first seed tried was taken.
 - **The coincidence check.** The lead compared these values with the dev cases' without showing
-  them, and two coincided: test-two-features' A-site element (now Rb, for Cs: the same spectator
-  role, a 12-coordinate ion of similar size) and test-user-choice's elongation (now 0.36 Å, 25 %
-  below the first choice, 0.48 Å, with the thermal sd from 0.045 to 0.035 Å, so the
-  elongation-to-thermal ratio and the deep trough stay). Both rules were re-run unchanged and
-  took their first seeds again (211, 241); the numbers above are the new configurations'.
+  them, and two coincided: an A-site element (changed for another of the same spectator role and
+  similar size) and an elongation (made smaller, with the thermal width lowered to keep the
+  elongation-to-thermal ratio and the deep trough). Both rules were re-run unchanged and took their
+  first seeds again; every reading above is the new configurations'.
 
 `TEST_SET_SHA256` changes: results on the earlier test set are not comparable with this one.
 
@@ -1151,19 +1207,21 @@ cache hits $0.10, cache writes $2.50, so prompts are charged at $2.50. `RMC_EVAL
 ## Arm A results (no model; 2026-10-14, commit b4fe09f)
 
 `npx vite-node validation/run.js -- arm-a --split dev` (and `--split test --final`). Records:
-`validation/baseline/arm-a-{dev,test}.json` (re-recorded after batch 1 at commit 5780c50, below;
+`validation/baseline/arm-a-dev.json` and, sealed since the holdout gate,
+`validation/holdout/arm-a-test.json` (re-recorded after batch 1 at commit 5780c50, below;
 the 2026-10-14 records are in git at b4fe09f; the test records again at 4ab9eab for protocol
 2026-10-19.2, with the same scores; the dev A+ records again at 3f90a80 for the engine verdicts,
 their cluster and modulation readings only, with the same scores and claims; and at 63569f3 for
 candidate 8, A+ reading the app's rules, with the same scores and claims apart from
-dev-offcentre's δ, 0.201 → 0.202 Å).
+dev-offcentre's δ, 0.201 → 0.202 Å). The readings in the last column are the dev cases'; the test
+cases' are in the sealed records.
 
 | Kind | A dev / test | A+ dev / test | Where the default analyses mislead |
 | --- | --- | --- | --- |
-| offcentre | 1 / 1 | 1 / 1 | They don't: split site found, direction within 7° / 10°, δ 0.201 / 0.162 Å |
+| offcentre | 1 / 1 | 1 / 1 | They don't: split site found, direction within 7°, δ 0.201 Å (dev) |
 | zone_boundary | 0.67 / 0.67 | 1 / 1 | **Ordered antiphase order read as random off-centring** (the PCA cloud is split exactly as for disorder); q missed |
 | breathing | 0.50 / 0.50 | 1 / 0.50 | **"No order"**: no page sees cluster breathing. A+ test: breathing found, plus a spurious "shape distortion" from the gyration-axis test (L2) |
-| jahn_teller | 0.92 / 0.92 | 0.92 / 0.92 | Split shell seen (Δ 0.31 / 0.38 Å for 0.32 / 0.37), but not the long-axis family |
+| jahn_teller | 0.92 / 0.92 | 0.92 / 0.92 | Split shell seen (Δ 0.31 Å for 0.32 on dev), but not the long-axis family |
 | cell_wrap | 0.83 / 0.83 | 1 / 1 | No wrap artefact (the engines handle x = 0), but the rigid dimers are invisible without the cluster engine |
 | thermal_null | 1 / 1 | 1 / 1 | They don't over-claim (with the calibrated superstructure test; before it, A+ found "order" in 6 of 12 configurations without any) |
 | symmetry_lowering | 0.33 / 0.33 | 0.83 / 0.83 | **The 0.2 Å card says Pm-3m:** wrong group, called centrosymmetric and non-polar. A+ reads the noise floor and gets the group, but has no rule naming the shift |
@@ -1200,7 +1258,7 @@ were set on the dev cases; the test set was re-run once batch 1 was committed (`
 | jahn_teller | 0.92 / 0.92 | 0.92 / 0.92 | — (the long-axis family is still not named) |
 | cell_wrap | 0.83 / 0.83 | 1 / 1 | — |
 | thermal_null | 1 / 1 | 1 / 1 | — |
-| symmetry_lowering | 0.33 / 0.33 | **1** / **1** | the shift named (L4): Ta 0.065 Å [0 0 1] for 0.07; Ti 0.055 Å [1 1 1] for 0.06 |
+| symmetry_lowering | 0.33 / 0.33 | **1** / **1** | the shift named (L4): Ta 0.065 Å [0 0 1] for 0.07 on dev; the test case's likewise, within the tolerances |
 | sites_only (achiral) | 1 / 1 | 1 / 1 | — |
 | sites_only (chiral) | 1 / 1 | 1 / 1 | — |
 | **mean** | **0.81 / 0.81** | **0.99 / 0.99** | |
@@ -1267,8 +1325,8 @@ these files, so the dock and the harness send what the one module builds.
 
 Beside them, `caseBlind.test.js` (no snapshot file) checks that the harness tells the model nothing
 about the case:
-- the first request on every case, dev and test, in arms B and C, names no case id in any spelling
-  (dashes, underscores, spaces, any case);
+- the first request on every case, dev and test (the test cases where the loader opens them: in
+  CI), in arms B and C, names no case id in any spelling (dashes, underscores, spaces, any case);
 - no case kind, and no multi-word case id without its split ("cell-wrap"), appears in that
   request's run-specific parts: the context, the question past the fixed case question, the request
   fields, and every tool string that is not the same in every case. The fixed text (the system
@@ -1276,7 +1334,8 @@ about the case:
 - with every tool the harness offers called once on each dev case (every section, pair, element
   and skill it lists), no request of the turn and no tool result names the case id.
 
-It reads only each case's id and kind, never a test case's parameters or truth.
+It reads only each case's id and kind, never a test case's parameters or truth (it builds the
+sealed cases through the loader, and only in CI).
 
 A change to any of these files is a change to what the model sees: say so in the PR, and bump
 `PROTOCOL_VERSION` when it changes what a run means. Refresh them with

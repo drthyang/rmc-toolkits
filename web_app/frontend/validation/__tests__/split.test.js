@@ -1,42 +1,76 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-// The held-out test set stays held out: its cases are pinned (a change to
+// The held-out test set stays held out: its cases are sealed (only
+// holdoutLoader.js may import them, on the --final path or with CI's
+// RMC_VALIDATION_HOLDOUT=1; holdoutGate.test.js checks), pinned (a change to
 // them, or to the generators they use, fails here until the pin is changed
-// in review), they share no id with the dev set, no tool, skill, app source
-// or doc names them or their materials, magnitudes and directions (the
-// holdout scan, holdoutScan.js), the CLI runs them only on purpose from
-// committed code, and a supervisor finding on them cannot propose tuning.
+// in review), they share no id with the dev set, no tool, skill, app source,
+// doc or validation text names them or their materials, magnitudes,
+// directions and seeds (the holdout scan, holdoutScan.js), the CLI runs them
+// only on purpose from committed code, and a supervisor finding on them
+// cannot propose tuning.
+//
+// Without the flag (locally) every test that needs the sealed definitions is
+// skipped, and the holdout scan looks for the public ids only; CI runs all.
 
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildCase, DEV_CASES, JUDGMENT_SITUATIONS, TEST_CASES } from '../cases';
+import { buildCase, DEV_CASES, JUDGMENT_SITUATIONS, splitOf, TEST_CASE_IDS } from '../cases';
 import { parseFindingFiles, parseFindings, validateFinding } from '../findings';
-import { guardSplit } from '../run';
+import { ARM_A_TEST_RECORDS, HOLDOUT_DIR, holdoutEnabled, loadTestCases } from '../holdoutLoader';
+import { guardSplit, guardTestOutput } from '../run';
 import { copilotSkills } from '../../src/copilotSkills';
+import { HOLDOUT_ALLOWED, HOLDOUT_LEAKS_PENDING_USER } from './holdoutLists';
 import { describeHit, holdoutTokens, readText, scanText } from './holdoutScan';
 
 const FRONTEND = resolve(__dirname, '../..');
 const REPO = resolve(FRONTEND, '../..');
 
+// The sealed test cases, only where the loader may open them (CI's flag).
+const HOLDOUT = holdoutEnabled();
+const TEST_CASES = HOLDOUT ? await loadTestCases() : [];
+
 // sha256 of every test case as built (configuration, partial g(r), truth).
 // Change only with a dated note in docs/algorithms/copilot-validation.md:
 // results on the old test set are not comparable with the new one.
-// 2026-10-19 (protocol 2026-10-19.2): test-breathing recomposed.
+// 2026-10-19 (protocol 2026-10-19.2): the test breathing case recomposed.
 // 2026-10-19 (protocol 2026-10-19.11): five held-out judgment cases join the test set
 // (two values then changed after the lead's coincidence check, before any run).
+// 2026-10-19 (holdout gate): the definitions sealed, unchanged; the hash holds.
 const TEST_SET_SHA256 = '397dd6a2f73e1eea9ff14eca2d8500766743cdeb6daf829e565c1a6ae3d79d50';
 
+// Every file under a folder, never node_modules, dist or the sealed folder
+// (which no scan reads).
+const SEALED = join(FRONTEND, HOLDOUT_DIR);
 const filesUnder = (dir, keep) => readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
-    if (name === 'node_modules' || name === 'dist') return [];
+    if (name === 'node_modules' || name === 'dist' || path === SEALED) return [];
     return statSync(path).isDirectory() ? filesUnder(path, keep) : (keep(path) ? [path] : []);
 });
 
 describe('the dev / test split', () => {
-    it('has the same kinds of case on both sides and no shared id', () => {
+    it('no shared id: the dev ids and the public test ids, each split\'s own', () => {
+        const ids = [...DEV_CASES.map((item) => item.id), ...TEST_CASE_IDS];
+        expect(new Set(ids).size).toBe(ids.length);
+        expect(DEV_CASES.every((item) => item.id.startsWith('dev-'))).toBe(true);
+        expect(TEST_CASE_IDS.every((id) => id.startsWith('test-'))).toBe(true);
+        expect(DEV_CASES.every((item) => splitOf(item.id) === 'dev')).toBe(true);
+        expect(TEST_CASE_IDS.every((id) => splitOf(id) === 'test')).toBe(true);
+        expect(splitOf('test-not-a-case')).toBeNull();
+        DEV_CASES.filter((item) => item.devOnly).forEach((item) => expect(typeof item.devOnly, item.id).toBe('string'));
+        // Plan item 4.6: the fit-data case.
+        expect(DEV_CASES.filter((item) => item.devOnly && !item.judgment).map((item) => item.id)).toEqual(['dev-fit-unconverged']);
+    });
+
+    it.skipIf(!HOLDOUT)('the sealed test cases are exactly the public ids, in order', () => {
+        expect(TEST_CASES.map((item) => item.id)).toEqual([...TEST_CASE_IDS]);
+        TEST_CASES.forEach((item) => expect(buildCase(item, { partials: false }).split, item.id).toBe('test'));
+    });
+
+    it.skipIf(!HOLDOUT)('has the same kinds of case on both sides and no shared id', () => {
         const ids = [...DEV_CASES, ...TEST_CASES].map((item) => item.id);
         expect(new Set(ids).size).toBe(ids.length);
         expect(DEV_CASES.every((item) => item.id.startsWith('dev-'))).toBe(true);
@@ -61,7 +95,17 @@ describe('the dev / test split', () => {
     // ambiguous or wrong. Since protocol 2026-10-19.11 every dev judgment case
     // has a held-out match, written blind from validation/judgment-spec.md:
     // the same situation, kind and option, one match per dev case.
-    it('the judgment subset (plan 1.6 ii): paired by situation, every situation covered, the truth says which', () => {
+    it('the judgment subset, its dev side: every situation covered, the truth says which', () => {
+        const judged = DEV_CASES.filter((item) => item.judgment);
+        expect([...new Set(judged.map((item) => item.situation))].sort()).toEqual(Object.keys(JUDGMENT_SITUATIONS).sort());
+        judged.forEach((item) => expect(buildCase(item, { partials: false }).truth.judgment, item.id).toEqual({ situation: item.situation }));
+        DEV_CASES.filter((item) => !item.judgment).forEach((item) => {
+            expect(item.situation, item.id).toBeUndefined();
+            expect(buildCase(item, { partials: false }).truth.judgment, item.id).toBeUndefined();
+        });
+    });
+
+    it.skipIf(!HOLDOUT)('the judgment subset (plan 1.6 ii): paired by situation, every situation covered, the truth says which', () => {
         const judged = DEV_CASES.filter((item) => item.judgment);
         const matched = TEST_CASES.filter((item) => item.judgment);
         expect(judged.map((item) => item.id)).toEqual([
@@ -86,7 +130,7 @@ describe('the dev / test split', () => {
         expect(() => buildCase({ ...judged[0], situation: 'nope' }, { partials: false })).toThrow(/unknown judgment situation 'nope'/);
     });
 
-    it('pins the test set: configurations, partials and truths', () => {
+    it.skipIf(!HOLDOUT)('pins the test set: configurations, partials and truths', () => {
         const hash = createHash('sha256');
         TEST_CASES.forEach((item) => {
             const built = buildCase(item);
@@ -100,61 +144,35 @@ describe('the dev / test split', () => {
         expect(() => guardSplit({ split: 'test', final: false, clean: true })).toThrow(/held out: add --final/);
         expect(() => guardSplit({ split: 'test', final: true, clean: false })).toThrow(/clean git tree/);
         expect(() => guardSplit({ split: 'test', final: true, clean: true })).not.toThrow();
+        // A test-set file written inside the repository goes under the sealed
+        // folder or a gitignored output folder.
+        expect(() => guardTestOutput('test', join(FRONTEND, ARM_A_TEST_RECORDS))).not.toThrow();
+        expect(() => guardTestOutput('test', join(FRONTEND, 'validation/runs/x'))).not.toThrow();
+        expect(() => guardTestOutput('test', join(FRONTEND, 'validation/baseline/arm-a-test.json'))).toThrow(/goes under/);
+        expect(() => guardTestOutput('test', join(FRONTEND, 'validation/holdout-copy/x.json'))).toThrow(/goes under/);
+        expect(() => guardTestOutput('dev', join(FRONTEND, 'validation/baseline/arm-a-dev.json'))).not.toThrow();
     });
 });
 
 // The holdout scan. Where it looks: what the tools, the prompts and the app
 // say (src: js, jsx, md, and the snapshots of what the model sees), every
-// skill file, the Python package, docs/ and the top-level docs. Not scanned:
-// the validation itself (web_app/frontend/validation/**, which must name its
-// cases) and copilot-validation.md, whose Cases table names every test case.
-// docs/AGENT_PLAN.md is scanned.
-const NOT_SCANNED = new Set(['docs/algorithms/copilot-validation.md']);
+// skill file, the Python package, every md under docs/ (the change notes,
+// the CHANGELOG, copilot-validation.md and AGENT_PLAN.md among them), the
+// top-level docs, and the validation itself outside the sealed folder (its
+// js and md files, and its findings: the decision records and the batches).
+// The sealed folder is never read. The ids are public, so a file that must
+// name a case by its id (copilot-validation.md, cases.js's manifest, a
+// decision record on a test case) holds an id-only allowance below; every
+// other kind of token is a hit there as anywhere. The two lists of what may
+// be named, and where, are holdoutLists.js.
 const scannedFiles = () => [
     ...filesUnder(join(FRONTEND, 'src'), (path) => /\.(js|jsx|md)$/.test(path) || path.includes('__snapshots__')),
+    ...filesUnder(join(FRONTEND, 'validation'), (path) => /\.(js|jsx|md)$/.test(path) || /[\\/]findings[\\/].*\.jsonl?$/.test(path)),
     ...filesUnder(join(REPO, '.claude/skills'), () => true),
     ...filesUnder(join(REPO, 'rmc_toolkits'), (path) => path.endsWith('.py')),
     ...filesUnder(join(REPO, 'docs'), (path) => path.endsWith('.md')),
     ...readdirSync(REPO).filter((name) => name.endsWith('.md')).map((name) => join(REPO, name))
-].filter((path) => !NOT_SCANNED.has(relative(REPO, path)));
-
-// Two lists, and nothing in either names a test-case value. An entry covers
-// exactly `count` hits of one test case's kind of token in one file (and, for
-// a leak, on one line): a different count fails, so a new mention there is
-// still caught and a removed one must leave the list.
-//
-// HOLDOUT_ALLOWED: hits the model can never read, in any arm. Model-visible
-// text is the system prompt, the tool descriptions and results, read_skill's
-// output and every skill file (the SKILL.md files and the reference files
-// copilotSkills.js bundles), so an allowed file is none of those, is in no
-// snapshot of what the model sees, and no app module can import it (checked
-// below). copilot-validation.md lists these as known risks.
-const HOLDOUT_ALLOWED = [
-    // The four 2026-10-19 entries for the test breathing case's old cluster
-    // (the skills' reference compound's) left with protocol 2026-10-19.2: the
-    // case was recomposed and nothing names its new cluster.
-    //
-    // FOUND 2026-10-19, reviewed: a real-compound fixture of the symmetry
-    // finder (an orthorhombic Pnma perovskite) whose composition is the test
-    // symmetry-lowering case's, unrelated to the planted shift. Imported only by
-    // the symmetry tests in src/__tests__, never by the app, the tools or the
-    // snapshot tests.
-    {
-        file: 'web_app/frontend/src/__tests__/fixtures/symmetryStructures.js', case: 'test-symmetry-lowering', kind: 'composition', count: 1,
-        reason: 'test-only: a symmetry-finder fixture imported only by src/__tests__/*.test.js; never model-visible'
-    }
 ];
-
-// HOLDOUT_LEAKS_PENDING_USER: hits the model CAN read. They are leaks, not
-// allowed hits: printed on every run, pinned line by line so a change shows,
-// and left for the user, whose text the skills are. The scan still fails on
-// any hit in neither list. copilot-validation.md lists them as open leaks.
-// An entry is { file, line, case, kind, count, status }, the status saying
-// how the text reaches the model and that it awaits the user's decision.
-// Empty since protocol 2026-10-19.2: the three lines of
-// coordination-shells/lacunar-spinel-shells.md named the test breathing
-// case's old cluster, and the case was recomposed instead of the skill.
-const HOLDOUT_LEAKS_PENDING_USER = [];
 
 // Every file the model can read: the skill files copilotSkills.js bundles
 // for the prompt and read_skill, anything under .claude/skills, and the
@@ -163,10 +181,32 @@ const SNAPSHOTS = 'web_app/frontend/src/__tests__/modelVisible/__snapshots__/';
 const modelVisible = (file) => file.startsWith('.claude/skills/') || file.startsWith(SNAPSHOTS)
     || [...Object.keys(copilotSkills.files), ...copilotSkills.references].includes(file);
 
-describe('the holdout scan: no tool, skill, app source or doc names a test case', () => {
-    const tokens = TEST_CASES.flatMap((item) => holdoutTokens(item, DEV_CASES));
+const allows = (entry, file, hit) => entry.file === file && entry.kind === hit.kind && (entry.case === hit.case || entry.case === '*');
 
-    it('derives every test case\'s tokens from its parameters: more than its id', () => {
+describe('the holdout scan: no tool, skill, app source, doc or validation text names a test case', () => {
+    // Every token with the flag; the public ids alone without it.
+    const ID_TOKENS = TEST_CASE_IDS.map((id) => ({ case: id, kind: 'id', name: 'id', text: id }));
+    const tokens = HOLDOUT ? TEST_CASES.flatMap((item) => holdoutTokens(item, DEV_CASES)) : ID_TOKENS;
+    const active = new Set(tokens.map((token) => token.kind));
+
+    it('scans what it promises: the docs, the change notes, the CHANGELOG, the validation and its records, never the sealed folder', () => {
+        const files = scannedFiles().map((path) => relative(REPO, path));
+        const must = [
+            'docs/algorithms/copilot-validation.md', 'docs/CHANGELOG.md', 'docs/AGENT_PLAN.md', 'AGENTS.md',
+            'web_app/frontend/validation/cases.js', 'web_app/frontend/validation/run.js', 'web_app/frontend/validation/judgment-spec.md',
+            'web_app/frontend/validation/holdoutLoader.js', 'web_app/frontend/validation/findings/batch-1.jsonl',
+            ...readdirSync(join(REPO, 'docs/changes/unreleased')).filter((name) => name.endsWith('.md')).map((name) => `docs/changes/unreleased/${name}`),
+            ...readdirSync(join(FRONTEND, 'validation/findings/decisions')).map((name) => `web_app/frontend/validation/findings/decisions/${name}`)
+        ];
+        must.forEach((file) => expect(files, file).toContain(file));
+        const sealed = relative(REPO, SEALED);
+        expect(files.filter((file) => file.startsWith(`${sealed}/`))).toEqual([]);
+        // An id-only allowance is for ids only.
+        HOLDOUT_ALLOWED.filter((entry) => entry.case === '*').forEach((entry) => expect(entry.kind, entry.file).toBe('id'));
+    });
+
+    it.skipIf(!HOLDOUT)('derives every test case\'s tokens from its parameters: more than its id', () => {
+        expect(tokens.filter((token) => token.kind === 'id')).toEqual(ID_TOKENS);
         TEST_CASES.forEach((item) => {
             const kinds = tokens.filter((token) => token.case === item.id).map((token) => token.kind);
             expect(kinds, item.id).toContain('id');
@@ -175,13 +215,31 @@ describe('the holdout scan: no tool, skill, app source or doc names a test case'
         expect(() => holdoutTokens({ id: 'test-new', kind: 'new_kind', params: {} }, DEV_CASES)).toThrow(/add it to PLANTED/);
     });
 
-    it('the judgment subset removes no test case\'s token (plan 1.6 ii): it is never a kind\'s physics', () => {
+    // Plan: the token kinds cover the seeds and every planted magnitude.
+    it.skipIf(!HOLDOUT)('every test case yields its seed, and each value and supercell its dev twins do not share', () => {
+        TEST_CASES.forEach((item) => {
+            const mine = tokens.filter((token) => token.case === item.id);
+            expect(mine.filter((token) => token.kind === 'seed').map((token) => token.value), item.id).toEqual([item.params.seed]);
+            const twins = DEV_CASES.filter((dev) => !dev.judgment && dev.kind === item.kind);
+            const differs = (key) => !twins.some((dev) => JSON.stringify(dev.params[key]) === JSON.stringify(item.params[key]));
+            for (const key of ['a', 'delta', 'edge', 'elongation', 'short', 'long', 'bond', 'sigma', 'sigmaCommon', 'sigmaOwn', 'breathe']) {
+                if (typeof item.params[key] !== 'number' || !differs(key)) continue;
+                expect(mine.some((token) => token.kind === 'magnitude' && token.value === item.params[key]), `${item.id} ${key}`).toBe(true);
+            }
+            if (item.params.offCentre && differs('offCentre')) {
+                expect(mine.some((token) => token.kind === 'magnitude' && token.value === item.params.offCentre.delta), `${item.id} offCentre`).toBe(true);
+            }
+            if (differs('supercell')) expect(mine.some((token) => token.kind === 'supercell'), `${item.id} supercell`).toBe(true);
+        });
+    });
+
+    it.skipIf(!HOLDOUT)('the judgment subset removes no test case\'s token (plan 1.6 ii): it is never a kind\'s physics', () => {
         const ordinary = DEV_CASES.filter((item) => !item.judgment);
         expect(ordinary.length).toBeLessThan(DEV_CASES.length);
         expect(TEST_CASES.flatMap((item) => holdoutTokens(item, ordinary))).toEqual(tokens);
     });
 
-    it('finds every test case in its own truth, written as prose', () => {
+    it.skipIf(!HOLDOUT)('finds every test case in its own truth, written as prose', () => {
         TEST_CASES.forEach((item) => {
             const { truth } = buildCase(item, { partials: false });
             const text = [truth.summary, ...truth.traps].join('\n');
@@ -201,7 +259,7 @@ describe('the holdout scan: no tool, skill, app source or doc names a test case'
                 ...hit,
                 text: read.text.slice(...hit.spans[0]),
                 leak: HOLDOUT_LEAKS_PENDING_USER.find((entry) => entry.file === file && entry.line === hit.line && entry.case === hit.case && entry.kind === hit.kind),
-                allowed: HOLDOUT_ALLOWED.find((entry) => entry.file === file && entry.case === hit.case && entry.kind === hit.kind)
+                allowed: HOLDOUT_ALLOWED.find((entry) => allows(entry, file, hit))
             }));
             return { file, read, hits };
         });
@@ -215,7 +273,8 @@ describe('the holdout scan: no tool, skill, app source or doc names a test case'
         const unexpected = files.flatMap(({ file, read, hits }) => hits.filter((hit) => !hit.leak && !hit.allowed)
             .map((hit) => describeHit(read, hit, hits, file)));
         expect(unexpected, 'a held-out test case is named (matched text masked as ■): remove it; only text no model can read may be allow-listed').toEqual([]);
-        [...HOLDOUT_ALLOWED, ...HOLDOUT_LEAKS_PENDING_USER].forEach((entry) => {
+        // An entry of a kind the scan looks for here (every kind with the flag, the ids without it).
+        [...HOLDOUT_ALLOWED, ...HOLDOUT_LEAKS_PENDING_USER].filter((entry) => active.has(entry.kind)).forEach((entry) => {
             expect(covered(entry).length, `${entry.file}${entry.line ? `:${entry.line}` : ''} ${entry.case} ${entry.kind}: update the count after a review`).toBe(entry.count);
         });
     });
@@ -239,9 +298,12 @@ describe('the holdout scan: no tool, skill, app source or doc names a test case'
         expect(Object.keys(copilotSkills.files).length).toBeGreaterThan(3);
         bundled.forEach((file) => expect(existsSync(join(REPO, file)), `bundled skill file ${file}`).toBe(true));
         HOLDOUT_ALLOWED.forEach((entry) => {
+            expect(existsSync(join(REPO, entry.file)), entry.file).toBe(true);
+            expect(entry.reason, entry.file).toMatch(/\S.{20,}/);
             expect(modelVisible(entry.file), `${entry.file} is model-visible: a hit there is a leak, not an allowed hit`).toBe(false);
+            // No app module imports or reads it (a path ending in its name).
             const stem = entry.file.split('/').pop().replace(/\.[^.]+$/, '');
-            const named = new RegExp(`['"\`][^'"\`\\n]*\\b${stem}\\b[^'"\`\\n]*['"\`]`);
+            const named = new RegExp(`['"\`][^'"\`\\n]*/${stem}(?:\\.[a-z]+)?['"\`]`);
             expect(appModules.some((text) => named.test(text)), `an app module names ${entry.file}`).toBe(false);
             covered(entry).forEach((hit) => {
                 const token = new RegExp(`(?<![A-Za-z0-9₀-₉])${hit.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9₀-₉])`);
@@ -271,7 +333,9 @@ describe('supervisor findings', () => {
     });
 
     it('a test case may only report a bug, with approval: no tuning on the test set', () => {
-        const onTest = { ...base, case: 'test-zone-boundary', run: 'test-zone-boundary__B__qwen3.8-27b__r1' };
+        // Any held-out id (a test file never writes one: holdoutGate.test.js).
+        const id = TEST_CASE_IDS[1];
+        const onTest = { ...base, case: id, run: `${id}__B__qwen3.8-27b__r1` };
         expect(validateFinding(onTest).errors[0]).toMatch(/held-out test case: file science-error findings from dev cases only/);
         expect(validateFinding({ ...onTest, kind: 'bug' }).errors).toEqual(['a bug found on a held-out test case needs the user\'s approval before it is fixed']);
         expect(validateFinding({ ...onTest, kind: 'bug', needs_user_approval: true }).ok).toBe(true);
@@ -337,14 +401,22 @@ describe('where a finding stands, and validation batch 1', () => {
         }
     };
 
+    // The one record on a held-out case is named after its case's id, which a
+    // test file never writes: it is found by its case.
+    const onTestCase = () => Object.entries(decisions()).filter(([, decision]) => splitOf(decision.case) === 'test');
+
     it('decision records: one JSON file per record, read in id order, each validated by the findings schema', () => {
-        expect(Object.keys(decisions())).toEqual([
+        const ids = Object.keys(decisions());
+        expect([...ids].sort()).toEqual(ids);
+        const [[recomposed, { case: heldOut }]] = onTestCase();
+        expect(recomposed).toBe(`2026-10-19-${heldOut}-recomposed`);
+        expect(ids.filter((id) => id !== recomposed)).toEqual([
             '2026-10-19-aplus-app-rules', '2026-10-19-asked-before', '2026-10-19-engine-verdicts', '2026-10-19-judgment-dev-cases',
             '2026-10-19-list-sites-split', '2026-10-19-mode-polarisation', '2026-10-19-modulation-bar-and-family',
-            '2026-10-19-provenance-told', '2026-10-19-shell-catalogue', '2026-10-19-shell-cut-rule', '2026-10-19-test-breathing-recomposed'
+            '2026-10-19-provenance-told', '2026-10-19-shell-catalogue', '2026-10-19-shell-cut-rule'
         ]);
         expect(existsSync(join(FRONTEND, 'validation/findings/decisions.jsonl'))).toBe(false);
-        const record = readFileSync(join(DECISIONS, '2026-10-19-test-breathing-recomposed.json'), 'utf8');
+        const record = readFileSync(join(DECISIONS, `${recomposed}.json`), 'utf8');
         const read = parseFindingFiles([
             { name: 'README.md', text: 'not a record' },
             { name: '2026-10-20-b.json', text: record },
@@ -360,9 +432,14 @@ describe('where a finding stands, and validation batch 1', () => {
     });
 
     it('decisions: the recomposed test breathing case, approved on the user\'s delegation and implemented with its commit', () => {
-        const recomposed = decisions()['2026-10-19-test-breathing-recomposed'];
-        expect(recomposed).toMatchObject({ case: 'test-breathing', kind: 'bug' });
+        const records = onTestCase();
+        expect(records).toHaveLength(1);
+        const [[, recomposed]] = records;
+        expect(TEST_CASE_IDS).toContain(recomposed.case);
+        expect(recomposed.kind).toBe('bug');
         delegated(recomposed);
+        // Its values are sealed with the cases: the record points there.
+        expect(/TEST_SET_SHA256/.test(recomposed.proposed_fix), 'the record points to the sealed cases').toBe(true);
     });
 
     it('decisions: the engines return their own verdicts (candidate 5), approved on the user\'s delegation, implemented with its tests', () => {
