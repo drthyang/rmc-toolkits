@@ -13,9 +13,16 @@
 // case (the reported numbers only): the same physics with other elements,
 // directions, magnitudes or structures. Never tune on TEST: the split test
 // pins the TEST definitions by hash and keeps their ids out of the tools and
-// skills. A dev-only case (`devOnly`, saying why) has a kind of its own and
-// no test twin: dev-fit-unconverged, the one case with fit files (a χ² log,
-// an F(Q) and its G(r)), for the fit tools and the rmc-fit-assessment skill.
+// skills. A dev-only case (`devOnly`, saying why) has no test twin:
+// dev-fit-unconverged, the one case with fit files (a χ² log, an F(Q) and its
+// G(r)), for the fit tools and the rmc-fit-assessment skill, with a kind of
+// its own; and the judgment subset (`judgment: true` and a `situation`, plan
+// item 1.6 part ii), whose cases live in judgmentCases.js and build with the
+// kinds below (options of existing kinds, and elongated_clusters). Its
+// held-out matches are written later by a fresh author from
+// judgment-spec.md alone, never from these cases or their results.
+
+import { JUDGMENT_DEV_CASES } from './judgmentCases';
 
 // --- deterministic randomness -----------------------------------------------------
 
@@ -303,14 +310,72 @@ const perovskiteThermal = (sites, index, rng) => {
 
 const perovskiteSymmetry = { space_group: 'Pm-3m', chiral: false, centrosymmetric: true, polar: false };
 
+// The weak zone-boundary order of the judgment subset (KINDS.zone_boundary
+// with `weak: true`, plan item 1.6 ii): ordered antiphase B displacements
+// whose amplitude is below half the B thermal rms — scoring.js's 0.03 Å,
+// below which a static shift cannot be told from the thermal width — and no
+// decoy. The truth names q only: no reading of one site resolves the axis.
+const weakZoneBoundary = (p) => {
+    if (p.decoy != null) throw new Error('zone_boundary: a weak order has no decoy (decoy: null)');
+    if (!(p.delta < THERMAL.B / 2)) throw new Error(`zone_boundary: a weak order is below ${THERMAL.B / 2} Å, got ${p.delta}`);
+    const sites = perovskiteSites(p.elements);
+    const u = unit(p.axis);
+    const config = buildConfiguration({
+        cell: [p.a, p.a, p.a],
+        supercell: p.supercell,
+        sites,
+        seed: p.seed,
+        shift: (index, _, rng, n) => {
+            const d = perovskiteThermal(sites, index, rng);
+            if (index !== 1) return d;
+            const phase = p.q.reduce((sum, q, k) => sum + q * n[k], 0);
+            return add(d, scale(u, p.delta * Math.cos(2 * Math.PI * phase)));
+        }
+    });
+    const B = p.elements[1];
+    const q = `(${p.q.join(', ')})`;
+    return {
+        config,
+        truth: {
+            summary: `${B} displaced ±${p.delta} Å along [${p.axis.join(' ')}] in an ordered pattern with q = ${q}, far below its thermal `
+                + `width (${THERMAL.B} Å rms): a weak superstructure at the edge of significance`,
+            features: [{ kind: 'modulation', element: B, accept: ['modulation'], q: p.q }],
+            tolerated: [],
+            symmetry: { ...perovskiteSymmetry, primary: false },
+            traps: [
+                `the order is real but weak: analyze_modulations puts ${B} at q = ${q} near its 3σ bar, so a fixed 3σ rule is a coin flip; `
+                    + 'an honest answer gives the significance and says how confident it is',
+                `${B}'s folded cloud looks thermal: no ellipsoid, kurtosis or direction map shows an amplitude this far below the thermal width, `
+                    + 'and nothing resolves its axis'
+            ]
+        }
+    };
+};
+
 // --- the case kinds ------------------------------------------------------------------
+
+// The eight <111> directions (±1, ±1, ±1): an axis of this family names them all.
+const isBodyDiagonal = (axis) => Array.isArray(axis) && axis.length === 3 && axis.every((value) => Math.abs(value) === 1);
 
 const KINDS = {
     // Two-site disorder: each B atom sits ±delta off its site along `axis`,
     // the sign random per atom. The average site stays put (cubic).
+    //
+    // `wells: 8` (the judgment subset, plan item 1.6 ii): eight-site disorder
+    // instead, each B atom delta off its site along one of the eight <111>
+    // directions at random (±delta/√3 on each axis, the three signs
+    // independent; `axis` is a <111> direction, the family's name). The eight
+    // wells average to an isotropic ellipsoid and orientation tensor, so the
+    // split shows only in the kurtosis and the direction map, and the B–X
+    // shell splits 3 + 3. Without `wells` (or 2) every random draw is the
+    // two-site case's, so those cases build exactly as before.
     offcentre: (p) => {
         const sites = perovskiteSites(p.elements);
         const u = unit(p.axis);
+        const eight = p.wells === 8;
+        if (p.wells != null && p.wells !== 2 && !eight) throw new Error(`offcentre: wells is 2 or 8, got ${p.wells}`);
+        if (eight && !isBodyDiagonal(p.axis)) throw new Error('offcentre: eight wells need a <111> axis');
+        const component = p.delta / Math.sqrt(3);
         const config = buildConfiguration({
             cell: [p.a, p.a, p.a],
             supercell: p.supercell,
@@ -318,9 +383,32 @@ const KINDS = {
             seed: p.seed,
             shift: (index, _, rng) => {
                 const d = perovskiteThermal(sites, index, rng);
+                if (index === 1 && eight) return d.map((value) => value + (rng() < 0.5 ? component : -component));
                 return index === 1 ? add(d, scale(u, rng() < 0.5 ? p.delta : -p.delta)) : d;
             }
         });
+        const [, B, X] = p.elements;
+        if (eight) {
+            return {
+                config,
+                truth: {
+                    summary: `${B} off-centred ${p.delta} Å along one of the eight <111> directions at random (eight-site disorder); `
+                        + 'the average structure stays cubic',
+                    features: [{
+                        kind: 'off_centre', element: B, accept: ['off_centre'],
+                        direction_uvw: p.axis, direction_mode: 'cubic', magnitude_A: p.delta
+                    }],
+                    tolerated: [],
+                    symmetry: { ...perovskiteSymmetry, primary: false },
+                    traps: [
+                        `the eight wells average to an isotropic ${B} ellipsoid and an isotropic orientation tensor: no principal axis is resolved, `
+                            + 'so the ellipsoid shows no split; the Mardia kurtosis is strongly negative, and the direction map, anisotropic at '
+                            + 'its default tiling, resolves the eight <111> lobes only on a finer one',
+                        `the ${B}–${X} first shell is split 3 + 3 by the off-centring itself (three short, three long bonds), not by a Jahn–Teller distortion`
+                    ]
+                }
+            };
+        }
         return {
             config,
             truth: {
@@ -340,7 +428,15 @@ const KINDS = {
     // where it is odd. Each B site's folded cloud is split ±delta exactly as
     // two-site disorder is; only the correlation between cells differs. A
     // stronger box-scale wave of A (the decoy) is the strongest mode.
+    //
+    // `weak: true` (the judgment subset, plan item 1.6 ii): the same order with
+    // an amplitude far below the B thermal width and no decoy (`decoy: null`):
+    // the folded cloud looks thermal, no single-site reading resolves the
+    // displacement axis (so the truth names only q), and the modulation
+    // engine's calibrated significance sits near its 3σ bar. A case without
+    // `weak` keeps its decoy and builds exactly as before.
     zone_boundary: (p) => {
+        if (p.weak) return weakZoneBoundary(p);
         const sites = perovskiteSites(p.elements);
         const u = unit(p.axis);
         const decoyAxis = unit(p.decoy.axis);
@@ -421,18 +517,24 @@ const KINDS = {
         };
     },
 
-    // Isolated BX6 octahedra (B at the body centre, A at the origin). Each
-    // octahedron is Jahn–Teller elongated, 2 long + 4 short bonds, its long
-    // axis along x, y or z at random: the average octahedron is regular at
-    // (long + 2 short)/3, the local B–X shell is split 4 + 2.
-    jahn_teller: (p) => {
-        const [A, B, X] = p.elements;
-        const mean = (p.long + 2 * p.short) / 3;
+    // The judgment subset (plan item 1.6 ii), the one kind of its own: finite
+    // M6 octahedra (a vertex on each cubic axis about the body centre), an
+    // anion X at the origin, as the breathing kind places its clusters. Each
+    // octahedron is elongated along x, y or z at random — its two apical
+    // atoms pushed out by `elongation` Å — so the local octahedron has 4 short
+    // (equatorial, `edge`) and 8 long edges, and the average one is regular,
+    // its edge between the two. The M–M shell is split across a trough, and
+    // it closes at CN 4, an octahedron: the Workbench joins the two peaks and
+    // asks when a window cuts them, while the first peak alone holds no edge
+    // of the average octahedron. No other kind plants a cluster distortion.
+    elongated_clusters: (p) => {
         const axes = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+        // Equatorial radius (short edge = r0·√2); the average radius r0 + elongation/3.
+        const r0 = p.edge / Math.SQRT2;
+        const mean = r0 + p.elongation / 3;
         const sites = [
-            { el: A, frac: [0, 0, 0] },
-            { el: B, frac: [0.5, 0.5, 0.5] },
-            ...axes.map((v) => ({ el: X, frac: v.map((value) => 0.5 + (mean * value) / p.a), axis: v }))
+            { el: p.anion, frac: [0, 0, 0] },
+            ...axes.map((v) => ({ el: p.element, frac: v.map((value) => 0.5 + (mean * value) / p.a), axis: v }))
         ];
         const config = buildConfiguration({
             cell: [p.a, p.a, p.a],
@@ -442,28 +544,103 @@ const KINDS = {
             cellState: (_, rng) => Math.floor(rng() * 3),
             shift: (index, longAxis, rng) => {
                 const d = gauss3(rng, p.sigma);
+                if (index === 0) return d;
+                const v = sites[index].axis;
+                return add(d, scale(v, (v[longAxis] !== 0 ? r0 + p.elongation : r0) - mean));
+            }
+        });
+        const long = Math.hypot(r0, r0 + p.elongation);
+        const M = p.element;
+        return {
+            config,
+            truth: {
+                summary: `${M}6 octahedra each elongated along x, y or z at random: locally 4 short + 8 long edges (${p.edge} / ${long.toFixed(2)} Å), `
+                    + `the average octahedron regular (edge ${(mean * Math.SQRT2).toFixed(2)} Å)`,
+                features: [{ kind: 'cluster_distortion', element: M, accept: ['cluster_distortion'] }],
+                // True but partial descriptions of the same distortion: each
+                // vertex sits on one of two positions along its own axis, and
+                // each M's own M–M shell is split.
+                tolerated: [{ kind: 'off_centre', element: M }, { kind: 'jahn_teller', element: M }],
+                // A regular octahedron at the body centre, the anion at the origin: m-3m.
+                symmetry: { space_group: 'Pm-3m', chiral: false, centrosymmetric: true, polar: false, primary: false },
+                traps: [
+                    `the ${M}–${M} first shell is split across a trough (the short and the long edges) and closes at 4 ${M} per ${M}, an octahedron: `
+                        + 'the first peak alone holds no edge of the average octahedron, so no clusters there; which window is the user\'s choice, '
+                        + 'and the Workbench asks when a window cuts the shell',
+                    `the ${M} split sites are the elongation seen one atom at a time, not independent off-centring`
+                ]
+            }
+        };
+    },
+
+    // Isolated BX6 octahedra (B at the body centre, A at the origin). Each
+    // octahedron is Jahn–Teller elongated, 2 long + 4 short bonds, its long
+    // axis along x, y or z at random: the average octahedron is regular at
+    // (long + 2 short)/3, the local B–X shell is split 4 + 2.
+    //
+    // `offCentre: { axis, delta }` (the judgment subset, plan item 1.6 ii):
+    // each B also sits ±delta off the octahedron's centre along `axis`, the
+    // sign random per atom — two features of one polyhedron at once. An
+    // off-centred B splits its own shell 1 + 4 + 1 about the mean distance;
+    // the Jahn–Teller elongation still puts 4 X below it and 2 above. Without
+    // `offCentre` every random draw is as before.
+    jahn_teller: (p) => {
+        const [A, B, X] = p.elements;
+        const mean = (p.long + 2 * p.short) / 3;
+        const axes = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+        const sites = [
+            { el: A, frac: [0, 0, 0] },
+            { el: B, frac: [0.5, 0.5, 0.5] },
+            ...axes.map((v) => ({ el: X, frac: v.map((value) => 0.5 + (mean * value) / p.a), axis: v }))
+        ];
+        const off = p.offCentre ? unit(p.offCentre.axis) : null;
+        const config = buildConfiguration({
+            cell: [p.a, p.a, p.a],
+            supercell: p.supercell,
+            sites,
+            seed: p.seed,
+            cellState: (_, rng) => Math.floor(rng() * 3),
+            shift: (index, longAxis, rng) => {
+                const d = gauss3(rng, p.sigma);
+                if (index === 1 && off) return add(d, scale(off, rng() < 0.5 ? p.offCentre.delta : -p.offCentre.delta));
                 if (index < 2) return d;
                 const v = sites[index].axis;
                 const bond = v[longAxis] !== 0 ? p.long : p.short;
                 return add(d, scale(v, bond - mean));
             }
         });
+        const jt = {
+            kind: 'jahn_teller', element: B, accept: ['jahn_teller'],
+            magnitude_A: Number((p.long - p.short).toFixed(3)), direction_uvw: [0, 0, 1], direction_mode: 'cubic'
+        };
+        const summary = `${B}${X}6 octahedra Jahn–Teller elongated: 4 × ${p.short} + 2 × ${p.long} Å (Δ = ${(p.long - p.short).toFixed(2)} Å), `
+            + `long axis along x, y or z at random; the average octahedron is regular at ${mean.toFixed(3)} Å`;
+        const traps = [
+            `the ${B}–${X} first shell has two peaks: a window around the first peak holds about 4 ${X}, the whole shell 6`,
+            'the average octahedron is regular: the distortion is local only'
+        ];
         return {
             config,
-            truth: {
-                summary: `${B}${X}6 octahedra Jahn–Teller elongated: 4 × ${p.short} + 2 × ${p.long} Å (Δ = ${(p.long - p.short).toFixed(2)} Å), `
-                    + `long axis along x, y or z at random; the average octahedron is regular at ${mean.toFixed(3)} Å`,
-                features: [{
-                    kind: 'jahn_teller', element: B, accept: ['jahn_teller'],
-                    magnitude_A: Number((p.long - p.short).toFixed(3)), direction_uvw: [0, 0, 1], direction_mode: 'cubic'
+            truth: off ? {
+                summary: `${summary}; every ${B} also sits ±${p.offCentre.delta} Å off the centre along [${p.offCentre.axis.join(' ')}] at random (two-site disorder)`,
+                features: [jt, {
+                    kind: 'off_centre', element: B, accept: ['off_centre'],
+                    direction_uvw: p.offCentre.axis, direction_mode: 'axis', magnitude_A: p.offCentre.delta
                 }],
-                // True but partial descriptions of the same distortion.
                 tolerated: [{ kind: 'off_centre', element: X }, { kind: 'cluster_distortion', element: X }],
                 symmetry: { ...perovskiteSymmetry, primary: false },
                 traps: [
-                    `the ${B}–${X} first shell has two peaks: a window around the first peak holds about 4 ${X}, the whole shell 6`,
-                    'the average octahedron is regular: the distortion is local only'
+                    ...traps,
+                    `two distortions of one octahedron: an off-centred ${B} splits its own shell 1 + 4 + 1 about the mean distance, which cannot put `
+                        + `4 ${X} below the mean and 2 above; reading the split shell as the off-centring's alone misses the Jahn–Teller elongation`
                 ]
+            } : {
+                summary,
+                features: [jt],
+                // True but partial descriptions of the same distortion.
+                tolerated: [{ kind: 'off_centre', element: X }, { kind: 'cluster_distortion', element: X }],
+                symmetry: { ...perovskiteSymmetry, primary: false },
+                traps
             }
         };
     },
@@ -714,8 +891,23 @@ export const DEV_CASES = [
                 chiNoise: 0.002
             }
         }
-    }
+    },
+    // The judgment subset (plan item 1.6 ii), dev only: judgmentCases.js.
+    ...JUDGMENT_DEV_CASES
 ];
+
+/**
+ * The judgment subset's situations (plan item 1.6 ii): where a fixed rule
+ * that joins the engines' readings is ambiguous or wrong. Each judgment case
+ * names one; validation/judgment-spec.md describes them for the author of the
+ * held-out matches.
+ */
+export const JUDGMENT_SITUATIONS = Object.freeze({
+    two_features: 'two features at once, where a rule that lets one finding explain a reading misses the other',
+    marginal: 'a signal at 2.5–4σ, where a fixed 3σ rule is a coin flip and an honest answer says how confident it is',
+    two_readings: 'evidence that two tools read differently, where the right answer needs both readings',
+    user_choice: 'a choice only the user can make, where the Workbench asks, the simulated user skips, and the answer must state its default and its consequence'
+});
 
 export const TEST_CASES = [
     { id: 'test-offcentre', kind: 'offcentre', params: { elements: ['Sr', 'Ge', 'O'], a: 3.95, supercell: [8, 8, 8], axis: [1, 1, 0], delta: 0.16, seed: 201 } },
@@ -760,12 +952,17 @@ const elementsInOrder = (sites) => [...new Set(sites.map((site) => site.el))];
  * case has fit data (dev-fit-unconverged), and the truth. Built lazily (a
  * perovskite case is ~2,500 atoms; its g(r) takes about a second). Its run
  * folder's names are runFolder.js's RUN_NAME and RUN_FILES, the same for
- * every case: no name is built from the case id, which names its kind.
+ * every case: no name is built from the case id, which names its kind. A
+ * judgment case's truth also says so (`judgment: { situation }`), so its
+ * records (which keep the truth; the model never sees it) say which
+ * situation they test, and the report reads the subset from them.
  */
 export const buildCase = (item, { partials = true } = {}) => {
     const make = KINDS[item.kind];
     if (!make) throw new Error(`unknown case kind '${item.kind}'`);
-    const { config, truth, fit } = make(item.params);
+    if (item.judgment && !JUDGMENT_SITUATIONS[item.situation]) throw new Error(`${item.id}: unknown judgment situation '${item.situation}'`);
+    const { config, truth: planted, fit } = make(item.params);
+    const truth = item.judgment ? { ...planted, judgment: { situation: item.situation } } : planted;
     const elements = elementsInOrder(config.atoms);
     const partial = partials ? partialGr(config.atoms, config.box, elements) : null;
     return {

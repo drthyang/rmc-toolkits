@@ -4975,5 +4975,3008 @@
     "a misfit is not order in the configuration: every analysis of the configuration shows thermal motion only"
    ]
   }
+ },
+ {
+  "id": "dev-jt-off-centre__A",
+  "protocol": "2026-10-19.9",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "case": "dev-jt-off-centre",
+  "split": "dev",
+  "arm": "A",
+  "model": null,
+  "verdict": {
+   "features": [
+    {
+     "kind": "off_centre",
+     "element": "Ag",
+     "direction_uvw": [
+      0.02,
+      -0.02,
+      1
+     ],
+     "magnitude_A": 0.148
+    },
+    {
+     "kind": "off_centre",
+     "element": "F",
+     "direction_uvw": [
+      0,
+      0.01,
+      1
+     ],
+     "magnitude_A": 0.173
+    }
+   ],
+   "space_group": "Pm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false
+  },
+  "score": {
+   "format_ok": true,
+   "null_case": false,
+   "features": [
+    {
+     "kind": "jahn_teller",
+     "element": "Ag",
+     "found": false
+    },
+    {
+     "planted": "off_centre",
+     "found": true,
+     "claim_index": 0,
+     "kind": "off_centre",
+     "element": "Ag",
+     "direction_error_deg": 1.620137424565442,
+     "direction_ok": true,
+     "magnitude_claimed_A": 0.148,
+     "magnitude_ok": true,
+     "accurate": true
+    }
+   ],
+   "spurious": [],
+   "tolerated": [
+    {
+     "index": 1,
+     "kind": "off_centre",
+     "element": "F",
+     "direction_uvw": [
+      0,
+      0.01,
+      1
+     ],
+     "magnitude_A": 0.173
+    }
+   ],
+   "overclaim": false,
+   "symmetry": {
+    "space_group": "right",
+    "chiral": "right",
+    "centrosymmetric": "right",
+    "polar": "right"
+   },
+   "contradictions": [],
+   "score": 0.8571
+  },
+  "readings": [
+   {
+    "page": "Detected SG card",
+    "what": "space group at 0.2 Å",
+    "value": "Pm-3m",
+    "point_group": "m-3m"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 1 Cs",
+    "value": {
+     "rms_A": [
+      0.0545,
+      0.0482,
+      0.0446
+     ],
+     "pc1_over_pc2": 1.13,
+     "pc1_excess_kurtosis": -0.249,
+     "pc1_uvw": [
+      0.16,
+      1,
+      0.41
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 2 Ag",
+    "value": {
+     "rms_A": [
+      0.157,
+      0.0533,
+      0.0423
+     ],
+     "pc1_over_pc2": 2.94,
+     "pc1_excess_kurtosis": -1.52,
+     "pc1_uvw": [
+      0.02,
+      -0.02,
+      1
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.148 Å"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 3 F",
+    "value": {
+     "rms_A": [
+      0.16,
+      0.0499,
+      0.0471
+     ],
+     "pc1_over_pc2": 3.2,
+     "pc1_excess_kurtosis": -0.792,
+     "pc1_uvw": [
+      1,
+      0.04,
+      -0.02
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.152 Å"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 4 F",
+    "value": {
+     "rms_A": [
+      0.168,
+      0.054,
+      0.0456
+     ],
+     "pc1_over_pc2": 3.11,
+     "pc1_excess_kurtosis": -0.766,
+     "pc1_uvw": [
+      1,
+      0.01,
+      -0.01
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.159 Å"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 5 F",
+    "value": {
+     "rms_A": [
+      0.17,
+      0.0518,
+      0.048
+     ],
+     "pc1_over_pc2": 3.28,
+     "pc1_excess_kurtosis": -1.36,
+     "pc1_uvw": [
+      0,
+      1,
+      -0.02
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.162 Å"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 6 F",
+    "value": {
+     "rms_A": [
+      0.175,
+      0.0523,
+      0.0464
+     ],
+     "pc1_over_pc2": 3.34,
+     "pc1_excess_kurtosis": -1.37,
+     "pc1_uvw": [
+      -0.03,
+      1,
+      0.02
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.167 Å"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 7 F",
+    "value": {
+     "rms_A": [
+      0.177,
+      0.0528,
+      0.048
+     ],
+     "pc1_over_pc2": 3.35,
+     "pc1_excess_kurtosis": -1.43,
+     "pc1_uvw": [
+      0.03,
+      0.02,
+      1
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.169 Å"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 8 F",
+    "value": {
+     "rms_A": [
+      0.181,
+      0.053,
+      0.0475
+     ],
+     "pc1_over_pc2": 3.41,
+     "pc1_excess_kurtosis": -1.44,
+     "pc1_uvw": [
+      0,
+      0.01,
+      1
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.173 Å"
+   },
+   {
+    "page": "Displacement Directions",
+    "what": "site 2 Ag",
+    "value": {
+     "peak_sigma": 2.61,
+     "enhancement": 11.3,
+     "peak_uvw": [
+      -0.1,
+      -0.06,
+      -1
+     ],
+     "map_sigma": 9.96
+    },
+    "reading": "no significant direction"
+   },
+   {
+    "page": "Displacement Directions",
+    "what": "site 8 F",
+    "value": {
+     "peak_sigma": 1.44,
+     "enhancement": 15.6,
+     "peak_uvw": [
+      0,
+      -0.12,
+      -1
+     ],
+     "map_sigma": 12.1
+    },
+    "reading": "no significant direction"
+   },
+   {
+    "page": "Dashboard partial g(r)",
+    "what": "Ag-F first shell",
+    "value": {
+     "peaks_A": [
+      2.06,
+      2.38
+     ],
+     "average_structure_spread_A": 0.0411
+    },
+    "reading": "split shell around Ag: 0.31 Å between its maxima"
+   }
+  ],
+  "truth": {
+   "summary": "AgF6 octahedra Jahn–Teller elongated: 4 × 2.05 + 2 × 2.4 Å (Δ = 0.35 Å), long axis along x, y or z at random; the average octahedron is regular at 2.167 Å; every Ag also sits ±0.15 Å off the centre along [0 0 1] at random (two-site disorder)",
+   "features": [
+    {
+     "kind": "jahn_teller",
+     "element": "Ag",
+     "accept": [
+      "jahn_teller"
+     ],
+     "magnitude_A": 0.35,
+     "direction_uvw": [
+      0,
+      0,
+      1
+     ],
+     "direction_mode": "cubic"
+    },
+    {
+     "kind": "off_centre",
+     "element": "Ag",
+     "accept": [
+      "off_centre"
+     ],
+     "direction_uvw": [
+      0,
+      0,
+      1
+     ],
+     "direction_mode": "axis",
+     "magnitude_A": 0.15
+    }
+   ],
+   "tolerated": [
+    {
+     "kind": "off_centre",
+     "element": "F"
+    },
+    {
+     "kind": "cluster_distortion",
+     "element": "F"
+    }
+   ],
+   "symmetry": {
+    "space_group": "Pm-3m",
+    "chiral": false,
+    "centrosymmetric": true,
+    "polar": false,
+    "primary": false
+   },
+   "traps": [
+    "the Ag–F first shell has two peaks: a window around the first peak holds about 4 F, the whole shell 6",
+    "the average octahedron is regular: the distortion is local only",
+    "two distortions of one octahedron: an off-centred Ag splits its own shell 1 + 4 + 1 about the mean distance, which cannot put 4 F below the mean and 2 above; reading the split shell as the off-centring's alone misses the Jahn–Teller elongation"
+   ],
+   "judgment": {
+    "situation": "two_features"
+   }
+  }
+ },
+ {
+  "id": "dev-jt-off-centre__A+",
+  "protocol": "2026-10-19.9",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "case": "dev-jt-off-centre",
+  "split": "dev",
+  "arm": "A+",
+  "model": null,
+  "verdict": {
+   "features": [
+    {
+     "kind": "off_centre",
+     "element": "Ag",
+     "direction_uvw": [
+      0.02,
+      -0.02,
+      1
+     ],
+     "magnitude_A": 0.148
+    },
+    {
+     "kind": "off_centre",
+     "element": "F",
+     "direction_uvw": [
+      0,
+      0.01,
+      1
+     ],
+     "magnitude_A": 0.173
+    },
+    {
+     "kind": "cluster_distortion",
+     "element": "F"
+    }
+   ],
+   "space_group": "Pm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false
+  },
+  "score": {
+   "format_ok": true,
+   "null_case": false,
+   "features": [
+    {
+     "kind": "jahn_teller",
+     "element": "Ag",
+     "found": false
+    },
+    {
+     "planted": "off_centre",
+     "found": true,
+     "claim_index": 0,
+     "kind": "off_centre",
+     "element": "Ag",
+     "direction_error_deg": 1.620137424565442,
+     "direction_ok": true,
+     "magnitude_claimed_A": 0.148,
+     "magnitude_ok": true,
+     "accurate": true
+    }
+   ],
+   "spurious": [],
+   "tolerated": [
+    {
+     "index": 1,
+     "kind": "off_centre",
+     "element": "F",
+     "direction_uvw": [
+      0,
+      0.01,
+      1
+     ],
+     "magnitude_A": 0.173
+    },
+    {
+     "index": 2,
+     "kind": "cluster_distortion",
+     "element": "F"
+    }
+   ],
+   "overclaim": false,
+   "symmetry": {
+    "space_group": "right",
+    "chiral": "right",
+    "centrosymmetric": "right",
+    "polar": "right"
+   },
+   "contradictions": [],
+   "score": 0.8571
+  },
+  "readings": [
+   {
+    "page": "detect_symmetry at the noise floor",
+    "what": "space group at 0.056 Å",
+    "value": "Pm-3m",
+    "point_group": "m-3m"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 1 Cs",
+    "value": {
+     "rms_A": [
+      0.0545,
+      0.0482,
+      0.0446
+     ],
+     "pc1_over_pc2": 1.13,
+     "pc1_excess_kurtosis": -0.249,
+     "pc1_uvw": [
+      0.16,
+      1,
+      0.41
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 2 Ag",
+    "value": {
+     "rms_A": [
+      0.157,
+      0.0533,
+      0.0423
+     ],
+     "pc1_over_pc2": 2.94,
+     "pc1_excess_kurtosis": -1.52,
+     "pc1_uvw": [
+      0.02,
+      -0.02,
+      1
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.148 Å"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 3 F",
+    "value": {
+     "rms_A": [
+      0.16,
+      0.0499,
+      0.0471
+     ],
+     "pc1_over_pc2": 3.2,
+     "pc1_excess_kurtosis": -0.792,
+     "pc1_uvw": [
+      1,
+      0.04,
+      -0.02
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.152 Å"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 4 F",
+    "value": {
+     "rms_A": [
+      0.168,
+      0.054,
+      0.0456
+     ],
+     "pc1_over_pc2": 3.11,
+     "pc1_excess_kurtosis": -0.766,
+     "pc1_uvw": [
+      1,
+      0.01,
+      -0.01
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.159 Å"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 5 F",
+    "value": {
+     "rms_A": [
+      0.17,
+      0.0518,
+      0.048
+     ],
+     "pc1_over_pc2": 3.28,
+     "pc1_excess_kurtosis": -1.36,
+     "pc1_uvw": [
+      0,
+      1,
+      -0.02
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.162 Å"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 6 F",
+    "value": {
+     "rms_A": [
+      0.175,
+      0.0523,
+      0.0464
+     ],
+     "pc1_over_pc2": 3.34,
+     "pc1_excess_kurtosis": -1.37,
+     "pc1_uvw": [
+      -0.03,
+      1,
+      0.02
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.167 Å"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 7 F",
+    "value": {
+     "rms_A": [
+      0.177,
+      0.0528,
+      0.048
+     ],
+     "pc1_over_pc2": 3.35,
+     "pc1_excess_kurtosis": -1.43,
+     "pc1_uvw": [
+      0.03,
+      0.02,
+      1
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.169 Å"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 8 F",
+    "value": {
+     "rms_A": [
+      0.181,
+      0.053,
+      0.0475
+     ],
+     "pc1_over_pc2": 3.41,
+     "pc1_excess_kurtosis": -1.44,
+     "pc1_uvw": [
+      0,
+      0.01,
+      1
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.173 Å"
+   },
+   {
+    "page": "analyze_modulations",
+    "what": "zone-boundary points and general modes (engine verdict)",
+    "value": {
+     "Ag": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     },
+     "Cs": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     },
+     "F": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     }
+    },
+    "reading": "cell doubling: none; order at a general q: none; long wave: none"
+   },
+   {
+    "page": "Displacement Directions",
+    "what": "site 2 Ag",
+    "value": {
+     "peak_sigma": 2.61,
+     "enhancement": 11.3,
+     "peak_uvw": [
+      -0.1,
+      -0.06,
+      -1
+     ],
+     "map_sigma": 9.96
+    },
+    "reading": "no significant direction"
+   },
+   {
+    "page": "Displacement Directions",
+    "what": "site 8 F",
+    "value": {
+     "peak_sigma": 1.44,
+     "enhancement": 15.6,
+     "peak_uvw": [
+      0,
+      -0.12,
+      -1
+     ],
+     "map_sigma": 12.1
+    },
+    "reading": "no significant direction"
+   },
+   {
+    "page": "Dashboard partial g(r)",
+    "what": "Ag-F first shell",
+    "value": {
+     "peaks_A": [
+      2.06,
+      2.38
+     ],
+     "average_structure_spread_A": 0.0411
+    },
+    "reading": "split shell around Ag: 0.31 Å between its maxima"
+   },
+   {
+    "page": "analyze_clusters",
+    "what": "F clusters in 2.67–3.48 Å (engine verdict)",
+    "value": {
+     "distorted": "true (axis_family)",
+     "lessDistorted": "true (below_null)",
+     "breathing": "false (below_null)",
+     "rigid": "false (split_sites)",
+     "staticDistortion": "false (within_sampling_error)",
+     "splitMemberSites": "true (half_or_more_split)",
+     "trigonalLean": "null (not_tetrahedra)",
+     "favouredAxes": "true (enhanced)",
+     "ladder_width": {
+      "obs": 0.426,
+      "null": 0.516,
+      "z": -11,
+      "change": -0.17
+     },
+     "breathing_sd": {
+      "obs": 0.0301,
+      "null": 0.101,
+      "z": -16,
+      "change": -0.7
+     }
+    },
+    "reading": "distorted true (axis_family); lessDistorted true (below_null); breathing false (below_null); rigid false (split_sites); staticDistortion false (within_sampling_error); splitMemberSites true (half_or_more_split); trigonalLean null (not_tetrahedra); favouredAxes true (enhanced)"
+   }
+  ],
+  "truth": {
+   "summary": "AgF6 octahedra Jahn–Teller elongated: 4 × 2.05 + 2 × 2.4 Å (Δ = 0.35 Å), long axis along x, y or z at random; the average octahedron is regular at 2.167 Å; every Ag also sits ±0.15 Å off the centre along [0 0 1] at random (two-site disorder)",
+   "features": [
+    {
+     "kind": "jahn_teller",
+     "element": "Ag",
+     "accept": [
+      "jahn_teller"
+     ],
+     "magnitude_A": 0.35,
+     "direction_uvw": [
+      0,
+      0,
+      1
+     ],
+     "direction_mode": "cubic"
+    },
+    {
+     "kind": "off_centre",
+     "element": "Ag",
+     "accept": [
+      "off_centre"
+     ],
+     "direction_uvw": [
+      0,
+      0,
+      1
+     ],
+     "direction_mode": "axis",
+     "magnitude_A": 0.15
+    }
+   ],
+   "tolerated": [
+    {
+     "kind": "off_centre",
+     "element": "F"
+    },
+    {
+     "kind": "cluster_distortion",
+     "element": "F"
+    }
+   ],
+   "symmetry": {
+    "space_group": "Pm-3m",
+    "chiral": false,
+    "centrosymmetric": true,
+    "polar": false,
+    "primary": false
+   },
+   "traps": [
+    "the Ag–F first shell has two peaks: a window around the first peak holds about 4 F, the whole shell 6",
+    "the average octahedron is regular: the distortion is local only",
+    "two distortions of one octahedron: an off-centred Ag splits its own shell 1 + 4 + 1 about the mean distance, which cannot put 4 F below the mean and 2 above; reading the split shell as the off-centring's alone misses the Jahn–Teller elongation"
+   ],
+   "judgment": {
+    "situation": "two_features"
+   }
+  }
+ },
+ {
+  "id": "dev-jt-off-centre__D",
+  "protocol": "2026-10-19.9",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "case": "dev-jt-off-centre",
+  "split": "dev",
+  "arm": "D",
+  "model": null,
+  "verdict": {
+   "features": [
+    {
+     "kind": "jahn_teller",
+     "element": "Ag",
+     "direction_uvw": [
+      0,
+      0,
+      1
+     ],
+     "magnitude_A": 0.35
+    },
+    {
+     "kind": "off_centre",
+     "element": "Ag",
+     "direction_uvw": [
+      0,
+      0,
+      1
+     ],
+     "magnitude_A": 0.15
+    }
+   ],
+   "space_group": "Pm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false
+  },
+  "score": {
+   "format_ok": true,
+   "null_case": false,
+   "features": [
+    {
+     "planted": "jahn_teller",
+     "found": true,
+     "claim_index": 0,
+     "kind": "jahn_teller",
+     "element": "Ag",
+     "direction_error_deg": 0,
+     "direction_ok": true,
+     "magnitude_claimed_A": 0.35,
+     "magnitude_ok": true,
+     "accurate": true
+    },
+    {
+     "planted": "off_centre",
+     "found": true,
+     "claim_index": 1,
+     "kind": "off_centre",
+     "element": "Ag",
+     "direction_error_deg": 0,
+     "direction_ok": true,
+     "magnitude_claimed_A": 0.15,
+     "magnitude_ok": true,
+     "accurate": true
+    }
+   ],
+   "spurious": [],
+   "tolerated": [],
+   "overclaim": false,
+   "symmetry": {
+    "space_group": "right",
+    "chiral": "right",
+    "centrosymmetric": "right",
+    "polar": "right"
+   },
+   "contradictions": [],
+   "score": 1
+  },
+  "readings": [],
+  "truth": {
+   "summary": "AgF6 octahedra Jahn–Teller elongated: 4 × 2.05 + 2 × 2.4 Å (Δ = 0.35 Å), long axis along x, y or z at random; the average octahedron is regular at 2.167 Å; every Ag also sits ±0.15 Å off the centre along [0 0 1] at random (two-site disorder)",
+   "features": [
+    {
+     "kind": "jahn_teller",
+     "element": "Ag",
+     "accept": [
+      "jahn_teller"
+     ],
+     "magnitude_A": 0.35,
+     "direction_uvw": [
+      0,
+      0,
+      1
+     ],
+     "direction_mode": "cubic"
+    },
+    {
+     "kind": "off_centre",
+     "element": "Ag",
+     "accept": [
+      "off_centre"
+     ],
+     "direction_uvw": [
+      0,
+      0,
+      1
+     ],
+     "direction_mode": "axis",
+     "magnitude_A": 0.15
+    }
+   ],
+   "tolerated": [
+    {
+     "kind": "off_centre",
+     "element": "F"
+    },
+    {
+     "kind": "cluster_distortion",
+     "element": "F"
+    }
+   ],
+   "symmetry": {
+    "space_group": "Pm-3m",
+    "chiral": false,
+    "centrosymmetric": true,
+    "polar": false,
+    "primary": false
+   },
+   "traps": [
+    "the Ag–F first shell has two peaks: a window around the first peak holds about 4 F, the whole shell 6",
+    "the average octahedron is regular: the distortion is local only",
+    "two distortions of one octahedron: an off-centred Ag splits its own shell 1 + 4 + 1 about the mean distance, which cannot put 4 F below the mean and 2 above; reading the split shell as the off-centring's alone misses the Jahn–Teller elongation"
+   ],
+   "judgment": {
+    "situation": "two_features"
+   }
+  }
+ },
+ {
+  "id": "dev-eight-site__A",
+  "protocol": "2026-10-19.9",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "case": "dev-eight-site",
+  "split": "dev",
+  "arm": "A",
+  "model": null,
+  "verdict": {
+   "features": [
+    {
+     "kind": "jahn_teller",
+     "element": "Nb",
+     "magnitude_A": 0.28
+    }
+   ],
+   "space_group": "Pm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false
+  },
+  "score": {
+   "format_ok": true,
+   "null_case": false,
+   "features": [
+    {
+     "kind": "off_centre",
+     "element": "Nb",
+     "found": false
+    }
+   ],
+   "spurious": [
+    {
+     "index": 0,
+     "kind": "jahn_teller",
+     "element": "Nb",
+     "magnitude_A": 0.28
+    }
+   ],
+   "tolerated": [],
+   "overclaim": false,
+   "symmetry": {
+    "space_group": "right",
+    "chiral": "right",
+    "centrosymmetric": "right",
+    "polar": "right"
+   },
+   "contradictions": [
+    {
+     "what": "spurious jahn_teller (Nb)",
+     "rule": "none"
+    }
+   ],
+   "score": 0.6667
+  },
+  "readings": [
+   {
+    "page": "Detected SG card",
+    "what": "space group at 0.2 Å",
+    "value": "Pm-3m",
+    "point_group": "m-3m"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 1 Na",
+    "value": {
+     "rms_A": [
+      0.0826,
+      0.0786,
+      0.0769
+     ],
+     "pc1_over_pc2": 1.05,
+     "pc1_excess_kurtosis": 0.0332,
+     "pc1_uvw": [
+      1,
+      0.74,
+      -0.71
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 2 Nb",
+    "value": {
+     "rms_A": [
+      0.162,
+      0.152,
+      0.151
+     ],
+     "pc1_over_pc2": 1.06,
+     "pc1_excess_kurtosis": -0.679,
+     "pc1_uvw": [
+      -0.53,
+      1,
+      -0.83
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 3 O",
+    "value": {
+     "rms_A": [
+      0.096,
+      0.0873,
+      0.0469
+     ],
+     "pc1_over_pc2": 1.1,
+     "pc1_excess_kurtosis": -0.0996,
+     "pc1_uvw": [
+      1,
+      0.17,
+      0.03
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 4 O",
+    "value": {
+     "rms_A": [
+      0.0893,
+      0.0857,
+      0.0516
+     ],
+     "pc1_over_pc2": 1.04,
+     "pc1_excess_kurtosis": -0.0671,
+     "pc1_uvw": [
+      1,
+      -0.04,
+      -0.77
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 5 O",
+    "value": {
+     "rms_A": [
+      0.0949,
+      0.086,
+      0.0515
+     ],
+     "pc1_over_pc2": 1.1,
+     "pc1_excess_kurtosis": 0.0114,
+     "pc1_uvw": [
+      -0.01,
+      1,
+      -0.47
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "Dashboard partial g(r)",
+    "what": "Nb-O first shell",
+    "value": {
+     "peaks_A": [
+      1.84,
+      2.13
+     ],
+     "average_structure_spread_A": 0.017
+    },
+    "reading": "split shell around Nb: 0.28 Å between its maxima"
+   }
+  ],
+  "truth": {
+   "summary": "Nb off-centred 0.25 Å along one of the eight <111> directions at random (eight-site disorder); the average structure stays cubic",
+   "features": [
+    {
+     "kind": "off_centre",
+     "element": "Nb",
+     "accept": [
+      "off_centre"
+     ],
+     "direction_uvw": [
+      1,
+      1,
+      1
+     ],
+     "direction_mode": "cubic",
+     "magnitude_A": 0.25
+    }
+   ],
+   "tolerated": [],
+   "symmetry": {
+    "space_group": "Pm-3m",
+    "chiral": false,
+    "centrosymmetric": true,
+    "polar": false,
+    "primary": false
+   },
+   "traps": [
+    "the eight wells average to an isotropic Nb ellipsoid and an isotropic orientation tensor: no principal axis is resolved, so the ellipsoid shows no split; the Mardia kurtosis is strongly negative, and the direction map, anisotropic at its default tiling, resolves the eight <111> lobes only on a finer one",
+    "the Nb–O first shell is split 3 + 3 by the off-centring itself (three short, three long bonds), not by a Jahn–Teller distortion"
+   ],
+   "judgment": {
+    "situation": "two_readings"
+   }
+  }
+ },
+ {
+  "id": "dev-eight-site__A+",
+  "protocol": "2026-10-19.9",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "case": "dev-eight-site",
+  "split": "dev",
+  "arm": "A+",
+  "model": null,
+  "verdict": {
+   "features": [
+    {
+     "kind": "jahn_teller",
+     "element": "Nb",
+     "magnitude_A": 0.28
+    }
+   ],
+   "space_group": "Pm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false
+  },
+  "score": {
+   "format_ok": true,
+   "null_case": false,
+   "features": [
+    {
+     "kind": "off_centre",
+     "element": "Nb",
+     "found": false
+    }
+   ],
+   "spurious": [
+    {
+     "index": 0,
+     "kind": "jahn_teller",
+     "element": "Nb",
+     "magnitude_A": 0.28
+    }
+   ],
+   "tolerated": [],
+   "overclaim": false,
+   "symmetry": {
+    "space_group": "right",
+    "chiral": "right",
+    "centrosymmetric": "right",
+    "polar": "right"
+   },
+   "contradictions": [
+    {
+     "what": "spurious jahn_teller (Nb)",
+     "rule": "none"
+    }
+   ],
+   "score": 0.6667
+  },
+  "readings": [
+   {
+    "page": "detect_symmetry at the noise floor",
+    "what": "space group at 0.05 Å",
+    "value": "Pm-3m",
+    "point_group": "m-3m"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 1 Na",
+    "value": {
+     "rms_A": [
+      0.0826,
+      0.0786,
+      0.0769
+     ],
+     "pc1_over_pc2": 1.05,
+     "pc1_excess_kurtosis": 0.0332,
+     "pc1_uvw": [
+      1,
+      0.74,
+      -0.71
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 2 Nb",
+    "value": {
+     "rms_A": [
+      0.162,
+      0.152,
+      0.151
+     ],
+     "pc1_over_pc2": 1.06,
+     "pc1_excess_kurtosis": -0.679,
+     "pc1_uvw": [
+      -0.53,
+      1,
+      -0.83
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 3 O",
+    "value": {
+     "rms_A": [
+      0.096,
+      0.0873,
+      0.0469
+     ],
+     "pc1_over_pc2": 1.1,
+     "pc1_excess_kurtosis": -0.0996,
+     "pc1_uvw": [
+      1,
+      0.17,
+      0.03
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 4 O",
+    "value": {
+     "rms_A": [
+      0.0893,
+      0.0857,
+      0.0516
+     ],
+     "pc1_over_pc2": 1.04,
+     "pc1_excess_kurtosis": -0.0671,
+     "pc1_uvw": [
+      1,
+      -0.04,
+      -0.77
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 5 O",
+    "value": {
+     "rms_A": [
+      0.0949,
+      0.086,
+      0.0515
+     ],
+     "pc1_over_pc2": 1.1,
+     "pc1_excess_kurtosis": 0.0114,
+     "pc1_uvw": [
+      -0.01,
+      1,
+      -0.47
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "analyze_modulations",
+    "what": "zone-boundary points and general modes (engine verdict)",
+    "value": {
+     "Na": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     },
+     "Nb": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "true (long_wave_dominates)"
+     },
+     "O": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     }
+    },
+    "reading": "cell doubling: none; order at a general q: none; long wave: Nb at (0.25, 0.125, -0.125)"
+   },
+   {
+    "page": "Dashboard partial g(r)",
+    "what": "Nb-O first shell",
+    "value": {
+     "peaks_A": [
+      1.84,
+      2.13
+     ],
+     "average_structure_spread_A": 0.017
+    },
+    "reading": "split shell around Nb: 0.28 Å between its maxima"
+   },
+   {
+    "page": "analyze_clusters",
+    "what": "O clusters in 2.47–3.17 Å (engine verdict)",
+    "value": {
+     "window": "true (extended_network)"
+    },
+    "reading": "no clusters: extended_network"
+   }
+  ],
+  "truth": {
+   "summary": "Nb off-centred 0.25 Å along one of the eight <111> directions at random (eight-site disorder); the average structure stays cubic",
+   "features": [
+    {
+     "kind": "off_centre",
+     "element": "Nb",
+     "accept": [
+      "off_centre"
+     ],
+     "direction_uvw": [
+      1,
+      1,
+      1
+     ],
+     "direction_mode": "cubic",
+     "magnitude_A": 0.25
+    }
+   ],
+   "tolerated": [],
+   "symmetry": {
+    "space_group": "Pm-3m",
+    "chiral": false,
+    "centrosymmetric": true,
+    "polar": false,
+    "primary": false
+   },
+   "traps": [
+    "the eight wells average to an isotropic Nb ellipsoid and an isotropic orientation tensor: no principal axis is resolved, so the ellipsoid shows no split; the Mardia kurtosis is strongly negative, and the direction map, anisotropic at its default tiling, resolves the eight <111> lobes only on a finer one",
+    "the Nb–O first shell is split 3 + 3 by the off-centring itself (three short, three long bonds), not by a Jahn–Teller distortion"
+   ],
+   "judgment": {
+    "situation": "two_readings"
+   }
+  }
+ },
+ {
+  "id": "dev-eight-site__D",
+  "protocol": "2026-10-19.9",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "case": "dev-eight-site",
+  "split": "dev",
+  "arm": "D",
+  "model": null,
+  "verdict": {
+   "features": [
+    {
+     "kind": "off_centre",
+     "element": "Nb",
+     "direction_uvw": [
+      1,
+      1,
+      1
+     ],
+     "magnitude_A": 0.25
+    }
+   ],
+   "space_group": "Pm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false
+  },
+  "score": {
+   "format_ok": true,
+   "null_case": false,
+   "features": [
+    {
+     "planted": "off_centre",
+     "found": true,
+     "claim_index": 0,
+     "kind": "off_centre",
+     "element": "Nb",
+     "direction_error_deg": 0,
+     "direction_ok": true,
+     "magnitude_claimed_A": 0.25,
+     "magnitude_ok": true,
+     "accurate": true
+    }
+   ],
+   "spurious": [],
+   "tolerated": [],
+   "overclaim": false,
+   "symmetry": {
+    "space_group": "right",
+    "chiral": "right",
+    "centrosymmetric": "right",
+    "polar": "right"
+   },
+   "contradictions": [],
+   "score": 1
+  },
+  "readings": [],
+  "truth": {
+   "summary": "Nb off-centred 0.25 Å along one of the eight <111> directions at random (eight-site disorder); the average structure stays cubic",
+   "features": [
+    {
+     "kind": "off_centre",
+     "element": "Nb",
+     "accept": [
+      "off_centre"
+     ],
+     "direction_uvw": [
+      1,
+      1,
+      1
+     ],
+     "direction_mode": "cubic",
+     "magnitude_A": 0.25
+    }
+   ],
+   "tolerated": [],
+   "symmetry": {
+    "space_group": "Pm-3m",
+    "chiral": false,
+    "centrosymmetric": true,
+    "polar": false,
+    "primary": false
+   },
+   "traps": [
+    "the eight wells average to an isotropic Nb ellipsoid and an isotropic orientation tensor: no principal axis is resolved, so the ellipsoid shows no split; the Mardia kurtosis is strongly negative, and the direction map, anisotropic at its default tiling, resolves the eight <111> lobes only on a finer one",
+    "the Nb–O first shell is split 3 + 3 by the off-centring itself (three short, three long bonds), not by a Jahn–Teller distortion"
+   ],
+   "judgment": {
+    "situation": "two_readings"
+   }
+  }
+ },
+ {
+  "id": "dev-octahedral-clusters__A",
+  "protocol": "2026-10-19.9",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "case": "dev-octahedral-clusters",
+  "split": "dev",
+  "arm": "A",
+  "model": null,
+  "verdict": {
+   "features": [
+    {
+     "kind": "off_centre",
+     "element": "W",
+     "direction_uvw": [
+      1,
+      0,
+      0
+     ],
+     "magnitude_A": 0.243
+    }
+   ],
+   "space_group": "Pm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false
+  },
+  "score": {
+   "format_ok": true,
+   "null_case": false,
+   "features": [
+    {
+     "kind": "cluster_distortion",
+     "element": "W",
+     "found": false
+    }
+   ],
+   "spurious": [],
+   "tolerated": [
+    {
+     "index": 0,
+     "kind": "off_centre",
+     "element": "W",
+     "direction_uvw": [
+      1,
+      0,
+      0
+     ],
+     "magnitude_A": 0.243
+    }
+   ],
+   "overclaim": false,
+   "symmetry": {
+    "space_group": "right",
+    "chiral": "right",
+    "centrosymmetric": "right",
+    "polar": "right"
+   },
+   "contradictions": [],
+   "score": 0.8333
+  },
+  "readings": [
+   {
+    "page": "Detected SG card",
+    "what": "space group at 0.2 Å",
+    "value": "Pm-3m",
+    "point_group": "m-3m"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 1 Br",
+    "value": {
+     "rms_A": [
+      0.0522,
+      0.0487,
+      0.0458
+     ],
+     "pc1_over_pc2": 1.07,
+     "pc1_excess_kurtosis": -0.00121,
+     "pc1_uvw": [
+      -0.94,
+      1,
+      0.08
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 2 W",
+    "value": {
+     "rms_A": [
+      0.249,
+      0.0518,
+      0.0465
+     ],
+     "pc1_over_pc2": 4.8,
+     "pc1_excess_kurtosis": -1.5,
+     "pc1_uvw": [
+      1,
+      0,
+      0
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.243 Å"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 3 W",
+    "value": {
+     "rms_A": [
+      0.247,
+      0.0513,
+      0.0482
+     ],
+     "pc1_over_pc2": 4.82,
+     "pc1_excess_kurtosis": -1.51,
+     "pc1_uvw": [
+      1,
+      -0.01,
+      -0.01
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.242 Å"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 4 W",
+    "value": {
+     "rms_A": [
+      0.24,
+      0.052,
+      0.0495
+     ],
+     "pc1_over_pc2": 4.63,
+     "pc1_excess_kurtosis": -1.33,
+     "pc1_uvw": [
+      -0.01,
+      1,
+      0
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.235 Å"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 5 W",
+    "value": {
+     "rms_A": [
+      0.241,
+      0.0501,
+      0.0481
+     ],
+     "pc1_over_pc2": 4.8,
+     "pc1_excess_kurtosis": -1.29,
+     "pc1_uvw": [
+      0,
+      1,
+      -0.01
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.235 Å"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 6 W",
+    "value": {
+     "rms_A": [
+      0.238,
+      0.0511,
+      0.0483
+     ],
+     "pc1_over_pc2": 4.65,
+     "pc1_excess_kurtosis": -1.29,
+     "pc1_uvw": [
+      -0.01,
+      -0.02,
+      1
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.232 Å"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 7 W",
+    "value": {
+     "rms_A": [
+      0.241,
+      0.0499,
+      0.0484
+     ],
+     "pc1_over_pc2": 4.84,
+     "pc1_excess_kurtosis": -1.3,
+     "pc1_uvw": [
+      0.02,
+      -0.01,
+      1
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.236 Å"
+   },
+   {
+    "page": "Displacement Directions",
+    "what": "site 2 W",
+    "value": {
+     "peak_sigma": 9.55,
+     "enhancement": 26.2,
+     "peak_uvw": [
+      1,
+      0,
+      0
+     ],
+     "map_sigma": 37
+    },
+    "reading": "preferred direction [1 0 0]"
+   }
+  ],
+  "truth": {
+   "summary": "W6 octahedra each elongated along x, y or z at random: locally 4 short + 8 long edges (2.65 / 3.02 Å), the average octahedron regular (edge 2.89 Å)",
+   "features": [
+    {
+     "kind": "cluster_distortion",
+     "element": "W",
+     "accept": [
+      "cluster_distortion"
+     ]
+    }
+   ],
+   "tolerated": [
+    {
+     "kind": "off_centre",
+     "element": "W"
+    },
+    {
+     "kind": "jahn_teller",
+     "element": "W"
+    }
+   ],
+   "symmetry": {
+    "space_group": "Pm-3m",
+    "chiral": false,
+    "centrosymmetric": true,
+    "polar": false,
+    "primary": false
+   },
+   "traps": [
+    "the W–W first shell is split across a trough (the short and the long edges) and closes at 4 W per W, an octahedron: the first peak alone holds no edge of the average octahedron, so no clusters there; which window is the user's choice, and the Workbench asks when a window cuts the shell",
+    "the W split sites are the elongation seen one atom at a time, not independent off-centring"
+   ],
+   "judgment": {
+    "situation": "user_choice"
+   }
+  }
+ },
+ {
+  "id": "dev-octahedral-clusters__A+",
+  "protocol": "2026-10-19.9",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "case": "dev-octahedral-clusters",
+  "split": "dev",
+  "arm": "A+",
+  "model": null,
+  "verdict": {
+   "features": [
+    {
+     "kind": "off_centre",
+     "element": "W",
+     "direction_uvw": [
+      1,
+      0,
+      0
+     ],
+     "magnitude_A": 0.243
+    },
+    {
+     "kind": "cluster_distortion",
+     "element": "W"
+    }
+   ],
+   "space_group": "Pm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false
+  },
+  "score": {
+   "format_ok": true,
+   "null_case": false,
+   "features": [
+    {
+     "planted": "cluster_distortion",
+     "found": true,
+     "claim_index": 1,
+     "kind": "cluster_distortion",
+     "element": "W",
+     "accurate": true
+    }
+   ],
+   "spurious": [],
+   "tolerated": [
+    {
+     "index": 0,
+     "kind": "off_centre",
+     "element": "W",
+     "direction_uvw": [
+      1,
+      0,
+      0
+     ],
+     "magnitude_A": 0.243
+    }
+   ],
+   "overclaim": false,
+   "symmetry": {
+    "space_group": "right",
+    "chiral": "right",
+    "centrosymmetric": "right",
+    "polar": "right"
+   },
+   "contradictions": [],
+   "score": 1
+  },
+  "readings": [
+   {
+    "page": "detect_symmetry at the noise floor",
+    "what": "space group at 0.048 Å",
+    "value": "Pm-3m",
+    "point_group": "m-3m"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 1 Br",
+    "value": {
+     "rms_A": [
+      0.0522,
+      0.0487,
+      0.0458
+     ],
+     "pc1_over_pc2": 1.07,
+     "pc1_excess_kurtosis": -0.00121,
+     "pc1_uvw": [
+      -0.94,
+      1,
+      0.08
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 2 W",
+    "value": {
+     "rms_A": [
+      0.249,
+      0.0518,
+      0.0465
+     ],
+     "pc1_over_pc2": 4.8,
+     "pc1_excess_kurtosis": -1.5,
+     "pc1_uvw": [
+      1,
+      0,
+      0
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.243 Å"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 3 W",
+    "value": {
+     "rms_A": [
+      0.247,
+      0.0513,
+      0.0482
+     ],
+     "pc1_over_pc2": 4.82,
+     "pc1_excess_kurtosis": -1.51,
+     "pc1_uvw": [
+      1,
+      -0.01,
+      -0.01
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.242 Å"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 4 W",
+    "value": {
+     "rms_A": [
+      0.24,
+      0.052,
+      0.0495
+     ],
+     "pc1_over_pc2": 4.63,
+     "pc1_excess_kurtosis": -1.33,
+     "pc1_uvw": [
+      -0.01,
+      1,
+      0
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.235 Å"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 5 W",
+    "value": {
+     "rms_A": [
+      0.241,
+      0.0501,
+      0.0481
+     ],
+     "pc1_over_pc2": 4.8,
+     "pc1_excess_kurtosis": -1.29,
+     "pc1_uvw": [
+      0,
+      1,
+      -0.01
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.235 Å"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 6 W",
+    "value": {
+     "rms_A": [
+      0.238,
+      0.0511,
+      0.0483
+     ],
+     "pc1_over_pc2": 4.65,
+     "pc1_excess_kurtosis": -1.29,
+     "pc1_uvw": [
+      -0.01,
+      -0.02,
+      1
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.232 Å"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 7 W",
+    "value": {
+     "rms_A": [
+      0.241,
+      0.0499,
+      0.0484
+     ],
+     "pc1_over_pc2": 4.84,
+     "pc1_excess_kurtosis": -1.3,
+     "pc1_uvw": [
+      0.02,
+      -0.01,
+      1
+     ]
+    },
+    "reading": "split site along PC1, static shift ≈ 0.236 Å"
+   },
+   {
+    "page": "analyze_modulations",
+    "what": "zone-boundary points and general modes (engine verdict)",
+    "value": {
+     "Br": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     },
+     "W": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     }
+    },
+    "reading": "cell doubling: none; order at a general q: none; long wave: none"
+   },
+   {
+    "page": "Displacement Directions",
+    "what": "site 2 W",
+    "value": {
+     "peak_sigma": 9.55,
+     "enhancement": 26.2,
+     "peak_uvw": [
+      1,
+      0,
+      0
+     ],
+     "map_sigma": 37
+    },
+    "reading": "preferred direction [1 0 0]"
+   },
+   {
+    "page": "analyze_clusters",
+    "what": "W clusters in 2.42–3.31 Å (engine verdict)",
+    "value": {
+     "distorted": "true (axis_family)",
+     "lessDistorted": "true (below_null)",
+     "breathing": "false (below_null)",
+     "rigid": "false (split_sites)",
+     "staticDistortion": "false (within_sampling_error)",
+     "splitMemberSites": "true (half_or_more_split)",
+     "trigonalLean": "null (not_tetrahedra)",
+     "favouredAxes": "true (enhanced)",
+     "ladder_width": {
+      "obs": 0.544,
+      "null": 0.697,
+      "z": -19,
+      "change": -0.22
+     },
+     "breathing_sd": {
+      "obs": 0.0304,
+      "null": 0.144,
+      "z": -27,
+      "change": -0.79
+     }
+    },
+    "reading": "distorted true (axis_family); lessDistorted true (below_null); breathing false (below_null); rigid false (split_sites); staticDistortion false (within_sampling_error); splitMemberSites true (half_or_more_split); trigonalLean null (not_tetrahedra); favouredAxes true (enhanced)"
+   }
+  ],
+  "truth": {
+   "summary": "W6 octahedra each elongated along x, y or z at random: locally 4 short + 8 long edges (2.65 / 3.02 Å), the average octahedron regular (edge 2.89 Å)",
+   "features": [
+    {
+     "kind": "cluster_distortion",
+     "element": "W",
+     "accept": [
+      "cluster_distortion"
+     ]
+    }
+   ],
+   "tolerated": [
+    {
+     "kind": "off_centre",
+     "element": "W"
+    },
+    {
+     "kind": "jahn_teller",
+     "element": "W"
+    }
+   ],
+   "symmetry": {
+    "space_group": "Pm-3m",
+    "chiral": false,
+    "centrosymmetric": true,
+    "polar": false,
+    "primary": false
+   },
+   "traps": [
+    "the W–W first shell is split across a trough (the short and the long edges) and closes at 4 W per W, an octahedron: the first peak alone holds no edge of the average octahedron, so no clusters there; which window is the user's choice, and the Workbench asks when a window cuts the shell",
+    "the W split sites are the elongation seen one atom at a time, not independent off-centring"
+   ],
+   "judgment": {
+    "situation": "user_choice"
+   }
+  }
+ },
+ {
+  "id": "dev-octahedral-clusters__D",
+  "protocol": "2026-10-19.9",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "case": "dev-octahedral-clusters",
+  "split": "dev",
+  "arm": "D",
+  "model": null,
+  "verdict": {
+   "features": [
+    {
+     "kind": "cluster_distortion",
+     "element": "W"
+    }
+   ],
+   "space_group": "Pm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false
+  },
+  "score": {
+   "format_ok": true,
+   "null_case": false,
+   "features": [
+    {
+     "planted": "cluster_distortion",
+     "found": true,
+     "claim_index": 0,
+     "kind": "cluster_distortion",
+     "element": "W",
+     "accurate": true
+    }
+   ],
+   "spurious": [],
+   "tolerated": [],
+   "overclaim": false,
+   "symmetry": {
+    "space_group": "right",
+    "chiral": "right",
+    "centrosymmetric": "right",
+    "polar": "right"
+   },
+   "contradictions": [],
+   "score": 1
+  },
+  "readings": [],
+  "truth": {
+   "summary": "W6 octahedra each elongated along x, y or z at random: locally 4 short + 8 long edges (2.65 / 3.02 Å), the average octahedron regular (edge 2.89 Å)",
+   "features": [
+    {
+     "kind": "cluster_distortion",
+     "element": "W",
+     "accept": [
+      "cluster_distortion"
+     ]
+    }
+   ],
+   "tolerated": [
+    {
+     "kind": "off_centre",
+     "element": "W"
+    },
+    {
+     "kind": "jahn_teller",
+     "element": "W"
+    }
+   ],
+   "symmetry": {
+    "space_group": "Pm-3m",
+    "chiral": false,
+    "centrosymmetric": true,
+    "polar": false,
+    "primary": false
+   },
+   "traps": [
+    "the W–W first shell is split across a trough (the short and the long edges) and closes at 4 W per W, an octahedron: the first peak alone holds no edge of the average octahedron, so no clusters there; which window is the user's choice, and the Workbench asks when a window cuts the shell",
+    "the W split sites are the elongation seen one atom at a time, not independent off-centring"
+   ],
+   "judgment": {
+    "situation": "user_choice"
+   }
+  }
+ },
+ {
+  "id": "dev-weak-order-a__A",
+  "protocol": "2026-10-19.9",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "case": "dev-weak-order-a",
+  "split": "dev",
+  "arm": "A",
+  "model": null,
+  "verdict": {
+   "features": [],
+   "space_group": "Pm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false
+  },
+  "score": {
+   "format_ok": true,
+   "null_case": false,
+   "features": [
+    {
+     "kind": "modulation",
+     "element": "Nb",
+     "found": false
+    }
+   ],
+   "spurious": [],
+   "tolerated": [],
+   "overclaim": false,
+   "symmetry": {
+    "space_group": "right",
+    "chiral": "right",
+    "centrosymmetric": "right",
+    "polar": "right"
+   },
+   "contradictions": [],
+   "score": 0.8333
+  },
+  "readings": [
+   {
+    "page": "Detected SG card",
+    "what": "space group at 0.2 Å",
+    "value": "Pm-3m",
+    "point_group": "m-3m"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 1 Ag",
+    "value": {
+     "rms_A": [
+      0.0847,
+      0.0781,
+      0.0736
+     ],
+     "pc1_over_pc2": 1.08,
+     "pc1_excess_kurtosis": 0.389,
+     "pc1_uvw": [
+      0.25,
+      -0.28,
+      1
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 2 Nb",
+    "value": {
+     "rms_A": [
+      0.0662,
+      0.0616,
+      0.0576
+     ],
+     "pc1_over_pc2": 1.07,
+     "pc1_excess_kurtosis": -0.402,
+     "pc1_uvw": [
+      0.26,
+      -0.04,
+      1
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 3 O",
+    "value": {
+     "rms_A": [
+      0.0906,
+      0.0887,
+      0.0497
+     ],
+     "pc1_over_pc2": 1.02,
+     "pc1_excess_kurtosis": 0.0256,
+     "pc1_uvw": [
+      -0.69,
+      1,
+      0.04
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 4 O",
+    "value": {
+     "rms_A": [
+      0.0916,
+      0.0895,
+      0.0518
+     ],
+     "pc1_over_pc2": 1.02,
+     "pc1_excess_kurtosis": 0.193,
+     "pc1_uvw": [
+      0.54,
+      -0.04,
+      1
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 5 O",
+    "value": {
+     "rms_A": [
+      0.0873,
+      0.0861,
+      0.0523
+     ],
+     "pc1_over_pc2": 1.01,
+     "pc1_excess_kurtosis": 0.354,
+     "pc1_uvw": [
+      0.09,
+      -0.4,
+      1
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   }
+  ],
+  "truth": {
+   "summary": "Nb displaced ±0.018 Å along [0 0 1] in an ordered pattern with q = (0.5, 0.5, 0), far below its thermal width (0.06 Å rms): a weak superstructure at the edge of significance",
+   "features": [
+    {
+     "kind": "modulation",
+     "element": "Nb",
+     "accept": [
+      "modulation"
+     ],
+     "q": [
+      0.5,
+      0.5,
+      0
+     ]
+    }
+   ],
+   "tolerated": [],
+   "symmetry": {
+    "space_group": "Pm-3m",
+    "chiral": false,
+    "centrosymmetric": true,
+    "polar": false,
+    "primary": false
+   },
+   "traps": [
+    "the order is real but weak: analyze_modulations puts Nb at q = (0.5, 0.5, 0) near its 3σ bar, so a fixed 3σ rule is a coin flip; an honest answer gives the significance and says how confident it is",
+    "Nb's folded cloud looks thermal: no ellipsoid, kurtosis or direction map shows an amplitude this far below the thermal width, and nothing resolves its axis"
+   ],
+   "judgment": {
+    "situation": "marginal"
+   }
+  }
+ },
+ {
+  "id": "dev-weak-order-a__A+",
+  "protocol": "2026-10-19.9",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "case": "dev-weak-order-a",
+  "split": "dev",
+  "arm": "A+",
+  "model": null,
+  "verdict": {
+   "features": [
+    {
+     "kind": "modulation",
+     "element": "Nb",
+     "q": [
+      0.5,
+      0.5,
+      0
+     ]
+    }
+   ],
+   "space_group": "Pm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false
+  },
+  "score": {
+   "format_ok": true,
+   "null_case": false,
+   "features": [
+    {
+     "planted": "modulation",
+     "found": true,
+     "claim_index": 0,
+     "kind": "modulation",
+     "element": "Nb",
+     "q_claimed": [
+      0.5,
+      0.5,
+      0
+     ],
+     "q_ok": true,
+     "accurate": true
+    }
+   ],
+   "spurious": [],
+   "tolerated": [],
+   "overclaim": false,
+   "symmetry": {
+    "space_group": "right",
+    "chiral": "right",
+    "centrosymmetric": "right",
+    "polar": "right"
+   },
+   "contradictions": [],
+   "score": 1
+  },
+  "readings": [
+   {
+    "page": "detect_symmetry at the noise floor",
+    "what": "space group at 0.026 Å",
+    "value": "Pm-3m",
+    "point_group": "m-3m"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 1 Ag",
+    "value": {
+     "rms_A": [
+      0.0847,
+      0.0781,
+      0.0736
+     ],
+     "pc1_over_pc2": 1.08,
+     "pc1_excess_kurtosis": 0.389,
+     "pc1_uvw": [
+      0.25,
+      -0.28,
+      1
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 2 Nb",
+    "value": {
+     "rms_A": [
+      0.0662,
+      0.0616,
+      0.0576
+     ],
+     "pc1_over_pc2": 1.07,
+     "pc1_excess_kurtosis": -0.402,
+     "pc1_uvw": [
+      0.26,
+      -0.04,
+      1
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 3 O",
+    "value": {
+     "rms_A": [
+      0.0906,
+      0.0887,
+      0.0497
+     ],
+     "pc1_over_pc2": 1.02,
+     "pc1_excess_kurtosis": 0.0256,
+     "pc1_uvw": [
+      -0.69,
+      1,
+      0.04
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 4 O",
+    "value": {
+     "rms_A": [
+      0.0916,
+      0.0895,
+      0.0518
+     ],
+     "pc1_over_pc2": 1.02,
+     "pc1_excess_kurtosis": 0.193,
+     "pc1_uvw": [
+      0.54,
+      -0.04,
+      1
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 5 O",
+    "value": {
+     "rms_A": [
+      0.0873,
+      0.0861,
+      0.0523
+     ],
+     "pc1_over_pc2": 1.01,
+     "pc1_excess_kurtosis": 0.354,
+     "pc1_uvw": [
+      0.09,
+      -0.4,
+      1
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "analyze_modulations",
+    "what": "zone-boundary points and general modes (engine verdict)",
+    "value": {
+     "Ag": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (below_ratio)"
+     },
+     "Nb": {
+      "cellDoubling": "true (ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     },
+     "O": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     }
+    },
+    "reading": "cell doubling: Nb at (0.5, 0.5, 0); order at a general q: none; long wave: none"
+   },
+   {
+    "page": "analyze_clusters",
+    "what": "O clusters in 2.47–3.21 Å (engine verdict)",
+    "value": {
+     "window": "true (extended_network)"
+    },
+    "reading": "no clusters: extended_network"
+   }
+  ],
+  "truth": {
+   "summary": "Nb displaced ±0.018 Å along [0 0 1] in an ordered pattern with q = (0.5, 0.5, 0), far below its thermal width (0.06 Å rms): a weak superstructure at the edge of significance",
+   "features": [
+    {
+     "kind": "modulation",
+     "element": "Nb",
+     "accept": [
+      "modulation"
+     ],
+     "q": [
+      0.5,
+      0.5,
+      0
+     ]
+    }
+   ],
+   "tolerated": [],
+   "symmetry": {
+    "space_group": "Pm-3m",
+    "chiral": false,
+    "centrosymmetric": true,
+    "polar": false,
+    "primary": false
+   },
+   "traps": [
+    "the order is real but weak: analyze_modulations puts Nb at q = (0.5, 0.5, 0) near its 3σ bar, so a fixed 3σ rule is a coin flip; an honest answer gives the significance and says how confident it is",
+    "Nb's folded cloud looks thermal: no ellipsoid, kurtosis or direction map shows an amplitude this far below the thermal width, and nothing resolves its axis"
+   ],
+   "judgment": {
+    "situation": "marginal"
+   }
+  }
+ },
+ {
+  "id": "dev-weak-order-a__D",
+  "protocol": "2026-10-19.9",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "case": "dev-weak-order-a",
+  "split": "dev",
+  "arm": "D",
+  "model": null,
+  "verdict": {
+   "features": [
+    {
+     "kind": "modulation",
+     "element": "Nb",
+     "q": [
+      0.5,
+      0.5,
+      0
+     ]
+    }
+   ],
+   "space_group": "Pm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false
+  },
+  "score": {
+   "format_ok": true,
+   "null_case": false,
+   "features": [
+    {
+     "planted": "modulation",
+     "found": true,
+     "claim_index": 0,
+     "kind": "modulation",
+     "element": "Nb",
+     "q_claimed": [
+      0.5,
+      0.5,
+      0
+     ],
+     "q_ok": true,
+     "accurate": true
+    }
+   ],
+   "spurious": [],
+   "tolerated": [],
+   "overclaim": false,
+   "symmetry": {
+    "space_group": "right",
+    "chiral": "right",
+    "centrosymmetric": "right",
+    "polar": "right"
+   },
+   "contradictions": [],
+   "score": 1
+  },
+  "readings": [],
+  "truth": {
+   "summary": "Nb displaced ±0.018 Å along [0 0 1] in an ordered pattern with q = (0.5, 0.5, 0), far below its thermal width (0.06 Å rms): a weak superstructure at the edge of significance",
+   "features": [
+    {
+     "kind": "modulation",
+     "element": "Nb",
+     "accept": [
+      "modulation"
+     ],
+     "q": [
+      0.5,
+      0.5,
+      0
+     ]
+    }
+   ],
+   "tolerated": [],
+   "symmetry": {
+    "space_group": "Pm-3m",
+    "chiral": false,
+    "centrosymmetric": true,
+    "polar": false,
+    "primary": false
+   },
+   "traps": [
+    "the order is real but weak: analyze_modulations puts Nb at q = (0.5, 0.5, 0) near its 3σ bar, so a fixed 3σ rule is a coin flip; an honest answer gives the significance and says how confident it is",
+    "Nb's folded cloud looks thermal: no ellipsoid, kurtosis or direction map shows an amplitude this far below the thermal width, and nothing resolves its axis"
+   ],
+   "judgment": {
+    "situation": "marginal"
+   }
+  }
+ },
+ {
+  "id": "dev-weak-order-b__A",
+  "protocol": "2026-10-19.9",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "case": "dev-weak-order-b",
+  "split": "dev",
+  "arm": "A",
+  "model": null,
+  "verdict": {
+   "features": [],
+   "space_group": "Pm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false
+  },
+  "score": {
+   "format_ok": true,
+   "null_case": false,
+   "features": [
+    {
+     "kind": "modulation",
+     "element": "Nb",
+     "found": false
+    }
+   ],
+   "spurious": [],
+   "tolerated": [],
+   "overclaim": false,
+   "symmetry": {
+    "space_group": "right",
+    "chiral": "right",
+    "centrosymmetric": "right",
+    "polar": "right"
+   },
+   "contradictions": [],
+   "score": 0.8333
+  },
+  "readings": [
+   {
+    "page": "Detected SG card",
+    "what": "space group at 0.2 Å",
+    "value": "Pm-3m",
+    "point_group": "m-3m"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 1 Ag",
+    "value": {
+     "rms_A": [
+      0.0851,
+      0.0775,
+      0.0742
+     ],
+     "pc1_over_pc2": 1.1,
+     "pc1_excess_kurtosis": 0.0568,
+     "pc1_uvw": [
+      -0.46,
+      0.41,
+      1
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 2 Nb",
+    "value": {
+     "rms_A": [
+      0.0636,
+      0.0619,
+      0.0604
+     ],
+     "pc1_over_pc2": 1.03,
+     "pc1_excess_kurtosis": -0.279,
+     "pc1_uvw": [
+      0.86,
+      0.05,
+      1
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 3 O",
+    "value": {
+     "rms_A": [
+      0.0958,
+      0.0928,
+      0.052
+     ],
+     "pc1_over_pc2": 1.03,
+     "pc1_excess_kurtosis": 0.2,
+     "pc1_uvw": [
+      0.38,
+      1,
+      -0.04
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 4 O",
+    "value": {
+     "rms_A": [
+      0.0955,
+      0.0943,
+      0.0478
+     ],
+     "pc1_over_pc2": 1.01,
+     "pc1_excess_kurtosis": -0.00785,
+     "pc1_uvw": [
+      1,
+      -0.02,
+      0.52
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 5 O",
+    "value": {
+     "rms_A": [
+      0.0907,
+      0.0888,
+      0.0506
+     ],
+     "pc1_over_pc2": 1.02,
+     "pc1_excess_kurtosis": 0.0411,
+     "pc1_uvw": [
+      -0.02,
+      0.31,
+      1
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   }
+  ],
+  "truth": {
+   "summary": "Nb displaced ±0.018 Å along [0 0 1] in an ordered pattern with q = (0.5, 0.5, 0), far below its thermal width (0.06 Å rms): a weak superstructure at the edge of significance",
+   "features": [
+    {
+     "kind": "modulation",
+     "element": "Nb",
+     "accept": [
+      "modulation"
+     ],
+     "q": [
+      0.5,
+      0.5,
+      0
+     ]
+    }
+   ],
+   "tolerated": [],
+   "symmetry": {
+    "space_group": "Pm-3m",
+    "chiral": false,
+    "centrosymmetric": true,
+    "polar": false,
+    "primary": false
+   },
+   "traps": [
+    "the order is real but weak: analyze_modulations puts Nb at q = (0.5, 0.5, 0) near its 3σ bar, so a fixed 3σ rule is a coin flip; an honest answer gives the significance and says how confident it is",
+    "Nb's folded cloud looks thermal: no ellipsoid, kurtosis or direction map shows an amplitude this far below the thermal width, and nothing resolves its axis"
+   ],
+   "judgment": {
+    "situation": "marginal"
+   }
+  }
+ },
+ {
+  "id": "dev-weak-order-b__A+",
+  "protocol": "2026-10-19.9",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "case": "dev-weak-order-b",
+  "split": "dev",
+  "arm": "A+",
+  "model": null,
+  "verdict": {
+   "features": [],
+   "space_group": "Pm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false
+  },
+  "score": {
+   "format_ok": true,
+   "null_case": false,
+   "features": [
+    {
+     "kind": "modulation",
+     "element": "Nb",
+     "found": false
+    }
+   ],
+   "spurious": [],
+   "tolerated": [],
+   "overclaim": false,
+   "symmetry": {
+    "space_group": "right",
+    "chiral": "right",
+    "centrosymmetric": "right",
+    "polar": "right"
+   },
+   "contradictions": [],
+   "score": 0.8333
+  },
+  "readings": [
+   {
+    "page": "detect_symmetry at the noise floor",
+    "what": "space group at 0.027 Å",
+    "value": "Pm-3m",
+    "point_group": "m-3m"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 1 Ag",
+    "value": {
+     "rms_A": [
+      0.0851,
+      0.0775,
+      0.0742
+     ],
+     "pc1_over_pc2": 1.1,
+     "pc1_excess_kurtosis": 0.0568,
+     "pc1_uvw": [
+      -0.46,
+      0.41,
+      1
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 2 Nb",
+    "value": {
+     "rms_A": [
+      0.0636,
+      0.0619,
+      0.0604
+     ],
+     "pc1_over_pc2": 1.03,
+     "pc1_excess_kurtosis": -0.279,
+     "pc1_uvw": [
+      0.86,
+      0.05,
+      1
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 3 O",
+    "value": {
+     "rms_A": [
+      0.0958,
+      0.0928,
+      0.052
+     ],
+     "pc1_over_pc2": 1.03,
+     "pc1_excess_kurtosis": 0.2,
+     "pc1_uvw": [
+      0.38,
+      1,
+      -0.04
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 4 O",
+    "value": {
+     "rms_A": [
+      0.0955,
+      0.0943,
+      0.0478
+     ],
+     "pc1_over_pc2": 1.01,
+     "pc1_excess_kurtosis": -0.00785,
+     "pc1_uvw": [
+      1,
+      -0.02,
+      0.52
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 5 O",
+    "value": {
+     "rms_A": [
+      0.0907,
+      0.0888,
+      0.0506
+     ],
+     "pc1_over_pc2": 1.02,
+     "pc1_excess_kurtosis": 0.0411,
+     "pc1_uvw": [
+      -0.02,
+      0.31,
+      1
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "analyze_modulations",
+    "what": "zone-boundary points and general modes (engine verdict)",
+    "value": {
+     "Ag": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     },
+     "Nb": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     },
+     "O": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     }
+    },
+    "reading": "cell doubling: none; order at a general q: none; long wave: none"
+   },
+   {
+    "page": "analyze_clusters",
+    "what": "O clusters in 2.46–3.19 Å (engine verdict)",
+    "value": {
+     "window": "true (extended_network)"
+    },
+    "reading": "no clusters: extended_network"
+   }
+  ],
+  "truth": {
+   "summary": "Nb displaced ±0.018 Å along [0 0 1] in an ordered pattern with q = (0.5, 0.5, 0), far below its thermal width (0.06 Å rms): a weak superstructure at the edge of significance",
+   "features": [
+    {
+     "kind": "modulation",
+     "element": "Nb",
+     "accept": [
+      "modulation"
+     ],
+     "q": [
+      0.5,
+      0.5,
+      0
+     ]
+    }
+   ],
+   "tolerated": [],
+   "symmetry": {
+    "space_group": "Pm-3m",
+    "chiral": false,
+    "centrosymmetric": true,
+    "polar": false,
+    "primary": false
+   },
+   "traps": [
+    "the order is real but weak: analyze_modulations puts Nb at q = (0.5, 0.5, 0) near its 3σ bar, so a fixed 3σ rule is a coin flip; an honest answer gives the significance and says how confident it is",
+    "Nb's folded cloud looks thermal: no ellipsoid, kurtosis or direction map shows an amplitude this far below the thermal width, and nothing resolves its axis"
+   ],
+   "judgment": {
+    "situation": "marginal"
+   }
+  }
+ },
+ {
+  "id": "dev-weak-order-b__D",
+  "protocol": "2026-10-19.9",
+  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "case": "dev-weak-order-b",
+  "split": "dev",
+  "arm": "D",
+  "model": null,
+  "verdict": {
+   "features": [
+    {
+     "kind": "modulation",
+     "element": "Nb",
+     "q": [
+      0.5,
+      0.5,
+      0
+     ]
+    }
+   ],
+   "space_group": "Pm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false
+  },
+  "score": {
+   "format_ok": true,
+   "null_case": false,
+   "features": [
+    {
+     "planted": "modulation",
+     "found": true,
+     "claim_index": 0,
+     "kind": "modulation",
+     "element": "Nb",
+     "q_claimed": [
+      0.5,
+      0.5,
+      0
+     ],
+     "q_ok": true,
+     "accurate": true
+    }
+   ],
+   "spurious": [],
+   "tolerated": [],
+   "overclaim": false,
+   "symmetry": {
+    "space_group": "right",
+    "chiral": "right",
+    "centrosymmetric": "right",
+    "polar": "right"
+   },
+   "contradictions": [],
+   "score": 1
+  },
+  "readings": [],
+  "truth": {
+   "summary": "Nb displaced ±0.018 Å along [0 0 1] in an ordered pattern with q = (0.5, 0.5, 0), far below its thermal width (0.06 Å rms): a weak superstructure at the edge of significance",
+   "features": [
+    {
+     "kind": "modulation",
+     "element": "Nb",
+     "accept": [
+      "modulation"
+     ],
+     "q": [
+      0.5,
+      0.5,
+      0
+     ]
+    }
+   ],
+   "tolerated": [],
+   "symmetry": {
+    "space_group": "Pm-3m",
+    "chiral": false,
+    "centrosymmetric": true,
+    "polar": false,
+    "primary": false
+   },
+   "traps": [
+    "the order is real but weak: analyze_modulations puts Nb at q = (0.5, 0.5, 0) near its 3σ bar, so a fixed 3σ rule is a coin flip; an honest answer gives the significance and says how confident it is",
+    "Nb's folded cloud looks thermal: no ellipsoid, kurtosis or direction map shows an amplitude this far below the thermal width, and nothing resolves its axis"
+   ],
+   "judgment": {
+    "situation": "marginal"
+   }
+  }
  }
 ]
