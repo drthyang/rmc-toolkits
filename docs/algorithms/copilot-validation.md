@@ -869,7 +869,10 @@ short with the configuration's sampling error
 - **The description** names the split: `dock/tools.json`, `harness/tools.arm-B.json` and
   `tools.arm-C.json` grow by 123 characters each (the budget pins: +48 tokens on the dock's worst
   turn, +49 on arm B's). The Demo joins no shell, so its `find_gr_peaks` results and every other
-  snapshot are unchanged.
+  model-visible snapshot are unchanged. The scripted runs' record files
+  (`validation/__tests__/__snapshots__/records/`) move only in each request's length and hash
+  (+121 characters a request with tools), and `harness.coordination-square` in its
+  `find_gr_peaks` step on dev-jahn-teller's Cu–F shell (the split and the new note).
 - **Arm A+** takes a Jahn–Teller claim's magnitude from the catalogue's split where it joins the
   claimed shell, and records the split as a `find_gr_peaks` reading; for a split shell the app
   does not join it keeps the separation of the maxima arm A reads, since the app gives no split
