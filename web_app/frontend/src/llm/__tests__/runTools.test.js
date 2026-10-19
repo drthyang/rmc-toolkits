@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { describe, expect, it } from 'vitest';
+import { checkText, toolDescription } from '../copilot/method';
 import { buildRunTools } from '../copilot/runTools';
 
 const grid = (n, step) => Array.from({ length: n }, (_, i) => i * step);
@@ -342,5 +343,72 @@ describe('the cards each run tool reads', () => {
         expect(tools.read_run_data.cards({ section: 'datasets' })).toEqual([]);
         // Without a catalog, no cards; a file without a name matches none.
         expect(toolMap({ plotFiles: [partialsFile()] }).find_gr_peaks.cards({})).toEqual([]);
+    });
+});
+
+// The method advice in the run tools (method.js, plan item 1.8): with method
+// 'off' (the validation's arm C) a description says what the tool does and
+// returns, and a check keeps its reading, without which window to use.
+describe('the run tools\' method advice: arm C reads them without it', () => {
+    const fitFile = () => {
+        const x = grid(400, 0.05).map((q) => q + 0.5);
+        return {
+            name: 'run_SQ1.csv',
+            plotKind: 'neutron_sq',
+            plotData: { series: [{ label: 'S(Q)_RMC', x, y: x.map(Math.sin) }, { label: 'S(Q)_Expt', x, y: x.map(Math.sin) }] }
+        };
+    };
+
+    it('find_gr_peaks and compare_fit: the advice comes back whole with method full, and is gone with off', () => {
+        const tools = toolMap({ plotFiles: [partialsFile(), fitFile()] });
+        const peaks = tools.find_gr_peaks;
+        expect(toolDescription(peaks, 'full')).toContain('the window from onset to the first deep minimum (use first_shell.window_A for '
+            + 'compute_bond_angles: it holds the whole shell, split shells included), mean distance');
+        expect(toolDescription(peaks, 'off')).toBe(peaks.description);
+        expect(peaks.description).toContain('the window from onset to the first deep minimum (it holds the whole shell, '
+            + 'split shells included), mean distance');
+        expect(peaks.description).not.toMatch(/compute_bond_angles|use first_shell/);
+        const fit = tools.compare_fit;
+        expect(toolDescription(fit, 'full')).toBe(`${fit.description} Use it for "where does the fit fail" and "is the misfit at short or long range"; `
+            + 'run it once per dataset (a G(r) and its F(Q) are separate entries).');
+        expect(toolDescription(fit, 'off')).toBe(fit.description);
+        expect(fit.description).toMatch(/^Where the model misses the measured data, for one fitted dataset: .* size relative to the data's rms\)\.$/);
+    });
+
+    it('find_gr_peaks: a split shell\'s note keeps its reading; "use first_shell.window_A" is advice', async () => {
+        const L = 20;
+        const counts = { Ta: 400, Se: 800 };
+        const rhoSe = counts.Se / L ** 3;
+        const x = grid(600, 0.01);
+        const normal = (r, r0, s) => Math.exp(-((r - r0) ** 2) / (2 * s * s)) / (s * Math.sqrt(2 * Math.PI));
+        const y = x.map((r) => (r > 0 ? (3 * normal(r, 2.52, 0.06) + 3 * normal(r, 2.74, 0.1)) / (4 * Math.PI * rhoSe * r * r) : 0));
+        const { find_gr_peaks: tool } = toolMap({
+            structure: { latticeVectors: [[L, 0, 0], [0, L, 0], [0, 0, L]], elementCounts: counts },
+            plotFiles: [{ plotKind: 'pdf_partials', plotData: { series: [{ label: 'Ta-Se', x, y }] } }]
+        });
+        const { checks } = await tool.run({ pair: 'Ta-Se' });
+        expect(checks[0].method).toEqual([' Use first_shell.window_A, not the first peak alone.']);
+        expect(checkText(checks[0], 'full')).toBe(checks[0].text);
+        expect(checkText(checks[0], 'off')).toMatch(new RegExp('^The first shell holds 2 peaks \\([\\d., ]+ Å\\): a split shell, e\\.g\\. two '
+            + 'bond lengths of one distorted polyhedron\\. The first peak alone \\(first_peak_only, to [\\d.]+ Å\\) holds [\\d.]+ Se per Ta '
+            + 'of the shell\'s [\\d.]+\\.$'));
+        expect(checkText(checks[1], 'off')).toBe(checks[1].text);
+    });
+
+    it('find_gr_peaks: a joined Jahn–Teller shell\'s note keeps "cuts the polyhedron"; when to use the first peak is advice', async () => {
+        const L = 20;
+        const counts = { Cu: 200, F: 1200 };
+        const rhoF = counts.F / L ** 3;
+        const x = grid(600, 0.005);
+        const normal = (r, r0) => Math.exp(-((r - r0) ** 2) / (2 * 0.05 ** 2)) / (0.05 * Math.sqrt(2 * Math.PI));
+        const y = x.map((r) => (r > 0 ? (4 * normal(r, 1.93) + 2 * normal(r, 2.25)) / (4 * Math.PI * rhoF * r * r) : 0));
+        const { find_gr_peaks: tool } = toolMap({
+            structure: { latticeVectors: [[L, 0, 0], [0, L, 0], [0, 0, L]], elementCounts: counts },
+            plotFiles: [{ plotKind: 'pdf_partials', plotData: { series: [{ label: 'Cu-F', x, y }] } }]
+        });
+        const { checks } = await tool.run({ pair: 'Cu-F' });
+        expect(checks[0].text).toMatch(/The first peak alone \(first_peak_only\) cuts the polyhedron; use it only if the user chooses it\.$/);
+        expect(checks[0].method).toEqual(['; use it only if the user chooses it']);
+        expect(checkText(checks[0], 'off')).toMatch(/^One split shell across a deep trough: .* \(e\.g\. Jahn–Teller\)\. The first peak alone \(first_peak_only\) cuts the polyhedron\.$/);
     });
 });

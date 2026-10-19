@@ -33,18 +33,23 @@ export const bundledSkills = () => parseSkillFiles(copilotSkills.files, { availa
 
 // Every system prompt the code can build: tools off (one prompt, whatever
 // else is asked), or tools on with each combination of the view tools,
-// ask_user and the skills' index.
+// ask_user and the skills' index; and with method 'off' (llm
+// copilot/method.js: the validation's arm C), which sends no skills' index,
+// each combination of the view tools and ask_user (tools off, the same
+// no-tools prompt).
 export const PROMPT_VARIANTS = [
     'no-tools',
     'tools', 'tools-ask', 'tools-skills', 'tools-ask-skills',
-    'tools-view', 'tools-view-ask', 'tools-view-skills', 'tools-view-ask-skills'
+    'tools-view', 'tools-view-ask', 'tools-view-skills', 'tools-view-ask-skills',
+    'tools.method-off', 'tools-ask.method-off', 'tools-view.method-off', 'tools-view-ask.method-off'
 ];
 
 export const variantFlags = (name) => ({
     toolsEnabled: name !== 'no-tools',
     viewTools: name.includes('-view'),
     askUser: name.includes('-ask'),
-    skills: name.includes('-skills')
+    skills: name.includes('-skills'),
+    method: name.endsWith('.method-off') ? 'off' : 'full'
 });
 
 /** name → the exact system prompt, with `index` as the skills' index. */
@@ -64,9 +69,10 @@ export const exactLine = (text) => `${text.length} characters, sha256 ${sha256(t
 
 export const renderPrompt = (name, text) => {
     const flags = variantFlags(name);
+    // The method is named only when it is 'off', so the 'full' files keep their header.
     const call = flags.toolsEnabled
         ? `copilotSystemPrompt({ toolsEnabled: true, viewTools: ${flags.viewTools}, askUser: ${flags.askUser}, `
-            + `skills: ${flags.skills ? 'skillIndex(<the bundled .claude/skills>)' : '\'\''} })`
+            + `skills: ${flags.skills ? 'skillIndex(<the bundled .claude/skills>)' : '\'\''}${flags.method === 'off' ? ', method: \'off\'' : ''} })`
         : 'copilotSystemPrompt({ toolsEnabled: false }) — COPILOT_PROMPT_NO_TOOLS';
     return [
         `# The Copilot's system prompt, variant "${name}"`,

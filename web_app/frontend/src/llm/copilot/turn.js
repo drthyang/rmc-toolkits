@@ -43,6 +43,16 @@
 //                 askUser (the dock's card-focus controller)
 //   config        { toolsEnabled = true, method = 'full', limits = {} }
 //
+// The method (method.js): 'full' is the Copilot as it ships; 'off' (the
+// validation's arm C) sends none of the method. One pure function, planTurn,
+// decides from it what the model reads: the prompt's sections (no skills'
+// index, no EVIDENCE_RULES and no method sentence of TOOL_RULES or ASK_RULES
+// with 'off'; prompts/copilot.js), read_skill (only with 'full'), and each
+// tool as offered (toolAsSent: its description with its `method` advice
+// with 'full', without it with 'off', and with 'off' its checks without
+// their advice). With 'full' every request is byte for byte what it was
+// before the switch.
+//
 // Invariants:
 //   - ask_user is offered only with an askUser port and tools on; read_skill
 //     only with skills, tools on and method 'full'; both after `tools`, in
@@ -74,9 +84,7 @@
 // tools_unsupported at most once, before any tool step, followed by a new
 // round and request under the no-tools prompt.
 //
-// Seams for the next pieces: arm C's method switch goes in planTurn (one
-// function decides the prompt sections, the tool descriptions, the skills
-// offered and the gate's wording); the verification module replaces the four
+// Seams for the next pieces: the verification module replaces the four
 // checks loopChecks builds; provider quirks stay behind the model port.
 
 import { runCopilotTurn } from './agentLoop';
@@ -84,6 +92,7 @@ import { contextAuditFacts } from './answerAudit';
 import { ASK_USER, buildAskUserTool } from './askUser';
 import { buildClarifier } from './clarify';
 import { buildEvidenceGate } from './evidence';
+import { TURN_METHODS, toolAsSent, toolDescription } from './method';
 import { compactAnswer, explainModelError } from './robustness';
 import { READ_SKILL, buildReadSkillTool, parseSkillFiles, skillIndex } from './skills';
 import { usableTools } from './tools';
@@ -94,9 +103,9 @@ import { asModelPort } from '../provider/model';
 
 // The longest earlier answer re-sent whole as memory.
 export const MEMORY_ANSWER_CHARS = 2000;
-// The methods a turn can follow: 'full' (the skills and the prompt's method
-// rules). Arm C's 'off' joins when its switch is built.
-export const TURN_METHODS = Object.freeze(['full']);
+// The methods a turn can follow (method.js): 'full', the skills and the
+// method in the prompt, the descriptions and the checks; 'off', none of it.
+export { TURN_METHODS };
 // The tools the turn adds itself, never the caller.
 export const TURN_OWN_TOOLS = Object.freeze([ASK_USER, READ_SKILL]);
 
@@ -121,6 +130,9 @@ const readSpec = (spec, { running }) => {
     if (!Array.isArray(tools)) invalid('tools must be an array');
     const own = tools.find((tool) => tool && TURN_OWN_TOOLS.includes(tool.name));
     if (own) invalid(`tools must not contain ${own.name}: the turn adds it (askUser, skills)`);
+    // A tool's method advice must put back into its description (method.js),
+    // whatever this turn's method: a malformed spec fails in every arm.
+    usableTools(tools).forEach((tool) => toolDescription(tool, 'full'));
     if (askUser != null && typeof askUser !== 'function') invalid('askUser must be a function or null');
     if (skills != null && !(isObject(skills) && (isObject(skills.files) || Array.isArray(skills.list)))) {
         invalid('skills must be { files, references?, load? }, { list, load? } or null');
@@ -154,7 +166,9 @@ const readSkills = (skills) => {
 };
 
 // The assembly, pure: the context, the tools offered, the prompt they get.
-// Arm C's method switch belongs here.
+// The method switch is here: read_skill only with method 'full', each tool
+// as the model reads it under the method (toolAsSent), and the method passed
+// to the prompt (turnMessages).
 const planTurn = ({ run, tools, askUser, skills, config }) => {
     const context = buildRunContext(run);
     const { list, load, error } = readSkills(skills);
@@ -165,7 +179,7 @@ const planTurn = ({ run, tools, askUser, skills, config }) => {
         ...usableTools(tools),
         ...(asks ? [buildAskUserTool()] : []),
         ...(reads ? [buildReadSkillTool(list, { load })] : [])
-    ];
+    ].map((tool) => toolAsSent(tool, config.method));
     const toolsActive = on && offered.length > 0;
     const view = offered.some((tool) => Boolean(tool.view));
     return {
@@ -209,7 +223,8 @@ const turnMessages = (plan, { question, history }) => buildCopilotMessages({
     toolsEnabled: plan.toolsActive,
     viewTools: plan.prompt === 'view',
     askUser: plan.toolsActive && plan.offered.askUser,
-    skills: plan.toolsActive && plan.offered.skills.length ? skillIndex(plan.skills) : ''
+    skills: plan.toolsActive && plan.offered.skills.length ? skillIndex(plan.skills) : '',
+    method: plan.method
 });
 
 // The four checks the loop runs with: the Workbench's own questions (only

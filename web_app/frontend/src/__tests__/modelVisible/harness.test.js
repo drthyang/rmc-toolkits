@@ -10,8 +10,14 @@
 // every question. No model runs.
 //
 //   harness/first-request.arm-B.txt   arm B (skills): fields, tool names, messages
-//   harness/first-request.arm-C.txt   arm C (no skills), against arm B
+//   harness/first-request.arm-C.txt   arm C (no method), against arm B
 //   harness/tools.arm-B.json          the `tools` field exactly as sent (arm B)
+//   harness/tools.arm-C.json          the `tools` field exactly as sent (arm C)
+//
+// Arm C follows no method (the turn's method 'off', src/llm/copilot/method.js,
+// plan item 1.8, protocol 2026-10-19.10): its first request is also checked
+// for every skill name, the skills' step headings, the prompt's method
+// sentences, EVIDENCE_RULES and the tools' method advice.
 //
 // A change to these files is a change to what the model sees: call it out in
 // the PR. The files' header line still names the capture point by its name
@@ -22,7 +28,10 @@ import { describe, expect, it } from 'vitest';
 import { buildCase, DEV_CASES } from '../../../validation/cases';
 import { runLiveCase } from '../../../validation/harness';
 import { loadSkills } from '../../../validation/run';
-import { skillIndex } from '../../llm/copilot/skills';
+import { loadRun } from '../../../validation/runFolder';
+import { buildRunTools } from '../../llm/copilot/runTools';
+import { parseSkillFiles, skillIndex } from '../../llm/copilot/skills';
+import { EVIDENCE_RULES, METHOD_SENTENCES } from '../../llm/prompts/copilot';
 import { bundledSkills, jsonFile, promptVariants, recordingModel, renderRequest } from './helpers';
 
 const CASE = 'dev-offcentre';
@@ -52,14 +61,60 @@ describe(`the harness's first request (${CASE})`, () => {
         })).toMatchFileSnapshot('__snapshots__/harness/first-request.arm-B.txt');
     });
 
-    it('arm C: the same request without the skills', async () => {
-        const [{ request: b }, { request: c }] = [await firstRequest('B'), await firstRequest('C')];
-        // Arm C's tools are arm B's without read_skill, each definition unchanged.
-        expect(c.tools).toEqual(b.tools.filter((tool) => tool.function.name !== 'read_skill'));
+    it('arm C: the same request without the method', async () => {
+        const [{ request: b }, { request: c, record }] = [await firstRequest('B'), await firstRequest('C')];
+        expect(record.method).toBe('off');
+        // Arm C's tools are arm B's without read_skill, with the same names and
+        // parameters; a description loses its method advice and nothing else.
+        const shared = b.tools.filter((tool) => tool.function.name !== 'read_skill');
+        expect(c.tools.map((tool) => tool.function.name)).toEqual(shared.map((tool) => tool.function.name));
+        expect(c.tools.map((tool) => tool.function.parameters)).toEqual(shared.map((tool) => tool.function.parameters));
+        await expect(jsonFile(c.tools)).toMatchFileSnapshot('__snapshots__/harness/tools.arm-C.json');
         await expect(renderRequest(c, {
-            title: `First request of the validation harness, arm C (no skills), dev case ${CASE}`,
-            port: PORT, variants, toolsFile: 'harness/tools.arm-B.json, without read_skill',
+            title: `First request of the validation harness, arm C (no method), dev case ${CASE}`,
+            port: PORT, variants, toolsFile: 'harness/tools.arm-C.json',
             base: b, baseName: 'first-request.arm-B.txt'
         })).toMatchFileSnapshot('__snapshots__/harness/first-request.arm-C.txt');
+    });
+
+    it('arm C names no skill or skill step and sends no method sentence, EVIDENCE_RULES or tool advice', async () => {
+        const [{ request: b }, { request: c }] = [await firstRequest('B'), await firstRequest('C')];
+        // Every text arm C's first request holds: the messages, and each tool's
+        // description and parameter descriptions.
+        const descriptions = (node) => (node && typeof node === 'object'
+            ? Object.entries(node).flatMap(([key, value]) => (key === 'description' && typeof value === 'string' ? [value] : descriptions(value)))
+            : []);
+        const texts = (request) => [...request.messages.map((message) => message.content), ...descriptions(request.tools)];
+        const sent = texts(c).join('\n');
+        const disk = loadSkills();
+        const skills = parseSkillFiles(disk.files, { available: disk.references });
+        // The skills' names, and each skill's step headings of more than one
+        // word ("Find the shell", "Read the significances"); the one-word ones
+        // ("Convergence", "Directions") are words any tool may need.
+        const stages = skills.flatMap((skill) => [...(/^## Steps\s*\n([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(skill.body)?.[1] || '')
+            .matchAll(/^\d+\.\s+\*\*([^*]+?)[.:]?\*\*/gm)].map((match) => match[1].trim()).filter((stage) => stage.split(/\s+/).length > 1));
+        expect(skills.map((skill) => skill.name)).toEqual(['coordination-shells', 'displacement-anisotropy', 'local-symmetry', 'rmc-fit-assessment']);
+        expect(stages.length).toBeGreaterThan(15);
+        for (const name of skills.map((skill) => skill.name)) expect(sent).not.toContain(name);
+        for (const stage of stages) expect(sent.toLowerCase()).not.toContain(stage.toLowerCase());
+        const system = c.messages[0].content;
+        expect(system).not.toContain(EVIDENCE_RULES);
+        expect(system).not.toContain('Skills —');
+        for (const sentence of METHOD_SENTENCES) expect(sent).not.toContain(sentence);
+        // Every piece of method advice the tools carry: in arm B's request,
+        // in none of arm C's descriptions.
+        const run = await loadRun(buildCase(DEV_CASES.find((item) => item.id === CASE)));
+        const advice = [...buildRunTools(run.props, { cards: [] }), ...run.tools]
+            .flatMap((tool) => [].concat(tool.method ?? []).map((part) => (typeof part === 'string' ? part : part.text).trim()));
+        // find_gr_peaks, list_sites, compute_bond_angles, analyze_clusters (2),
+        // analyze_modulations, detect_symmetry, measure_symmetry_lowering.
+        expect(advice).toHaveLength(8);
+        const armB = descriptions(b.tools).join('\n');
+        for (const piece of advice) {
+            expect(armB).toContain(piece);
+            expect(sent).not.toContain(piece);
+        }
+        // B against C: the rest of the request is the same.
+        expect(c.messages.slice(1)).toEqual(b.messages.slice(1));
     });
 });
