@@ -11,7 +11,7 @@ that went with it is [copilot-review.md](copilot-review.md).
 | Arm | What answers | Code |
 | --- | --- | --- |
 | **A** | The default Workbench, no agent: the Detected SG card (0.2 Å), the PCA Ellipsoid table, the Displacement Directions page (ν = 10, smoothing 2) and the partial g(r), read by fixed rules (`ARM_A_RULES`). The cluster and superstructure engines have no page, so A cannot use them | `armA.js` `runArmA` |
-| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules; no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19), a modulation claim with the engine's polarisation as its direction (since protocol 2026-10-19.12). Where the app has a rule, A+ calls the app's function (`SWEEP_RULES`, since 2026-10-19: the split site, the cluster elements, the lower group's tolerance). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
+| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules; no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19), a modulation claim with the engine's polarisation as its direction (since protocol 2026-10-19.12). Where the app has a rule, A+ calls the app's function (`SWEEP_RULES`, since 2026-10-19: the split site, the cluster elements, the lower group's tolerance), and a Jahn–Teller claim's long − short is the shell catalogue's split of a joined shell (since protocol 2026-10-19.15). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
 | **B** | The Copilot as the app assembles it: tools, skills, guardrails (refusals, the Workbench's window questions, answer checks) | `harness.js` |
 | **C** | B without the method ([below](#arm-c-the-copilot-without-the-method)): no skills (no `read_skill`, no skills index), no method rules in the prompt, no method advice in a tool's description or check; the tools, refusals, the Workbench's questions, the evidence gate and the answer checks still run. The ablation | `harness.js` |
 | **D** | The planted truth, scored as a verdict; it must score 1 (a test checks this) | `verdict.js` `truthVerdict` |
@@ -818,6 +818,38 @@ not run. What the model sees changes in the modulation tool's result only: its n
 32k budget pins hold. Approved by the manager on the user's delegation, 2026-10-19
 (`validation/findings/decisions/2026-10-19-mode-polarisation.json`).
 
+**Protocol 2026-10-19.15 (a joined shell's split by number, plan item 4.2).** The review saw the
+model subtract two g(r) peak positions to quote a Jahn–Teller split, a number provenance flags as
+unsourced and no reference can carry. The shell catalogue now reads, for a shell joined across a
+deep trough, its split: the parts cut at each inter-peak minimum (every part of a 2 + 2 + 2
+octahedron), each with its CN (summing to the shell's), share and r²g mean distance, and long −
+short with the configuration's sampling error
+([ai-assistant.md, Step 9](ai-assistant.md#step-9--assembling-contextpair_correlations)). What
+`find_gr_peaks` returns and says changes for every arm:
+- **`first_shell.split`** (`parts`, `long_minus_short_A`, `long_minus_short_se_A`), only for a
+  joined shell; the dataShape declares it.
+- **The joined-shell note** quotes the parts' counts at their mean distances, long − short ± its
+  sampling error and the shares by path, and no longer the peaks' separation: dev-jahn-teller's
+  Cu–F reads 3.98 F per Cu at 1.929 Å + 2.01 at 2.251 Å, long − short 0.321 ± 0.0043 Å (planted
+  0.32; the maxima of g are 0.31 apart).
+- **The description** names the split: `dock/tools.json`, `harness/tools.arm-B.json` and
+  `tools.arm-C.json` grow by 123 characters each (the budget pins: +48 tokens on the dock's worst
+  turn, +49 on arm B's). The Demo joins no shell, so its `find_gr_peaks` results and every other
+  snapshot are unchanged.
+- **Arm A+** takes a Jahn–Teller claim's magnitude from the catalogue's split where it joins the
+  claimed shell, and records the split as a `find_gr_peaks` reading; for a split shell the app
+  does not join it keeps the separation of the maxima arm A reads, since the app gives no split
+  there. Which shells are claimed stays A+'s own joining rule, and the long axis has no app rule
+  (the g(r) is orientation-averaged), so A+ still names none. Arm A is unchanged.
+
+**Arms A and A+ on dev** (`arm-a --split dev` before at c4d8d83, after at e9e67e1): one of the 45
+records moves. dev-jahn-teller's A+ claim reads 0.321 Å where it read 0.31, with the split as a
+new reading; its score stays 0.9167 (the magnitude was and is within its tolerance; the long-axis
+family is still unnamed). Every arm A and D record, every other A+ record and every score is
+identical. The record is re-recorded in `arm-a-dev.json`; the others stay as recorded. The test
+set was not run. Approved by the manager on the user's delegation, 2026-10-19
+(`validation/findings/decisions/2026-10-19-jt-split.json`).
+
 ### The report beside the case score (plan item 1.6, part i)
 
 The engines alone (A+) score 0.99, because most components of a case are facts they get right every
@@ -1071,9 +1103,9 @@ each model a window that holds the worst turn (`MIN_CONTEXT_TOKENS`):
 | Cloud | None | The provider; never probed |
 
 48k holds the worst realistic turn of the dock and of arm B (two skills read whole, a full round of
-analyses, the 8,192-token reply reserve; `src/__tests__/contextBudget.test.js`), with 10,500 and
-13,230 tokens to spare (arm B's worst is dev-fit-unconverged since protocol 2026-10-19.6; protocol
-2026-10-19.8 added 90 tokens to the dock's and 16 to arm B's).
+analyses, the 8,192-token reply reserve; `src/__tests__/contextBudget.test.js`), with 10,452 and
+13,182 tokens to spare (arm B's worst is dev-fit-unconverged since protocol 2026-10-19.6; protocol
+2026-10-19.8 added 90 tokens to the dock's and 16 to arm B's, protocol 2026-10-19.15 48 and 49).
 
 **The pre-run check.** `run.js live` calls `preflight` before every run. It reads the model's
 server the way the guard does: `detectServer`, then LM Studio's `GET /api/v0/models`
@@ -1096,8 +1128,8 @@ request at LM Studio's default), the record, the transcript and the report carry
 
 **The dock at 32k.** The decision fixes the validation, not the dock. A user who loads
 qwen3.8-27b in LM Studio at 32k can have the worst two-skill turn refused. The budget test pins the
-dock's worst turn 1,788 tokens over by LM Studio's rule (5,884 by `planContext`'s), and arm B's
-3,154 over by `planContext`'s. The fix is on-demand skill references (plan item 5.5, second half):
+dock's worst turn 1,836 tokens over by LM Studio's rule (5,932 by `planContext`'s), and arm B's
+3,202 over by `planContext`'s. The fix is on-demand skill references (plan item 5.5, second half):
 the skills' long reference material leaves what `read_skill` returns whole. That is skill text, so
 it waits for the user.
 

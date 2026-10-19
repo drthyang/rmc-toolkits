@@ -207,8 +207,12 @@ inputs on its page, stays the *user's* action.
      coordination numbers both ways and their sensitivity to the cut, whether it is separated from
      the next shell, and for two or more resolved peaks `first_peak_only` (to the minimum between
      the first two: window, CN, trough; the old `first_peak_window_A`, r ± FWHM, left on
-     2026-10-19) — and whether the pair's minimum-distance constraint cuts the distribution. The
-     shell does not depend on `r_max`;
+     2026-10-19); for a shell joined across a deep trough, `split` (plan item 4.2): its parts short
+     to long (window, mean distance and spread, CN in the direction the join decided, share) and
+     `long_minus_short_A` ± `long_minus_short_se_A` (the configuration's sampling error), which
+     the joined-shell note quotes by path instead of the peaks' separation — and whether the
+     pair's minimum-distance constraint cuts the distribution. The shell does not depend on
+     `r_max`;
    - `compare_fit(dataset)`: where the model misses the data, as Rw and the share of the misfit
      per range of r or Q, and the largest residual features.
 8. **`copilot/askUser.js`**: the `ask_user` tool (*Asking the user* below).

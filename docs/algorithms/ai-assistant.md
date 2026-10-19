@@ -645,6 +645,7 @@ sort order (Step 11) is used.
    first two) and what it holds (until 2026-10-19 only a split shell joined across a deep trough had
    them). `gap_g_fraction` when the shell is not separated from the next, and
    `cut_at_min_distance: {at_A, g_fraction}` when the pair's closest-approach constraint limits it.
+   A joined shell's split by number is not in the context: `find_gr_peaks` gives it (below).
 6. The entry is kept only if at least one of `avg_structure_d_A` / `gr_peaks_A` is present.
 
 **The first coordination shell: one reading per pair, per run (`shells.js`, architecture candidate
@@ -654,7 +655,7 @@ partials data, structure and run settings, and every reader takes the reading fr
 context, `find_gr_peaks`, the Workbench's questions, the evidence gate, the answer checks
 (`cnMatches`), `compute_bond_angles`' refusal (`countsCut`) and arm A+'s cluster windows. A Shell is
 frozen: `{centre, partner, label, peaks, window, peaksInShell, meanR, sdR, peakG, cn, reverseCn,
-ideal, joined, troughRatio, separated, firstPeak, cut, constraint}`. On the 5-point moving average
+ideal, joined, troughRatio, separated, firstPeak, split, cut, constraint}`. On the 5-point moving average
 $\tilde g$ of the partial (normalised to 1 at large $r$, as RMCProfile writes it), one rule per
 quantity:
 
@@ -720,6 +721,52 @@ quantity:
   only* and asks before an analysis runs in it. Bond-length splits of distorted polyhedra are
   0.1–0.4 Å; the next coordination shell lies a sizeable fraction of the bond further out, and a
   summed count that is no polyhedron (4 + 3) is never joined;
+- **a joined shell's split by number** (`split: {parts, longMinusShort, longMinusShortSe,
+  direction}`, plan item 4.2, approved by the manager on the user's delegation, 2026-10-19), only
+  for a joined shell (null otherwise). Its parts are cut at the minimum of $\tilde g$ between each
+  two successive resolved peaks in the shell (the first cut is the first peak alone's, so the first
+  part is `firstPeak`'s window), the last part ending at the shell's boundary; every edge is
+  rounded to 0.01 Å, as every window. Each part `{window, cn, reverseCn, share, meanR, sdR}` has its
+  CN integrated over exactly its window, so the parts sum to the shell's CN and their shares to 1,
+  and its mean distance and spread from $r^2 g$ over it, as the shell's (whose mean is the parts',
+  weighted by their shares). `longMinusShort` is the last part's mean minus the first's;
+  `longMinusShortSe` $= \sqrt{s_1^2/n_1 + s_k^2/n_k}$, $s$ a part's spread and $n$ its bonds in the
+  box (the centres' count × its CN, halved for a same-element pair): the configuration's sampling
+  error with the bonds taken as independent — an over-estimate where one atom's displacement
+  lengthens one bond as it shortens another, as a moving octahedron centre does — and not the fit's
+  uncertainty. `direction` is the count the join decided by, which `find_gr_peaks` says the parts
+  in: 'forward' ($\mathrm{CN}_{B|A}$ is ideal, or there is no other) or 'reverse'
+  ($\mathrm{CN}_{A|B}$). **Three or more parts (2 + 2 + 2):** every part is reported, and long −
+  short is the longest minus the shortest. In the E⊗e Jahn–Teller problem an octahedron's
+  distortion is a point $(\rho, \varphi)$ of the $(Q_3, Q_2)$ plane: $\varphi = 0$ is a 4 + 2
+  elongation, $60°$ a 2 + 4 compression, and between them the bonds come in short, medium and long
+  pairs (2 + 2 + 2, as in LaMnO₃). Long − short lies between $\rho\sqrt3/2$ (either end) and $\rho$
+  (the middle), so it measures the amplitude whatever the mix, and the shares show the mix;
+  "short against the rest" would read a 2 + 2 + 2 octahedron as a 2 + 4 compression with long −
+  short $(m + l)/2 - s$. **Why only a joined shell:** there a deep minimum (below 20 % of the first
+  peak) separates the parts, so each holds one bond group up to its tails. Peaks that overlap
+  without one are cut through both groups (the Demo's Ta–Se, its trough at 48 % of the first peak:
+  3.25 + 2.75 for 3 + 3), and a resolved peak can hide a group in its flank (dev-offcentre's Nb–O
+  reads 0.89 + 5.11 for an off-centred centre's 1 + 4 + 1): such a shell keeps its first peak alone
+  and its note, and no split. *Known answers* (`shells.test.js`): 4 × 1.93 + 2 × 2.25 Å at σ 0.05 Å
+  on 0.005, 0.01 and 0.02 Å grids gives 4 + 2 (shares 2/3 and 1/3 within 0.005), each mean and long
+  − short (0.32 Å) within 0.002 Å — the means are moments of $r^2 g$, not grid positions, and the
+  tails cut at the minimum and below the onset lie 3σ out (~0.1 % of a part, < 0.0005 Å on a mean);
+  2 + 2 + 2 at 1.95, 2.12 and 2.32 Å (σ 0.03 Å) gives three thirds and 0.37 Å; 1 + 0.5 F per Cu
+  with Cu four times as dense is joined by the reverse count and said as 4 + 2 Cu per F. **The
+  cut's bias:** as the parts overlap, each part's tail beyond the minimum pulls its mean toward the
+  other's, the long part's more, so long − short reads high: +0.001–0.0017 Å at σ 0.07 Å (0.5 % of
+  0.32 Å) and +0.006 Å (2 %) at σ 0.085 Å, where the trough reaches 20 % of the first peak, the
+  most the join takes. **The sampling error:** over 300 synthetic configurations of 216 octahedra
+  (independent bond lengths at σ 0.05 Å, histogrammed as the dev cases' partials are), (long −
+  short − 0.32)/error has mean 0.06, sd 0.96 and 95 % coverage 0.953. At σ 0.07 Å the cut's bias
+  is about half an error at 216 octahedra (coverage 0.93) and three quarters at 1,000 (0.87): there
+  the error understates the total. **Noise:** a noise maximum on a peak's flank is a resolved peak
+  to the peak finder (its 15 % floor has no prominence test), so it adds a part, as it moves the
+  first peak alone: at σ 0.07 Å in 9 of 400 configurations of 216 octahedra, in none of 400 of
+  1,000 or at σ 0.05 Å. The Demo joins no shell. dev-jahn-teller's Cu–F reads 3.98 F per Cu at
+  1.929 Å + 2.01 at 2.251 Å, long − short 0.321 ± 0.0043 Å (planted 0.32; the maxima of g are
+  0.31 apart);
 - **`ideal`:** the ideal count $\mathrm{CN}_{B|A}$ matches (`cnMatches`), or null.
 
 `window(centre, partner, [lo, hi], { counts })` reads a caller's window (as given, not rounded)
@@ -1309,7 +1356,7 @@ not answer as asked". A tool is offered only when its inputs exist.
 |---|---|---|---|---|
 | `read_run_data(section)` | the context has the section | `buildRunContext` | one context section as built (the builder's caps apply: ≤ 12 sites, 48 history points), before `contextToJson`'s trims | — |
 | `assess_convergence()` | an R-value series exists | `classifyConvergence` (Step 14), `seriesStats` | column, status, n, first/last/min, total drop, least-squares slope per row over the last 10 / 25 / 50 % (≥ 3 points each) | note: judged on one `.log` column, not the total; ok: converged; note: improving; warn: stalled/diverging; warn: non-finite rows; warn: < 5 rows; fail: < 2 finite rows |
-| `find_gr_peaks(pair, r_max = 6, max_peaks = 3)` | a parsed partials file | `extractPeaks` (Step 8) for `peaks_A`; the run's shell reading (`shells.js`, Step 9) for the rest | peaks (r, FWHM) below `r_max` — a display: the shell does not depend on it; `first_shell`, the run's reading: its window (onset − one grid step to the boundary, to 0.01 Å), the peaks inside it, mean distance and sd from $r^2g$ over the window, the CN in both directions and with the top 0.2 Å earlier / later, the trough $\tilde g/h$ at the boundary, and for two or more resolved peaks `first_peak_only` (to the minimum between the first two: window, CN, trough; `first_peak_window_A`, $[r - \mathrm{FWHM}, r + \mathrm{FWHM}]$, left on 2026-10-19); the pair's `MINIMUM_DISTANCES` value, matched order-free, and `g_at_constraint_fraction` | warn: the first shell is not separated from the next (`separated`: $\tilde g/h > 0.02$ at its boundary: distances fill the gap, the CN depends on the cut); note: the shell holds several peaks (a split shell: use its window; the first peak alone's CN of the shell's); note: a split shell joined across a deep trough, with the first peak's CN and window (`first_shell.first_peak_only`) and the summed count, said in the direction that is ideal (review L1); note: no peak below `r_max`, the first shell beyond it; note: no boundary below max(8, r₁ + 3 Å); note: no shell (no peak below 8 Å); warn: the closest-approach constraint cuts the distribution — raw $g$ in $(d_{\min}, d_{\min} + 2.5\,\Delta r]$ above 2 % of the peak (`SEPARATION_G_FRACTION`; demo Ga–Se 9 % at 2.2 Å; the old $r - \mathrm{FWHM}/2 \le d_{\min} + 0.05$ Å clause dropped 2026-10-19); ok: peak, shell edge, mean, CNs; fail: no peak below `r_max` and no shell |
+| `find_gr_peaks(pair, r_max = 6, max_peaks = 3)` | a parsed partials file | `extractPeaks` (Step 8) for `peaks_A`; the run's shell reading (`shells.js`, Step 9) for the rest | peaks (r, FWHM) below `r_max` — a display: the shell does not depend on it; `first_shell`, the run's reading: its window (onset − one grid step to the boundary, to 0.01 Å), the peaks inside it, mean distance and sd from $r^2g$ over the window, the CN in both directions and with the top 0.2 Å earlier / later, the trough $\tilde g/h$ at the boundary, and for two or more resolved peaks `first_peak_only` (to the minimum between the first two: window, CN, trough; `first_peak_window_A`, $[r - \mathrm{FWHM}, r + \mathrm{FWHM}]$, left on 2026-10-19); for a shell joined across a deep trough, `split` (plan item 4.2, the catalogue's split, Step 9): `parts` short to long, each `{window_A, mean_d_A, sd_d_A, cn: {<counted>_per_<around>}, share}` with its CN in the direction the join decided (one key), and `long_minus_short_A` ± `long_minus_short_se_A`, the configuration's sampling error; the pair's `MINIMUM_DISTANCES` value, matched order-free, and `g_at_constraint_fraction` | warn: the first shell is not separated from the next (`separated`: $\tilde g/h > 0.02$ at its boundary: distances fill the gap, the CN depends on the cut); note: the shell holds several peaks (a split shell: use its window; the first peak alone's CN of the shell's); note: a split shell joined across a deep trough (review L1), by number since plan item 4.2: each part's CN at its mean distance (`first_shell.split.parts`), the summed count, both said in the direction that is ideal, long − short ± its sampling error and the shares by path (dev-jahn-teller: "3.98 F per Cu at 1.929 Å + 2.01 at 2.251 Å (first_shell.split.parts), 6 together … Long − short 0.321 ± 0.0043 Å (first_shell.split: long_minus_short_A ± long_minus_short_se_A, the configuration's sampling error); 66 % / 34 % of the shell's count"), and where the first peak alone ends (it no longer quotes the peaks' separation, which the review saw subtracted by hand); note: no peak below `r_max`, the first shell beyond it; note: no boundary below max(8, r₁ + 3 Å); note: no shell (no peak below 8 Å); warn: the closest-approach constraint cuts the distribution — raw $g$ in $(d_{\min}, d_{\min} + 2.5\,\Delta r]$ above 2 % of the peak (`SEPARATION_G_FRACTION`; demo Ga–Se 9 % at 2.2 Å; the old $r - \mathrm{FWHM}/2 \le d_{\min} + 0.05$ Å clause dropped 2026-10-19); ok: peak, shell edge, mean, CNs; fail: no peak below `r_max` and no shell |
 | `list_sites(element?)` | a browser-loaded run or Flask mode | worker `sites` / `/api/pca/sites` | per site: ref, label (composition if mixed), count, U_iso, rms axes, anisotropy, Mardia kurtosis; `kurtosis_axes`, the excess kurtosis along each principal axis on resolved axes only (null elsewhere; absent when none has one); `pc1_uvw`, PC1 as a direct-lattice `[u v w]` (`crystalOrientationRows`) when PC1 is resolved; on a split site, `delta_A` ± `delta_se_A`, its static displacement and sampling error (Step 20); split sites first (largest `delta_A` first), then by \|kurtosis\| and U_iso; top-3 refs by \|kurtosis\|, U_iso and anisotropy; the note defines only the fields the result holds | warn: parse warning; note: reconstructed sites; warn: zero-spread sites; note: the split sites by ref and label (PC1 resolved, κ₁ ≤ −0.5 and ≤ −3√(24/n): `isSplitSite`, the rule `analyze_clusters` uses); fail: no site (holding that element) |
 | `analyze_displacement_directions(site_ref \| element, frequency?)` | same | worker `orientation` / `/api/pca/orientation`, `geometry: false` | used / rejected points; peak enhancement, count, expected and calibrated `peakSignificance`; peak direction as a Cartesian unit vector, as `[u v w]` (direct lattice, $M^{-T}d$ scaled to max \|component\| = 1, sign kept, since the map is not antipodally folded) and as angles to a, b, c; `mapSignificance`; antipodal asymmetry, its z and flag; orientation-tensor eigenvalues, anisotropy and its Bingham significance; the principal axis `[u v w]` (`crystalOrientationRows`) | warn: < 100 vectors; ok: peak ≥ 3σ; note: peak < 3σ; note: map test undefined; ok: map ≥ 3σ, said as *anisotropic* and, without a significant peak, "not a preferred direction" (any anisotropic Gaussian ellipsoid passes the map test: the validation's thermal-only O, peak 2.3σ, map 7.2σ; review L3); note: tied peak cells; note: significant ± asymmetry; warn: parse warning; note: an element pooled over > 1 site (the site count from the basis) — where their local axes differ, as for the four vertices of a tetrahedral cluster, a per-site preference cancels, so an isotropic pooled map is not evidence against a per-site or cluster distortion |
 | `compute_bond_angles(end1, apex, end2, r12_min, r12_max, r23_min?, r23_max?, bin_width = 1)` | same | worker `triplets` / `/api/triplets` (`APP_MAX_ANGLES` applies) | angle count, central atoms, mean ± sd; ≤ 3 modes (local maxima of a 5-bin running mean of the counts, each with the share of angles within ± 7.5°); the distribution in 18 bins of 10° (the engine's bins shared by overlap), raw and sin θ-corrected ($S_j = (N_j/N)\,/\,[(\cos\theta_j - \cos\theta_{j+1})/2]$, 1 for random directions); for an A–B–A triplet in one window that does not cut the shell and a mean coordination within half an atom of 6 (`cnMatches`), the share and mean angle below and above 135° against an ideal octahedron (80 % cis at 90°, 20 % trans at 180°), of 4, the share within 15° of 109.47°; mean bond length, its sd from the engine's 40-bin length histogram, and unique bonds per window; coordination histogram and mean (the engine's `coordinationSummary`) | fail: 0 angles ("widen the window": find_gr_peaks' first_shell.window_A); warn: > 50 % of central atoms have no A–B bond in the window; otherwise warn: < 60 % of central atoms have the most common A–B bond count (the window cuts a coordination shell; both the shell module's `countsCut`, unchanged on 2026-10-19) — **refused** (fail) unless `window_confirmed`, the modes, mean, sd and histograms withheld (the coordination-shells skill's firm rule), else a warn "kept: the user chose this window"; note: raw counts deplete 180° (with the octahedron split); warn: parse warning; ok otherwise. Refused before running: min ≥ max, an r23 bound without its pair |
