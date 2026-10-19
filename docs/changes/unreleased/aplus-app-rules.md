@@ -18,15 +18,18 @@
     the tool, the Workbench's tolerance question (`clarify.js`, until now its own `NOISE_MARGIN`)
     and A+.
 - Arm A's rules are the frozen protocol's and are unchanged. On the dev set every arm A and D
-  record is identical, and so is every score and claim. All ten A+ records move in their readings:
+  record is identical, and so is every score and claim. Every A+ record moves in its readings; on
+  the ten paired cases:
   - The group is now read at 1.25 × the floor, with the same group in every case.
   - Eight cluster readings of extended networks (CN 6–12) are gone: the O of four perovskites,
     FeSi's Fe and Si, rock-salt Mg and O.
   - In dev-jahn-teller, two F sites are no longer split (2.8 sampling errors). The F claim stays.
   - dev-offcentre's δ is now 0.202 Å, where it was 0.201 (planted 0.2).
-  - The records are re-recorded in `arm-a-dev.json`.
+  - The judgment subset's five A+ records move in the same ways, with unchanged scores (their
+    readings stay in the records and pins).
+  - The moved records are re-recorded in `arm-a-dev.json`.
 - What the model sees is unchanged: the model-visible snapshots pass as they were. Live runs stay
-  comparable, and `PROTOCOL_VERSION` stays 2026-10-19.8.
+  comparable, and `PROTOCOL_VERSION` stays 2026-10-19.9.
 - The skill lint gained a `rule` check (`RULES`). It flags a skill sentence that states one of the
   three rules otherwise. Its allow-list now holds five sentences, awaiting the user's skill review:
   - displacement-anisotropy SKILL.md:27 and significance-reading.md:17: a split site is a negative

@@ -544,7 +544,7 @@ three rules of its own where the app has one. It now calls the app's functions, 
 | Rule | A+ before | The app's, which A+ now applies | Evidence |
 | --- | --- | --- | --- |
 | Split site | arm A's: PC1/PC2 ≥ 1.3, PC1 resolved, κ₁ ≤ −0.5; δ = √(rms1² − rms2²) | `isSplitSite`: PC1 resolved, κ₁ ≤ −0.5 and at least 3 sampling errors (√(24/n)) below zero; δ ± its error from `list_sites` (`splitDisplacement`, √(rms1² − rms⊥²)) | On synthetic prolate Gaussian sites arm A's rule called 3.6 % (216 copies) and 14 % (100 copies) split, `isSplitSite` none (2,000 seeds each). A planted ±0.15 Å split over a 0.05 Å width at 216 copies is found in all 300 seeds, its δ within 1.96 errors in 94 % of them. rms2 alone biases δ low (ai-assistant.md Step 20). |
-| Cluster elements | every same-element first shell peaking below 3.6 Å | the evidence gate's: the element's own first shell holds 0.5–4.5 neighbours (`clusterElementsOf`, `CLUSTER_CN_MAX`, now in `shells.js`; `evidence.js` imports it) | Dimers 1, trimers 2, tetrahedra 3, octahedra 4 are finite clusters; CN 6–12 is a network. On dev the CN rule tries the planted V₂, Mo₃ and the F around Cu. The eight elements the old rule also tried (the O of four perovskites, FeSi's Fe and Si, rock-salt Mg and O) are extended networks that the engine itself refuses. |
+| Cluster elements | every same-element first shell peaking below 3.6 Å | the evidence gate's: the element's own first shell holds 0.5–4.5 neighbours (`clusterElementsOf`, `CLUSTER_CN_MAX`, now in `shells.js`; `evidence.js` imports it) | Dimers 1, trimers 2, tetrahedra 3, octahedra 4 are finite clusters; CN 6–12 is a network. On the ten paired dev cases the CN rule tries the planted V₂, Mo₃ and the F around Cu. The eight elements the old rule also tried there (the O of four perovskites, FeSi's Fe and Si, rock-salt Mg and O) are extended networks that the engine itself refuses. |
 | Lower group's tolerance | the noise floor | `lowerGroupTolerance`: `NOISE_FLOOR_MARGIN` (1.25) × the floor, `measure_symmetry_lowering`'s default; the Workbench's tolerance question counts a group only where it holds to the same margin (`clarify.js`, until now its own `NOISE_MARGIN`) | No dev group moves: every lower rung ends below 0.7 × the floor and every true group holds past 1.25 × it. The cost: a lowering whose group holds only to 1–1.25 × the floor is not read. A synthetic shift of 0.0147 Å, whose group holds to 1.18 × the floor, now reads Pm-3m, while one of 0.027 Å (2.2 ×) reads P4mm. The app chose the margin, and no dev case shows it wrong. |
 
 Arm A's rules are the frozen protocol's and are unchanged. What A+ keeps of its own is only how it
@@ -555,9 +555,10 @@ joins the engines:
 - a mode's polarisation is the PC1 of the element's most prolate site (PC1/PC2 ≥ 1.3); the app
   has no polarisation rule (plan section D).
 
-**Arms A and A+ on dev** (`arm-a --split dev`, before at a2c5dad and after at 63569f3):
+**Arms A and A+ on dev** (`arm-a --split dev`: before at a2c5dad and after at 63569f3 on the ten
+paired cases; after again at 3de8fc5 with the judgment subset):
 - Every arm A and D record is identical, and so is every score and claim.
-- All ten A+ records move in their readings:
+- Every A+ record moves in its readings. On the ten paired cases:
   - The group is read at 1.25 × the floor (0.026 → 0.032 Å on dev-symmetry-lowering), with the
     same group in every case, and the shift tool names its lower group at that tolerance.
   - The split-site readings say `list_sites`, with κ₁, its z and δ ± its error.
@@ -565,11 +566,14 @@ joins the engines:
   - dev-jahn-teller's F sites 5 and 6 (κ₁ −0.95 and −0.93 at 216 copies, z −2.84 and −2.78) are no
     longer split. The F claim, from the site with the largest δ, stays.
   - dev-offcentre's claim reads δ 0.202 Å, where it read 0.201 (planted 0.2).
-- The ten A+ records are re-recorded in `arm-a-dev.json`; the A and D records stay as recorded.
+- The judgment subset's five A+ records move in the same ways, with every score unchanged. Their
+  readings are in `arm-a-dev.json` and the `arms.test.js` pins, not here, since the held-out
+  author may read this document.
+- The moved A+ records are re-recorded in `arm-a-dev.json`; the A and D records stay as recorded.
 - The test set was not run; its A+ records are re-recorded at the freeze.
 
 **The protocol does not move.** What the model sees is byte-identical (the model-visible snapshots
-pass without `-u`), so live runs under 2026-10-19.8 stay comparable. Arms A and A+ have no model,
+pass without `-u`), so live runs under 2026-10-19.9 stay comparable. Arms A and A+ have no model,
 and each of their records carries its own commit and protocol.
 
 **The skills.** The skill lint gained a `rule` check (`RULES` in `skillLint/tables.js`). It flags
