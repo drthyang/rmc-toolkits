@@ -29,7 +29,7 @@ drafts of batch 1 wait in PR #71 for the user's review.
   snapshot of the prompt, the tool list and the descriptions (phase 1.7) shows any change in the
   diff.
 
-## Status (plan-status 1, 2026-10-19)
+## Status (plan-status 2, 2026-10-19)
 
 **Scope.** On 2026-10-19 the user widened the work to the whole plan, through phase 6, and
 delegated approvals to the manager. Still the user's: skill text (#71, 5.2, 5.4, and 5.5's
@@ -52,12 +52,50 @@ PR, and a decision record in `validation/findings/decisions/` and here.
 | 5.1 | #80 | the skill lint |
 | 5.5 (test) | #81 | the 32k budget test |
 | 4.1 | #82 | `list_sites` shows the split (protocol 2026-10-19.3) |
+| 3.5 | #83 | a corpus of real answers for the claim regexes (0 false alarms in 4 readings, 1 miss) |
+| 1, 1.1 | #84 | the turn module; the harness's warmer retry (protocol 2026-10-19.4) |
+| — | #85 | plan status 1 |
+| 1.2 | #86 | one run policy, recorded; LM Studio below 48k refused before a run (protocol 2026-10-19.5) |
+| 4.6 | #87 | a fit-data dev case (protocol 2026-10-19.6) |
+| 3 | #88 | the provider quirks behind the model port (protocol 2026-10-19.7) |
+| 5 | #89 | the engines return their own verdicts (clusters, modulations) |
+| 1.4 | #90 | state lifecycle: a new configuration ends the earlier answers; the pick resets per run |
+| 1.6 (i) | #91 | the report compares B with A+ per component; feature-only scores |
+| 9 | #92 | one request contract, checked against every adapter |
+| — | #93 | an App-level smoke test of the dock; two Live Data fixes |
+| 6 | #94 | one shell reading per pair, per run; the first peak at the inter-peak minimum (protocol 2026-10-19.8) |
 
-**Open:** #83 (3.5, the answer corpus) and #84 (1, the turn module; protocol 2026-10-19.4).
-**In progress:** RunPolicy and the context check (1.2 and Q3), #5 (the engine verdicts) and 4.6.
+**In progress:**
+- 1.6 (ii), the judgment dev cases;
+- the arm C switch (1.8);
+- 2.6, PCA subsamples identical in both runtimes.
+
+**Then:**
+- 4, the verification module;
+- 8, which carries 2.3 and 2.4 (code only; the skill mismatches are listed in the lint for the
+  user);
+- 2.5, 10, 11, 4.2–4.5;
+- 1.6 (ii) on the test set, written blind from `validation/judgment-spec.md` only;
+- phase 6.
+
+**Waiting for the user (preconditions for the freeze):**
+- the skill review. #71 (5.2), and the skill-lint mismatches #94 lists: the coordination-shells
+  skill quotes the Ta–Se first peak as 3.9 over 2.33–2.71 Å, where the tool now reads 3.25 over
+  2.21–2.65 Å;
+- #6's window-cut rule: today's 60 % modal share against the CN margin (the table in #94);
+- 5.4 and 5.5's on-demand references, which are skill text.
 
 **Decisions** (the manager, on the user's delegation, 2026-10-19):
 - **1.8:** arm C removes the whole method, through a structural switch in the turn module.
+  - **Q4:** in C the evidence gate still runs and checks, so the guardrail is the same in both
+    arms. Its send-back names no analysis and no tool ("this conclusion needs its evidence from
+    an analysis run in this question"), and no other refusal in C teaches the method.
+- **#6, the shell catalogue:**
+  - The first-peak window moves to the inter-peak minimum (approved). r ± FWHM overcounts into the
+    second peak: on a constructed 3+3 split the minimum gives 3.03 and r ± FWHM 3.4–4.0, and the
+    Demo's Ta–Se reads 3.25, not 3.86.
+  - The window-cut rule stays at the 60 % modal share. That is the user's interview item, and the
+    CN-margin alternative goes to the user with its dev evidence.
 - **4.4:** approved, provided it is calibrated on thermal-only seeds (the observed false-positive
   rate at or below α), has a known-answer test on a planted spread, and uses dev cases only.
 - **5.4:** waits for the user's skill review. Arm B's descriptions keep their method advice until
@@ -378,10 +416,10 @@ Beyond single contradictions:
 
 | PR | Change | Size |
 | --- | --- | --- |
-| 1.1 | **The warmer retry in the harness.** Now part of the turn module (1) and the model port (3): both adapters get the same retry, and a test at the port asserts it. | — |
-| 1.2 | **One run policy, recorded.** A `RunPolicy` states the limits, temperature, server kind, context size, reply cap and the context-guard decisions; each record and transcript keeps it; the report lists what a comparison across models also compares. One scripted check that the final round's `tool_choice: 'none'` is sent in the form each provider accepts. | M |
+| 1.1 | **Done (#84).** **The warmer retry in the harness.** Now part of the turn module (1) and the model port (3): both adapters get the same retry, and a test at the port asserts it. | — |
+| 1.2 | **Done (#86).** **One run policy, recorded.** A `RunPolicy` states the limits, temperature, server kind, context size, reply cap and the context-guard decisions; each record and transcript keeps it; the report lists what a comparison across models also compares. One scripted check that the final round's `tool_choice: 'none'` is sent in the form each provider accepts. | M |
 | 1.3 | **Context parity, stated.** The record says which context sections the run had (no PCA table, no run settings, the 0.2 Å card) and that it is one fresh question; the harness gets an option for a PCA-table context, as after a visit to the PCA page, for a dev check of its effect. **Built with the run module (Phase 2, PR 2):** `record.view`, `record.context`, `run.js live --pca-table`. | S |
-| 1.4 | **State lifecycle.** A Live Data save that changes the configuration starts a new conversation, as a new run does, or marks earlier answers as about the previous configuration; the Detected SG pick resets with the run. | S |
+| 1.4 | **Done (#90, #93).** **State lifecycle.** A Live Data save that changes the configuration starts a new conversation, as a new run does, or marks earlier answers as about the previous configuration; the Detected SG pick resets with the run. | S |
 | 1.5 | **Holdout scan widened** (done, 2026-10-19): test-case materials, formulas, magnitudes and directions (from `cases.js`) across `src`, `.claude/skills`, `rmc_toolkits` and `docs/` except the validation docs. The overlap with the skills' reference compound reaches arm B through `read_skill`: copilot-validation.md lists it as an open leak pending the user. Only test- or doc-only hits are allow-listed, as known risks. | S |
 | 1.6 | **An informative comparison with A+** *(approved 2026-10-19; the held-out judgment cases are written by a fresh author without the dev results)*. Dev set only. (i) The report gives feature-only scores, B against A+ per component, and every disagreement with the planted truth beside it, with no change to the case score. (ii) A "judgment" dev subset, designed and tried on dev only: cases where A+'s fixed joining rules are ambiguous or wrong — two features at once, a signal at 2.5–4σ, evidence that two tools read differently, a choice only the user can make — so the model has room to add. The test set gets matching cases only through a new, pinned test version authored without reference to the dev results, decided by the user. | M |
 | 1.7 | **Snapshots of what the model sees.** A test snapshots the system prompt (every variant), the tool list, every description and schema, the first request as the dock and the harness send it, and a sample of each tool's result text, so a refactor that changes them shows in the diff. Arm C's snapshot is checked for skill names. First of the started set. | S |
@@ -395,9 +433,9 @@ The candidates of B and C, in this order. Each is one PR, stacked on the one bef
 | --- | --- | --- |
 | a | **The case-id leak.** The harness gives the run a neutral name; a test asserts that no case id or kind reaches the model. The model-visible snapshot changes by the run name only. **(this PR:** `rmc_run`, `caseBlind.test.js`, protocol 2026-10-19.1**)** | S |
 | 2 | **The run module** (candidate 2). The browser and the harness are its two adapters; the harness records the view state it chose. **(this PR:** `copilotRun.js`, `useCopilotRun.js`, `openRunFolder.js`, the harness on `openRunFolder`, item 1.3**)** | M |
-| 1 | **The turn module** (candidate 1). The dock and the harness are its two adapters; it emits each request as sent. | L |
+| 1 | **Done (#84).** **The turn module** (candidate 1). The dock and the harness are its two adapters; it emits each request as sent. | L |
 | C | **Arm C's "method off" switch** in the turn module (1.8). Arm C's snapshot is checked for skill names and the method sentences. | M |
-| 3 | **The model port** (candidate 3): the retry temperature, `tool_choice: 'none'`, "tools unsupported" as a typed failure. | S |
+| 3 | **Done (#88).** **The model port** (candidate 3): the retry temperature, `tool_choice: 'none'`, "tools unsupported" as a typed failure. | S |
 | 4 | **The verification module** (candidate 4). The prompt's evidence sentence is generated from its claim catalogue. | L |
 | 7 | **Golden fixtures** at the orientation and site seams (candidate 7), in parallel, cut from `main`. Built: `orientation_fixture.json` and `pca_sites_fixture.json` from their generators, with staleness tests on both sides; the hand-copied twin pins are gone. | S |
 
@@ -405,10 +443,10 @@ The candidates of B and C, in this order. Each is one PR, stacked on the one bef
 
 | PR | Change | Size |
 | --- | --- | --- |
-| 5 | **The engines return their own verdicts** (clusters, modulations) *(approved 2026-10-19)*. | M |
-| 6 | **One shell reading per pair, per run** *(approved 2026-10-19)*. Changes the numbers a question quotes (by < 0.05 atom), a context flag and the cut rule. | M |
+| 5 | **Done (#89).** **The engines return their own verdicts** (clusters, modulations) *(approved 2026-10-19)*. | M |
+| 6 | **Done (#94; the cut rule waits for the user).** **One shell reading per pair, per run** *(approved 2026-10-19)*. Changes the numbers a question quotes (by < 0.05 atom), a context flag and the cut rule. | M |
 | 8 | **Arm A+ reads the app's rules** for the split site, the cluster elements and the symmetry floor *(approved 2026-10-19)*. It covers old 2.3 and 2.4, which land with 5.3, since the rule and the skill change together. Arm A's rule is part of the frozen protocol and changes only with a dated note. | S |
-| 9 | One request contract for the worker and Flask adapters. | M |
+| 9 | **Done (#92).** One request contract for the worker and Flask adapters: one fixture checked against every adapter. | M |
 | 10 | Turn policy: what ends a turn. | M |
 | 11 | Tool transcript; result statuses (old 3.2). | M |
 | 2.5 | **The page and the tool at the same settings** *(approved 2026-10-19)*: the directions tool also reports at the page's ν and smoothing, or the page defaults to the engine's choice. Changes arm A's reading. | S |
@@ -428,7 +466,7 @@ change what A+ sweeps are noted.
 | 4.3 | **The polarisation of an ordered mode** *(approved 2026-10-19)*: `analyze_modulations` returns each ordered point's displacement direction (the mode's eigenvector over the element's sites). Changes A+ (it reads the tool, not PC1). | M |
 | 4.4 | **Diffuse order between cells** *(approved 2026-10-19; new statistic, calibrated on thermal-only seeds, false-positive rate ≤ α)*: a calibrated test of excess power spread over many q (not one mode), against the same independent-displacement null, with a false-positive test over many seeds of thermal-only configurations. | L |
 | 4.5 | **The symmetry tools in Flask mode**: the basis (with its moments) from `/api/structure`, so `detect_symmetry` and `measure_symmetry_lowering` exist for server folders (AGENTS.md next step 4). | M |
-| 4.6 | **A fit-data dev case** for rmc-fit-assessment: a configuration with a synthetic fit and χ² history, so `assess_convergence` and `compare_fit` are exercised. Dev only. | M |
+| 4.6 | **Done (#87).** **A fit-data dev case** for rmc-fit-assessment: a configuration with a synthetic fit and χ² history, so `assess_convergence` and `compare_fit` are exercised. Dev only. | M |
 
 ### Phase 5 — Skills
 
