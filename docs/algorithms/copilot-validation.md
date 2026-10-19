@@ -151,9 +151,10 @@ ambiguous or wrong, so a model that reads the tools with judgment has room to ad
   (`judgment.test.js`) and would show a reader that leaves the one shell reading again.
 - **Seeds.** The first three cases take the first seed, upward from their base, on which A+ errs
   only where the situation says, so each measures its own situation. The situation's own failure
-  held on every seed tried. The side failures seen are reported with the PR as findings for the
-  engines. The weak-order pair shares one amplitude, set so the expected significance is 3σ. Its
-  seeds come from an outcome-neutral rule: one realised on each side of the bar (`judgmentCases.js`).
+  held on every seed tried (the octahedral case's under the cluster window before protocol
+  2026-10-19.8). The side failures seen are reported with the PR as findings for the engines. The
+  weak-order pair shares one amplitude, set so the expected significance is 3σ. Its seeds come from
+  an outcome-neutral rule: one realised on each side of the bar (`judgmentCases.js`).
 - **Scoring is unchanged.** Three things to read with it:
   - the verdict has no confidence field, so an honest "marginal" shows in the prose, the answer
     checks and the computed verdict, not in the score;

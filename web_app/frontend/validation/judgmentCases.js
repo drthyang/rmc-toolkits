@@ -20,7 +20,9 @@
 // that each case measures its own situation: a side failure would blur it.
 // The situation's own failure held on every seed tried; the side failures
 // seen (an engine's false positive, a misread group) are reported with the
-// PR, not hidden. The two weak-order cases share one amplitude, set from the
+// PR, not hidden. The octahedral case's seed was taken under the cluster
+// window before protocol 2026-10-19.8; since then A+ reads the Workbench's
+// own joined shell there, and the case is the subset's control. The two weak-order cases share one amplitude, set from the
 // noncentral χ² of the zone-boundary power so that the modulation engine's
 // expected significance is 3σ; their seeds come from a rule that takes one on
 // each side of the fixed 3σ bar, so it does not depend on which side an arm
