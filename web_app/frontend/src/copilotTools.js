@@ -250,6 +250,23 @@ const anglesToCell = (direction, unitCell) => unitCell.map((edge) => {
     return roundFixed(Math.acos(Math.max(-1, Math.min(1, cosine))) * 180 / Math.PI, 1);
 });
 
+// The peak direction is the peak cell's centre: it names a direction only to
+// within the cell's circumscribed radius (the engine's peakCellRadiusDeg, the
+// largest angle from the centre to the cell's corners). Within
+// LOW_INDEX_CONE_DEG the direction is resolved finely enough to tell the
+// <100>, <110> and <111> families apart; a wider cell (every cell at ν ≤ 2,
+// 19.3–37.4°) does not resolve it. Arm A+ applies the same bound
+// (validation/armA.js, SWEEP_RULES.directionResolved).
+export const directionResolved = (radiusDeg) => Number.isFinite(radiusDeg) && radiusDeg <= LOW_INDEX_CONE_DEG;
+
+// The peak direction as the checks write it: the crystal [u v w], else the
+// Cartesian triple.
+const peakDirectionText = (peak) => {
+    if (Array.isArray(peak.direction_uvw)) return `[${peak.direction_uvw.join(' ')}]`;
+    if (Array.isArray(peak.direction_cartesian)) return `(${peak.direction_cartesian.join(', ')}) (Cartesian)`;
+    return 'the peak cell\'s centre';
+};
+
 // direction_uvw, angles_to_abc_deg and principal_axis_uvw need the unit cell.
 const ORIENTATION_SHAPE = {
     note: 'string',
@@ -267,7 +284,8 @@ const ORIENTATION_SHAPE = {
         significance_sigma: 'number|null',
         direction_cartesian: oneOf(XYZ, 'null'),
         'direction_uvw?': oneOf(XYZ, 'null'),
-        'angles_to_abc_deg?': XYZ
+        'angles_to_abc_deg?': XYZ,
+        radius_deg: 'number|null'
     },
     map_significance_sigma: 'number|null',
     antipodal_asymmetry: 'number|null',
@@ -295,6 +313,9 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
         peak.direction_uvw = cartesianToUvw(direction, unitCell);
         peak.angles_to_abc_deg = anglesToCell(direction, unitCell);
     }
+    // How finely the peak names its direction: the peak cell's radius.
+    const radius = Number.isFinite(payload.peakCellRadiusDeg) ? roundFixed(payload.peakCellRadiusDeg, 1) : null;
+    peak.radius_deg = radius;
     const tensor = {
         eigenvalues: (payload.orientationEigenvalues || []).map((value) => round(value)),
         anisotropy: round(payload.orientationAnisotropy),
@@ -306,7 +327,8 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
     if (axisRows) tensor.principal_axis_uvw = axisRows[0].crystalDirection.map((value) => roundFixed(value, 2));
     const data = {
         note: 'enhancement = density / isotropic (1 = isotropic); significances are calibrated one-sided sigma; '
-            + 'the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal',
+            + 'the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal; '
+            + 'peak.radius_deg is the peak cell\'s radius: the peak names its direction only to within it',
         site: payload.referenceNumber ?? null,
         element: payload.element ?? 'all',
         frequency: payload.frequency,
@@ -327,9 +349,16 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
         checks.push({ level: 'warn', text: `Only ${payload.usedPoints} displacement vectors: the map is noisy.` });
     }
     if (payload.peakSignificance >= SIGNIFICANCE_SIGMA) {
+        const strength = `the peak cell is ${round(payload.peakEnhancement)}× isotropic at ${round(payload.peakSignificance)}σ (corrected over all cells)`;
+        const where = `${peakDirectionText(peak)}${radius == null ? '' : ` ± ${radius}°, the cell radius at ν = ${payload.frequency}`}`;
         checks.push({
             level: 'ok',
-            text: `Preferred direction: the peak cell is ${round(payload.peakEnhancement)}× isotropic at ${round(payload.peakSignificance)}σ (corrected over all cells).`
+            // A cell wider than LOW_INDEX_CONE_DEG cannot say which low-index
+            // family the direction belongs to: say so, and name none.
+            text: radius != null && !directionResolved(radius)
+                ? `Preferred direction: ${strength}, toward ${where}. The direction is not resolved finer than ${radius}° `
+                    + `(over ${LOW_INDEX_CONE_DEG}°), so it names no <100>, <110> or <111> family.`
+                : `Preferred direction: ${where}; ${strength}.`
         });
     } else {
         checks.push({ level: 'note', text: `No significant peak direction (${round(payload.peakSignificance)}σ < ${SIGNIFICANCE_SIGMA}σ).` });
@@ -344,7 +373,9 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
             level: 'ok',
             text: `The displacements are anisotropic: the map departs from isotropy at ${round(payload.mapSignificance)}σ. `
                 + (payload.peakSignificance >= SIGNIFICANCE_SIGMA
-                    ? 'The peak test above names the preferred direction.'
+                    ? (radius != null && !directionResolved(radius)
+                        ? 'The peak test above places the preferred direction only to within its cell.'
+                        : 'The peak test above names the preferred direction.')
                     : 'Thermal ellipsoids pass this test too: it is not a preferred direction, which needs the peak test.')
         });
     }
@@ -1076,8 +1107,12 @@ export const summarizeClusters = (payload) => {
 // --- analyze_modulations ---------------------------------------------------------
 
 // analyze_modulations' own result budget (characters): the rows of four
-// elements with an ordered point's polarisation, and its checks.
-export const MODULATION_RESULT_BUDGET = 4000;
+// elements with an ordered point's polarisation and their diffuse rows, and
+// its checks. Since plan item 4.4's diffuse rows and note the largest results
+// are three elements each: the Demo's 3,687 (three long-wave notes and the
+// in-phase note), dev-zone-boundary's 3,344 (an ordered point); a fourth
+// element adds about 500.
+export const MODULATION_RESULT_BUDGET = 4500;
 
 const qLabel = (q) => `(${q.map((value) => {
     const rounded = Math.round(value * 1000) / 1000;
@@ -1097,12 +1132,18 @@ const POLARISATION_ROW = {
     share: 'number',
     'nearest_low_index?': { uvw: ['number', 'number', 'number'], off_deg: 'number|null' }
 };
+// The diffuse test (plan item 4.4) as a row: [lag, correlation, sigma] — the
+// neighbour-cell lag whose correlation the power fits most strongly, that
+// correlation, the whole neighbour-cell pattern's σ; absent when the grid
+// has too few compared modes.
+const DIFFUSE_ROW = ['string', 'number|string|null', 'number|string|null'];
 const MODULATIONS_SHAPE = {
     note: 'string',
     supercell: ['number', 'number', 'number'],
     wavevectors: 'number',
     elements: [{
-        element: 'string', sites: 'number', zone_boundary: [MODE_ROW], strongest: [MODE_ROW], 'polarisation?': [POLARISATION_ROW]
+        element: 'string', sites: 'number', zone_boundary: [MODE_ROW], strongest: [MODE_ROW], 'polarisation?': [POLARISATION_ROW],
+        'diffuse?': DIFFUSE_ROW
     }],
     'untestable_zone_boundary?': ['string']
 };
@@ -1131,9 +1172,27 @@ const barCell = (value, bar, usual) => {
 // The ratio and σ in a row. A null σ in a sentence is σ = −∞ (an undefined
 // one is said in words), written as the tool always wrote it.
 const ratioCell = (ratio, rules) => barCell(ratio, rules.ratio, round(ratio, 2));
-const sigmaCell = (sigma, rules) => (sigma == null ? null : (sigma >= rules.sigmaMax ? '>8' : barCell(sigma, rules.sigma, roundFixed(sigma, 1))));
-const sigmaText = (sigma) => (sigma > 8 ? '> 8σ' : `${round(sigma, 2)}σ`);
+const sigmaCell = (sigma, rules, bar = rules.sigma) => (sigma == null ? null : (sigma >= rules.sigmaMax ? '>8' : barCell(sigma, bar, roundFixed(sigma, 1))));
+// σ in a sentence: past 8 as '> 8σ'; null (σ = −∞: 1 − (1 − p)^F rounds to 1,
+// so σ < −8.2) as '< −8σ' — until F1 no nearest miss was ever that far below
+// the background, and the sentence printed 'nullσ'.
+const sigmaText = (sigma) => {
+    if (sigma == null) return '< −8σ';
+    return sigma > 8 ? '> 8σ' : `${round(sigma, 2)}σ`;
+};
 const sameQ = (a, b) => a.length === b.length && a.every((value, axis) => value === b[axis]);
+// A neighbour-cell lag [u v w] as written: "[1 -1 0]".
+const lagLabel = (lag) => `[${lag.join(' ')}]`;
+// A signed correlation to two significant digits, never printed onto its bar
+// (F2's rule on |Γ| against rules.diffuseCorrelation): nearer than six
+// digits, '<0.1' (or '>-0.1' for a negative one).
+const correlationCell = (correlation, rules) => {
+    if (correlation == null) return null;
+    const cell = barCell(Math.abs(correlation), rules.diffuseCorrelation, round(Math.abs(correlation), 2));
+    if (typeof cell === 'string') return correlation < 0 ? `>-${rules.diffuseCorrelation}` : cell;
+    return correlation < 0 ? -cell : cell;
+};
+const signedText = (value) => (value < 0 ? `−${Math.abs(value)}` : `+${value}`);
 
 // No element has an ordered zone-boundary point: one sentence for all of
 // them, naming the nearest miss (the largest σ over every element tested). A
@@ -1180,12 +1239,15 @@ const polarisedText = (row) => {
  * point, and its absence once for every element (noCellDoubling). Every
  * `because` the engine can give has an entry (copilotTools.test.js checks).
  */
+// "Ga", "Ga and Se", "Ga, Se and Ta".
+const listText = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0]);
+
 export const MODULATION_SENTENCES = {
     cellDoubling: {
         ordered_point: ({ element, point, family, polarisation }) => ({
             level: 'ok',
             text: `Ordered ${element} displacements at q = ${qLabel(point.q)}: ${round(point.ratio, 3)}× the median power, `
-                + `${sigmaText(point.sigma)} against independent displacements (corrected over ${family} zone-boundary points) `
+                + `${sigmaText(point.sigma)} against independent cells (corrected over ${family} zone-boundary points) `
                 + '— a superstructure doubling the cell along '
                 + `${['a', 'b', 'c'].filter((_, axis) => point.q[axis]).join(', ')}${polarisedText(polarisation)}.`
         }),
@@ -1198,7 +1260,7 @@ export const MODULATION_SENTENCES = {
         ordered_mode: ({ element, mode, family, polarisation }) => ({
             level: 'ok',
             text: `Correlated ${element} displacements between cells at q = ${qLabel(mode.q)}: ${round(mode.ratio, 3)}× the median power, `
-                + `${sigmaText(mode.sigma)} against independent displacements (corrected over ${family} compared modes) — order at a `
+                + `${sigmaText(mode.sigma)} against independent cells (corrected over ${family} compared modes) — order at a `
                 + `general wavevector (incommensurate, or short-range correlation between cells), not a cell doubling${polarisedText(polarisation)}.`
         }),
         no_ordered_mode: null,
@@ -1215,6 +1277,30 @@ export const MODULATION_SENTENCES = {
         below_ratio: null,
         strongest_not_long_wave: null,
         undefined_statistic: null,
+        no_displacements: null
+    },
+    // Plan item 4.4: correlation between neighbouring cells spread over many
+    // q. In antiphase it is short-range order, said per element; in phase it
+    // is neighbouring cells moving together, said once for every element.
+    diffuseOrder: {
+        correlated_antiphase: ({ element, diffuse, family }) => ({
+            level: 'ok',
+            text: `Short-range order between cells: ${element} displacements in neighbouring cells ${lagLabel(diffuse.lag)} apart move in antiphase `
+                + `(correlation ${signedText(round(diffuse.correlation, 2))}; the neighbour-cell pattern ${sigmaText(diffuse.sigma)} against independent `
+                + `cells, corrected over ${family} elements), the power spread over many q toward the zone boundary with no single mode `
+                + 'standing out — order that alternates between cells over a short range, not a long-range superstructure.'
+        }),
+        correlated_in_phase: ({ elements, strongest, diffuse }) => ({
+            level: 'note',
+            text: `${listText(elements)} displacements are correlated in phase between neighbouring cells (${elements.length > 1 ? `the strongest, ${strongest}, ` : ''}`
+                + `${signedText(round(diffuse.correlation, 2))} between cells ${lagLabel(diffuse.lag)} apart, ${sigmaText(diffuse.sigma)} against `
+                + 'independent cells): the power beyond the long waves leans toward the zone centre — neighbouring cells moving together '
+                + '(as RMC\'s long waves and acoustic-like thermal motion give), not a superstructure.'
+        }),
+        below_correlation: null,
+        below_sigma: null,
+        undefined_statistic: null,
+        too_few_modes: null,
         no_displacements: null
     }
 };
@@ -1240,16 +1326,26 @@ export const summarizeModulations = (payload, { unitCell = null } = {}) => {
     const polarisations = new Map(tested.map((entry) => [entry.element, orderedPoints(entry).map((point) => polarisationRow(point, unitCell))]));
     const polarisationOf = (element, q) => polarisations.get(element).find((row) => row.q === qLabel(q)) ?? null;
     const anyPolarisation = [...polarisations.values()].some((rows) => rows.length);
+    // The diffuse row of an element whose grid holds enough compared modes for the test.
+    const diffuseRow = (entry) => (entry.diffuse?.df != null && entry.diffuse.lag
+        ? [lagLabel(entry.diffuse.lag), correlationCell(entry.diffuse.correlation, rules), sigmaCell(entry.diffuse.sigma, rules, rules.diffuseSigma)]
+        : null);
+    const anyDiffuse = tested.some((entry) => diffuseRow(entry));
     const data = {
         note: 'zone_boundary rows are [q, ratio, percentile, sigma]: an element\'s displacement power at wavevector q (fractions '
             + 'of the cell\'s reciprocal axes) over its median across all q of the supercell grid (the diffuse background), the '
             + 'share of the compared modes (one per ±q pair, long waves with every |q_i| ≤ 0.25 left out) with less power, and '
-            + `the calibrated one-sided significance against independent displacements, corrected over all ${family.zoneBoundaryPoints} zone-boundary `
+            + `the calibrated one-sided significance against independent cells (each cell's own correlations kept), corrected over all ${family.zoneBoundaryPoints} zone-boundary `
             + `points of the configuration's ${familyElements.length} elements, whichever the call names (≥ 3 with ratio ≥ 3 is order). `
             + 'strongest rows are [q, ratio, percentile, sigma]: the sigma of a general q (neither zone boundary nor long wave; a '
             + 'complex sum, corrected over the compared modes of every element), null otherwise. '
             + 'A ½ component is order that doubles the cell along that axis; order at a general q is correlation between cells '
             + '(incommensurate or short-range) that does not.'
+            + (anyDiffuse
+                ? ' diffuse is [lag, correlation, sigma]: the strongest correlation between a site\'s displacements in cells one lag '
+                    + 'apart that the power over the compared modes shows (+ in phase, − antiphase), and the significance of the 13 '
+                    + 'neighbour-cell lags together against independent cells (≥ 3 with |correlation| ≥ 0.1: correlation spread over many q).'
+                : '')
             + (anyPolarisation
                 ? ' polarisation: each ordered point\'s displacement direction (the leading axis of the element\'s power tensor at '
                     + 'q) as a direct-lattice [u v w], an axis, and share, the fraction of the power at q along it (1: one '
@@ -1267,7 +1363,8 @@ export const summarizeModulations = (payload, { unitCell = null } = {}) => {
             strongest: entry.strongest.slice(0, 3).map((mode) => [
                 qLabel(mode.q), ratioCell(mode.ratio, rules), roundFixed(mode.percentile, 1), sigmaCell(mode.sigma, rules)
             ]),
-            ...(polarisations.get(entry.element).length ? { polarisation: polarisations.get(entry.element) } : {})
+            ...(polarisations.get(entry.element).length ? { polarisation: polarisations.get(entry.element) } : {}),
+            ...(diffuseRow(entry) ? { diffuse: diffuseRow(entry) } : {})
         }))
     };
     if (payload.untestable?.length) data.untestable_zone_boundary = payload.untestable.map((flags) => qLabel(flags.map((flag) => flag / 2)));
@@ -1303,6 +1400,20 @@ export const summarizeModulations = (payload, { unitCell = null } = {}) => {
         });
     });
     tested.forEach((entry) => say('longWave', entry.verdict.longWave, { element: entry.element, mode: entry.strongest[0] }));
+    // Diffuse order between cells (plan item 4.4): each element in antiphase
+    // on its own; every element in phase in one note, naming the most
+    // significant. An engine without the test (no diffuseOrder) says nothing.
+    const diffuseBecause = (entry) => entry.verdict.diffuseOrder?.because;
+    tested.filter((entry) => diffuseBecause(entry) === 'correlated_antiphase').forEach((entry) => say('diffuseOrder', entry.verdict.diffuseOrder, {
+        element: entry.element, diffuse: entry.diffuse, family: family.diffuse
+    }));
+    const inPhase = tested.filter((entry) => diffuseBecause(entry) === 'correlated_in_phase');
+    if (inPhase.length) {
+        const top = inPhase.reduce((best, entry) => ((entry.diffuse.sigma ?? -Infinity) > (best.diffuse.sigma ?? -Infinity) ? entry : best));
+        say('diffuseOrder', top.verdict.diffuseOrder, { elements: inPhase.map((entry) => entry.element), strongest: top.element, diffuse: top.diffuse });
+    }
+    tested.filter((entry) => entry.verdict.diffuseOrder && !['correlated_antiphase', 'correlated_in_phase'].includes(diffuseBecause(entry)))
+        .forEach((entry) => say('diffuseOrder', entry.verdict.diffuseOrder, {}));
     if (payload.untestable?.length) {
         checks.push({ level: 'note', text: `An odd supercell axis cannot hold ${data.untestable_zone_boundary.join(', ')}: not tested.` });
     }
@@ -1574,7 +1685,7 @@ export const buildCopilotTools = ({ request, structure, elements = [], plotFiles
             name: 'analyze_displacement_directions',
             description: 'Histogram the displacement directions of one site (site_ref, from list_sites) or of every atom '
                 + 'of one element (element; "all" pools every atom) on the sphere, and test them: the peak direction '
-                + '(Cartesian and crystal [u v w]) with its calibrated significance, the whole-map test against '
+                + '(Cartesian and crystal [u v w], ± its cell\'s radius) with its calibrated significance, the whole-map test against '
                 + 'isotropy, the +u/−u asymmetry, and the orientation-tensor anisotropy.',
             parameters: {
                 type: 'object',
@@ -1745,9 +1856,10 @@ export const buildCopilotTools = ({ request, structure, elements = [], plotFiles
             },
             dataShape: MODULATIONS_SHAPE,
             label: ({ element }) => `Superstructure test${element ? ` · ${element}` : ''}`,
-            // Three elements with an ordered point and its polarisation run to
-            // ~2.9k characters with the checks (dev-zone-boundary), a fourth
-            // element past 3k: within the default budget the rows would be cut.
+            // Three elements with an ordered point, its polarisation and the
+            // diffuse rows run to ~3.3k characters with the checks
+            // (dev-zone-boundary), a fourth element to ~3.9k: within the
+            // default budget the rows would be cut.
             resultBudget: MODULATION_RESULT_BUDGET,
             run: async ({ element }, { signal } = {}) => summarizeModulations(
                 await request('modulations', element ? { element } : {}, { signal }),

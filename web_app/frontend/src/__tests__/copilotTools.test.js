@@ -556,7 +556,7 @@ describe('Copilot summarizers', () => {
         Object.entries(MODULATION_BECAUSE).filter(([name]) => name !== 'point').forEach(([name, codes]) => {
             expect(Object.keys(MODULATION_SENTENCES[name] || {}).sort(), name).toEqual([...codes].sort());
         });
-        expect(Object.keys(MODULATION_SENTENCES).sort()).toEqual(['cellDoubling', 'generalOrder', 'longWave']);
+        expect(Object.keys(MODULATION_SENTENCES).sort()).toEqual(['cellDoubling', 'diffuseOrder', 'generalOrder', 'longWave']);
         // A because the table does not know is a broken contract with the engine: it throws, never goes unsaid.
         const payload = clusterDistortion(siteDisplacementsFromRmc6f(clustersFixture.cases.find((entry) => entry.name === 'trigonal').text), 'Nb', [2.5, 3.5]);
         const broken = { ...payload, verdict: { ...payload.verdict, breathing: { ...payload.verdict.breathing, because: 'invented_code' } } };
@@ -609,7 +609,7 @@ describe('Copilot summarizers', () => {
         expect(checks).toHaveLength(1);
         expect(checks[0]).toEqual({
             level: 'ok',
-            text: 'Ordered Nb displacements at q = (0, 0, ½): 204× the median power, > 8σ against independent displacements '
+            text: 'Ordered Nb displacements at q = (0, 0, ½): 204× the median power, > 8σ against independent cells '
                 + '(corrected over 2 zone-boundary points) — a superstructure doubling the cell along c.'
         });
         // Ratios to two significant digits (204 reads 200), σ past SIGMA_MAX as '>8'.
@@ -631,7 +631,7 @@ describe('Copilot summarizers', () => {
         const payload = displacementModulations(siteDisplacementsFromRmc6f(text), 'Ti');
         const { checks } = summarizeModulations(payload);
         expect(checks[0].level).toBe('ok');
-        expect(checks[0].text).toMatch(/^Ordered Ti displacements at q = \(0, 0, ½\): \d+(\.\d+)?× the median power, (> 8|\d+(\.\d+)?)σ against independent displacements/);
+        expect(checks[0].text).toMatch(/^Ordered Ti displacements at q = \(0, 0, ½\): \d+(\.\d+)?× the median power, (> 8|\d+(\.\d+)?)σ against independent cells/);
         expect(checks.some((check) => /long-wavelength wave/.test(check.text))).toBe(true);
     });
 
@@ -753,7 +753,7 @@ describe('Copilot summarizers', () => {
         expect(facts.modulation.general).toEqual([{ element: 'Ti', q: [expect.closeTo(0.375, 6), 0, 0] }]);
         // The mode's polarisation (plan item 4.3): the planted z, named as its low-index direction.
         expect(checks.find((check) => /^Correlated Ti displacements between cells at q = \(0\.375, 0, 0\)/.test(check.text)).text)
-            .toMatch(/against independent displacements \(corrected over \d+ compared modes\) — order at a general wavevector .* not a cell doubling, polarised along \[0 0 1\] \([\d.]+° off; \d+ % of the power at q\)\.$/);
+            .toMatch(/against independent cells \(corrected over \d+ compared modes\) — order at a general wavevector .* not a cell doubling, polarised along \[0 0 1\] \([\d.]+° off; \d+ % of the power at q\)\.$/);
         const ti = data.elements.find((entry) => entry.element === 'Ti');
         expect(ti.strongest[0][3]).not.toBeNull();
         expect(ti.polarisation).toEqual([{ q: '(0.375, 0, 0)', uvw: [expect.any(Number), expect.any(Number), 1], share: expect.any(Number), nearest_low_index: { uvw: [0, 0, 1], off_deg: expect.any(Number) } }]);
@@ -782,7 +782,7 @@ describe('Copilot summarizers', () => {
             q: '(0, 0, ½)', uvw: [-0.05, 0.09, 1], share: 1, nearest_low_index: { uvw: [0, 0, 1], off_deg: 5.5 }
         }]);
         expect(checks[0].text).toBe('Ordered Ti displacements at q = (0, 0, ½): 498× the median power, > 8σ against independent '
-            + 'displacements (corrected over 21 zone-boundary points) — a superstructure doubling the cell along c, polarised along '
+            + 'cells (corrected over 21 zone-boundary points) — a superstructure doubling the cell along c, polarised along '
             + '[0 0 1] (5.5° off; 100 % of the power at q).');
         // The decoy long wave and the other elements carry no polarisation row: none is ordered.
         expect(data.elements.filter((entry) => entry.polarisation).map((entry) => entry.element)).toEqual(['Ti']);
@@ -793,26 +793,76 @@ describe('Copilot summarizers', () => {
         expect(JSON.stringify({ ref: 'r1', checks, data }).length).toBeLessThan(MODULATION_RESULT_BUDGET - 1000);
     });
 
-    it('F2: a σ just below the 3σ bar is never printed as 3σ beside a "no order" verdict (dev-weak-order-b)', async () => {
-        // Nb at (½, ½, 0): 2.959σ over the 21 zone-boundary points. Until
-        // 2026-10-19 the row read 3 and the sentence "3σ after the correction".
-        const { data, checks } = await devTools('dev-weak-order-b').analyze_modulations.run({});
-        expect(checks[0].text).toBe('No order that doubles the cell: no zone-boundary point stands out of the diffuse background '
-            + '(the strongest, Nb at (½, ½, 0), is 19× the median, 2.96σ after the correction: below the 3σ bar).');
-        const row = data.elements.find((entry) => entry.element === 'Nb').zone_boundary.find((cells) => cells[0] === '(½, ½, 0)');
-        expect(row).toEqual(['(½, ½, 0)', 19, 99.5, 2.96]);
-        expect(data.elements.every((entry) => !entry.polarisation)).toBe(true);
-        // The synthetic known answer (the modulations fixture's weak doubling, 2.98σ) read "3σ" too.
+    it('F2: a σ just below the 3σ bar is never printed as 3σ beside a "no order" verdict (the fixture\'s weak doubling)', () => {
+        // The modulations fixture's weak doubling: Nb at (0, 0, ½), 2.99σ over
+        // the 21 zone-boundary points against the independent-cell null (F1).
+        // Its usual rounding (3.0 in the row, "3σ" in the sentence) would read
+        // the bar. (Until F1 the known answer was dev-weak-order-b at 2.96σ:
+        // the calibrated null reads that order at 5.6σ.)
         const weak = modulationsFixture.cases.find((entry) => entry.name.startsWith('weak doubling'));
         const synthetic = summarizeModulations(displacementModulations(siteDisplacementsFromRmc6f(weak.text)));
         expect(synthetic.checks[0].text).toBe('No order that doubles the cell: no zone-boundary point stands out of the diffuse background '
-            + '(the strongest, Nb at (0, 0, ½), is 6.4× the median, 2.98σ after the correction: below the 3σ bar).');
-        expect(synthetic.data.elements.find((entry) => entry.element === 'Nb').zone_boundary[0]).toEqual(['(0, 0, ½)', 6.4, 95.5, 2.98]);
+            + '(the strongest, Nb at (0, 0, ½), is 4.4× the median, 2.99σ after the correction: below the 3σ bar).');
+        expect(synthetic.data.elements.find((entry) => entry.element === 'Nb').zone_boundary[0]).toEqual(['(0, 0, ½)', 4.4, 95.5, 2.99]);
+        expect(synthetic.data.elements.every((entry) => !entry.polarisation)).toBe(true);
         // A ratio just below its bar reads below it too: dev-thermal-null's Ti
         // at (½, 0, 0) is 2.9976× the median (it read 3).
-        const thermal = await devTools('dev-thermal-null').analyze_modulations.run({});
-        const ti = thermal.data.elements.find((entry) => entry.element === 'Ti').zone_boundary.find((cells) => cells[0] === '(½, 0, 0)');
-        expect(ti[1]).toBe(2.998);
+        return devTools('dev-thermal-null').analyze_modulations.run({}).then((thermal) => {
+            const ti = thermal.data.elements.find((entry) => entry.element === 'Ti').zone_boundary.find((cells) => cells[0] === '(½, 0, 0)');
+            expect(ti[1]).toBe(2.998);
+        });
+    });
+
+    it('diffuse order (plan item 4.4): antiphase is short-range order, said per element; in phase is one note; a row per element', () => {
+        const run = (prefix) => summarizeModulations(displacementModulations(siteDisplacementsFromRmc6f(
+            modulationsFixture.cases.find((entry) => entry.name.startsWith(prefix)).text
+        )));
+        const anti = run('diffuse order in antiphase');
+        const said = anti.checks.filter((check) => /^Short-range order between cells/.test(check.text));
+        expect(said).toHaveLength(1);
+        expect(said[0]).toEqual({
+            level: 'ok',
+            text: 'Short-range order between cells: Nb displacements in neighbouring cells [1 0 0] apart move in antiphase (correlation −0.29; '
+                + 'the neighbour-cell pattern 3.7σ against independent cells, corrected over 2 elements), the power spread over many q toward '
+                + 'the zone boundary with no single mode standing out — order that alternates between cells over a short range, not a '
+                + 'long-range superstructure.'
+        });
+        expect(anti.data.elements.find((entry) => entry.element === 'Nb').diffuse).toEqual(['[1 0 0]', -0.29, 3.7]);
+        expect(anti.data.note).toMatch(/ diffuse is \[lag, correlation, sigma\]: /);
+        // No single mode is ordered: the per-mode tests say no order, the facts hold none.
+        expect(anti.facts.modulation).toEqual({ elements: ['Ag', 'Nb'], ordered: [], general: [] });
+        const inPhase = run('diffuse order in phase');
+        expect(inPhase.checks.find((check) => /correlated in phase/.test(check.text))).toEqual({
+            level: 'note',
+            text: 'Nb displacements are correlated in phase between neighbouring cells (+0.47 between cells [0 0 1] apart, 4.6σ against '
+                + 'independent cells): the power beyond the long waves leans toward the zone centre — neighbouring cells moving together '
+                + '(as RMC\'s long waves and acoustic-like thermal motion give), not a superstructure.'
+        });
+        // Too few compared modes (a 4 × 4 × 4 grid): no row, no word.
+        const small = run('doubled (4, 4, 4)');
+        expect(small.data.elements.every((entry) => entry.diffuse === undefined)).toBe(true);
+        expect(small.data.note).not.toMatch(/diffuse is/);
+    });
+
+    it('diffuse order: a correlation just below its 0.1 bar is never printed onto it (F2\'s rule), in either sign', () => {
+        const rules = { ratio: 3, sigma: 3, longWaveRatio: 5, longWaveQ: 0.25, sigmaMax: SIGMA_MAX, diffuseSigma: 3, diffuseCorrelation: 0.1 };
+        const finding = (answer, because, decidedBy = [], nearest = null) => ({ answer, because, decidedBy, nearest });
+        const entry = (element, correlation) => ({
+            element, sites: 1, medianPower: 1, comparedModes: 90, zoneBoundary: [], strongest: [],
+            diffuse: { modes: 90, df: 13, chiSquare: 40, sigma: 3.5, correlations: [], lag: [1, 0, 0], correlation, phase: correlation > 0 ? 'in_phase' : 'antiphase' },
+            verdict: {
+                cellDoubling: finding(null, 'untestable'), generalOrder: finding(null, 'no_general_mode'), longWave: finding(null, 'undefined_statistic'),
+                diffuseOrder: { answer: false, because: 'below_correlation', evidence: [] }
+            }
+        });
+        const { data, checks } = summarizeModulations({
+            supercell: [6, 6, 6], wavevectors: 215, untestable: [], rules,
+            family: { zoneBoundaryPoints: 0, comparedModes: 180, diffuse: 3, elements: ['A', 'B', 'C'] },
+            elements: [entry('A', 0.0996), entry('B', -0.09999999), entry('C', -0.0996)]
+        });
+        expect(data.elements.map((item) => item.diffuse)).toEqual([['[1 0 0]', 0.0996, 3.5], ['[1 0 0]', '>-0.1', 3.5], ['[1 0 0]', -0.0996, 3.5]]);
+        // Below the correlation bar: nothing said.
+        expect(checks.some((check) => /neighbouring cells/.test(check.text))).toBe(false);
     });
 
     it('F2: nearer the bar than six significant digits reads "<3"; at or above the bar, the usual rounding', () => {
@@ -841,17 +891,23 @@ describe('Copilot summarizers', () => {
             + '(the strongest, Nb at (½, 0, 0), is < 3× the median, < 3σ after the correction: below the 3× and 3σ bars).');
     });
 
-    it('F3: naming one element corrects over every element\'s points, so 2.96σ stays "no order" (dev-weak-order-b)', async () => {
-        // Until 2026-10-19 analyze_modulations({ element: 'Nb' }) corrected over
-        // Nb's own 7 points: 3.28σ, "ordered".
-        const tools = devTools('dev-weak-order-b');
-        const every = await tools.analyze_modulations.run({});
-        const named = await tools.analyze_modulations.run({ element: 'Nb' });
+    it('F3: naming one element corrects over every element\'s points, so 2.99σ stays "no order" (the fixture\'s weak doubling)', async () => {
+        // Corrected over Nb's own 7 points the same point reads 3.31σ, "ordered".
+        const weak = modulationsFixture.cases.find((entry) => entry.name.startsWith('weak doubling'));
+        const parsed = siteDisplacementsFromRmc6f(weak.text);
+        const every = summarizeModulations(displacementModulations(parsed));
+        const named = summarizeModulations(displacementModulations(parsed, 'Nb'));
         expect(named.checks[0].text).toBe(every.checks[0].text);
         expect(named.data.elements.map((entry) => entry.element)).toEqual(['Nb']);
         expect(named.data.elements[0]).toEqual(every.data.elements.find((entry) => entry.element === 'Nb'));
         expect(named.data.note).toContain('corrected over all 21 zone-boundary points of the configuration\'s 3 elements, whichever the call names');
         expect(named.facts.modulation).toEqual({ elements: ['Nb'], ordered: [], general: [] });
+        // dev-weak-order-b (F3's case until F1): the same Nb data whether or not the call names it, now ordered.
+        const tools = devTools('dev-weak-order-b');
+        const all = await tools.analyze_modulations.run({});
+        const nb = await tools.analyze_modulations.run({ element: 'Nb' });
+        expect(nb.data.elements[0]).toEqual(all.data.elements.find((entry) => entry.element === 'Nb'));
+        expect(nb.facts.modulation).toEqual({ elements: ['Nb'], ordered: [{ element: 'Nb', q: [0.5, 0.5, 0] }], general: [] });
     });
 
     it('cluster summary: other_sizes never lists the analysed kind, on a tie too (review 2026-10-12 #17)', () => {

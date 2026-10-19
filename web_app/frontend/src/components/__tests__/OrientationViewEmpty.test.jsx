@@ -11,18 +11,16 @@ import OrientationView from '../OrientationView';
 
 const render = (extra = {}) => renderToStaticMarkup(
     <OrientationView
-        requestPca={async () => null}
-        ready={false}
+        result={null}
+        readout={null}
+        loading={false}
+        error={null}
+        loadedRef={null}
         selectedRef={null}
         selectedEllipsoid={null}
-        clusterThreshold={1}
         unitCell={null}
-        frequency="auto"
-        weight="count"
         frame="cartesian"
         onFrameChange={() => {}}
-        smoothing={0}
-        minQuantile={0}
         colormap="viridis"
         contrast={1}
         relief={0.5}

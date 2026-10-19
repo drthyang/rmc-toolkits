@@ -13,7 +13,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { buildCase, DEV_CASES, mulberry32 } from '../cases';
 import { loadRun } from '../runFolder';
 import { appSplitSites, ARM_A_RULES, runArmSweep, SWEEP_RULES } from '../armA';
-import { splitDisplacement, summarizeSites } from '../../src/copilotTools';
+import { directionResolved, LOW_INDEX_CONE_DEG, splitDisplacement, summarizeSites } from '../../src/copilotTools';
 import { buildClarifier } from '../../src/llm/copilot/clarify';
 import { createVerification } from '../../src/llm/copilot/verification';
 import { lowerGroupTolerance, NOISE_FLOOR_MARGIN, symmetryNoiseFloor } from '../../src/llm/context/runContext';
@@ -56,8 +56,12 @@ describe('A+ reads the app\'s rules (candidate 8): one definition each', () => {
         expect(SWEEP_RULES.staticDisplacement).toBe(splitDisplacement);
         expect(SWEEP_RULES.clusterElements).toBe(clusterElementsOf);
         expect(SWEEP_RULES.lowerGroupTolerance).toBe(lowerGroupTolerance);
+        // Plan item 2.5: a peak cell resolves a direction within LOW_INDEX_CONE_DEG.
+        expect(SWEEP_RULES.directionResolved).toBe(directionResolved);
         expect(NOISE_FLOOR_MARGIN).toBe(1.25);
         expect(CLUSTER_CN_MAX).toBe(4.5);
+        expect(LOW_INDEX_CONE_DEG).toBe(15);
+        expect([14.9, 15, 15.1, 37.4, null].map(directionResolved)).toEqual([true, true, false, false, false]);
     });
 });
 

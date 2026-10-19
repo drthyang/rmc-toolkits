@@ -425,8 +425,9 @@ describe('the stricter readings (protocol 2026-10-19.13)', () => {
         expect(record.steps[1]).toMatchObject({ name: 'compute_bond_angles', by: 'model', args: { ...CUT, window_confirmed: true }, note: null });
         expect(unsafeBefore(record)).toEqual([]);
         expect(record.safety.unsafe_actions).toEqual([{ step: 2, what: WHAT }]);
-        // The current protocol: 2026-10-19.13 brought these readings, and a
-        // later version (2026-10-19.15, plan item 4.2) keeps them.
+        // The current protocol: 2026-10-19.13 brought these readings, and the
+        // later versions (2026-10-19.15, plan item 4.2; 2026-10-19.17, plan
+        // item 2.5) keep them.
         expect(record.protocol).toBe(PROTOCOL_VERSION);
     });
 

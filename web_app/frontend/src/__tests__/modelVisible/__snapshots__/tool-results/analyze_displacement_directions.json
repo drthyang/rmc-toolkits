@@ -3,7 +3,7 @@
   "arguments": {
     "site_ref": 1
   },
-  "content_chars": 1026,
+  "content_chars": 1135,
   "content": {
     "ref": "r1",
     "checks": [
@@ -17,7 +17,7 @@
       }
     ],
     "data": {
-      "note": "enhancement = density / isotropic (1 = isotropic); significances are calibrated one-sided sigma; the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal",
+      "note": "enhancement = density / isotropic (1 = isotropic); significances are calibrated one-sided sigma; the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal; peak.radius_deg is the peak cell's radius: the peak names its direction only to within it",
       "site": 1,
       "element": "Ta",
       "frequency": 2,
@@ -32,7 +32,8 @@
         "significance_sigma": 2.51,
         "direction_cartesian": [0.5, -0.309, -0.809],
         "direction_uvw": [0.62, -0.38, -1],
-        "angles_to_abc_deg": [60, 108, 144]
+        "angles_to_abc_deg": [60, 108, 144],
+        "radius_deg": 20.9
       },
       "map_significance_sigma": 2.59,
       "antipodal_asymmetry": 0.186,

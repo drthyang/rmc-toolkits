@@ -10,8 +10,8 @@ that went with it is [copilot-review.md](copilot-review.md).
 
 | Arm | What answers | Code |
 | --- | --- | --- |
-| **A** | The default Workbench, no agent: the Detected SG card (0.2 Å), the PCA Ellipsoid table, the Displacement Directions page (ν = 10, smoothing 2) and the partial g(r), read by fixed rules (`ARM_A_RULES`). The cluster and superstructure engines have no page, so A cannot use them | `armA.js` `runArmA` |
-| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules; no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19), a modulation claim with the engine's polarisation as its direction (since protocol 2026-10-19.12). Where the app has a rule, A+ calls the app's function (`SWEEP_RULES`, since 2026-10-19: the split site, the cluster elements, the lower group's tolerance), and a Jahn–Teller claim's long − short is the shell catalogue's split of a joined shell (since protocol 2026-10-19.15). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
+| **A** | The default Workbench, no agent: the Detected SG card (0.2 Å), the PCA Ellipsoid table, the Displacement Directions page at its own defaults (the engine's resolution, its readouts from the raw histogram, since protocol 2026-10-19.17; [below](#the-displacement-directions-page-at-its-defaults)) and the partial g(r), read by fixed rules (`ARM_A_RULES`). The cluster and superstructure engines have no page, so A cannot use them | `armA.js` `runArmA` |
+| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules; no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19), a modulation claim with the engine's polarisation as its direction (since protocol 2026-10-19.12). Where the app has a rule, A+ calls the app's function (`SWEEP_RULES`, since 2026-10-19: the split site, the cluster elements, the lower group's tolerance), and a Jahn–Teller claim's long − short is the shell catalogue's split of a joined shell (since protocol 2026-10-19.15), and a split site's direction is the direction map's peak only where the peak cell resolves it, else PC1 (`directionResolved`, 15°; since protocol 2026-10-19.17). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
 | **B** | The Copilot as the app assembles it: tools, skills, guardrails (refusals, the Workbench's window questions, answer checks) | `harness.js` |
 | **C** | B without the method ([below](#arm-c-the-copilot-without-the-method)): no skills (no `read_skill`, no skills index), no method rules in the prompt, no method advice in a tool's description or check; the tools, refusals, the Workbench's questions, the evidence gate and the answer checks still run. The ablation | `harness.js` |
 | **D** | The planted truth, scored as a verdict; it must score 1 (a test checks this) | `verdict.js` `truthVerdict` |
@@ -50,6 +50,37 @@ arm's skills (arm B) and method (arm C), the verdict's words for the gate (`verd
 the same claim in prose; the app's own claim catalogue reads prose only) and a model port. `run.js` builds that port as the app
 does, with `providerModel` (`src/llm/provider/model.js`: the context guard, the warmer retry), and
 meters it for an API model (`spend.js` `meteredModel`).
+
+### The Displacement Directions page at its defaults
+
+Decided 2026-10-19 (plan item 2.5; protocol 2026-10-19.17). Arm A reads a split site's direction
+map on the Displacement Directions page as the page shows it at its defaults, and takes those
+defaults from the page itself: `ARM_A_RULES.DIRECTION_SETTINGS` *is* the page's
+`DIRECTION_DEFAULTS` (`src/directionSettings.js`), and the request is the page's own readout
+request (`directionReadoutRequest`), so no number is copied into the protocol. Since this decision
+the page opens at Auto, the engine's recommended resolution (`recommendedFrequency`), and takes
+every readout (the peak, its direction and σ, the map test, the ± asymmetry, the Bingham
+anisotropy) from the raw histogram, at smoothing 0; the smoothing redraws the map only. That is
+exactly what `analyze_displacement_directions` computes when it is given no frequency, so arm A,
+A+ (which reads a split site's map through the same reading, `directionsOf`) and the Copilot read
+one tiling and one set of numbers; a known-answer test checks it site by site on a dev case
+(`validation/__tests__/directionsDefault.test.js`). Before it, the page opened at ν = 10 and read
+its numbers off the 2× smoothed map, whose peak cell, direction and σ follow the smoothing (the
+engines pick the peak cell on the smoothed map).
+
+What it changes in a reading: the reading records the resolution it read (`frequency`) and the
+peak cell's radius (`radius_deg`, the "± R°" the page prints beside the direction), and a peak
+that reaches 3σ on the engine's coarser tiling names the claim's direction where PC1 named it
+before. A tiling names a direction only to within its cell (the engines' `peakCellRadiusDeg`, the
+cell's circumscribed radius): below 504 copies Auto is ν = 1, twelve cells 37.4° in radius whose
+centres lie 31.7° from every cube axis; at ν = 2 a cell is 19.3–20.9°, still wider than the 15°
+direction tolerance. Arm A takes a significant peak whatever its radius, as a user reading the
+page. A+ applies the tool's bound (`SWEEP_RULES.directionResolved`: `LOW_INDEX_CONE_DEG`, 15°)
+and takes PC1 where the peak cell is wider, since a cell cannot localise a direction more finely
+than its own size. The page's map opens unsmoothed, which no reading or score depends on.
+The moved dev records are re-recorded in `arm-a-dev.json` (the others as recorded) and pinned in
+`arms.test.js`; the tables under [Arm A results](#arm-a-results-no-model-2026-10-14-commit-b4fe09f)
+were recorded under the earlier default, and the test set's records move at its next scoring.
 
 ### Arm C: the Copilot without the method
 
@@ -888,6 +919,41 @@ family is still unnamed). Every arm A and D record, every other A+ record and ev
 identical. The record is re-recorded in `arm-a-dev.json`; the others stay as recorded. The test
 set was not run. Approved by the manager on the user's delegation, 2026-10-19
 (`validation/findings/decisions/2026-10-19-jt-split.json`).
+**Protocol 2026-10-19.16 (the independent-cell null, finding F1; diffuse order between cells, plan
+item 4.4).** What `analyze_modulations` returns changes for every arm that calls it:
+- **F1.** Both modulation engines test an element's power against its own cells placed at random,
+  which keeps every correlation inside a cell (the ligands of a Jahn–Teller octahedron, the
+  vertices of a cluster) and destroys every correlation between cells
+  ([ai-assistant.md, Step 19](ai-assistant.md#step-19--displacement-modulations-order-that-enlarges-the-cell-analyze_modulations)).
+  The null of independent sites it replaces found order in 9–32 % of the configurations of the dev
+  Jahn–Teller, two-feature and octahedral generator kinds (1,000 fresh ones each); the calibrated
+  null finds it at the rate its bar allows. It also stops holding an independent site to the
+  one-component bound: an isotropic site has three, so a weak order on one is read as far more
+  significant than before.
+- **4.4.** Each element gains `verdict.diffuseOrder`: a rank test of whether the power over the
+  compared modes is spread in the pattern that correlation between neighbouring cells makes. The
+  tool shows a `diffuse` row per element and says antiphase correlation as short-range order and
+  in-phase correlation as neighbouring cells moving together (the Demo's three elements: in phase).
+- **The marginal situation.** Both dev weak orders are now far above the 3σ bar, so the dev pair
+  no longer straddles it; their amplitude was set from the null before F1. Re-setting it (and its
+  held-out match's, set by the same rule) is the user's call; the case definitions are unchanged.
+- **Arm A+** reads cellDoubling, generalOrder and longWave as before; the diffuse finding is not
+  among its readings (the verdict has no feature kind for it, and adding one changes the scoring).
+
+**Arms A and A+ on dev** (`arm-a --split dev` before at c4d8d83, after on this protocol's code):
+every arm A and D record is identical, and every score but one. One A+ record of the judgment
+subset moves: its weak order is now ordered, A+ claims it and its score rises (its values are in
+`arm-a-dev.json` and the `arms.test.js` pins, not here). It is re-recorded in `arm-a-dev.json`; the
+other records stay as recorded. The test set was not run. What the model sees changes in the
+modulation tool's result only (`tool-results/analyze_modulations.json` and
+`analyze_modulations.element.json`: the σ of the zone-boundary rows, the note, the diffuse rows and
+the Demo's in-phase note); no tool description, prompt or first request changes. The scripted runs'
+record files that call it move with it (`fitCase.in-the-harness`, `harness.gate-split-site`,
+`harness.over-claim`, `judgment.edge-above`, `judgment.edge-below`: the tool's rows and checks, and each
+request's length and hash); the edge-of-significance harness test now finds its below-the-bar case at
+a smaller amplitude by the weak pair's own rule, since both dev weak orders are above the bar. Approved by the
+manager on the user's delegation, 2026-10-19 (`validation/findings/decisions/2026-10-19-modulation-null.json`,
+`2026-10-19-diffuse-order.json`).
 
 **Protocol 2026-10-19.18 (one cut rule: `compute_bond_angles` refuses on the CN margin).** Protocol
 2026-10-19.8 left two readings of a window that cuts a shell, the Workbench asking on the CN margin

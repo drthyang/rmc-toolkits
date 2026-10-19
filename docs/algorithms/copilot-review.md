@@ -29,7 +29,9 @@ regression pin on the demo run.
    ratio ≥ 3 and ≥ 3σ against independent displacements: χ² with at least m degrees of freedom
    for m sites, which holds for any site anisotropy, Šidák-corrected. Planted order stays above 8σ.
    (`zoneBoundarySigma`, in the modulation engines since 2026-10-19: workers/modulations.js,
-   modulations.py, and their tests)
+   modulations.py, and their tests; since finding F1 the same day, against independent cells,
+   each cell's own correlations kept: the bound did not hold where sites share a cell-level
+   variable, ai-assistant.md Step 19)
 2. **The cluster check denied a distortion its own axis test found.** For JT octahedra it printed
    "LESS distorted … no correlated shape distortion on top" next to "more clusters elongated along
    <100>". The sentence now names the favoured axis.
