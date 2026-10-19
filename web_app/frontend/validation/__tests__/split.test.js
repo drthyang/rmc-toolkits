@@ -413,8 +413,8 @@ describe('where a finding stands, and validation batch 1', () => {
         expect(ids.filter((id) => id !== recomposed)).toEqual([
             '2026-10-19-aplus-app-rules', '2026-10-19-asked-before', '2026-10-19-diffuse-order', '2026-10-19-engine-verdicts',
             '2026-10-19-f5-shell-join', '2026-10-19-jt-split', '2026-10-19-judgment-dev-cases', '2026-10-19-list-sites-split',
-            '2026-10-19-mode-polarisation', '2026-10-19-modulation-bar-and-family', '2026-10-19-modulation-null',
-            '2026-10-19-provenance-told', '2026-10-19-shell-catalogue', '2026-10-19-shell-cut-rule'
+            '2026-10-19-marginal-reset-dev', '2026-10-19-mode-polarisation', '2026-10-19-modulation-bar-and-family',
+            '2026-10-19-modulation-null', '2026-10-19-provenance-told', '2026-10-19-shell-catalogue', '2026-10-19-shell-cut-rule'
         ]);
         expect(existsSync(join(FRONTEND, 'validation/findings/decisions.jsonl'))).toBe(false);
         const record = readFileSync(join(DECISIONS, `${recomposed}.json`), 'utf8');
@@ -521,6 +521,20 @@ describe('where a finding stands, and validation batch 1', () => {
                 expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
             });
         }
+    });
+
+    it('decisions: the marginal situation re-set for the calibrated null (dev pair and arm C\'s modulation notes), approved on the user\'s delegation, implemented with its tests', () => {
+        const reset = decisions()['2026-10-19-marginal-reset-dev'];
+        expect(reset).toMatchObject({ case: 'dev-weak-order-b', kind: 'bug' });
+        expect(DEV_CASES.find((item) => item.id === reset.case)).toMatchObject({ judgment: true, situation: 'marginal' });
+        delegated(reset);
+        // The user may still reverse it before the freeze: both fields say so.
+        for (const field of ['evidence', 'proposed_fix']) expect(reset[field], field).toMatch(/the user may reverse it before the freeze\.$/);
+        expect(reset.tests.length).toBeGreaterThan(0);
+        reset.tests.forEach((test) => {
+            const [path, title] = test.split(' › ');
+            expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+        });
     });
 
     it('decisions: the tool transcript\'s stricter readings (candidate 11, D3 and D6), approved on the user\'s delegation, implemented with their known-answer tests', () => {
