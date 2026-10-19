@@ -11,6 +11,9 @@
 // The tools only compute: none changes a page, the shared tolerance, or a file.
 // Each names the card it reads (`cards`), which breathes while it runs when
 // that card is on screen (the llm module's card focus).
+// The cluster and modulation engines decide what their statistics show (their
+// `verdict`): analyze_clusters and analyze_modulations only shape the data and
+// say each finding through a sentence table keyed by (finding, because).
 // The summarizers are pure and exported for tests.
 
 import { describeSymmetry, orbitLabel } from './symmetryModel';
@@ -20,7 +23,7 @@ import { describePointGroup, pointGroupFacts } from './llm';
 import { symmetryNoiseFloor } from './llm/context/runContext';
 import { symmetryShifts } from './symmetryShift';
 import { nearestLowIndex } from './viewer3d';
-import { normalQuantile, regularizedGamma } from './workers/orientation';
+import { CLUSTER_BECAUSE, SPLIT_SITE_KURTOSIS, SPLIT_SITE_SE, isSplitSite } from './workers/clusters';
 import { oneOf } from './llm/copilot/dataShape';
 
 // Each tool's `dataShape` (llm/copilot/dataShape.js) is the shape of the data
@@ -54,23 +57,15 @@ const parseWarningCheck = (payload) => (
     payload?.parseWarning ? [{ level: 'warn', text: `Structure file: ${payload.parseWarning}` }] : []
 );
 
-// --- split sites (list_sites and the cluster summary) ------------------------------
+// --- split sites (list_sites) ----------------------------------------------------
 
-// A site is split (two positions) when its PC1 is resolved and its PC1 excess
-// kurtosis is at most −0.5 — the value at which two equal wells ±δ of thermal
-// width σ separate (δ = σ: κ = −2δ⁴/(δ² + σ²)² = −0.5) — and at least this
-// many sampling errors (√(24/n)) below zero.
-export const SPLIT_SITE_KURTOSIS = -0.5;
-export const SPLIT_SITE_SE = 3;
+// A site is split (two positions) by the app's one rule, isSplitSite in the
+// cluster engine (workers/clusters.js, clusters.py's is_split_site): PC1
+// resolved, its excess kurtosis ≤ SPLIT_SITE_KURTOSIS (−0.5) and at least
+// SPLIT_SITE_SE (3) sampling errors (√(24/n)) below zero. analyze_clusters'
+// split member sites are that engine's own verdict.
 // The threshold as the texts the model reads write it (a true minus sign).
 const SPLIT_RULE_KURTOSIS = String(SPLIT_SITE_KURTOSIS).replace('-', '−');
-
-/** Whether one site (an engine 'sites' row) is split: the app's one rule, for list_sites and analyze_clusters. */
-export const isSplitSite = (site) => {
-    const kappa = site?.excessKurtosis?.[0];
-    return Boolean(site?.axisResolved?.[0]) && Number.isFinite(kappa) && site.count > 0
-        && kappa <= SPLIT_SITE_KURTOSIS && kappa <= -SPLIT_SITE_SE * Math.sqrt(24 / site.count);
-};
 
 /**
  * A split site's static displacement along PC1 and its sampling error, from
@@ -107,11 +102,6 @@ export const splitDisplacement = (site) => {
     const delta = Math.sqrt(delta2);
     return { delta, se: Math.sqrt(variance[0] + (variance[1] + variance[2]) / 4) / (2 * delta) };
 };
-
-/** The sites (list_sites' engine rows) among `refs` whose clouds are split. */
-export const splitMemberSites = (siteRows, refs) => (siteRows || []).filter((site) => (
-    refs.includes(site.referenceNumber) && isSplitSite(site)
-));
 
 // --- list_sites ------------------------------------------------------------------
 
@@ -659,30 +649,8 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
 
 // --- analyze_clusters ------------------------------------------------------------
 
-// A shape statistic departs from independent atoms only when both its z and
-// its size clear these: with thousands of clusters a 1 % effect reaches
-// z > 3 and still means nothing physically.
-export const CLUSTER_Z = 3;
-// Relative change (observed / null − 1) of a width or an rms.
-export const CLUSTER_EFFECT = 0.05;
-// Change of the tetrahedral T2 trigonality (its range is 1/3 to 1).
-export const TRIGONALITY_EFFECT = 0.02;
-// Observed / null fraction of clusters with an axis near one lattice family.
-export const AXIS_ENHANCEMENT = 1.1;
-// The average cluster counts as statically distorted when its edges spread
-// over more than this many sampling errors (six independent normal edges span
-// ~2.5 on average and exceed 5 in under 1 % of cases).
-export const STATIC_SPREAD_SE = 5;
-// Template bonds outside the window, or contacts linking clusters, per atom.
-export const CLUSTER_OUTLIER_FRACTION = 0.05;
 // analyze_clusters' own result budget (characters of the tool message).
 export const CLUSTER_RESULT_BUDGET = 4500;
-
-const significant = (z, change, effect) => (
-    Number.isFinite(z) && Math.abs(z) >= CLUSTER_Z && Number.isFinite(change) && Math.abs(change) >= effect
-);
-
-// A member site is split by the rule list_sites reports (isSplitSite, above).
 
 // One statistic against its null: change = obs/null − 1, when both are finite.
 const NULL_ROW = { obs: 'number|null', null: 'number|null', z: 'number|null', 'change?': 'number' };
@@ -717,20 +685,206 @@ const CLUSTERS_SHAPE = {
     'split_member_sites?': ['number']
 };
 
+// How a favoured gyration axis is said, and the size the shape is read at.
+const AXIS_VERB = { long: 'elongated', short: 'compressed' };
+const SIZE_TEXT = '(at each cluster\'s own size)';
+
+// The shape readings (one per cluster result: the edge spread against the
+// shape null, with the pattern beside it). `width` is the data's rounded row.
+const lessReading = ({ width, pattern }) => ({
+    level: 'ok',
+    text: `The clusters are ${Math.round(-width.change * 100)} % LESS distorted than independent atoms would make them ${SIZE_TEXT} `
+        + `(edge spread ${width.obs} vs ${width.null} Å, z = ${width.z}): the atoms of a cluster move together`
+        + (pattern
+            ? `, yet ${pattern}: a correlated shape distortion whose amplitude the independent-atom null already holds (split or disordered sites).`
+            : ', and there is no correlated shape distortion on top.')
+});
+const patternReading = (context) => (context.less ? lessReading(context) : {
+    level: 'ok',
+    text: `The edge spread (${context.width.obs} Å) matches the shuffle null ${SIZE_TEXT} (${context.width.null} Å; change `
+        + `${Math.round((context.width.change ?? 0) * 100)} %, z = ${context.width.z}), but the pattern does not: ${context.pattern}. A correlated shape `
+        + 'distortion whose amplitude the sites\' own displacements already hold.'
+});
+const noDistortion = ({ width }) => ({
+    level: 'ok',
+    text: `No cluster shape distortion beyond independent atoms ${SIZE_TEXT}: the edge spread (${width.obs} Å) matches the shuffle null `
+        + `(${width.null} Å; change ${Math.round((width.change ?? 0) * 100)} %, z = ${width.z}).`
+});
+// A cluster with one edge (a dimer) has no edge spread: its shape reading, whatever `distorted` says.
+const singleEdgeReading = ({ kind, pattern }) => ({
+    level: 'ok',
+    text: `${kind.members === 2 ? 'Dimers have' : 'Each cluster has'} one edge: the shape is the bond length, read from the size `
+        + `row (breathing_sd_A, against independent atoms)${pattern ? `; ${pattern}` : ''}.`
+});
+
 /**
- * The cluster result the model reads. The shape statistics (edge spread,
- * shape rms, tetrahedral modes, gyration-axis families) are read against the
- * engine's shape null — independent atoms at each cluster's own breathing —
- * and the size statistics (mean edge, breathing) against independent atoms:
- * against the latter alone, a collective size fluctuation read as "LESS
- * distorted" and as a shape preference (the review's L2, approved
- * 2026-10-14). `siteRows` (the engine's 'sites' rows, when the tool could
- * read them) tell split member sites, for which the null already holds the
- * distortion's amplitude.
+ * How analyze_clusters says each finding of the cluster engine's verdict
+ * (workers/clusters.js, clusters.py): (finding, because) → a check, or null
+ * where the finding adds no check of its own (rigid and lessDistorted are said
+ * by the shape reading and the breathing note, favouredAxes by its families,
+ * the negatives by nothing). Every `because` the engine can give has an entry,
+ * so a new one cannot go unsaid (copilotTools.test.js checks). The texts are
+ * the tool's from before the rules moved into the engines (2026-10-19).
  */
-export const summarizeClusters = (payload, { siteRows = null } = {}) => {
+export const CLUSTER_SENTENCES = {
+    'window.extendedNetwork': {
+        extended_network: ({ element, lo, hi }) => ({
+            level: 'fail',
+            text: `The ${lo}–${hi} Å window links the ${element} atoms into an extended network (chains or a 3-D net), `
+                + `not finite clusters: narrow it to the intra-cluster bond (find_gr_peaks: first_shell.window_A of ${element}-${element}).`
+        }),
+        no_clusters: ({ element, lo, hi }) => ({
+            level: 'fail',
+            text: `No two ${element} sites of the average structure lie ${lo}–${hi} Å apart: no clusters. `
+                + `Widen the window (find_gr_peaks gives the ${element}-${element} first shell).`
+        }),
+        finite_clusters: null
+    },
+    'window.mixedSizes': {
+        above_bar: ({ payload }) => ({
+            level: 'warn',
+            text: `The window gives clusters of different sizes (${payload.kinds.map((k) => `${k.clusters}×${k.members}`).join(', ')}): `
+                + 'it may cut through or merge clusters. The statistics are for the most common size only.'
+        }),
+        within_bar: null,
+        extended_network: null,
+        no_clusters: null
+    },
+    staticDistortion: {
+        above_sampling_error: ({ ideal }) => ({
+            level: 'note',
+            text: `The average cluster is itself distorted: its edges span ${ideal.edges_A[0]}–${ideal.edges_A.at(-1)} Å, `
+                + `${ideal.spread_over_se}× their sampling error (${ideal.edge_se_A} Å) — a static distortion of the average structure.`
+        }),
+        within_sampling_error: ({ ideal }) => ({
+            level: 'note',
+            text: `The average cluster is regular within its sampling error: edges ${ideal.edges_A[0]}–${ideal.edges_A.at(-1)} Å `
+                + `(± ${ideal.edge_se_A} Å each).`
+        }),
+        extended_network: null,
+        no_clusters: null
+    },
+    distorted: {
+        edge_spread: ({ width }) => ({
+            level: 'ok',
+            text: `The clusters are distorted beyond independent atoms ${SIZE_TEXT}: the spread of their edges (longest − shortest, `
+                + `${width.obs} Å) is ${Math.round(width.change * 100)} % above the shuffle null (${width.null} Å, z = ${width.z}) — `
+                + 'a correlated distortion the data put in.'
+        }),
+        axis_family: patternReading,
+        trigonality: patternReading,
+        less_distorted: ({ width }) => lessReading({ width, pattern: null }),
+        within_null: noDistortion,
+        undefined_statistic: noDistortion,
+        extended_network: null,
+        no_clusters: null
+    },
+    lessDistorted: Object.fromEntries(CLUSTER_BECAUSE.lessDistorted.map((because) => [because, null])),
+    breathing: {
+        above_null: ({ breathing }) => ({
+            level: 'note',
+            text: `The clusters breathe: their size (mean edge) fluctuates ${Math.round(breathing.change * 100)} % more than for independent `
+                + `atoms (breathing sd ${breathing.obs} vs ${breathing.null} Å, z = ${breathing.z}) — a collective size fluctuation, `
+                + 'not a shape distortion.'
+        }),
+        below_null: ({ breathing, split }) => ({
+            level: 'note',
+            text: `The cluster size (mean edge) fluctuates ${Math.round(-breathing.change * 100)} % less than for independent atoms `
+                + `(breathing sd ${breathing.obs} vs ${breathing.null} Å, z = ${breathing.z})`
+                + (split
+                    ? ': the split sites\' positions combine in a pattern that keeps the size (as a Jahn–Teller distortion does), '
+                        + 'not stiff bonds.'
+                    : ': the bonds are stiffer than independent atoms make them — the atoms move together.')
+        }),
+        within_null: null,
+        undefined_statistic: null,
+        extended_network: null,
+        no_clusters: null
+    },
+    rigid: Object.fromEntries(CLUSTER_BECAUSE.rigid.map((because) => [because, null])),
+    trigonalLean: {
+        leans_trigonal: ({ trig }) => ({
+            level: 'note',
+            text: `The edge pattern leans trigonal: three edges at one vertex differ from the other three (C3v-like; trigonality ${trig.obs} vs ${trig.null}, z = ${trig.z}).`
+        }),
+        leans_one_edge: ({ trig }) => ({
+            level: 'note',
+            text: `The edge pattern leans to one edge against its opposite (trigonality ${trig.obs} vs ${trig.null}, z = ${trig.z}).`
+        }),
+        within_null: null,
+        not_tetrahedra: null,
+        undefined_statistic: null,
+        extended_network: null,
+        no_clusters: null
+    },
+    favouredAxes: Object.fromEntries(CLUSTER_BECAUSE.favouredAxes.map((because) => [because, null])),
+    'favouredAxes.families': {
+        enhanced: ({ family, entry, verb }) => ({
+            level: 'note',
+            text: `More clusters are ${verb} along ${family} than by chance: ${Math.round(entry.obs * 100)} % `
+                + `vs ${Math.round(entry.null * 100)} % in the null (z = ${entry.z}).`
+        }),
+        within_null: null,
+        undefined_statistic: null
+    },
+    splitMemberSites: {
+        half_or_more_split: ({ verdict }) => ({
+            level: 'note',
+            text: `Split sites: ${verdict.splitMemberSites.sites.length} of the ${verdict.splitMemberSites.memberSites.length} member sites `
+                + `(${verdict.splitMemberSites.sites.join(', ')}) `
+                + 'have two positions (PC1 excess kurtosis ≤ −0.5). The null keeps each site\'s two positions, so it already holds the '
+                + 'distortion\'s amplitude: the edge spread cannot show it, and "no distortion" or "less distorted" does not make the '
+                + 'clusters regular. Read the pattern (axis families, trigonality), the partial g(r) shell (find_gr_peaks) and the bond angles.'
+        }),
+        fewer_than_half_split: null,
+        none_split: null,
+        extended_network: null,
+        no_clusters: null
+    },
+    'window.bondsOutsideWindow': {
+        above_bar: ({ data, lo, hi }) => ({
+            level: 'warn',
+            text: `${Math.round(data.outliers.bonds_outside_window * 100)} % of the cluster bonds lie outside ${lo}–${hi} Å in the configuration: `
+                + 'the bond lengths spread wider than the window, or have heavy tails (atoms straying from their cluster).'
+        }),
+        within_bar: null,
+        extended_network: null,
+        no_clusters: null
+    },
+    'window.contactsBetweenClusters': {
+        above_bar: ({ data, element }) => ({
+            level: 'warn',
+            text: `${data.outliers.contacts_between_clusters_per_atom} ${element}–${element} contacts per atom inside the window `
+                + 'are not cluster bonds: atoms crossing the gap between clusters.'
+        }),
+        within_bar: null,
+        extended_network: null,
+        no_clusters: null
+    }
+};
+
+// One finding said into `checks` through a sentence table: an unknown
+// `because` is a broken contract with the engine, never silent.
+const sayInto = (checks, table, tool) => (name, finding, context) => {
+    const entries = table[name];
+    if (!entries || !Object.prototype.hasOwnProperty.call(entries, finding?.because)) {
+        throw new Error(`${tool}: the engine's ${name} finding gave '${finding?.because}', which has no sentence`);
+    }
+    const check = entries[finding.because]?.(context);
+    if (check) checks.push(check);
+};
+
+/**
+ * The cluster result the model reads: the engine's statistics shaped into
+ * rows (the shape rows against the engine's shape null — independent atoms at
+ * each cluster's own breathing — and the size rows against independent atoms;
+ * the review's L2, approved 2026-10-14) and its verdict said through
+ * CLUSTER_SENTENCES. The engine decides; this only renders.
+ */
+export const summarizeClusters = (payload) => {
     const [lo, hi] = payload.window || [];
     const element = payload.element;
+    const { verdict } = payload;
     const data = {
         element,
         window_A: [lo, hi],
@@ -738,25 +892,13 @@ export const summarizeClusters = (payload, { siteRows = null } = {}) => {
     };
     if (payload.isolatedSites) data.sites_without_bond = payload.isolatedSites;
     const checks = [...parseWarningCheck(payload)];
-    if (payload.extended) {
-        checks.push({
-            level: 'fail',
-            text: `The ${lo}–${hi} Å window links the ${element} atoms into an extended network (chains or a 3-D net), `
-                + `not finite clusters: narrow it to the intra-cluster bond (find_gr_peaks: first_shell.window_A of ${element}-${element}).`
-        });
-        return { data, checks };
-    }
-    if (!payload.templates?.length || !payload.kind) {
-        checks.push({
-            level: 'fail',
-            text: `No two ${element} sites of the average structure lie ${lo}–${hi} Å apart: no clusters. `
-                + `Widen the window (find_gr_peaks gives the ${element}-${element} first shell).`
-        });
+    const say = sayInto(checks, CLUSTER_SENTENCES, 'analyze_clusters');
+    if (verdict.window.extendedNetwork.because !== 'finite_clusters') {
+        say('window.extendedNetwork', verdict.window.extendedNetwork, { element, lo, hi });
         return { data, checks };
     }
     const { observed: obs } = payload;
-    // Shape statistics against the shape null (when the engine gave one).
-    const shape = payload.shapeNull ? { mean: payload.shapeNull.mean, z: payload.shapeNull.z } : { mean: payload.nullMean, z: payload.z };
+    const shape = { mean: payload.shapeNull.mean, z: payload.shapeNull.z };
     const size = { mean: payload.nullMean, z: payload.z };
     const row = (value, nullValue, zValue, digits = 3) => {
         const entry = { obs: round(value, digits), null: round(nullValue, digits), z: round(zValue, 2) };
@@ -804,162 +946,63 @@ export const summarizeClusters = (payload, { siteRows = null } = {}) => {
             t2_trigonality: row(obs.t2Trigonality, shape.mean.t2Trigonality, shape.z.t2Trigonality)
         };
     }
-    const families = (name) => (obs[name] ? Object.fromEntries(Object.keys(obs[name]).map((family) => [
+    const familyRows = (name) => (obs[name] ? Object.fromEntries(Object.keys(obs[name]).map((family) => [
         `<${family}>`, row(obs[name][family], shape.mean[name][family], shape.z[name][family], 3)
     ])) : undefined);
-    if (obs.longAxis) data.local.long_axis_within_15deg = families('longAxis');
-    if (obs.shortAxis) data.local.short_axis_within_15deg = families('shortAxis');
+    if (obs.longAxis) data.local.long_axis_within_15deg = familyRows('longAxis');
+    if (obs.shortAxis) data.local.short_axis_within_15deg = familyRows('shortAxis');
     data.outliers = {
         bonds_outside_window: round(payload.outliers.brokenEdgeFraction, 2),
         contacts_between_clusters_per_atom: round(payload.outliers.extraContactsPerAtom, 2)
     };
-    // The analysed kind's member sites, and which of them are split.
-    const memberRefs = [...new Set(payload.templates
-        .filter((template) => template.referenceNumbers.length === kind.members && template.edges.length === kind.edges)
-        .flatMap((template) => template.referenceNumbers))];
-    const split = splitMemberSites(siteRows, memberRefs);
-    const splitSites = split.length && 2 * split.length >= memberRefs.length;
-    if (split.length) data.split_member_sites = split.map((site) => site.referenceNumber);
+    // The analysed kind's member sites the engine found split (all of them; the
+    // split finding needs half).
+    if (verdict.splitMemberSites.sites.length) data.split_member_sites = [...verdict.splitMemberSites.sites];
 
-    const otherShare = payload.kinds.slice(1).reduce((sum, k) => sum + k.clusters, 0)
-        / payload.kinds.reduce((sum, k) => sum + k.clusters, 0);
-    if (otherShare > 0.1) {
-        checks.push({
-            level: 'warn',
-            text: `The window gives clusters of different sizes (${payload.kinds.map((k) => `${k.clusters}×${k.members}`).join(', ')}): `
-                + 'it may cut through or merge clusters. The statistics are for the most common size only.'
-        });
-    }
-    const ideal = data.average_structure;
-    checks.push(payload.ideal.spreadOverSe >= STATIC_SPREAD_SE
-        ? {
-            level: 'note',
-            text: `The average cluster is itself distorted: its edges span ${ideal.edges_A[0]}–${ideal.edges_A.at(-1)} Å, `
-                + `${ideal.spread_over_se}× their sampling error (${ideal.edge_se_A} Å) — a static distortion of the average structure.`
-        }
-        : {
-            level: 'note',
-            text: `The average cluster is regular within its sampling error: edges ${ideal.edges_A[0]}–${ideal.edges_A.at(-1)} Å `
-                + `(± ${ideal.edge_se_A} Å each).`
-        });
-    // The lattice axes more clusters are elongated or compressed along than
-    // by chance: a correlated shape distortion, whatever the edge spread says.
-    const favoured = [['long_axis_within_15deg', 'elongated'], ['short_axis_within_15deg', 'compressed']].flatMap(([key, verb]) => (
-        Object.entries(data.local[key] || {})
-            .filter(([, entry]) => entry.z >= CLUSTER_Z && entry.null > 0 && entry.obs / entry.null >= AXIS_ENHANCEMENT)
-            .map(([family, entry]) => ({ family, entry, verb }))
-    ));
-    const trig = data.local.tetrahedral_modes?.t2_trigonality;
-    const trigonalLean = Boolean(trig && significant(trig.z, trig.obs - trig.null, TRIGONALITY_EFFECT));
-    const width = data.local.ladder_width_A;
-    const widthChanged = significant(width.z, width.change, CLUSTER_EFFECT);
-    const breathing = data.local.breathing_sd_A;
-    const breathes = significant(breathing.z, breathing.change, CLUSTER_EFFECT);
+    // The pattern beside the shape reading: the first favoured axis family, or the trigonal lean.
+    const favoured = verdict.favouredAxes.families.filter((family) => family.answer === true);
     const pattern = favoured.length
-        ? `more clusters than by chance are ${favoured[0].verb} along ${favoured[0].family} (below)`
-        : (trigonalLean ? 'the edge pattern leans to one form (below)' : null);
-    const sizeText = '(at each cluster\'s own size)';
-    if (kind.edges === 1) {
-        checks.push({
-            level: 'ok',
-            text: `${kind.members === 2 ? 'Dimers have' : 'Each cluster has'} one edge: the shape is the bond length, read from the size `
-                + `row (breathing_sd_A, against independent atoms)${pattern ? `; ${pattern}` : ''}.`
-        });
-    } else if (widthChanged && width.change > 0) {
-        checks.push({
-            level: 'ok',
-            text: `The clusters are distorted beyond independent atoms ${sizeText}: the spread of their edges (longest − shortest, `
-                + `${width.obs} Å) is ${Math.round(width.change * 100)} % above the shuffle null (${width.null} Å, z = ${width.z}) — `
-                + 'a correlated distortion the data put in.'
-        });
-    } else if (widthChanged) {
-        checks.push({
-            level: 'ok',
-            text: `The clusters are ${Math.round(-width.change * 100)} % LESS distorted than independent atoms would make them ${sizeText} `
-                + `(edge spread ${width.obs} vs ${width.null} Å, z = ${width.z}): the atoms of a cluster move together`
-                + (pattern
-                    ? `, yet ${pattern}: a correlated shape distortion whose amplitude the independent-atom null already holds (split or disordered sites).`
-                    : ', and there is no correlated shape distortion on top.')
-        });
-    } else if (pattern) {
-        checks.push({
-            level: 'ok',
-            text: `The edge spread (${width.obs} Å) matches the shuffle null ${sizeText} (${width.null} Å; change `
-                + `${Math.round((width.change ?? 0) * 100)} %, z = ${width.z}), but the pattern does not: ${pattern}. A correlated shape `
-                + 'distortion whose amplitude the sites\' own displacements already hold.'
-        });
-    } else {
-        checks.push({
-            level: 'ok',
-            text: `No cluster shape distortion beyond independent atoms ${sizeText}: the edge spread (${width.obs} Å) matches the shuffle null `
-                + `(${width.null} Å; change ${Math.round((width.change ?? 0) * 100)} %, z = ${width.z}).`
-        });
-    }
-    if (breathes) {
-        checks.push({
-            level: 'note',
-            text: breathing.change > 0
-                ? `The clusters breathe: their size (mean edge) fluctuates ${Math.round(breathing.change * 100)} % more than for independent `
-                    + `atoms (breathing sd ${breathing.obs} vs ${breathing.null} Å, z = ${breathing.z}) — a collective size fluctuation, `
-                    + 'not a shape distortion.'
-                : `The cluster size (mean edge) fluctuates ${Math.round(-breathing.change * 100)} % less than for independent atoms `
-                    + `(breathing sd ${breathing.obs} vs ${breathing.null} Å, z = ${breathing.z})`
-                    + (splitSites
-                        ? ': the split sites\' positions combine in a pattern that keeps the size (as a Jahn–Teller distortion does), '
-                            + 'not stiff bonds.'
-                        : ': the bonds are stiffer than independent atoms make them — the atoms move together.')
-        });
-    }
-    if (trigonalLean) {
-        checks.push({
-            level: 'note',
-            text: trig.obs < trig.null
-                ? `The edge pattern leans trigonal: three edges at one vertex differ from the other three (C3v-like; trigonality ${trig.obs} vs ${trig.null}, z = ${trig.z}).`
-                : `The edge pattern leans to one edge against its opposite (trigonality ${trig.obs} vs ${trig.null}, z = ${trig.z}).`
-        });
-    }
-    favoured.forEach(({ family, entry, verb }) => {
-        checks.push({
-            level: 'note',
-            text: `More clusters are ${verb} along ${family} than by chance: ${Math.round(entry.obs * 100)} % `
-                + `vs ${Math.round(entry.null * 100)} % in the null (z = ${entry.z}).`
-        });
-    });
-    if (splitSites) {
-        checks.push({
-            level: 'note',
-            text: `Split sites: ${split.length} of the ${memberRefs.length} member sites (${split.map((site) => site.referenceNumber).join(', ')}) `
-                + 'have two positions (PC1 excess kurtosis ≤ −0.5). The null keeps each site\'s two positions, so it already holds the '
-                + 'distortion\'s amplitude: the edge spread cannot show it, and "no distortion" or "less distorted" does not make the '
-                + 'clusters regular. Read the pattern (axis families, trigonality), the partial g(r) shell (find_gr_peaks) and the bond angles.'
-        });
-    }
-    if (data.outliers.bonds_outside_window > CLUSTER_OUTLIER_FRACTION) {
-        checks.push({
-            level: 'warn',
-            text: `${Math.round(data.outliers.bonds_outside_window * 100)} % of the cluster bonds lie outside ${lo}–${hi} Å in the configuration: `
-                + 'the bond lengths spread wider than the window, or have heavy tails (atoms straying from their cluster).'
-        });
-    }
-    if (data.outliers.contacts_between_clusters_per_atom > CLUSTER_OUTLIER_FRACTION) {
-        checks.push({
-            level: 'warn',
-            text: `${data.outliers.contacts_between_clusters_per_atom} ${element}–${element} contacts per atom inside the window `
-                + 'are not cluster bonds: atoms crossing the gap between clusters.'
-        });
-    }
-    // For the answer checks (review L5): what this analysis found.
+        ? `more clusters than by chance are ${AXIS_VERB[favoured[0].axis]} along <${favoured[0].family}> (below)`
+        : (verdict.trigonalLean.answer === true ? 'the edge pattern leans to one form (below)' : null);
+    const context = {
+        element, lo, hi, payload, data, verdict, kind, pattern,
+        width: data.local.ladder_width_A,
+        breathing: data.local.breathing_sd_A,
+        trig: data.local.tetrahedral_modes?.t2_trigonality,
+        ideal: data.average_structure,
+        less: verdict.lessDistorted.answer === true,
+        split: verdict.splitMemberSites.answer === true
+    };
+    say('window.mixedSizes', verdict.window.mixedSizes, context);
+    say('staticDistortion', verdict.staticDistortion, context);
+    if (kind.edges === 1) checks.push(singleEdgeReading(context));
+    else say('distorted', verdict.distorted, context);
+    say('lessDistorted', verdict.lessDistorted, context);
+    say('breathing', verdict.breathing, context);
+    say('rigid', verdict.rigid, context);
+    say('trigonalLean', verdict.trigonalLean, context);
+    say('favouredAxes', verdict.favouredAxes, context);
+    verdict.favouredAxes.families.forEach((family) => say('favouredAxes.families', family, {
+        ...context,
+        family: `<${family.family}>`,
+        entry: data.local[`${family.axis}_axis_within_15deg`]?.[`<${family.family}>`],
+        verb: AXIS_VERB[family.axis]
+    }));
+    say('splitMemberSites', verdict.splitMemberSites, context);
+    say('window.bondsOutsideWindow', verdict.window.bondsOutsideWindow, context);
+    say('window.contactsBetweenClusters', verdict.window.contactsBetweenClusters, context);
+    // For the answer checks (review L5): the engine's answers.
     const facts = {
         cluster: {
             element,
             members: kind.members,
             window: [lo, hi],
-            distorted: (widthChanged && width.change > 0) || Boolean(pattern),
-            static: payload.ideal.spreadOverSe >= STATIC_SPREAD_SE,
-            breathing: breathes && breathing.change > 0,
-            rigid: !splitSites && ((widthChanged && width.change < 0 && !pattern) || (breathes && breathing.change < 0)),
-            split: Boolean(splitSites),
-            families: favoured.map(({ family, verb }) => `${verb} ${family}`)
+            distorted: verdict.distorted.answer,
+            static: verdict.staticDistortion.answer,
+            breathing: verdict.breathing.answer,
+            rigid: verdict.rigid.answer,
+            split: verdict.splitMemberSites.answer,
+            families: favoured.map((family) => `${AXIS_VERB[family.axis]} <${family.family}>`)
         }
     };
     return { data, checks, facts };
@@ -967,62 +1010,13 @@ export const summarizeClusters = (payload, { siteRows = null } = {}) => {
 
 // --- analyze_modulations ---------------------------------------------------------
 
-// A zone-boundary point is ordered displacement when its power is at least
-// this many times the median over all wavevectors (the effect size) AND it
-// is significant at SIGNIFICANCE_SIGMA after a family-wise (Šidák)
-// correction over every zone-boundary point and element tested. The null:
-// for independent displacements a site's normalised power at a half-integer
-// q (a real Fourier sum) is Σ_c w_c χ²₁ with Σ w_c = 1, so an element's mean
-// over m sites has at least m degrees of freedom: P ≥ χ²_m / m is the
-// heaviest tail any site anisotropy allows (conservative). The earlier rule
-// (top 1 % of the modes, or rank 1) had no such correction: the validation
-// cases found "order" in 6 of 12 configurations without any.
-export const MODULATION_RATIO = 3;
-
-// One-sided σ of an upper-tail probability.
-const sigmaOf = (p) => (p <= 0 ? Infinity : (p >= 1 ? -Infinity : -normalQuantile(p)));
-
-/**
- * The family-wise significance (one-sided σ) of an element's zone-boundary
- * power `power` (normalised: 1 = independent displacements) over `sites`
- * sites, among `family` points tested.
- */
-export const zoneBoundarySigma = (power, sites, family) => {
-    if (!(power > 0) || !(sites > 0)) return null;
-    const p = regularizedGamma(sites / 2, (sites * power) / 2).upper;
-    // Šidák: 1 − (1 − p)^family, computed without cancellation for small p.
-    const familyP = -Math.expm1(family * Math.log1p(-Math.min(p, 1 - 1e-16)));
-    return sigmaOf(familyP);
-};
-// A mode this strong, within this fraction of the zone centre, is a
-// long-wavelength (box-scale) displacement wave.
-export const LONG_WAVE_RATIO = 5;
-export const LONG_WAVE_Q = 0.25;
-
-/**
- * The same family-wise significance at a general wavevector (not a
- * zone-boundary point, not a long wave): there the Fourier sum is complex, so
- * for independent displacements a site's normalised power is Σ_c w_c χ²₂/2,
- * and an element's mean over m sites has at least 2m degrees of freedom
- * (P ≥ χ²_2m / 2m); `family` = the compared modes (one per ±q pair). Order
- * there is correlation between cells that does not double the cell:
- * incommensurate, or short-range (the review's L4, approved 2026-10-14).
- */
-export const generalModeSigma = (power, sites, family) => {
-    if (!(power > 0) || !(sites > 0) || !(family >= 1)) return null;
-    const p = regularizedGamma(sites, sites * power).upper;
-    const familyP = -Math.expm1(family * Math.log1p(-Math.min(p, 1 - 1e-16)));
-    return sigmaOf(familyP);
-};
-const isZoneBoundary = (q) => q.every((value) => Math.abs(value) < 1e-9 || Math.abs(Math.abs(value) - 0.5) < 1e-9);
-const isLongWave = (q) => q.every((value) => Math.abs(value) <= LONG_WAVE_Q + 1e-12);
-
 const qLabel = (q) => `(${q.map((value) => {
     const rounded = Math.round(value * 1000) / 1000;
     return rounded === 0.5 ? '½' : String(rounded + 0);
 }).join(', ')})`;
 
-// A mode row is [q label, ratio, percentile, sigma]; sigma reads '>8' past 8σ.
+// A mode row is [q label, ratio, percentile, sigma]; sigma reads '>8' where
+// the engine reports σ = +∞ (as its rules' sigmaMax).
 const MODE_ROW = ['string', 'number|null', 'number|null', 'number|string|null'];
 const MODULATIONS_SHAPE = {
     note: 'string',
@@ -1032,24 +1026,81 @@ const MODULATIONS_SHAPE = {
     'untestable_zone_boundary?': ['string']
 };
 
+// σ in a row and in a sentence. A null σ in a sentence is σ = −∞ (an
+// undefined one is said in words), written as the tool always wrote it.
+const sigmaCell = (sigma, rules) => (sigma == null ? null : (sigma >= rules.sigmaMax ? '>8' : roundFixed(sigma, 1)));
+const sigmaText = (sigma) => (sigma > 8 ? '> 8σ' : `${round(sigma, 2)}σ`);
+const sameQ = (a, b) => a.length === b.length && a.every((value, axis) => value === b[axis]);
+
+// No element has an ordered zone-boundary point: one sentence for all of
+// them, naming the nearest miss (the largest σ over every element tested).
+const noCellDoubling = ({ best }) => ({
+    level: 'ok',
+    text: 'No order that doubles the cell: no zone-boundary point stands out of the diffuse background'
+        + (best ? ` (the strongest, ${best.element} at ${qLabel(best.point.q)}, is ${round(best.point.ratio, 2)}× the median, `
+            + `${best.point.because === 'undefined_statistic' ? 'significance undefined' : sigmaText(best.point.sigma)} after the correction).` : '.')
+});
+
+/**
+ * How analyze_modulations says each element finding of the modulation
+ * engine's verdict (workers/modulations.js, modulations.py): (finding,
+ * because) → a check, or null. A cell doubling is said once per ordered
+ * point, and its absence once for every element (noCellDoubling). Every
+ * `because` the engine can give has an entry (copilotTools.test.js checks).
+ */
+export const MODULATION_SENTENCES = {
+    cellDoubling: {
+        ordered_point: ({ element, point, family }) => ({
+            level: 'ok',
+            text: `Ordered ${element} displacements at q = ${qLabel(point.q)}: ${round(point.ratio, 3)}× the median power, `
+                + `${sigmaText(point.sigma)} against independent displacements (corrected over ${family} zone-boundary points) `
+                + '— a superstructure doubling the cell along '
+                + `${['a', 'b', 'c'].filter((_, axis) => point.q[axis]).join(', ')}.`
+        }),
+        no_ordered_point: noCellDoubling,
+        undefined_statistic: noCellDoubling,
+        untestable: noCellDoubling,
+        no_displacements: null
+    },
+    generalOrder: {
+        ordered_mode: ({ element, mode, family }) => ({
+            level: 'ok',
+            text: `Correlated ${element} displacements between cells at q = ${qLabel(mode.q)}: ${round(mode.ratio, 3)}× the median power, `
+                + `${sigmaText(mode.sigma)} against independent displacements (corrected over ${family} compared modes) — order at a `
+                + 'general wavevector (incommensurate, or short-range correlation between cells), not a cell doubling.'
+        }),
+        no_ordered_mode: null,
+        undefined_statistic: null,
+        no_general_mode: null,
+        no_displacements: null
+    },
+    longWave: {
+        long_wave_dominates: ({ element, mode }) => ({
+            level: 'note',
+            text: `${element}'s strongest mode is a long-wavelength wave, q = ${qLabel(mode.q)} at ${round(mode.ratio, 2)}× the median: `
+                + 'box-scale displacement correlations (common in RMC), not a crystallographic superstructure.'
+        }),
+        below_ratio: null,
+        strongest_not_long_wave: null,
+        undefined_statistic: null,
+        no_displacements: null
+    }
+};
+
+/**
+ * The modulation result the model reads: the engine's points as compact rows
+ * and its verdict said through MODULATION_SENTENCES. The significance family
+ * is the elements this call tested (the engine's `family`).
+ */
 export const summarizeModulations = (payload) => {
     const checks = [...parseWarningCheck(payload)];
     const tested = (payload.elements || []).filter((entry) => entry.sites);
-    const family = tested.reduce((sum, entry) => sum + entry.zoneBoundary.length, 0);
-    const sigmaAt = (entry, point) => (Number.isFinite(point.ratio) && Number.isFinite(entry.medianPower)
-        ? zoneBoundarySigma(point.ratio * entry.medianPower, entry.sites, family)
-        : null);
-    // The general modes: the compared modes over every tested element.
-    const generalFamily = tested.reduce((sum, entry) => sum + (Number.isFinite(entry.comparedModes) ? entry.comparedModes : 0), 0);
-    const generalSigmaAt = (entry, mode) => (Number.isFinite(mode.ratio) && Number.isFinite(entry.medianPower) && generalFamily > 0
-        && !isZoneBoundary(mode.q) && !isLongWave(mode.q)
-        ? generalModeSigma(mode.ratio * entry.medianPower, entry.sites, generalFamily)
-        : null);
+    const { family, rules } = payload;
     const data = {
         note: 'zone_boundary rows are [q, ratio, percentile, sigma]: an element\'s displacement power at wavevector q (fractions '
             + 'of the cell\'s reciprocal axes) over its median across all q of the supercell grid (the diffuse background), the '
             + 'share of the compared modes (one per ±q pair, long waves with every |q_i| ≤ 0.25 left out) with less power, and '
-            + `the calibrated one-sided significance against independent displacements, corrected over all ${family} zone-boundary `
+            + `the calibrated one-sided significance against independent displacements, corrected over all ${family.zoneBoundaryPoints} zone-boundary `
             + 'points tested (≥ 3 with ratio ≥ 3 is order). strongest rows are [q, ratio, percentile, sigma]: the sigma of a '
             + 'general q (neither zone boundary nor long wave; a complex sum, corrected over the compared modes), null otherwise. '
             + 'A ½ component is order that doubles the cell along that axis; order at a general q is correlation between cells '
@@ -1060,14 +1111,12 @@ export const summarizeModulations = (payload) => {
             element: entry.element,
             sites: entry.sites,
             // [q, ratio to the median, percentile, σ] — compact rows: 7 points × elements.
-            zone_boundary: entry.zoneBoundary.map((point) => {
-                const sigma = sigmaAt(entry, point);
-                return [qLabel(point.q), round(point.ratio, 2), roundFixed(point.percentile, 1), sigma === Infinity ? '>8' : roundFixed(sigma, 1)];
-            }),
-            strongest: entry.strongest.slice(0, 3).map((mode) => {
-                const sigma = generalSigmaAt(entry, mode);
-                return [qLabel(mode.q), round(mode.ratio, 2), roundFixed(mode.percentile, 1), sigma == null ? null : (sigma === Infinity ? '>8' : roundFixed(sigma, 1))];
-            })
+            zone_boundary: entry.zoneBoundary.map((point) => [
+                qLabel(point.q), round(point.ratio, 2), roundFixed(point.percentile, 1), sigmaCell(point.sigma, rules)
+            ]),
+            strongest: entry.strongest.slice(0, 3).map((mode) => [
+                qLabel(mode.q), round(mode.ratio, 2), roundFixed(mode.percentile, 1), sigmaCell(mode.sigma, rules)
+            ])
         }))
     };
     if (payload.untestable?.length) data.untestable_zone_boundary = payload.untestable.map((flags) => qLabel(flags.map((flag) => flag / 2)));
@@ -1075,66 +1124,30 @@ export const summarizeModulations = (payload) => {
         checks.push({ level: 'fail', text: 'No site has displacements to analyse (zero spread everywhere).' });
         return { data, checks };
     }
-    const ordered = [];
-    tested.forEach((entry) => {
-        entry.zoneBoundary.forEach((point) => {
-            const sigma = sigmaAt(entry, point);
-            if (point.ratio >= MODULATION_RATIO && sigma != null && sigma >= SIGNIFICANCE_SIGMA) ordered.push({ element: entry.element, point, sigma });
-        });
-    });
-    const sigmaText = (sigma) => (sigma === Infinity || sigma > 8 ? '> 8σ' : `${round(sigma, 2)}σ`);
-    if (ordered.length) {
-        ordered.forEach(({ element, point, sigma }) => {
-            const axes = ['a', 'b', 'c'].filter((_, axis) => point.q[axis]).join(', ');
-            checks.push({
-                level: 'ok',
-                text: `Ordered ${element} displacements at q = ${qLabel(point.q)}: ${round(point.ratio, 3)}× the median power, `
-                    + `${sigmaText(sigma)} against independent displacements (corrected over ${family} zone-boundary points) `
-                    + '— a superstructure doubling the cell along '
-                    + `${axes}.`
-            });
-        });
+    const say = sayInto(checks, MODULATION_SENTENCES, 'analyze_modulations');
+    const doubling = tested.filter((entry) => entry.verdict.cellDoubling.answer === true);
+    if (doubling.length) {
+        doubling.forEach((entry) => entry.verdict.cellDoubling.decidedBy.forEach((q) => say('cellDoubling', entry.verdict.cellDoubling, {
+            element: entry.element, point: entry.zoneBoundary.find((point) => sameQ(point.q, q)), family: family.zoneBoundaryPoints
+        })));
     } else {
+        // Each element's nearest miss; the largest σ of them, the first element on a tie.
         const best = tested
-            .flatMap((entry) => entry.zoneBoundary.map((point) => ({ element: entry.element, point, sigma: sigmaAt(entry, point) })))
-            .sort((a, b) => (b.sigma ?? -Infinity) - (a.sigma ?? -Infinity))[0];
-        checks.push({
-            level: 'ok',
-            text: 'No order that doubles the cell: no zone-boundary point stands out of the diffuse background'
-                + (best ? ` (the strongest, ${best.element} at ${qLabel(best.point.q)}, is ${round(best.point.ratio, 2)}× the median, `
-                    + `${best.sigma == null ? 'significance undefined' : sigmaText(best.sigma)} after the correction).` : '.')
-        });
+            .map((entry) => ({ element: entry.element, point: entry.verdict.cellDoubling.nearest }))
+            .filter((item) => item.point)
+            .reduce((top, item) => (top == null || (item.point.sigma ?? -Infinity) > (top.point.sigma ?? -Infinity) ? item : top), null);
+        say('cellDoubling', tested[0].verdict.cellDoubling, { best });
     }
-    // Correlation between cells at a general wavevector: the strongest modes
-    // that are neither zone-boundary points nor long waves, by the same rule.
-    const general = [];
+    // Correlation between cells at a general wavevector: each element's first ordered mode.
     tested.forEach((entry) => {
-        entry.strongest.forEach((mode) => {
-            const sigma = generalSigmaAt(entry, mode);
-            if (sigma != null && mode.ratio >= MODULATION_RATIO && sigma >= SIGNIFICANCE_SIGMA
-                && !general.some((item) => item.element === entry.element)) {
-                general.push({ element: entry.element, mode, sigma });
-            }
+        const finding = entry.verdict.generalOrder;
+        say('generalOrder', finding, {
+            element: entry.element,
+            mode: finding.answer === true ? entry.strongest.find((mode) => sameQ(mode.q, finding.decidedBy[0])) : null,
+            family: family.comparedModes
         });
     });
-    general.forEach(({ element, mode, sigma }) => {
-        checks.push({
-            level: 'ok',
-            text: `Correlated ${element} displacements between cells at q = ${qLabel(mode.q)}: ${round(mode.ratio, 3)}× the median power, `
-                + `${sigmaText(sigma)} against independent displacements (corrected over ${generalFamily} compared modes) — order at a `
-                + 'general wavevector (incommensurate, or short-range correlation between cells), not a cell doubling.'
-        });
-    });
-    (payload.elements || []).filter((entry) => entry.sites).forEach((entry) => {
-        const mode = entry.strongest[0];
-        if (mode && mode.ratio >= LONG_WAVE_RATIO && mode.q.every((value) => Math.abs(value) <= LONG_WAVE_Q)) {
-            checks.push({
-                level: 'note',
-                text: `${entry.element}'s strongest mode is a long-wavelength wave, q = ${qLabel(mode.q)} at ${round(mode.ratio, 2)}× the median: `
-                    + 'box-scale displacement correlations (common in RMC), not a crystallographic superstructure.'
-            });
-        }
-    });
+    tested.forEach((entry) => say('longWave', entry.verdict.longWave, { element: entry.element, mode: entry.strongest[0] }));
     if (payload.untestable?.length) {
         checks.push({ level: 'note', text: `An odd supercell axis cannot hold ${data.untestable_zone_boundary.join(', ')}: not tested.` });
     }
@@ -1142,8 +1155,10 @@ export const summarizeModulations = (payload) => {
     const facts = {
         modulation: {
             elements: tested.map((entry) => entry.element),
-            ordered: ordered.map(({ element, point }) => ({ element, q: point.q })),
-            general: general.map(({ element, mode }) => ({ element, q: mode.q }))
+            ordered: tested.flatMap((entry) => entry.verdict.cellDoubling.decidedBy.map((q) => ({ element: entry.element, q }))),
+            general: tested
+                .filter((entry) => entry.verdict.generalOrder.answer === true)
+                .map((entry) => ({ element: entry.element, q: entry.verdict.generalOrder.decidedBy[0] }))
         }
     };
     return { data, checks, facts };
@@ -1541,13 +1556,9 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
             resultBudget: CLUSTER_RESULT_BUDGET,
             run: async ({ element, r_min: rMin, r_max: rMax }, { signal } = {}) => {
                 if (rMin >= rMax) throw new Error('r_min must be below r_max');
-                // The site rows tell split member sites; the engine's parse
-                // cache makes them cheap, and a failure only drops that note.
-                const [payload, sites] = await Promise.all([
-                    request('clusters', { element, rMin, rMax }, { signal }),
-                    request('sites', {}, { signal }).catch(() => null)
-                ]);
-                return summarizeClusters(payload, { siteRows: sites?.sites ?? null });
+                // The engine's verdict holds the split member sites too: it
+                // reads them from the clouds it holds.
+                return summarizeClusters(await request('clusters', { element, rMin, rMax }, { signal }));
             }
         });
 

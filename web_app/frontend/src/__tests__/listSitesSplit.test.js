@@ -16,7 +16,8 @@
 
 import { describe, expect, it } from 'vitest';
 import { siteEllipsoids } from '../workers/pcaKde';
-import { isSplitSite, splitDisplacement, splitMemberSites, summarizeSites } from '../copilotTools';
+import { isSplitSite } from '../workers/clusters';
+import { splitDisplacement, summarizeSites } from '../copilotTools';
 import { buildCase, DEV_CASES, mulberry32 } from '../../validation/cases';
 import { loadRun } from '../../validation/runFolder';
 
@@ -270,8 +271,11 @@ describe('list_sites on the dev cases', () => {
     it('dev-jahn-teller: list_sites and the cluster summary call the same sites split (one rule)', async () => {
         const { result: { data }, rows } = await listSites('dev-jahn-teller');
         const listed = splitRows(data).map((site) => site.ref).sort((a, b) => a - b);
-        const member = splitMemberSites(rows, rows.map((row) => row.referenceNumber)).map((row) => row.referenceNumber);
-        expect(listed).toEqual(member);
+        expect(listed).toEqual(rows.filter(isSplitSite).map((row) => row.referenceNumber));
+        // The cluster engine's split member sites: its own verdict, from the clouds it holds.
+        const run = await loadRun(buildCase(DEV_CASES.find((item) => item.id === 'dev-jahn-teller'), { partials: false }));
+        const clusters = await run.engine('clusters', { element: 'F', rMin: 2.5, rMax: 3.25 });
+        expect(clusters.verdict.splitMemberSites.sites).toEqual(listed);
         expect(listed.length).toBeGreaterThanOrEqual(3);
         expect(splitRows(data).every((site) => site.site === 'F')).toBe(true);
     });

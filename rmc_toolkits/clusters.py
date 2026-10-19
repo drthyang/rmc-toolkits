@@ -58,19 +58,29 @@ configuration falls outside the window) and ``extraContacts`` (pairs of the
 element within the window that are not template bonds: atoms crossing the gap
 between clusters).
 
+The engine also decides what these statistics show (``verdict``, always
+present): each question -- distorted, less distorted, breathing, rigid, a
+static distortion of the average cluster, split member sites, a trigonal
+lean, favoured gyration axes, and what the window did -- is a *Finding*
+``{answer, because, evidence}`` read by fixed rules (``CLUSTER_RULES``) from
+the unrounded statistics, so every caller (the Copilot's ``analyze_clusters``,
+the validation's arm A+, a script) reads the same answer. See the verdict
+section below.
+
 The browser port is ``workers/clusters.js``; keep the two in sync (the parity
-fixture ``tests/generate_clusters_fixture.py`` pins them). Shuffles come from a
-counter-based hash, identical in both engines.
+fixture ``tests/generate_clusters_fixture.py`` pins them, verdicts included).
+Shuffles come from a counter-based hash, identical in both engines.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from math import ceil
 
 import numpy as np
 
-from rmc_toolkits.pca_kde import SiteDisplacements, load_site_displacements
+from rmc_toolkits.pca_kde import SiteDisplacements, load_site_displacements, site_ellipsoids
 from rmc_toolkits.triplets import WINDOW_TOL, _neighbor_bonds, _perpendicular_widths
 
 #: Shuffles of the null by default: enough for a null sd within ~15 %.
@@ -310,12 +320,14 @@ def cluster_distortion(
     shuffles: int = DEFAULT_SHUFFLES,
     seed: int = SHUFFLE_SEED,
 ) -> dict:
-    """Cluster templates, observed shape statistics and their shuffle null.
+    """Cluster templates, observed shape statistics, their shuffle null, and the verdict.
 
     ``window`` is the inclusive bond-length window (Angstrom) that links the
     element's atoms into clusters in the average structure. Raises
     ``ValueError`` for an unknown element, a malformed window, or a file
-    without cell indices (a coordinates-only configuration).
+    without cell indices (a coordinates-only configuration). ``verdict`` is
+    always returned: for an extended network or no clusters every shape
+    finding is None (see :func:`cluster_verdict`).
     """
     lo, hi = (float(window[0]), float(window[1]))
     if not (np.isfinite(lo) and np.isfinite(hi)) or lo < 0 or hi <= lo:
@@ -353,6 +365,7 @@ def cluster_distortion(
         "parseWarning": sites.parse_warning,
     }
     if extended or not templates:
+        result["verdict"] = _no_cluster_verdict("extended_network" if extended else "no_clusters")
         return result
 
     per_template = []
@@ -510,9 +523,395 @@ def cluster_distortion(
         "extraContacts": extra,
         "extraContactsPerAtom": float(2 * extra / element_rows.size) if element_rows.size else 0.0,
     }
+
+    # The analysed kind's member sites, from the clouds this engine holds:
+    # their site rows decide which are split (one rule, is_split_site).
+    member_references = sorted({int(sites.reference_numbers[s]) for _, template, _, _ in chosen for s in template.sites})
+    rows = {row["referenceNumber"]: row for row in site_ellipsoids(sites)}
+    result["verdict"] = cluster_verdict(result, [rows[reference] for reference in member_references])
     return result
 
 
 def cluster_distortion_from_file(path: str, element: str, rmin: float, rmax: float, shuffles: int = DEFAULT_SHUFFLES) -> dict:
     """:func:`cluster_distortion` of an ``.rmc6f`` file, read afresh."""
     return cluster_distortion(load_site_displacements(path), element, (rmin, rmax), shuffles=shuffles)
+
+
+# --- the verdict ------------------------------------------------------------------
+#
+# The engine decides what its statistics show, so every caller reads one answer:
+# the Copilot's analyze_clusters only renders it, and arm A+ maps it to claims.
+# Each question is a Finding,
+#
+#     {answer, because, evidence}
+#
+# answer True/False, or None where the question does not apply or its statistic
+# is undefined (never "not significant"); because, a code from CLUSTER_BECAUSE
+# saying why; evidence, every statistic the answer consulted (a negative keeps
+# them all), those that clear their bar first, then the rest in a fixed order.
+# An Evidence record is
+#
+#     {statistic, against, observed, null, z, change, changeKind, bar, clears,
+#      side?, strict?, site?}
+#
+# against: the null it is read against ('shapeNull', 'independentNull'), the
+# sampling error ('samplingError'), a site's kurtosis ('siteKurtosis') or the
+# window ('window'); change = observed / null - 1 ('ratio') or observed - null
+# ('difference'); bar maps a field of the record (z, change, observed) to its
+# threshold, side says which way it must be cleared ('above': >= bar, 'below':
+# <= -bar, absent: |value| >= bar; strict: > instead of >=), and clears is
+# evidence_clears(record): recomputable from the record alone. Decisions use the
+# unrounded statistics; every number is finite or None (Flask's strict JSON).
+# The rules are the Copilot's (they were its summarizeClusters' until
+# 2026-10-19), ported rule for rule, and echoed in the verdict (CLUSTER_RULES).
+
+#: A cluster statistic departs from its null only when both its z and its
+#: effect size clear these: with thousands of clusters a 1 % effect reaches
+#: z > 3 and still means nothing physically.
+CLUSTER_Z = 3
+#: Relative change (observed / null - 1) of a width or an rms.
+CLUSTER_EFFECT = 0.05
+#: Change (observed - null) of the tetrahedral T2 trigonality (range 1/3 to 1).
+TRIGONALITY_EFFECT = 0.02
+#: Observed / null fraction of clusters with a gyration axis near one lattice
+#: family (one-sided: a family more clusters favour than by chance).
+AXIS_ENHANCEMENT = 1.1
+#: The average cluster is statically distorted when its edges spread over at
+#: least this many sampling errors (six independent normal edges span ~2.5 on
+#: average and exceed 5 in under 1 % of cases).
+STATIC_SPREAD_SE = 5
+#: Template bonds outside the window, or contacts linking clusters per atom,
+#: above this: the window, not the clusters.
+CLUSTER_OUTLIER_FRACTION = 0.05
+#: Clusters of other kinds (sizes) above this share of all: the window may cut
+#: through or merge clusters.
+MIXED_SIZE_SHARE = 0.1
+#: A site is split (two positions) when its PC1 is resolved and its PC1 excess
+#: kurtosis is at most -0.5 -- the value at which two equal wells +-delta of
+#: thermal width sigma separate (delta = sigma: kappa = -2 delta^4 /
+#: (delta^2 + sigma^2)^2 = -0.5) -- and at least SPLIT_SITE_SE sampling errors
+#: (sqrt(24/n)) below zero. The one rule for the app: list_sites
+#: (workers/clusters.js isSplitSite) and the split member sites here.
+SPLIT_SITE_KURTOSIS = -0.5
+SPLIT_SITE_SE = 3
+
+CLUSTER_RULES = {
+    "z": CLUSTER_Z,
+    "effect": CLUSTER_EFFECT,
+    "trigonalityEffect": TRIGONALITY_EFFECT,
+    "axisEnhancement": AXIS_ENHANCEMENT,
+    "staticSpreadSe": STATIC_SPREAD_SE,
+    "outlierFraction": CLUSTER_OUTLIER_FRACTION,
+    "mixedSizeShare": MIXED_SIZE_SHARE,
+    "splitKurtosis": SPLIT_SITE_KURTOSIS,
+    "splitSe": SPLIT_SITE_SE,
+}
+
+_NO_CLUSTERS = ("extended_network", "no_clusters")
+#: Every ``because`` each finding can give (closed sets; the parity fixture pins
+#: the strings, and the Copilot's renderer has a sentence entry for each).
+CLUSTER_BECAUSE = {
+    "distorted": ("edge_spread", "axis_family", "trigonality", "less_distorted", "within_null",
+                  "undefined_statistic") + _NO_CLUSTERS,
+    "lessDistorted": ("below_null", "above_null", "within_null", "single_edge", "undefined_statistic") + _NO_CLUSTERS,
+    "breathing": ("above_null", "below_null", "within_null", "undefined_statistic") + _NO_CLUSTERS,
+    "rigid": ("less_distorted", "stiffer_bonds", "split_sites", "pattern", "within_null",
+              "undefined_statistic") + _NO_CLUSTERS,
+    "staticDistortion": ("above_sampling_error", "within_sampling_error") + _NO_CLUSTERS,
+    "splitMemberSites": ("half_or_more_split", "fewer_than_half_split", "none_split") + _NO_CLUSTERS,
+    "trigonalLean": ("leans_trigonal", "leans_one_edge", "within_null", "not_tetrahedra",
+                     "undefined_statistic") + _NO_CLUSTERS,
+    "favouredAxes": ("enhanced", "within_null", "undefined_statistic") + _NO_CLUSTERS,
+    "favouredAxes.families": ("enhanced", "within_null", "undefined_statistic"),
+    "window.extendedNetwork": ("extended_network", "finite_clusters", "no_clusters"),
+    "window.mixedSizes": ("above_bar", "within_bar") + _NO_CLUSTERS,
+    "window.bondsOutsideWindow": ("above_bar", "within_bar") + _NO_CLUSTERS,
+    "window.contactsBetweenClusters": ("above_bar", "within_bar") + _NO_CLUSTERS,
+}
+#: What an Evidence record is read against, and how its change is formed.
+EVIDENCE_AGAINST = ("shapeNull", "independentNull", "samplingError", "siteKurtosis", "window")
+CHANGE_KINDS = ("ratio", "difference")
+
+
+def evidence_clears(record: dict) -> bool:
+    """Whether an Evidence record clears its bar, from the record alone.
+
+    Every field the bar names must be defined and clear its threshold the
+    record's way: ``side`` 'above' value >= bar, 'below' value <= -bar, absent
+    |value| >= bar; ``strict`` makes each comparison strict. A record without a
+    bar clears nothing.
+    """
+    bar = record.get("bar") or {}
+    if not bar:
+        return False
+    side = record.get("side")
+    strict = bool(record.get("strict"))
+    for field, threshold in bar.items():
+        value = record.get(field)
+        if value is None:
+            return False
+        if side == "above":
+            passed = value > threshold if strict else value >= threshold
+        elif side == "below":
+            passed = value < -threshold if strict else value <= -threshold
+        else:
+            passed = abs(value) > threshold if strict else abs(value) >= threshold
+        if not passed:
+            return False
+    return True
+
+
+def _finite(value) -> float | None:
+    """A finite float, or None (undefined, or non-finite)."""
+    if value is None:
+        return None
+    value = float(value)
+    return value if math.isfinite(value) else None
+
+
+def _evidence(statistic: str, against: str, observed, null, z, change_kind, bar: dict, side=None, **extra) -> dict:
+    """One Evidence record; its change from observed and null by its kind."""
+    observed, null, z = _finite(observed), _finite(null), _finite(z)
+    change = None
+    if change_kind is not None and observed is not None and null is not None:
+        if change_kind == "ratio":
+            change = _finite(observed / null - 1.0) if null != 0 else None
+        else:
+            change = _finite(observed - null)
+    record = {"statistic": statistic, "against": against, **extra, "observed": observed, "null": null, "z": z,
+              "change": change, "changeKind": change_kind, "bar": dict(bar)}
+    if side is not None:
+        record["side"] = side
+    record["clears"] = evidence_clears(record)
+    return record
+
+
+def split_site_evidence(row: dict) -> dict:
+    """The split rule on one site row of :func:`rmc_toolkits.pca_kde.site_ellipsoids`.
+
+    observed = the PC1 excess kurtosis (its change from 0, a Gaussian's), z =
+    that kurtosis in sampling errors of a Gaussian's sample kurtosis,
+    kappa / sqrt(24/n) -- None unless PC1 is resolved (an unresolved axis's
+    direction, and so its kurtosis, is noise). It clears at z <= -SPLIT_SITE_SE
+    and kappa <= SPLIT_SITE_KURTOSIS.
+    """
+    kurtosis = row.get("excessKurtosis") or [None]
+    kappa = _finite(kurtosis[0])
+    count = int(row.get("count") or 0)
+    resolved = bool((row.get("axisResolved") or [False])[0])
+    z = kappa / math.sqrt(24.0 / count) if kappa is not None and resolved and count > 0 else None
+    return _evidence(
+        "pc1ExcessKurtosis", "siteKurtosis", kappa, 0.0, z, "difference",
+        {"z": SPLIT_SITE_SE, "change": -SPLIT_SITE_KURTOSIS}, "below", site=int(row["referenceNumber"]),
+    )
+
+
+def is_split_site(row: dict) -> bool:
+    """Whether one site row is split (two positions): its :func:`split_site_evidence` clears."""
+    return split_site_evidence(row)["clears"]
+
+
+def _defined(record: dict | None) -> bool:
+    return record is not None and record["z"] is not None and record["change"] is not None
+
+
+def _finding(answer, because: str, evidence=(), **extra) -> dict:
+    """A Finding; its evidence with the records that clear first, the rest after, each in the given order."""
+    records = list(evidence)
+    return {"answer": answer, "because": because, **extra,
+            "evidence": [r for r in records if r["clears"]] + [r for r in records if not r["clears"]]}
+
+
+def _no_cluster_verdict(because: str) -> dict:
+    """An extended network or no clusters: every shape finding None, ``because`` says which."""
+    def empty(**extra):
+        return _finding(None, because, **extra)
+
+    return {
+        "rules": dict(CLUSTER_RULES),
+        "distorted": empty(),
+        "lessDistorted": empty(),
+        "breathing": empty(),
+        "rigid": empty(),
+        "staticDistortion": empty(),
+        "splitMemberSites": empty(sites=[], memberSites=[]),
+        "trigonalLean": empty(),
+        "favouredAxes": empty(families=[]),
+        "window": {
+            "extendedNetwork": _finding(because == "extended_network", because),
+            "mixedSizes": empty(),
+            "bondsOutsideWindow": empty(),
+            "contactsBetweenClusters": empty(),
+        },
+    }
+
+
+def cluster_verdict(result: dict, member_rows: list[dict]) -> dict:
+    """The findings of a :func:`cluster_distortion` result that has clusters.
+
+    ``member_rows`` are the analysed kind's member sites' rows of
+    :func:`rmc_toolkits.pca_kde.site_ellipsoids`, in reference order. The
+    shape statistics (ladder width, trigonality, axis families) are read
+    against the shape null (each cluster's own breathing kept), the size
+    statistic (breathing sd) against independent atoms (the 2026-10-14
+    review's L2).
+    """
+    observed = result["observed"]
+    nulls = {"shapeNull": result["shapeNull"], "independentNull": {"mean": result["nullMean"], "z": result["z"]}}
+    kind = result["kind"]
+
+    def null_test(path, against, effect, side, change_kind="ratio"):
+        """A statistic (a key of ``observed``, or a key path) against one of the nulls."""
+        values = [observed, nulls[against]["mean"], nulls[against]["z"]]
+        for part in path:
+            values = [value.get(part) if isinstance(value, dict) else None for value in values]
+        return _evidence(".".join(path), against, *values, change_kind, {"z": CLUSTER_Z, "change": effect}, side)
+
+    width_up = null_test(("ladderWidth",), "shapeNull", CLUSTER_EFFECT, "above")
+    width_down = null_test(("ladderWidth",), "shapeNull", CLUSTER_EFFECT, "below")
+    breath_up = null_test(("breathingSd",), "independentNull", CLUSTER_EFFECT, "above")
+    breath_down = null_test(("breathingSd",), "independentNull", CLUSTER_EFFECT, "below")
+    tetrahedra = _finite(observed.get("eRms")) is not None
+    trig = null_test(("t2Trigonality",), "shapeNull", TRIGONALITY_EFFECT, None, "difference") if tetrahedra else None
+    # obs / null >= AXIS_ENHANCEMENT exactly when obs / null - 1 >= AXIS_ENHANCEMENT - 1:
+    # the subtraction is exact for ratios in [0.5, 2] (Sterbenz), and outside it both fail or both pass.
+    family_tests = []
+    for axis_key, axis in (("longAxis", "long"), ("shortAxis", "short")):
+        if not isinstance(observed.get(axis_key), dict):
+            continue
+        for family in observed[axis_key]:
+            record = null_test((axis_key, family), "shapeNull", AXIS_ENHANCEMENT - 1.0, "above")
+            family_tests.append((axis, family, record))
+    family_records = [record for _, _, record in family_tests]
+    favoured = [record for record in family_records if record["clears"]]
+    trigonal = trig is not None and trig["clears"]
+    pattern = bool(favoured) or trigonal
+
+    # Distorted: the edge spread above the shape null, or a pattern (an axis
+    # family more clusters favour, or a trigonal lean) whatever the spread.
+    consulted = [width_up] + ([trig] if trig is not None else []) + family_records
+    if width_up["clears"]:
+        distorted = (True, "edge_spread")
+    elif favoured:
+        distorted = (True, "axis_family")
+    elif trigonal:
+        distorted = (True, "trigonality")
+    elif not any(_defined(record) for record in consulted):
+        distorted = (None, "undefined_statistic")
+    elif width_down["clears"]:
+        distorted = (False, "less_distorted")
+    else:
+        distorted = (False, "within_null")
+
+    if kind["edges"] == 1:
+        less = (None, "single_edge")  # a dimer: its one edge has no spread
+    elif not _defined(width_down):
+        less = (None, "undefined_statistic")
+    elif width_down["clears"]:
+        less = (True, "below_null")
+    elif width_up["clears"]:
+        less = (False, "above_null")
+    else:
+        less = (False, "within_null")
+
+    if not _defined(breath_up):
+        breathing = (None, "undefined_statistic")
+    elif breath_up["clears"]:
+        breathing = (True, "above_null")
+    elif breath_down["clears"]:
+        breathing = (False, "below_null")
+    else:
+        breathing = (False, "within_null")
+
+    # Split member sites: at least half of the analysed kind's member sites.
+    split_records = [split_site_evidence(row) for row in member_rows]
+    split_sites = [record["site"] for record in split_records if record["clears"]]
+    member_sites = [int(row["referenceNumber"]) for row in member_rows]
+    if split_sites and 2 * len(split_sites) >= len(member_sites):
+        split = (True, "half_or_more_split")
+    elif split_sites:
+        split = (False, "fewer_than_half_split")
+    else:
+        split = (False, "none_split")
+
+    # Rigid: less distorted (and no pattern), or a size stiffer than independent
+    # atoms -- never with split sites, where the null mixes the sites' static
+    # choices and so already holds the distortion's amplitude.
+    is_split = split[0] is True
+    if not _defined(width_down) and not _defined(breath_down):
+        rigid = (None, "undefined_statistic")
+    elif is_split and (width_down["clears"] or breath_down["clears"]):
+        rigid = (False, "split_sites")
+    elif not is_split and width_down["clears"] and not pattern:
+        rigid = (True, "less_distorted")
+    elif not is_split and breath_down["clears"]:
+        rigid = (True, "stiffer_bonds")
+    elif width_down["clears"] and pattern:
+        rigid = (False, "pattern")
+    else:
+        rigid = (False, "within_null")
+
+    # The average cluster: its edge spread (null 0, a regular cluster) in
+    # sampling errors -- the largest spread / error over the templates.
+    ideal = result["ideal"]
+    static_record = _evidence(
+        "idealSpread", "samplingError", ideal["spread"], 0.0, ideal["spreadOverSe"], None,
+        {"z": STATIC_SPREAD_SE}, "above",
+    )
+    static = (True, "above_sampling_error") if static_record["clears"] else (False, "within_sampling_error")
+
+    if trig is None:
+        trigonal_lean = (None, "not_tetrahedra")
+    elif not _defined(trig):
+        trigonal_lean = (None, "undefined_statistic")
+    elif trig["clears"]:
+        # Below the null: three edges at one vertex differ alike (C3v); above: one edge against its opposite.
+        trigonal_lean = (True, "leans_trigonal" if trig["change"] < 0 else "leans_one_edge")
+    else:
+        trigonal_lean = (False, "within_null")
+
+    families = []
+    for axis, family, record in family_tests:
+        if record["clears"]:
+            answer = (True, "enhanced")
+        elif _defined(record):
+            answer = (False, "within_null")
+        else:
+            answer = (None, "undefined_statistic")
+        families.append({"axis": axis, "family": family, "answer": answer[0], "because": answer[1]})
+    if favoured:
+        axes = (True, "enhanced")
+    elif any(_defined(record) for record in family_records):
+        axes = (False, "within_null")
+    else:
+        axes = (None, "undefined_statistic")
+
+    # The window: other cluster sizes, bonds outside it, contacts between clusters.
+    kinds = result["kinds"]
+    total = sum(entry["clusters"] for entry in kinds)
+    share = sum(entry["clusters"] for entry in kinds[1:]) / total if total else None
+
+    def window_finding(statistic, value, bar):
+        record = _evidence(statistic, "window", value, None, None, None, {"observed": bar}, "above", strict=True)
+        return _finding(record["clears"], "above_bar" if record["clears"] else "within_bar", [record])
+
+    outliers = result["outliers"]
+    return {
+        "rules": dict(CLUSTER_RULES),
+        "distorted": _finding(*distorted, consulted),
+        "lessDistorted": _finding(*less, [width_down]),
+        "breathing": _finding(*breathing, [breath_up]),
+        "rigid": _finding(*rigid, [width_down, breath_down]),
+        "staticDistortion": _finding(*static, [static_record]),
+        "splitMemberSites": _finding(*split, split_records, sites=split_sites, memberSites=member_sites),
+        "trigonalLean": _finding(*trigonal_lean, [trig] if trig is not None else []),
+        "favouredAxes": _finding(*axes, family_records, families=families),
+        "window": {
+            "extendedNetwork": _finding(False, "finite_clusters"),
+            "mixedSizes": window_finding("otherKindsShare", share, MIXED_SIZE_SHARE),
+            "bondsOutsideWindow": window_finding(
+                "brokenEdgeFraction", outliers["brokenEdgeFraction"], CLUSTER_OUTLIER_FRACTION),
+            "contactsBetweenClusters": window_finding(
+                "extraContactsPerAtom", outliers["extraContactsPerAtom"], CLUSTER_OUTLIER_FRACTION),
+        },
+    }

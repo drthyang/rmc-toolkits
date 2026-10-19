@@ -1235,8 +1235,8 @@ not answer as asked". A tool is offered only when its inputs exist.
 | `detect_symmetry(tolerance_A ∈ [0.001, 1])` | the structure has a `basis` (browser-loaded runs) | `describeSymmetry` (the Detected SG card's finder), *not* changing the card | group, number (only when certain), point group and its facts (`point_group_facts`, as in the context), n ops, max residual, every orbit with `orbitLabel` Wyckoff label, site symmetry and representative fractional coordinates (4 decimals) | ok: group holds; note: the point group's facts ("take inversion, chirality and polarity from this"); note: undetermined; note: "≥" lower bound; warn: not analysed (caps); fail: no basis |
 | `measure_symmetry_lowering(parent_tolerance_A = 0.2, tolerance_A = 1.25 × noise floor)` | the structure has a `basis` | `symmetryShifts` (`symmetryShift.js`): the parent group at `parent_tolerance_A` (`analyseSymmetry`), each orbit averaged over its operations (`averageOrbit`), each member's ideal position the nearest image of that average; a member's shift = its mean − its ideal position, the common part the least-squares origin leaves removed by the geometric median of all members' shifts (Weiszfeld: the parent on the majority of the atoms, the description that moves the fewest); the lower group by `describeSymmetry` at `tolerance_A` | the parent and lower groups (the lower with its point-group facts), the noise floor, up to 12 sites (largest first) with `shift_A`, `direction_uvw`, `nearest_low_index` (within 15°, `LOW_INDEX_CONE_DEG`), `se_A` (the mean's sampling error along the shift) and `above_noise_floor`; `facts.lowering` = `{parent, lower, shifted: [{element, shift_A, direction_uvw}]}` | ok: each element whose largest shift exceeds the noise floor ("Ta shifted 0.065 Å along [0 0 1] (3.7° off) from the Pm-3m positions … a coherent shift every copy shares"); note: the parent → lower change in inversion and polarity; ok: no site above the noise floor; note: the lower tolerance still gives the parent group; warn: not analysed; fail: no basis, or no parent operation (review L4: the shift had to be worked out by hand from the orbit positions) |
 | `compare_fit(dataset, n_ranges = 6)` | a fit file with a model and a measured column (`xpdf`, `npdf`, `xray_sq`, `neutron_sq`, `bragg`; repeated kinds keyed `npdf_2`, …) | `fitTool` in `runTools.js` (roles by label `/exp\|obs/` vs `/calc\|rmc\|fit/`, else column order — `rwpColumns`, duplicated) | the dataset's $R$ (Step 10) over its range; per equal-width range of r or Q: $R$ there and its share of $\sum (y^\mathrm{calc}-y^\mathrm{expt})^2$; the 5 largest local extrema of the 5-point mean residual (position, model − data, relative to the data's rms) | ok (the card's headline): the overall $R$ and where the misfit lives — one range holding ≥ 40 % of the squared residual (`MISFIT_CONCENTRATION`), else spread; note: another range's own $R$ ≥ 3× the dataset's (`RELATIVE_MISFIT_FACTOR`) — weak signal poorly fitted, e.g. high-Q F(Q); fail: < 10 points |
-| `analyze_clusters(element, r_min, r_max)` | a browser-loaded run with site/cell columns, or Flask mode | worker `clusters` / `/api/clusters` (Step 18) | the cluster kind (members, edges, count, templates; other sizes); the average cluster's sorted edges, spread, median edge sampling error and spread/SE; per statistic obs / null mean / z / change = obs/null − 1 — the shape rows (edge ladder, ladder width, shape rms; tetrahedra: E and T2 rms and T2 trigonality; the fractions of long / short gyration axes within 15° of <100>, <110>, <111>) against `shapeNull`, the size rows (breathing sd, mean edge) against independent atoms (Step 18; review L2); `split_member_sites`: the analysed kind's member sites whose PC1 is resolved and whose PC1 excess kurtosis is ≤ −0.5 (`SPLIT_SITE_KURTOSIS`: two equal wells δ = σ, the onset of bimodality) and ≤ −3√(24/n) (`SPLIT_SITE_SE`) — `isSplitSite`, the rule `list_sites` reports — from the engine's `sites` rows the tool also requests; bonds outside the window, contacts between clusters per atom. `facts.cluster` = `{element, members, window, distorted, static, breathing, rigid, split, families}` for the cluster answer check | fail: extended network; fail: no clusters; warn: other sizes hold > 10 % of clusters; note: the average cluster is distorted (spread ≥ 5 SE, `STATIC_SPREAD_SE`) or regular; ok: dimers (one edge) — the shape is the bond length, read from the size row; ok: ladder width departs from the shape null (\|z\| ≥ 3 **and** \|change\| ≥ 5 %: more distorted — a correlated distortion — or less — rigid units, unless an axis family or the trigonality shows a pattern: then a distortion whose amplitude the null already holds), or matches it while the pattern does not (a correlated distortion held by the sites' own displacements), or matches it; note: breathing departs (same rule): more — collective breathing, a size fluctuation, not a shape distortion; less — stiffer bonds, the atoms move together; note: trigonality departs (\|z\| ≥ 3, \|Δ\| ≥ 0.02); note: an axis family enhanced (z ≥ 3, obs/null ≥ 1.1); note: split sites — at least half the member sites split: the null holds the amplitude, "no distortion" does not make the clusters regular; warn: > 5 % of bonds outside the window; warn: > 0.05 inter-cluster contacts per atom |
-| `analyze_modulations(element?)` | same | worker `modulations` / `/api/modulations` (Step 19) | per element: the zone-boundary points as `[q, ratio to the median, percentile, σ]` rows, the three strongest modes as `[q, ratio, percentile, σ]` (σ only at a general q); the supercell, wavevector count and untestable points; `facts.modulation` = `{elements, ordered: [{element, q}], general: [{element, q}]}` | ok: ordered displacements at a zone-boundary point (ratio ≥ 3 and ≥ 3σ against independent displacements, corrected over the points tested); ok: no cell doubling (the most significant point named); ok: correlated displacements between cells at a general q — one of the strongest modes that is neither a zone-boundary point nor a long wave, with ratio ≥ 3 and ≥ 3σ against independent displacements: a complex Fourier sum, so an element's mean over m sites has ≥ 2m degrees of freedom (P ≥ χ²₂ₘ/2m, `generalModeSigma`), Šidák-corrected over the compared modes of every tested element — incommensurate or short-range order between cells, not a cell doubling (review L4); note: a long-wavelength wave dominates (≥ 5×, every \|q_i\| ≤ 0.25); note: untestable points (odd axes); fail: no displacements |
+| `analyze_clusters(element, r_min, r_max)` | a browser-loaded run with site/cell columns, or Flask mode | worker `clusters` / `/api/clusters` (Step 18) | the cluster kind (members, edges, count, templates; other sizes); the average cluster's sorted edges, spread, median edge sampling error and spread/SE; per statistic obs / null mean / z / change = obs/null − 1 — the shape rows (edge ladder, ladder width, shape rms; tetrahedra: E and T2 rms and T2 trigonality; the fractions of long / short gyration axes within 15° of <100>, <110>, <111>) against `shapeNull`, the size rows (breathing sd, mean edge) against independent atoms (Step 18; review L2); `split_member_sites`: the analysed kind's member sites whose PC1 is resolved and whose PC1 excess kurtosis is ≤ −0.5 (`SPLIT_SITE_KURTOSIS`: two equal wells δ = σ, the onset of bimodality) and ≤ −3√(24/n) (`SPLIT_SITE_SE`) — `isSplitSite`, the rule `list_sites` reports — from the engine's verdict (`splitMemberSites`: the engine reads its own member clouds; until 2026-10-19 the tool made a second `sites` request, and a failed one dropped the note silently); bonds outside the window, contacts between clusters per atom. `facts.cluster` = `{element, members, window, distorted, static, breathing, rigid, split, families}`, the verdict's answers, for the cluster answer check. Every check below is a finding of the engine's verdict said through `CLUSTER_SENTENCES` (Step 18, *The verdict*) | fail: extended network; fail: no clusters; warn: other sizes hold > 10 % of clusters; note: the average cluster is distorted (spread ≥ 5 SE, `STATIC_SPREAD_SE`) or regular; ok: dimers (one edge) — the shape is the bond length, read from the size row; ok: ladder width departs from the shape null (\|z\| ≥ 3 **and** \|change\| ≥ 5 %: more distorted — a correlated distortion — or less — rigid units, unless an axis family or the trigonality shows a pattern: then a distortion whose amplitude the null already holds), or matches it while the pattern does not (a correlated distortion held by the sites' own displacements), or matches it; note: breathing departs (same rule): more — collective breathing, a size fluctuation, not a shape distortion; less — stiffer bonds, the atoms move together; note: trigonality departs (\|z\| ≥ 3, \|Δ\| ≥ 0.02); note: an axis family enhanced (z ≥ 3, obs/null ≥ 1.1); note: split sites — at least half the member sites split: the null holds the amplitude, "no distortion" does not make the clusters regular; warn: > 5 % of bonds outside the window; warn: > 0.05 inter-cluster contacts per atom |
+| `analyze_modulations(element?)` | same | worker `modulations` / `/api/modulations` (Step 19) | per element: the zone-boundary points as `[q, ratio to the median, percentile, σ]` rows, the three strongest modes as `[q, ratio, percentile, σ]` (σ only at a general q); the supercell, wavevector count and untestable points; `facts.modulation` = `{elements, ordered: [{element, q}], general: [{element, q}]}`, the element verdicts' `decidedBy`. σ and every check below come from the engine's verdict, said through `MODULATION_SENTENCES` (Step 19, *The verdict*) | ok: ordered displacements at a zone-boundary point (ratio ≥ 3 and ≥ 3σ against independent displacements, corrected over the points tested); ok: no cell doubling (the most significant point named); ok: correlated displacements between cells at a general q — one of the strongest modes that is neither a zone-boundary point nor a long wave, with ratio ≥ 3 and ≥ 3σ against independent displacements: a complex Fourier sum, so an element's mean over m sites has ≥ 2m degrees of freedom (P ≥ χ²₂ₘ/2m, `generalModeSigma`), Šidák-corrected over the compared modes of every tested element — incommensurate or short-range order between cells, not a cell doubling (review L4); note: a long-wavelength wave dominates (≥ 5×, every \|q_i\| ≤ 0.25); note: untestable points (odd axes); fail: no displacements |
 
 **Show in \<page\>.** A tool may declare `page` and `pageParams(args)`. The loop computes the
 parameters from the validated arguments (null after an error), and the step's button hands them to
@@ -1600,8 +1600,8 @@ independent atoms — every shape statistic within 0.3 % of `shapeNull`; breathi
 edge spread −23 % against independent atoms (z = −24) but +0.5 % (z = 0.6) against `shapeNull`, no axis
 family at |z| > 2, breathing +67 %; one vertex pushed out per cluster — the edge-spread excess goes too
 (the vertex sites' own two positions hold it), the pattern stays (trigonality z = −16.5, long axes
-along <111> z = +16.8). The Copilot's summary names split member sites (PC1 excess kurtosis ≤ −0.5 and
-3 sampling errors below 0; Step 17): there the null holds the distortion's amplitude.
+along <111> z = +16.8). The verdict names split member sites (PC1 excess kurtosis ≤ −0.5 and
+3 sampling errors below 0; Step 20): there the null holds the distortion's amplitude.
 
 **The average cluster.** The template's own bonds $|\mathbf b_j - \mathbf b_i|$ (a *static*
 distortion shows here, not in the shuffle test, which keeps the site means) with each bond's sampling
@@ -1632,6 +1632,61 @@ in the shape null (−20 %, z = −49; 0.386 Å, −23 %, against independent at
 along <110> 23 % against 21 % (z = 1.9) — <111> the axis of the distortion small-box PDF fits report for this compound
 ([Yang et al., Phys. Rev. Research 4, 033123 (2022)](https://doi.org/10.1103/PhysRevResearch.4.033123));
 average cluster 3.031–3.054 Å, 5.5 SE.
+
+**The verdict** (`verdict`, always returned; architecture candidate 5, 2026-10-19). The engine
+decides what its statistics show, so the Copilot's `analyze_clusters`, arm A+ and a script read one
+answer; the tool only renders it (`CLUSTER_SENTENCES`). The rules are the ones the tool's summary
+applied until then, ported rule for rule and echoed in the verdict (`CLUSTER_RULES`). Decisions use
+the unrounded statistics. The tool decided on its rounded rows (z and changes to 2 s.f., the axis
+fractions to 3 s.f.), so a statistic within rounding of a bar can now decide differently. None of
+the Demo, the dev cases, the fixtures or 1,010 compared tool results did: the old summary and the
+new renderer gave the same data and checks for every one.
+
+- A **Finding** is `{answer, because, evidence}`. `answer` is true or false, or null where the
+  question does not apply or its statistic is undefined (never "not significant"). `because` is a
+  closed code (`CLUSTER_BECAUSE`). `evidence` holds every statistic the answer consulted, the ones
+  that clear their bar first, then the rest in a fixed order: a negative keeps them all.
+- An **Evidence** record is `{statistic, against, observed, null, z, change, changeKind, bar,
+  clears, side?, strict?, site?}`. `against` is `shapeNull`, `independentNull`, `samplingError`,
+  `siteKurtosis` or `window`; `change` = observed/null − 1 (`ratio`) or observed − null
+  (`difference`). `bar` maps a field of the record (z, change, observed) to its threshold, and
+  `side` says which way it is cleared: `above` ≥ bar, `below` ≤ −bar, absent |value| ≥ bar
+  (`strict` makes each comparison strict). `clears` is `evidence_clears(record)`, so it is
+  recomputable from the record: the tests recompute it for every record of the fixtures, in both
+  engines. Every number is finite or null.
+
+| Finding | Reads | Answer |
+|---|---|---|
+| `distorted` | ladder width against the shape null (above); T2 trigonality (tetrahedra; either way, \|Δ\| ≥ 0.02); every axis family (above: z ≥ 3, obs/null ≥ 1.1) | true when the width clears (`edge_spread`), else an axis family (`axis_family`), else the trigonality (`trigonality`); false `less_distorted` (the width below, no pattern) or `within_null` |
+| `lessDistorted` | ladder width against the shape null (below) | true `below_null`; null for one edge (`single_edge`, a dimer) |
+| `breathing` | breathing sd against independent atoms | true `above_null`; false `below_null` (the size stiffer) or `within_null` |
+| `rigid` | ladder width (below) and breathing sd (below) | true when no split member sites and the width is below without a pattern (`less_distorted`) or the breathing is below (`stiffer_bonds`); false `split_sites`, `pattern` or `within_null` |
+| `staticDistortion` | the average cluster's edge spread (null 0) in sampling errors (`idealSpread`: z = the largest spread/error over the templates) | true at z ≥ 5 |
+| `splitMemberSites` | each member site's PC1 excess kurtosis (`split_site_evidence`, Step 20) | true when at least half of the analysed kind's member sites are split; `sites` lists every split one, `memberSites` the member sites |
+| `trigonalLean` | T2 trigonality against the shape null | true when \|z\| ≥ 3 and \|Δ\| ≥ 0.02: `leans_trigonal` below the null (C₃ᵥ), `leans_one_edge` above; null for other clusters (`not_tetrahedra`) |
+| `favouredAxes` | every long- and short-axis family against the shape null (above) | true when any family clears; `families` gives each its own answer |
+| `window.extendedNetwork`, `.mixedSizes`, `.bondsOutsideWindow`, `.contactsBetweenClusters` | the network; the other kinds' share of clusters; bonds outside the window; contacts between clusters per atom | an extended network; a share > 0.1; > 0.05; > 0.05 (`above_bar`) |
+
+For an extended network or no clusters every shape finding is null, `because` `extended_network`
+or `no_clusters`, and `window.extendedNetwork` says which (true or false). The split member sites
+come from the engine's own member clouds (`site_ellipsoids` / `siteEllipsoids`, pinned by
+`pca_sites_fixture.json`). The Demo's Ta₄: distorted (`axis_family`: <111> long and short axes),
+less distorted, breathing, not rigid (`pattern`), statically distorted (5.5 SE), no split member
+site, 8 % of the bonds outside the window.
+
+**Parity and margins.** `tests/generate_clusters_fixture.py` writes the verdicts and their closed
+vocabularies into `clusters_fixture.json`. It refuses to write a case where a decided statistic
+sits within 1e-6 of its threshold, so the two engines, which agree to ~1e-12, cannot disagree on a
+verdict there; `tests/test_clusters_fixture.py` fails when the file is stale. Known answers
+(`tests/test_clusters.py` and the JS engine tests): independent atoms find nothing; one edge
+pinched (vertices 0 and 1 moved ±t along it, t ~ N(0, 0.15 Å) per cluster) is `edge_spread` and
+`leans_one_edge`; rigid tetrahedra are less distorted and rigid; breathing tetrahedra breathe and
+nothing else (against independent atoms their edge spread is at z < −3, against the shape null it
+is not); one vertex pushed gives `axis_family` and `leans_trigonal`; Jahn–Teller F₆ octahedra (6³
+cells, every F site split, κ₁ ≈ −1.3) give split member sites, distorted (axis family), less
+distorted and not rigid (`split_sites`); rigid dimers give `stiffer_bonds`. On the validation's
+dev cases (dev-breathing, dev-jahn-teller, dev-cell-wrap) the engine gives the decisions the tool
+gave.
 
 **Cost.** Templates: (sites of the element)² × image shifts. Clusters and each shuffle: linear in the
 atoms of the element. The demo: 1.5 s in Python (load included), 0.7 s in the port after a 0.2 s parse.
@@ -1677,9 +1732,10 @@ Counting both members of a pair, and the box-scale waves RMC leaves, pushed real
 2026-10-12 review's Ti order at (0, 0, ½), 55× the median, sat at the 98.6th percentile of all
 $\mathbf q$ under a stronger long wave and its partner; among the compared modes it is rank 1.
 
-**Checks** (`summarizeModulations`): ok — ordered displacements at a zone-boundary point when its
+**The verdict** (the engine's since 2026-10-19, architecture candidate 5; `summarizeModulations`
+says it through `MODULATION_SENTENCES`). A zone-boundary point is ordered displacement when its
 ratio ≥ 3 (`MODULATION_RATIO`, the effect size) **and** its calibrated significance is ≥ 3σ
-(`zoneBoundarySigma`): for independent displacements a site's normalised power at a half-integer
+(`MODULATION_SIGMA`, `zoneBoundarySigma`): for independent displacements a site's normalised power at a half-integer
 $\mathbf q$ (a real Fourier sum) is $\sum_c w_c\chi^2_1$ with $\sum_c w_c = 1$, so an element's
 mean over $m$ sites has at least $m$ degrees of freedom and $P \ge \chi^2_m/m$ is the heaviest
 tail any site anisotropy allows; the p-value is Šidák-corrected over every zone-boundary point and
@@ -1687,8 +1743,43 @@ element tested, and each row carries it as a fourth entry. (Until 2026-10-14 the
 of the compared modes, or rank 1", with no correction over the 7 points × elements: the validation
 cases found "order" in 6 of 12 configurations without any, e.g. Ba at (½, 0, 0) under pure thermal
 motion.) Real RMC runs carry *less* zone-boundary power than independent cells (above), so the test
-is conservative there. Otherwise ok — no cell doubling, naming the most significant point; note — an element's strongest mode within 0.25 of the zone centre on every axis at
-≥ 5× the median is a long-wavelength (box-scale) wave, not a superstructure; note — untestable points.
+is conservative there. At a general q (neither a zone-boundary point nor a long wave) the Fourier
+sum is complex: $P \ge \chi^2_{2m}/2m$, Šidák-corrected over the compared modes of every element
+tested (`generalModeSigma`, review L4). An element's strongest mode within 0.25 of the zone centre
+on every axis at ≥ 5× the median (`LONG_WAVE_RATIO`) is a long-wavelength (box-scale) wave, not a
+superstructure.
+
+- **Each point** (zone-boundary and strongest) carries `sigma`, `kind` (`zone_boundary`,
+  `long_wave`, `general`), `ordered`, `because` and `bar` ({ratio 3, sigma 3}). σ is the tool's
+  arithmetic, unchanged: the power is ratio × median, the p-value capped below 1, then
+  1 − (1 − p)^F without cancellation. Far below the background σ is ill-conditioned
+  (1 − (1 − p)^F rounds), and the same arithmetic keeps it bit for bit what the tool reported. σ
+  reads as the tool showed it: null for a strongest mode that is a zone-boundary point (tested in
+  `zoneBoundary`) or a long wave (not tested), for power ≤ 0, and where it is −∞; +∞ (an upper
+  tail that underflows) is `SIGMA_MAX` = 40, which no finite double reaches (≈ 38.5 at
+  p = 5·10⁻³²⁴), shown as '>8'. `because` is `ordered`, `below_ratio`, `below_sigma`,
+  `undefined_statistic` (σ undefined: `ordered` null), or the untested kind.
+- **Each element** has `verdict` = {`cellDoubling`, `generalOrder`, `longWave`}, each
+  `{answer, because, decidedBy, nearest}`: `decidedBy` lists the q of the ordered points (or the
+  long wave), `nearest` is the miss with the largest σ (null as −∞, the first on a tie).
+  `cellDoubling` is null `untestable` when no axis can be halved; `generalOrder` null
+  `no_general_mode` when none of the five strongest modes is general; an element with no
+  displacement gives `no_displacements`.
+- **The payload** carries `family` (the zone-boundary points and compared modes the corrections
+  counted: the elements tested in this call, as the tool counted them) and `rules`.
+- **One long-wave predicate**, `is_long_wave` / `isLongWave`: every |q_i| ≤ 0.25 + 10⁻¹². It
+  replaces the engine's compared-mode test and the tool's |q_i| ≤ 0.25. On a grid they never
+  differ (k/N is ¼ exactly or at least 1/(4N) from it): the tests check every grid point up to
+  N = 256 in both engines.
+
+The tool's checks say it: ok — each ordered zone-boundary point, or no cell doubling (the nearest
+miss of every element tested); ok — each element's first ordered general mode; note — a long
+wave dominates; note — untestable points. `tests/generate_modulations_fixture.py` writes the
+verdicts into `modulations_fixture.json` and refuses a case where a ratio or σ sits within 10⁻⁶
+of its bar. Known answers: a planted doubling, order under a stronger long wave, order at
+q = (3/8, 0, 0) on an 8-cell axis (alone, and under a stronger long wave at (1/8, 0, 0): both
+found), and independent displacements (nothing); on the dev cases the four no-order cases find
+none and dev-zone-boundary finds only its Ti at (0, 0, ½).
 A planted doubling (Nb ± 0.1 Å along z in alternate cells, 6³ cells) gives 204× at (0,0,½), the
 strongest of 215 wavevectors. Both real runs: no zone-boundary point near the top (below the 85th
 percentile over all $\mathbf q$ when first measured; the Demo's highest is now the 78th percentile of
@@ -1710,17 +1801,23 @@ antiphase order) has a prolate cloud whose PC1 marginal is bimodal, and its elli
 large thermal motion. `list_sites` names such a site by the rule the cluster summary uses, and gives
 its static displacement with a sampling error, so an answer quotes the engine's number by reference
 (`{{r1.sites.0.delta_A}}`) instead of working it out by hand, which provenance flags as unsourced.
-Code: `isSplitSite`, `splitDisplacement` and `summarizeSites` in
+Code: `splitDisplacement` and `summarizeSites` in
 [`copilotTools.js`](../../web_app/frontend/src/copilotTools.js), from the engine's site rows
-(`site_ellipsoids` / `siteEllipsoids`, [pca-ellipsoid.md](pca-ellipsoid.md) Steps 3 and 12): the
-same in both runtimes, and nothing new in the engines (plan 4.1, 2026-10-19).
+(`site_ellipsoids` / `siteEllipsoids`, [pca-ellipsoid.md](pca-ellipsoid.md) Steps 3 and 12), the
+same in both runtimes (plan 4.1, 2026-10-19); the rule itself, `isSplitSite`, lives in the cluster
+engine since candidate 5 (2026-10-19): `is_split_site` / `split_site_evidence` in
+[`clusters.py`](../../rmc_toolkits/clusters.py), `isSplitSite` / `splitSiteEvidence` in
+[`workers/clusters.js`](../../web_app/frontend/src/workers/clusters.js), and `list_sites` imports it.
 
 **The rule** (`isSplitSite`). PC1 resolved (its eigenvalue gap to PC2 above three sampling errors,
 pca-ellipsoid.md 12b), and its excess kurtosis $\kappa_1 \le -0.5$ (`SPLIT_SITE_KURTOSIS`: two equal
 wells $\pm\delta$ of thermal width $\sigma$ have $\kappa = -2\delta^4/(\delta^2+\sigma^2)^2$, which is
 $-0.5$ at $\delta = \sigma$, where the marginal turns bimodal) and $\kappa_1 \le -3\sqrt{24/n}$
 (`SPLIT_SITE_SE`: three sampling errors of a Gaussian's sample kurtosis below zero). One definition:
-`splitMemberSites` (`analyze_clusters`' split member sites) calls it.
+the cluster verdict's split member sites (Step 18) apply it to the engine's own member rows. Since
+it moved into the engine the second bound is written as the evidence record carries it,
+$z = \kappa_1/\sqrt{24/n} \le -3$ ($z$ null unless PC1 is resolved), the same rule; the two
+comparisons could differ only on the last bit of a value exactly at the bound.
 
 **The estimator.** With $\lambda_1 \ge \lambda_2 \ge \lambda_3$ the eigenvalues of the site's
 covariance (unbiased, $1/(n-1)$; $\mathrm{rms}_a = \sqrt{\lambda_a}$),
@@ -1909,13 +2006,13 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 | `MISFIT_CONCENTRATION`, `RELATIVE_MISFIT_FACTOR` | 0.4, 3 | share; × the dataset's R | `runTools.js` | `compare_fit`'s concentration and weak-signal notes |
 | `DEFAULT_SHUFFLES`, `SHUFFLE_SEED`, `AXIS_CONE_DEG` | 24, `0x5EED`, 15° | — | `clusters.py`, `clusters.js` | The cluster null and the axis families |
 | `MAX_CLUSTER_WINDOW` | 8 | Å | `app.py`, `pcaKdeWorker.js` | Largest `rMax` of a cluster request |
-| `CLUSTER_Z`, `CLUSTER_EFFECT`, `TRIGONALITY_EFFECT`, `AXIS_ENHANCEMENT` | 3, 5 %, 0.02, 1.1 | — | `copilotTools.js` | A cluster statistic is a finding only when both its z and its size clear these |
-| `SPLIT_SITE_KURTOSIS`, `SPLIT_SITE_SE` | −0.5, 3 | PC1 excess kurtosis; its sampling errors $\sqrt{24/n}$ | `copilotTools.js` | A site with a resolved PC1 is split when $\kappa_1$ is at or below both (`isSplitSite`: `list_sites`' `delta_A`, `analyze_clusters`' split member sites; Step 20) |
-| `STATIC_SPREAD_SE` | 5 | sampling errors | `copilotTools.js` | The average cluster counts as distorted above this spread |
-| `CLUSTER_OUTLIER_FRACTION` | 0.05 | fraction / per atom | `copilotTools.js` | Bonds outside the window, contacts between clusters |
-| `MODULATION_RATIO` (+ `SIGNIFICANCE_SIGMA`) | 3 (+ 3σ) | × median (+ family-wise σ, `zoneBoundarySigma`) | `copilotTools.js` | A zone-boundary point is order above both |
-| `LONG_WAVE_Q` | 0.25 | of the reciprocal axes | `modulations.py`, `workers/modulations.js` | A mode with every component within this is a long wave, left out of the compared modes |
-| `LONG_WAVE_RATIO`, `LONG_WAVE_Q` | 5, 0.25 | × median, r.l.u. | `copilotTools.js` | A strongest mode this strong and this close to the zone centre is a box-scale wave |
+| `CLUSTER_Z`, `CLUSTER_EFFECT`, `TRIGONALITY_EFFECT`, `AXIS_ENHANCEMENT` | 3, 5 %, 0.02, 1.1 | — | `clusters.py`, `workers/clusters.js` (`CLUSTER_RULES`, echoed in the verdict) | A cluster statistic is a finding only when both its z and its size clear these (Step 18, the verdict) |
+| `SPLIT_SITE_KURTOSIS`, `SPLIT_SITE_SE` | −0.5, 3 | PC1 excess kurtosis; its sampling errors $\sqrt{24/n}$ | `clusters.py`, `workers/clusters.js` | A site with a resolved PC1 is split when $\kappa_1$ is at or below both (`is_split_site` / `isSplitSite`: `list_sites`' `delta_A`, the cluster verdict's split member sites; Step 20) |
+| `STATIC_SPREAD_SE` | 5 | sampling errors | `clusters.py`, `workers/clusters.js` | The average cluster counts as distorted at this spread or above |
+| `CLUSTER_OUTLIER_FRACTION`, `MIXED_SIZE_SHARE` | 0.05, 0.1 | fraction / per atom; share of clusters | `clusters.py`, `workers/clusters.js` | Bonds outside the window, contacts between clusters (above); clusters of other sizes (above) |
+| `MODULATION_RATIO`, `MODULATION_SIGMA` | 3, 3σ | × median; family-wise σ (`zoneBoundarySigma`, `generalModeSigma`) | `modulations.py`, `workers/modulations.js` (`MODULATION_RULES`) | A zone-boundary point (or a general mode) is order at both or above |
+| `LONG_WAVE_Q`, `LONG_WAVE_TOL` | 0.25, 1e-12 | of the reciprocal axes | `modulations.py`, `workers/modulations.js` | A mode with every component within this (`is_long_wave` / `isLongWave`, the one predicate) is a long wave: left out of the compared modes, never tested as a general mode |
+| `LONG_WAVE_RATIO`, `SIGMA_MAX` | 5, 40 | × median; σ | `modulations.py`, `workers/modulations.js` | A strongest mode this strong and a long wave is a box-scale wave; σ = +∞ is reported as `SIGMA_MAX` (no finite double reaches it) |
 | constraint margin | 0.05 | Å | `copilot/runTools.js` | First-peak low side within this of the closest-approach constraint: warn |
 | `temperature` (chat) | 0.2 (editable 0–2, step 0.1) | — | `settings.js`, `ConnectionSettings.jsx` | Sampling temperature |
 | `temperature` (watchdog) | 0 | — | `useWatchdog.js` | Fixed |

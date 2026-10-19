@@ -217,8 +217,8 @@
  },
  {
   "id": "dev-offcentre__A+",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.6",
+  "commit": "3f90a80fdb33984b75e86c0248b9c16dfa7b3efa",
   "case": "dev-offcentre",
   "split": "dev",
   "arm": "A+",
@@ -374,9 +374,25 @@
    },
    {
     "page": "analyze_modulations",
-    "what": "zone-boundary points and general modes",
-    "value": null,
-    "reading": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, Nb at (½, 0, 0), is 12× the median, 1.4σ after the correction)."
+    "what": "zone-boundary points and general modes (engine verdict)",
+    "value": {
+     "K": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     },
+     "Nb": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     },
+     "O": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     }
+    },
+    "reading": "cell doubling: none; order at a general q: none; long wave: none"
    },
    {
     "page": "Displacement Directions",
@@ -407,9 +423,11 @@
    },
    {
     "page": "analyze_clusters",
-    "what": "O clusters in 2.52–3.19 Å",
-    "value": null,
-    "reading": "The 2.52–3.19 Å window links the O atoms into an extended network (chains or a 3-D net), not finite clusters: narrow it to the intra-cluster bond (find_gr_peaks: first_shell.window_A of O-O)."
+    "what": "O clusters in 2.52–3.19 Å (engine verdict)",
+    "value": {
+     "window": "true (extended_network)"
+    },
+    "reading": "no clusters: extended_network"
    }
   ],
   "truth": {
@@ -751,8 +769,8 @@
  },
  {
   "id": "dev-zone-boundary__A+",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.6",
+  "commit": "3f90a80fdb33984b75e86c0248b9c16dfa7b3efa",
   "case": "dev-zone-boundary",
   "split": "dev",
   "arm": "A+",
@@ -916,15 +934,33 @@
    },
    {
     "page": "analyze_modulations",
-    "what": "zone-boundary points and general modes",
-    "value": null,
-    "reading": "Ordered Ti displacements at q = (0, 0, ½): 498× the median power, > 8σ against independent displacements (corrected over 21 zone-boundary points) — a superstructure doubling the cell along c. Sr's strongest mode is a long-wavelength wave, q = (0.125, 0, 0) at 100× the median: box-scale displacement correlations (common in RMC), not a crystallographic superstructure."
+    "what": "zone-boundary points and general modes (engine verdict)",
+    "value": {
+     "O": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (below_ratio)"
+     },
+     "Sr": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "true (long_wave_dominates)"
+     },
+     "Ti": {
+      "cellDoubling": "true (ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     }
+    },
+    "reading": "cell doubling: Ti at (0, 0, 0.5); order at a general q: none; long wave: Sr at (0.125, 0, 0)"
    },
    {
     "page": "analyze_clusters",
-    "what": "O clusters in 2.42–3.15 Å",
-    "value": null,
-    "reading": "The 2.42–3.15 Å window links the O atoms into an extended network (chains or a 3-D net), not finite clusters: narrow it to the intra-cluster bond (find_gr_peaks: first_shell.window_A of O-O)."
+    "what": "O clusters in 2.42–3.15 Å (engine verdict)",
+    "value": {
+     "window": "true (extended_network)"
+    },
+    "reading": "no clusters: extended_network"
    }
   ],
   "truth": {
@@ -1199,8 +1235,8 @@
  },
  {
   "id": "dev-breathing__A+",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.6",
+  "commit": "3f90a80fdb33984b75e86c0248b9c16dfa7b3efa",
   "case": "dev-breathing",
   "split": "dev",
   "arm": "A+",
@@ -1322,14 +1358,33 @@
    },
    {
     "page": "analyze_modulations",
-    "what": "zone-boundary points and general modes",
-    "value": null,
-    "reading": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, Mo at (0, ½, ½), is 3.2× the median, 0.27σ after the correction)."
+    "what": "zone-boundary points and general modes (engine verdict)",
+    "value": {
+     "Mo": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     },
+     "O": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     }
+    },
+    "reading": "cell doubling: none; order at a general q: none; long wave: none"
    },
    {
     "page": "analyze_clusters",
-    "what": "Mo clusters in 2.4–3.21 Å",
+    "what": "Mo clusters in 2.4–3.21 Å (engine verdict)",
     "value": {
+     "distorted": "false (within_null)",
+     "lessDistorted": "false (within_null)",
+     "breathing": "true (above_null)",
+     "rigid": "false (within_null)",
+     "staticDistortion": "false (within_sampling_error)",
+     "splitMemberSites": "false (none_split)",
+     "trigonalLean": "null (not_tetrahedra)",
+     "favouredAxes": "false (within_null)",
      "ladder_width": {
       "obs": 0.104,
       "null": 0.105,
@@ -1343,7 +1398,7 @@
       "change": 0.49
      }
     },
-    "reading": "The average cluster is regular within its sampling error: edges 2.8–2.805 Å (± 0.0048 Å each). No cluster shape distortion beyond independent atoms (at each cluster's own size): the edge spread (0.104 Å) matches the shuffle null (0.105 Å; change -1 %, z = -0.61). The clusters breathe: their size (mean edge) fluctuates 49 % more than for independent atoms (breathing sd 0.127 vs 0.0849 Å, z = 22) — a collective size fluctuation, not a shape distortion."
+    "reading": "distorted false (within_null); lessDistorted false (within_null); breathing true (above_null); rigid false (within_null); staticDistortion false (within_sampling_error); splitMemberSites false (none_split); trigonalLean null (not_tetrahedra); favouredAxes false (within_null)"
    }
   ],
   "truth": {
@@ -1725,8 +1780,8 @@
  },
  {
   "id": "dev-jahn-teller__A+",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.6",
+  "commit": "3f90a80fdb33984b75e86c0248b9c16dfa7b3efa",
   "case": "dev-jahn-teller",
   "split": "dev",
   "arm": "A+",
@@ -1965,9 +2020,25 @@
    },
    {
     "page": "analyze_modulations",
-    "what": "zone-boundary points and general modes",
-    "value": null,
-    "reading": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, F at (½, 0, ½), is 2.5× the median, 0.13σ after the correction)."
+    "what": "zone-boundary points and general modes (engine verdict)",
+    "value": {
+     "Cu": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     },
+     "F": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     },
+     "K": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (below_ratio)"
+     }
+    },
+    "reading": "cell doubling: none; order at a general q: none; long wave: none"
    },
    {
     "page": "Displacement Directions",
@@ -1998,8 +2069,16 @@
    },
    {
     "page": "analyze_clusters",
-    "what": "F clusters in 2.5–3.25 Å",
+    "what": "F clusters in 2.5–3.25 Å (engine verdict)",
     "value": {
+     "distorted": "true (axis_family)",
+     "lessDistorted": "true (below_null)",
+     "breathing": "false (below_null)",
+     "rigid": "false (split_sites)",
+     "staticDistortion": "false (within_sampling_error)",
+     "splitMemberSites": "true (half_or_more_split)",
+     "trigonalLean": "null (not_tetrahedra)",
+     "favouredAxes": "true (enhanced)",
      "ladder_width": {
       "obs": 0.401,
       "null": 0.484,
@@ -2013,7 +2092,7 @@
       "change": -0.68
      }
     },
-    "reading": "The average cluster is regular within its sampling error: edges 2.863–2.893 Å (± 0.011 Å each). The clusters are 17 % LESS distorted than independent atoms would make them (at each cluster's own size) (edge spread 0.401 vs 0.484 Å, z = -13): the atoms of a cluster move together, yet more clusters than by chance are elongated along <100> (below): a correlated shape distortion whose amplitude the independent-atom null already holds (split or disordered sites). The cluster size (mean edge) fluctuates 68 % less than for independent atoms (breathing sd 0.0293 vs 0.0928 Å, z = -15): the split sites' positions combine in a pattern that keeps the size (as a Jahn–Teller distortion does), not stiff bonds. More clusters are elongated along <100> than by chance: 100 % vs 56 % in the null (z = 12). More clusters are compressed along <110> than by chance: 35 % vs 15 % in the null (z = 7.7). Split sites: 4 of the 6 member sites (3, 4, 7, 8) have two positions (PC1 excess kurtosis ≤ −0.5). The null keeps each site's two positions, so it already holds the distortion's amplitude: the edge spread cannot show it, and \"no distortion\" or \"less distorted\" does not make the clusters regular. Read the pattern (axis families, trigonality), the partial g(r) shell (find_gr_peaks) and the bond angles."
+    "reading": "distorted true (axis_family); lessDistorted true (below_null); breathing false (below_null); rigid false (split_sites); staticDistortion false (within_sampling_error); splitMemberSites true (half_or_more_split); trigonalLean null (not_tetrahedra); favouredAxes true (enhanced)"
    }
   ],
   "truth": {
@@ -2263,8 +2342,8 @@
  },
  {
   "id": "dev-cell-wrap__A+",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.6",
+  "commit": "3f90a80fdb33984b75e86c0248b9c16dfa7b3efa",
   "case": "dev-cell-wrap",
   "split": "dev",
   "arm": "A+",
@@ -2353,18 +2432,33 @@
    },
    {
     "page": "analyze_modulations",
-    "what": "zone-boundary points and general modes",
-    "value": null,
-    "reading": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, V at (½, 0, ½), is 3× the median, 0.23σ after the correction)."
+    "what": "zone-boundary points and general modes (engine verdict)",
+    "value": {
+     "V": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     }
+    },
+    "reading": "cell doubling: none; order at a general q: none; long wave: none"
    },
    {
     "page": "analyze_clusters",
-    "what": "V clusters in 2.17–2.35 Å",
+    "what": "V clusters in 2.17–2.35 Å (engine verdict)",
     "value": {
+     "distorted": "null (undefined_statistic)",
+     "lessDistorted": "null (single_edge)",
+     "breathing": "false (below_null)",
+     "rigid": "true (stiffer_bonds)",
+     "staticDistortion": "false (within_sampling_error)",
+     "splitMemberSites": "false (none_split)",
+     "trigonalLean": "null (not_tetrahedra)",
+     "favouredAxes": "null (undefined_statistic)",
      "ladder_width": {
       "obs": 0,
       "null": 0,
-      "z": null
+      "z": null,
+      "change": null
      },
      "breathing_sd": {
       "obs": 0.0147,
@@ -2373,7 +2467,7 @@
       "change": -0.87
      }
     },
-    "reading": "The average cluster is regular within its sampling error: edges 2.249–2.249 Å (± 0.0049 Å each). Dimers have one edge: the shape is the bond length, read from the size row (breathing_sd_A, against independent atoms). The cluster size (mean edge) fluctuates 87 % less than for independent atoms (breathing sd 0.0147 vs 0.111 Å, z = -37): the bonds are stiffer than independent atoms make them — the atoms move together."
+    "reading": "distorted null (undefined_statistic); lessDistorted null (single_edge); breathing false (below_null); rigid true (stiffer_bonds); staticDistortion false (within_sampling_error); splitMemberSites false (none_split); trigonalLean null (not_tetrahedra); favouredAxes null (undefined_statistic)"
    }
   ],
   "truth": {
@@ -2623,8 +2717,8 @@
  },
  {
   "id": "dev-thermal-null__A+",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.6",
+  "commit": "3f90a80fdb33984b75e86c0248b9c16dfa7b3efa",
   "case": "dev-thermal-null",
   "split": "dev",
   "arm": "A+",
@@ -2756,15 +2850,33 @@
    },
    {
     "page": "analyze_modulations",
-    "what": "zone-boundary points and general modes",
-    "value": null,
-    "reading": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, O at (½, 0, 0), is 2.8× the median, -0.24σ after the correction). Ba's strongest mode is a long-wavelength wave, q = (0.25, -0.25, -0.125) at 5.1× the median: box-scale displacement correlations (common in RMC), not a crystallographic superstructure."
+    "what": "zone-boundary points and general modes (engine verdict)",
+    "value": {
+     "Ba": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "true (long_wave_dominates)"
+     },
+     "O": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     },
+     "Ti": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     }
+    },
+    "reading": "cell doubling: none; order at a general q: none; long wave: Ba at (0.25, -0.25, -0.125)"
    },
    {
     "page": "analyze_clusters",
-    "what": "O clusters in 2.5–3.23 Å",
-    "value": null,
-    "reading": "The 2.5–3.23 Å window links the O atoms into an extended network (chains or a 3-D net), not finite clusters: narrow it to the intra-cluster bond (find_gr_peaks: first_shell.window_A of O-O)."
+    "what": "O clusters in 2.5–3.23 Å (engine verdict)",
+    "value": {
+     "window": "true (extended_network)"
+    },
+    "reading": "no clusters: extended_network"
    }
   ],
   "truth": {
@@ -3012,8 +3124,8 @@
  },
  {
   "id": "dev-symmetry-lowering__A+",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.6",
+  "commit": "3f90a80fdb33984b75e86c0248b9c16dfa7b3efa",
   "case": "dev-symmetry-lowering",
   "split": "dev",
   "arm": "A+",
@@ -3169,9 +3281,25 @@
    },
    {
     "page": "analyze_modulations",
-    "what": "zone-boundary points and general modes",
-    "value": null,
-    "reading": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, K at (½, 0, 0), is 3.3× the median, -1σ after the correction)."
+    "what": "zone-boundary points and general modes (engine verdict)",
+    "value": {
+     "K": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     },
+     "O": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     },
+     "Ta": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     }
+    },
+    "reading": "cell doubling: none; order at a general q: none; long wave: none"
    },
    {
     "page": "measure_symmetry_lowering",
@@ -3195,9 +3323,11 @@
    },
    {
     "page": "analyze_clusters",
-    "what": "O clusters in 2.52–3.21 Å",
-    "value": null,
-    "reading": "The 2.52–3.21 Å window links the O atoms into an extended network (chains or a 3-D net), not finite clusters: narrow it to the intra-cluster bond (find_gr_peaks: first_shell.window_A of O-O)."
+    "what": "O clusters in 2.52–3.21 Å (engine verdict)",
+    "value": {
+     "window": "true (extended_network)"
+    },
+    "reading": "no clusters: extended_network"
    }
   ],
   "truth": {
@@ -3529,8 +3659,8 @@
  },
  {
   "id": "dev-chirality-trap__A+",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.6",
+  "commit": "3f90a80fdb33984b75e86c0248b9c16dfa7b3efa",
   "case": "dev-chirality-trap",
   "split": "dev",
   "arm": "A+",
@@ -3719,9 +3849,20 @@
    },
    {
     "page": "analyze_modulations",
-    "what": "zone-boundary points and general modes",
-    "value": null,
-    "reading": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, Cu at (½, 0, 0), is 1.8× the median, -1.1σ after the correction)."
+    "what": "zone-boundary points and general modes (engine verdict)",
+    "value": {
+     "Br": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     },
+     "Cu": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     }
+    },
+    "reading": "cell doubling: none; order at a general q: none; long wave: none"
    }
   ],
   "truth": {
@@ -3997,8 +4138,8 @@
  },
  {
   "id": "dev-chiral__A+",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.6",
+  "commit": "3f90a80fdb33984b75e86c0248b9c16dfa7b3efa",
   "case": "dev-chiral",
   "split": "dev",
   "arm": "A+",
@@ -4187,21 +4328,36 @@
    },
    {
     "page": "analyze_modulations",
-    "what": "zone-boundary points and general modes",
-    "value": null,
-    "reading": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, Fe at (0, 0, ½), is 1.9× the median, -1.1σ after the correction)."
+    "what": "zone-boundary points and general modes (engine verdict)",
+    "value": {
+     "Fe": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     },
+     "Si": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (below_ratio)"
+     }
+    },
+    "reading": "cell doubling: none; order at a general q: none; long wave: none"
    },
    {
     "page": "analyze_clusters",
-    "what": "Fe clusters in 2.5–3.1 Å",
-    "value": null,
-    "reading": "The 2.5–3.1 Å window links the Fe atoms into an extended network (chains or a 3-D net), not finite clusters: narrow it to the intra-cluster bond (find_gr_peaks: first_shell.window_A of Fe-Fe)."
+    "what": "Fe clusters in 2.5–3.1 Å (engine verdict)",
+    "value": {
+     "window": "true (extended_network)"
+    },
+    "reading": "no clusters: extended_network"
    },
    {
     "page": "analyze_clusters",
-    "what": "Si clusters in 2.5–3.1 Å",
-    "value": null,
-    "reading": "The 2.5–3.1 Å window links the Si atoms into an extended network (chains or a 3-D net), not finite clusters: narrow it to the intra-cluster bond (find_gr_peaks: first_shell.window_A of Si-Si)."
+    "what": "Si clusters in 2.5–3.1 Å (engine verdict)",
+    "value": {
+     "window": "true (extended_network)"
+    },
+    "reading": "no clusters: extended_network"
    }
   ],
   "truth": {
@@ -4496,8 +4652,8 @@
  },
  {
   "id": "dev-fit-unconverged__A+",
-  "protocol": "2026-10-19.2",
-  "commit": "2383578a3388678c26409fea133ee571c5aa4713",
+  "protocol": "2026-10-19.6",
+  "commit": "3f90a80fdb33984b75e86c0248b9c16dfa7b3efa",
   "case": "dev-fit-unconverged",
   "split": "dev",
   "arm": "A+",
@@ -4686,21 +4842,36 @@
    },
    {
     "page": "analyze_modulations",
-    "what": "zone-boundary points and general modes",
-    "value": null,
-    "reading": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, Mg at (½, ½, 0), is 1.7× the median, -1.5σ after the correction)."
+    "what": "zone-boundary points and general modes (engine verdict)",
+    "value": {
+     "Mg": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     },
+     "O": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     }
+    },
+    "reading": "cell doubling: none; order at a general q: none; long wave: none"
    },
    {
     "page": "analyze_clusters",
-    "what": "Mg clusters in 2.71–3.31 Å",
-    "value": null,
-    "reading": "The 2.71–3.31 Å window links the Mg atoms into an extended network (chains or a 3-D net), not finite clusters: narrow it to the intra-cluster bond (find_gr_peaks: first_shell.window_A of Mg-Mg)."
+    "what": "Mg clusters in 2.71–3.31 Å (engine verdict)",
+    "value": {
+     "window": "true (extended_network)"
+    },
+    "reading": "no clusters: extended_network"
    },
    {
     "page": "analyze_clusters",
-    "what": "O clusters in 2.67–3.33 Å",
-    "value": null,
-    "reading": "The 2.67–3.33 Å window links the O atoms into an extended network (chains or a 3-D net), not finite clusters: narrow it to the intra-cluster bond (find_gr_peaks: first_shell.window_A of O-O)."
+    "what": "O clusters in 2.67–3.33 Å (engine verdict)",
+    "value": {
+     "window": "true (extended_network)"
+    },
+    "reading": "no clusters: extended_network"
    }
   ],
   "truth": {
