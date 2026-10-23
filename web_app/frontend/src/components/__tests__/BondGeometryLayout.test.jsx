@@ -217,15 +217,26 @@ describe('BondGeometryPage presentation (Phase 1)', () => {
         expect([rail.tagName, rail.getAttribute('role'), rail.getAttribute('aria-live')]).toEqual(['DIV', 'status', 'polite']);
         expect(rail.querySelector('dl').hasAttribute('role')).toBe(false);
         expect(kpis().map((tile) => tile.value)).toEqual(['—', '—', '—']);
-        expect(kpis().map((tile) => tile.label)).toEqual(['Angles', 'Coordination', 'Nb–Se bond']);
+        expect(kpis().map((tile) => tile.label)).toEqual(['Angle count', 'Coordination', 'Nb–Se bond']);
         await submit();
         const [angles, coordination, bond] = kpis();
+        // A count of angles per central atom (240 angles over 16 Nb), never an
+        // angle: the tile says so, and the card's ? help gives the definition
+        // (in the card header: a ? inside the rail would be clipped).
         expect(angles.value).toBe('15.0 per Nb');
+        const help = container.querySelector('.geom-hero [aria-label="About the plot and the angle count"]');
+        const definition = document.getElementById(help.getAttribute('aria-describedby')).textContent;
+        expect(definition).toMatch(/^Angle count — not an angle: how many Se–Nb–Se angles meet at one Nb atom, on average over every Nb atom of the configuration \(one with fewer than two bonds in the windows counts 0\)/);
+        expect(definition).toMatch(/one bond in each window, both bounds inclusive/);
+        expect(definition).toMatch(/n\(n−1\)\/2 for n bonds in one window \(an octahedron: 15\)/);
+        expect(definition).toMatch(/every periodic image of the supercell \(no minimum-image cut-off\)/);
+        expect(definition).toMatch(/in the one \.rmc6f configuration loaded, not averaged over configurations/);
         // The mean ± std angle is visible on the sub line (not only in a hover);
         // the hover adds the bins and where it ran.
         expect(angles.sub).toBe('240 · mean 90.0 ± 5.0°');
         expect(container.querySelector('[aria-label="Triplet result"] .ui-kpi').title)
-            .toBe('240 angles, mean 90.0° ± 5.0° (std); 60.0° bins; computed in the server.');
+            .toBe('Mean number of angles per Nb atom (a count, not an angle): 240 angles over 16 Nb atoms, '
+                + 'mean 90.0° ± 5.0° (std); 60.0° bins; computed in the server.');
         expect(coordination.value).toBe('6.00 per Nb');
         expect(coordination.sub).toBe('6-fold 100.0% · of 16');
         expect(bond.value).toBe('2.600 Å');
@@ -233,7 +244,7 @@ describe('BondGeometryPage presentation (Phase 1)', () => {
         // Two bond types: a second bond tile, in the B–C colour.
         await setSelect('End element A', 'Ga');
         await submit();
-        expect(kpis().map((tile) => tile.label)).toEqual(['Angles', 'Coordination', 'Nb–Ga bond', 'Nb–Se bond']);
+        expect(kpis().map((tile) => tile.label)).toEqual(['Angle count', 'Coordination', 'Nb–Ga bond', 'Nb–Se bond']);
         expect(kpis()[3].value).toBe('2.700 Å');
     });
 
