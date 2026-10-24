@@ -120,6 +120,11 @@ def build_cases() -> list[dict]:
             "text": _table("r (Ang), A-A, A-B, B-B", [r, 1.0 + g, 1.0 - 0.5 * g, 1.0 + 0.2 * g], trailing_comma=True),
             "truth": None,
         },
+        {   # x-ray G(r) with its own sigma column: the experiment's error bar, not a curve
+            "name": "XR_FT_XFQ1.csv",
+            "text": _table("r(A), X_ray-calc, X_ray_exp_renorm, sigma", [r, 0.9 * g, g, 0.01 + 0.002 * r]),
+            "truth": {"calculated": 1, "experimental": 2},
+        },
     ]
 
 
@@ -138,6 +143,8 @@ def summarize(data: dict, metadata: dict) -> dict:
             "finite": len(finite),
             "first": finite[0] if finite else None,
             "last": finite[-1] if finite else None,
+            # An xPDF series' error bar from the file's own sigma column (its length), else None.
+            "sigma": len(entry["sigma"]) if "sigma" in entry else None,
         })
     return {
         "kind": data["kind"],

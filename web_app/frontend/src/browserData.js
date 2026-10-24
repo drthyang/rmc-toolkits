@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
+import { fileSigmaColumn, FT_FILE_RE } from './ftUncertainty.js';
 import { isAtomsMarker, LINE_BREAK, parseFortranNumber, parseRmc6fAtoms, readRmc6fCellVectors, rmc6fParseWarning } from './rmc6f.js';
 
 const SUPPORTED_NAMES = new Set(['scale_ft.gr', 'scale_ft.sq', 'scale_ft_rmc.fq', 'stog_input.dat']);
@@ -279,7 +280,7 @@ const transpose = (rows) => rows[0].map((_, index) => rows.map((row) => row[inde
 // so trailing-comma rows parse. Every cell must be a number (E/D exponents) or an
 // explicit non-finite token (NaN, Inf, ****), kept as NaN — a masked region;
 // anything else throws, naming the true file line. Mirrors read_rmc_csv().
-const readRmcCsv = (text, name) => {
+export const readRmcCsv = (text, name) => {
     const lines = text.split(LINE_BREAK)
         .map((line, index) => ({ line, number: index + 1 }))
         .filter(({ line }) => line.trim());
@@ -629,6 +630,10 @@ export const plotDataFromText = (file) => {
     }
     if (kind === 'npdf') metrics.pdf_index = pdfIndex(file.name);
 
+    // An xPDF file's own σ column (a header naming an uncertainty) is the
+    // experimental series' error bar, not a curve (xpdfSigma ⟷ app._xpdf_sigma).
+    const fileSigma = kind === 'xpdf' ? xpdfSigma(csv) : null;
+
     // One label source with Flask and the PNGs (seriesTitles ⟷ plots.series_titles).
     const [title, yLabel] = seriesTitles(kind, file.name, csv.labels);
     let xLabel = csv.labels[0] || 'x';
@@ -648,12 +653,31 @@ export const plotDataFromText = (file) => {
         metrics,
         xLabel,
         yLabel,
-        series: csv.labels.slice(1).map((label, index) => ({
-            label: label.trim() || `Series ${index + 1}`,
-            x: csv.data[0],
-            y: csv.data[index + 1]
-        })).filter((series) => series.y)
+        series: csv.labels.slice(1).map((label, index) => {
+            const column = index + 1;
+            if (fileSigma && column === fileSigma.column) return null;
+            const entry = { label: label.trim() || `Series ${index + 1}`, x: csv.data[0], y: csv.data[column] };
+            return fileSigma && column === fileSigma.series ? { ...entry, sigma: fileSigma.values } : entry;
+        }).filter((series) => series && series.y)
     };
+};
+
+// The σ column of an xPDF CSV, for its experimental series: { column, series,
+// values }, or null without one. Only a clean column counts (usable_sigma's
+// rule: σ finite and > 0 wherever r and G are), and never a column the fit's
+// roles read as the model or the data. Mirrors _xpdf_sigma() in app.py.
+const xpdfSigma = (csv) => {
+    const column = fileSigmaColumn(csv.labels);
+    const roles = rwpColumns(csv.labels, csv.data.length);
+    if (column === null || !roles || roles.includes(column) || !csv.data[column]) return null;
+    const [, experimental] = roles;
+    const x = csv.data[0];
+    const y = csv.data[experimental];
+    const values = csv.data[column];
+    for (let i = 0; i < values.length; i += 1) {
+        if (Number.isFinite(x[i]) && Number.isFinite(y[i]) && !(Number.isFinite(values[i]) && values[i] > 0)) return null;
+    }
+    return { column, series: experimental, values };
 };
 
 // Run-history counters from the .rmc6f header (everything before "Atoms:"):
@@ -886,6 +910,30 @@ export const compareDashboardPlotFiles = (a, b) => {
 /** Every plot file the Dashboard lists (hidden ones included), in its order: a new array. */
 export const dashboardPlotFiles = (files) => files.filter(isDashboardPlotFile).sort(compareDashboardPlotFiles);
 
+const fileVersion = (file) => `${file?.modified ?? ''}:${file?.size ?? ''}`;
+
+/**
+ * The version a plot file's data is asked for (InteractivePlot's refreshKey,
+ * plotDataCache's key): its own "modified:size", and for an xPDF transform
+ * (<stem>_FT_XFQ<n>.csv) also the files beside it its error ribbon reads that
+ * a folder listing shows — <stem>.dat, <stem>_XFQ<n>.csv, <stem>_FQ<n>.csv and
+ * <stem>_PDFpartials.csv — so a Live Data round that rewrites one of them asks
+ * for the ribbon again. (RMCProfile reads its input data file once, at the
+ * start of a run, so that file never changes under a running job.)
+ */
+export const plotDataVersion = (file, files = []) => {
+    const own = fileVersion(file);
+    const match = file?.plotKind === 'xpdf' ? FT_FILE_RE.exec(file.name || '') : null;
+    if (!match) return own;
+    const [, stem, number] = match;
+    const dir = dirname(file.path || '');
+    const byPath = new Map((files || []).map((entry) => [entry.path, entry]));
+    const companions = [`${stem}.dat`, `${stem}_XFQ${number}.csv`, `${stem}_FQ${number}.csv`, `${stem}_PDFpartials.csv`]
+        .map((name) => byPath.get(dir ? `${dir}/${name}` : name))
+        .map((entry) => (entry ? fileVersion(entry) : '-'));
+    return [own, ...companions].join('|');
+};
+
 /** One plot file as the Dashboard holds it once read: with its plotData, or its parseError. */
 export const parseDashboardPlotFile = async (file) => {
     try {
@@ -1073,6 +1121,17 @@ export const makeRunFromEntries = async (entries) => {
     return {
         name: directoryRoot || 'Local files',
         files,
+        // Every picked file, supported or not: the G(r) error ribbon reads the
+        // run's .dat and the input data file it names, whatever its extension
+        // (ftUncertaintyRun.js).
+        allFiles: entries.map(({ path, file }) => ({
+            name: basename(path),
+            path,
+            type: 'file',
+            sourceFile: file,
+            size: file.size,
+            modified: file.lastModified
+        })),
         structure: null,
         structureFile: rmc6f || null,
         settingsFile: settingsEntry

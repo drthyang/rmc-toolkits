@@ -19,6 +19,15 @@
     margin: 0 0.95rem 0.9rem;
 }
 
+/* The G(r) error ribbon's ? help (GrRibbon.jsx): one line per fact. */
+.gr-ribbon-note__line {
+    display: block;
+}
+
+.gr-ribbon-note__line + .gr-ribbon-note__line {
+    margin-top: 0.35rem;
+}
+
 .plot-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

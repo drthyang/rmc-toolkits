@@ -40,6 +40,7 @@ How a run folder becomes plots and numbers: file detection and parsing, the fit-
   - [Parameters and defaults — plot rendering and export](#parameters-and-defaults--plot-rendering-and-export)
   - [Screen vs. export: what actually changes](#screen-vs-export-what-actually-changes)
   - [Caveats / what this is not](#caveats--what-this-is-not-1)
+- [The G(r) error ribbon (Fourier-transform error propagation)](#the-gr-error-ribbon-fourier-transform-error-propagation)
 - [Model summary and the Detected SG symmetry finder](#model-summary-and-the-detected-sg-symmetry-finder)
   - [What this section covers — model summary and symmetry](#what-this-section-covers--model-summary-and-symmetry)
   - [Part A — Model information](#part-a--model-information)
@@ -2485,7 +2486,9 @@ rounding matter as much as the formula:
   accessible-contrast validated and repeat after 8 series.
 - **These are inspection figures.** The chart renderer applies no error bars (error columns in the
   source CSVs are plotted as ordinary series if present as columns, and otherwise ignored), no
-  weighting, no fit overlays beyond what the file contains, and no uncertainty propagation.
+  weighting and no fit overlays beyond what the file contains. The exception is the xPDF plot: its
+  σ column, if any, and the σ propagated from F(Q) draw an error ribbon
+  ([The G(r) error ribbon](#the-gr-error-ribbon-fourier-transform-error-propagation)).
 - **The colormaps are 5-anchor approximations** of `viridis`/`magma`/`seismic`/`reds`, not the
   published 256-entry tables — and `greys` is not an approximation of matplotlib `Greys` at all: it
   is a custom dark→light, slightly blue-tinted ramp (nearer `Greys_r`). An unknown name silently
@@ -2499,7 +2502,209 @@ rounding matter as much as the formula:
   describing the SVG chart depends on them.
 - **Nothing on this page re-analyses data.** Every number drawn or reported comes from the parsers;
   the renderer's only arithmetic is the affine map, the tick algorithm and the display rounding
-  described above.
+  described above. The one exception is the xPDF plot's error ribbon, computed from the run's
+  files by the section below.
+
+
+## The G(r) error ribbon (Fourier-transform error propagation)
+
+### What this section covers — the G(r) error ribbon
+
+An RMCProfile run that fits X-ray F(Q) data writes the data's Fourier transform,
+`<stem>_FT_XFQ<n>.csv` (columns `r(A), X_ray-calc, X_ray_exp_renorm`), which the Dashboard draws as
+its **xPDF** card. That file carries no uncertainty. The Dashboard rebuilds the transform from the
+run's own files, proves that it reproduces the file, and propagates the measured F(Q)'s σ through
+it: each r point's ±1σ, drawn as a ribbon around `X_ray_exp_renorm`, and the full covariance
+between r points, whose correlation the caption states. The same payload feeds the AI Copilot's
+`compare_fit` (its above-noise reading, [ai-assistant.md](ai-assistant.md)).
+
+| Runtime | Engine | Run glue | Reaches the card |
+|---|---|---|---|
+| **Flask mode** | [`rmc_toolkits/ft_uncertainty.py`](../../rmc_toolkits/ft_uncertainty.py) (the source of truth) | `ft_uncertainty_for_run()`; `app.py` → `_ft_uncertainty()` (cached on the transform and its companions' signatures, the input read only inside the data roots) | `/api/plot/data` adds `uncertainty` to an xPDF plot's payload |
+| **Browser** (a picked folder, the Demo, the Copilot's in-process run) | [`src/ftUncertainty.js`](../../web_app/frontend/src/ftUncertainty.js), a port | [`src/ftUncertaintyRun.js`](../../web_app/frontend/src/ftUncertaintyRun.js) → `attachFtUncertainty()` over every picked file (`makeRunFromEntries`' `allFiles`) | the parsed plot's `plotData.uncertainty` |
+
+The two give the same payload for the same files: one golden,
+`ft_uncertainty_fixture.json` (`tests/generate_ft_uncertainty_fixture.py`), held by
+`ftUncertaintyParity.test.js` and `tests/test_ft_uncertainty_api.py` to $10^{-9}$ relative +
+$10^{-12}$; `tests/test_ft_uncertainty_fixture.py` fails when it is stale.
+
+#### Notation and units
+
+$Q_k$ ($k = 0 \ldots n-1$) the run's F(Q) grid, uniform with step $\Delta Q$; $F_k$ its `F(Q)_Expt`
+column (RMCProfile's normalised $S(Q)-1$, dimensionless); $r_i$ the transform file's r column (Å);
+$G_i$ its `X_ray_exp_renorm` column; $F^{\mathrm{in}}_k$, $\sigma_k$ the input data file's second
+and third columns; $s$, $c$ the run's fitted scale and offset; $R$ the box radius (Å).
+
+### Step 1 — The files
+
+From the transform's name `^(.+)_FT_XFQ(\d+)\.csv$` (stem, dataset $n$), beside it:
+
+* `<stem>.dat` — the $n$-th `XRAY_RECIPROCAL_SPACE_DATA` block's `FILENAME` (the input data file),
+  `CONVOLVE`, `FITTED_SCALE`, `FITTED_OFFSET` (`run_datasets` / `runDatasets`; a `> FLAG` with or
+  without `::` is a flag). `NUMBER_DENSITY` and `R_SPACING` are read but not used: the transform
+  has no $\rho_0$, and the r grid is the file's own (on the demo it is `REAL_SPACE_PARAMETERS` ×
+  `R_SPACING`, 234–2000 × 0.01 Å, which a test checks).
+* The input data file, resolved against the transform's folder (Flask: through the data-root
+  guard, so a path outside the roots reads as absent; the browser: within the picked files only).
+  Read as a classic stog file (`read_stog_xy` / `readStogXy`): count line, title, then Q, F(Q)
+  [, σ].
+* `<stem>_XFQ<n>.csv` (15 digits), else `<stem>_FQ<n>.csv` (7 decimals): the run's `F(Q)_Expt`.
+* `<stem>_PDFpartials.csv` with `CONVOLVE`: its last r is $R$, the configuration's g(r) range
+  (RMCProfile's "Using 5182 r points spaced at 0.010 A up to 51.820 A": 51.82 Å on the demo).
+
+### Step 2 — The transform RMCProfile writes
+
+$$G(r_i) = \sum_k \Delta Q\, Q_k\,\bigl(F_k + c\bigr)\,\sin(Q_k r_i)$$
+
+(`rmc_ft()` / `rmcFt()`). A rectangle rule — every point weighted $\Delta Q$, the endpoints too —
+with **no $2/\pi$ and no $\rho_0$**: Keen's $D(r) = (2/\pi)\int Q F \sin(Qr)\,dQ$ times $\pi/2$. No
+Lorch window, no omitted-low-Q term, the Q range the F(Q) file's (1–2619 on the demo, its
+`RECIPROCAL_SPACE_PARAMETERS`). $c$ is the run's fitted offset (`FITTED_OFFSET`), recovered by least
+squares against the transform of a constant. On the committed demo run this reproduces
+`X_ray_exp_renorm` from `GTS_250K_XFQ1.csv` to **$1.5\times10^{-14}$ of max |G|** ($c = 2.7258\times
+10^{-4}$), from the 7-decimal `GTS_250K_FQ1.csv` to $4.5\times10^{-8}$. Every other convention tried
+fails by orders of magnitude (`tests/test_ft_uncertainty.py::DemoReproductionTests`, largest
+deviation over max |G|): the offset left out $3.2\times10^{-4}$, the trapezoid rule (stog, pystog,
+MATERIA) $2.8\times10^{-4}$, with $2/\pi$ (Keen's $D(r)$) 0.36, with Lorch 0.21, Keen's
+$G(r) = D/(4\pi\rho_0 r)$ 0.83. The `X_ray-calc` column is not the transform of `F(Q)_RMC` at machine
+precision ($1.6\times10^{-5}$ of max |G|, $3.9\times10^{-5}$ rms on the demo), so the tests use the
+experimental columns only.
+
+### Step 3 — The run's F(Q) is the input file, renormalised and box-convolved
+
+`F(Q)_Expt` is not the input file's F(Q):
+
+$$F_k = s\,(K F^{\mathrm{in}})_k - c,\qquad (K F)(Q_k) = \frac{1}{\pi Q_k}\sum_j \Delta Q\, Q_j F_j \left[\frac{\sin((Q_k-Q_j)R)}{Q_k-Q_j} - \frac{\sin((Q_k+Q_j)R)}{Q_k+Q_j}\right]$$
+
+(the $j=k$ term is $R$). $K$ — with `CONVOLVE`, else the identity — is the sine transform of $F$
+truncated at $r = R$, transformed back: the box convolution that matches the data to a g(r) known
+only to $R$ (`box_convolution()` / `boxConvolution()`, in Toeplitz − Hankel form, $O(n)$ sines).
+$s$ and $c$ are fitted by least squares (`reproduce_input()`); the transform then takes
+$F + c = s\,K F^{\mathrm{in}}$. Established on the two local runs (RMCProfile 6.7.9.5; `data/`,
+gitignored, so `LocalRunChainTests` is data-gated): GaTa₄Se₈ 250 K (the demo's run) reproduces to
+$4.6\times10^{-15}$ with $s = 1.14753505$ (the log prints "Renorm 1.1476 Constant = 0.0002"),
+GaNb₄Se₈ 5 K to $6.3\times10^{-15}$ with $s = 1.28313083$; the two offsets cancel to $10^{-16}$.
+Without $K$ the best affine fit misses by 0.096 of max |F|; with $R$ = 51.828 (the cell edge)
+instead of 51.82, by $3.2\times10^{-4}$.
+
+### Step 4 — The two reproduction tests and the tolerance
+
+Both tests pass when their largest deviation is at most `RMC_FT_TOLERANCE` = $10^{-6}$ of the
+reproduced function's largest |value|: (1) the run's G(r) column from its F(Q) column (Step 2,
+`reproduce_transform()`); (2) the run's F(Q) column from the input file (Step 3). The tolerance sits
+22× above the 7-decimal file's rounding and 280× below the smallest convention error. Both
+residuals and the tolerance are in the payload (`reproduction`), the card's ? help and title, and
+`compare_fit`'s `noise.reproduction`.
+
+### Step 5 — σ(Q): the input file's own error column only
+
+σ comes only from the input file's third column, and only when clean (`usable_sigma`'s rule,
+`scaling_cli.py`: finite and > 0 on every row with finite Q and F; one bad row drops the column).
+It is never made up. The run's F(Q) is $s\,K F^{\mathrm{in}}$, so σ enters as $s\,\sigma_k$.
+RMCProfile's own `*_FQ1.csv` has no σ; neither have the stog or Auto StoG `_rmc.fq` files on hand,
+so a ribbon needs an input file with a σ column.
+
+### Step 6 — The propagation and the full covariance
+
+The transform is linear, $G = A F$ with $A_{ik} = \Delta Q\,Q_k \sin(Q_k r_i)$, so for independent
+$s\sigma_k$, exactly (JCGM 102):
+
+$$\operatorname{Cov}[G(r_i), G(r_j)] = \sum_k (\Delta Q\, Q_k\, s\sigma_k)^2 \sin(Q_k r_i)\sin(Q_k r_j) = \tfrac12\bigl[P(r_i - r_j) - P(r_i + r_j)\bigr],\qquad P(x) = \sum_k (\Delta Q\, Q_k\, s\sigma_k)^2\cos(Q_k x)$$
+
+`rmc_ft_covariance()` / `rmcFtCovariance()` (on a uniform r grid from the $O(n)$ Toeplitz and
+Hankel values of $P$; its diagonal is `rmc_ft_sigma()`'s, bit for bit). The ribbon is
+$\pm\sqrt{C_{ii}}$. `correlation_summary()` gives the stationary correlation $P(\Delta)/P(0)$
+between neighbours (the grid step) and at $\pi/Q_\mathrm{max}$, the participation ratio
+$n^2/\lVert\rho\rVert_F^2$ of the exact correlation matrix (independent points, Bretherton et al.
+1999) and the Nyquist count $(r_\mathrm{max}-r_\mathrm{min})Q_\mathrm{max}/\pi$ (ported from MATERIA's
+`grErrors.ts`). For a σ rising with Q on the demo grids: $\rho = 0.97$ between neighbours, $-0.76$
+at $\pi/Q_\mathrm{max}$, ≈ 62 independent points of 1767 (Nyquist 152).
+
+**The box convolution is left out of the propagation.** The exact operator from the input file is
+$B = A K$; $K$ removes only noise components beyond $r = R$, so at $r$ well inside $R$, $AK \approx A$.
+Measured on the demo's grids, including it lowers σ(r) by at most 0.19 % at r ≤ 20 Å (0.5 % at
+40–45 Å, 34 % within 2 Å of $R$). It is checked exactly where it is largest:
+`convolution_sigma_change()` computes $B$'s row at $r_\mathrm{min}$ and at 8 points over the last
+$\pi/Q_\mathrm{max}$ before $r_\mathrm{max}$ ($O(n^2)$ each), and a change above
+`CONVOLUTION_CHECK_LIMIT` = 1 % refuses the ribbon (`convolutionCheck`).
+
+### Step 7 — The outcomes
+
+| `status` | When | Panel | Problems section |
+|---|---|---|---|
+| `propagated` | σ clean, both tests pass, $s > 0$, the convolution check within 1 % | the ribbon, its caption | — |
+| `unavailable` | no `<stem>.dat`; no X-ray dataset $n$ or no `FILENAME`; the input file absent ("F(Q) carries no uncertainties: … (named in …) is not in the run folder"); no third column ("… has no error column"); σ not clean; no F(Q) file; `CONVOLVE` without a PDFpartials file | "No error ribbon." and the reason | — |
+| `failed` | a test fails; a grid is not uniform or not increasing, or a value not finite; $s \le 0$; the convolution check; a file that cannot be read ("could not compute the error ribbon: …") | "No error ribbon." and the reason | a warning row |
+
+A reason carries no numbers; they are in `reproduction` and `convolutionCheck`. Without σ the tests
+still run where their files are there, and the ? help shows their result: the demo's says the
+transform reproduces its G(r) to $1.5\times10^{-14}$ (tolerance $10^{-6}$) and that
+`scale_ft_rmc.fq`, named in `GTS_250K.dat`, is not in the folder.
+
+### Step 8 — What the card shows
+
+`InteractivePlot`'s opt-in `ribbon` prop (`{series, sigma, label}`): one closed band per run of
+finite points (a non-finite y or σ breaks it), filled in the experiment's colour at
+`--plot-area-opacity` under its markers, inside the y range (its edges join the autoscale), a legend
+entry that hides it, and "value ± σ" in the hover readout; exported with the SVG/PNG. Which σ
+(`grRibbon.js`): with no σ column in the G(r) file, the propagated one ("±1σ propagated"); a column
+whose header names an uncertainty (`file_sigma_column`: sigma, σ, uncert…, error, the word err or
+esd; never a column the fit's roles read; clean by `usable_sigma`'s rule) is the experimental
+series' own `sigma` (`xpdfSigma` / `_xpdf_sigma`), drawn by default ("±1σ (file)"), with the
+propagated one as a header toggle ("σ file | σ propagated"). The caption under the plot says which,
+and that the r points are correlated (with ρ between neighbours); its ? help — and the row's
+`title`, the native tooltip — gives the transform, both reproduction residuals with the tolerance,
+the correlation and independent points, the convolution check, and that this is the statistical
+error of the measured F(Q) only. A `failed` ribbon is also a warning in the page's Problems
+section (`ribbonIssues`).
+
+**Live Data.** Flask: an xPDF card's data are asked for at `plotDataVersion(file, files)`, its own
+`modified:size` and those of `<stem>.dat`, `_XFQ<n>.csv`, `_FQ<n>.csv` and `_PDFpartials.csv` in the
+listing, so a rewrite of any of them re-reads the ribbon (the input file is not listed by Flask;
+RMCProfile reads it once, at the start of a run). Browser: `attachFtUncertainty` runs on every parse
+round and keeps one payload per set of file versions, so an unchanged round returns the same object
+(the chart keeps its zoom) and a changed file recomputes it.
+
+### Parameters and defaults — the G(r) error ribbon
+
+| Name | Value | Where | Role |
+|---|---|---|---|
+| `RMC_FT_TOLERANCE` | $10^{-6}$ of max \|·\| | `ft_uncertainty.py`, `ftUncertainty.js` | both reproduction tests |
+| `CONVOLUTION_CHECK_LIMIT` | 0.01 | same | the largest change of σ the left-out box convolution may make |
+| `CONVOLUTION_CHECK_POINTS` | 8 (+ $r_\mathrm{min}$) | same | the points checked over the last $\pi/Q_\mathrm{max}$ |
+| `UNIFORM_GRID_RTOL` | $10^{-6}$ of ΔQ | same | a uniform Q grid; the input file's grid matched to the run's |
+| `ABOVE_NOISE_SIGMA` | 3 | `llm/copilot/runTools.js` | `compare_fit`: a residual feature ≥ 3 σ(r) is above noise |
+
+### Known answers — the G(r) error ribbon
+
+`tests/test_ft_uncertainty.py`: the demo reproduction and every other convention failing; the
+operator against an explicit loop; a brute-force Jacobian (σ and covariance from the value path
+alone, uniform and ragged r); white noise against the continuum integral $\Delta Q\,\sigma^2\int
+Q^2\sin^2(Qr)\,dQ$ (midpoint limits, $10^{-3}$); Monte Carlo (20 000 draws: variances within 5 %,
+correlations within 0.035; and through the box convolution, within 2.5 % of $B$'s σ); white
+integrand noise on the Nyquist grid exactly uncorrelated (DST-I); the continuum correlation
+law $3[(u^2-2)\sin u + 2u\cos u]/u^3$, $\rho(\pi) = -6/\pi^2$; ≈ 5/9 of the Nyquist count for σ
+const; MATERIA's pystog golden (`pystog_golden.json`, copied from its `pystogGolden.ts`) adapted to
+RMCProfile's convention: $G_\mathrm{RMC} = (\pi/2)\,G_\mathrm{pystog} + \tfrac{\Delta Q}{2}$(the two
+endpoint terms) to $10^{-12}$, and $\sigma^2_\mathrm{RMC} = (\pi/2)^2 dG^2 + \Delta Q^2(e_0+e_n)/2$ to
+$10^{-12}$; RMCProfile's StoG on FeCoSn 199 K (data-gated): `fq_to_gpdf` with the low-Q term
+reproduces its g(r) to $10^{-10}$, and RMCProfile's operator is $(\pi/2)$(StoG − its low-Q term) +
+the endpoint halves.
+
+### Caveats / what this is not
+
+- **Statistical error only.** σ(r) is the propagated error of the measured F(Q)'s σ column; the
+  reduction's systematic errors (background, normalisation, Compton) are not in it.
+- **Correlated points.** Neighbouring r points are strongly correlated ($\rho \approx 0.97$ at
+  0.01 Å on the demo grids): a run of adjacent points outside the ribbon is one feature, and the
+  number of independent points is far below the grid's.
+- **The box convolution is approximated in the propagation** (Step 6), within the checked 1 %.
+- **Established on RMCProfile 6.7.9.5.** Another version that writes its transform otherwise fails
+  the reproduction test and gets no ribbon, with the reason; it is never drawn on an assumed
+  convention.
+- **An input file outside the run folder.** Flask reads it inside the data roots; the browser sees
+  only the picked files, so the same `.dat` can give a ribbon on the server and "not in the run
+  folder" in the browser (an absolute `FILENAME`, or one above the picked folder).
 
 
 ## Model summary and the Detected SG symmetry finder

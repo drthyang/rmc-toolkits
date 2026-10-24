@@ -12,13 +12,17 @@ import {
     isDashboardPlotFile,
     isStaticMode,
     parseDashboardPlotFile,
+    plotDataVersion,
     plotMetadataFromFile,
     rValueGroupKey,
     WATCH_INTERVAL_MS
 } from '../browserData';
 import { saveSvgFiguresAsZip } from '../figureExport';
+import { attachFtUncertainty } from '../ftUncertaintyRun';
 import { WatchdogBadge } from '../llm';
+import { ribbonIssues, ribbonProp, ribbonSources } from '../grRibbon';
 import { fetchPlotData } from '../plotDataCache';
+import { RibbonNote, RibbonToggle } from './GrRibbon';
 import { isIncompleteStructure } from '../structureReport';
 import InteractivePlot from './InteractivePlot';
 import {
@@ -63,6 +67,7 @@ const NO_MARKS = {};
 
 const NO_TARGETS = Object.freeze([]);
 const NO_SERVER_PLOTS = Object.freeze({});
+const NO_CHOICES = Object.freeze({});
 
 // A plot file's version: what its chart's data is fetched for (InteractivePlot's refreshKey).
 const plotVersion = (file) => `${file.modified ?? ''}:${file.size ?? ''}`;
@@ -114,6 +119,12 @@ const Dashboard = ({
     // the one last asked for, is dropped.
     const [serverPlots, setServerPlots] = useState(NO_SERVER_PLOTS);
     const serverPlotRequestsRef = useRef(new Map());
+    // An xPDF plot's σ choice where its file carries its own σ beside the
+    // propagated one ({ [path]: 'file' | 'propagated' }; the file's by default).
+    const [ribbonChoices, setRibbonChoices] = useState(NO_CHOICES);
+    // Flask mode: the plot data each chart fetched ({ [path]: plotData }), for
+    // the ribbon's caption and the Problems section (static mode's files carry it).
+    const [chartData, setChartData] = useState(NO_SERVER_PLOTS);
 
     useEffect(() => {
         filesRef.current = files;
@@ -260,7 +271,13 @@ const Dashboard = ({
                 }));
                 if (cancelled) return;
                 const parsedByPath = Object.fromEntries(parsedEntries);
-                const nextFiles = loadedFiles.map((file) => parsedByPath[file.path] || file);
+                // Each xPDF transform's error ribbon, from the run's files
+                // (ftUncertaintyRun.js; Flask sends the same in /api/plot/data).
+                const nextFiles = await attachFtUncertainty(
+                    loadedFiles.map((file) => parsedByPath[file.path] || file),
+                    localRun.allFiles || loadedFiles
+                );
+                if (cancelled) return;
                 signatureRef.current = fileSignature(nextFiles);
                 setFiles(nextFiles);
                 setMetadata(Object.fromEntries(
@@ -348,6 +365,8 @@ const Dashboard = ({
         setShowLoadedFiles(false);
         manuallyToggledPathsRef.current = new Set();
         setDismissedErrors(new Set());
+        setRibbonChoices(NO_CHOICES);
+        setChartData(NO_SERVER_PLOTS);
         // A failed "Save all figures" belongs to the previous run's figures.
         setSaveAllError(null);
     }, [directory]);
@@ -419,10 +438,42 @@ const Dashboard = ({
         if (!wantAssistantData || localRun || isStaticMode()) return NO_TARGETS;
         const targets = allPlotFiles
             .filter((file) => file.plotKind !== 'r_value')
-            .map((file) => ({ file, version: plotVersion(file) }));
+            .map((file) => ({ file, version: plotDataVersion(file, files) }));
         if (rValueFile) targets.push({ file: rValueFile, version: rValueVersion });
         return targets;
-    }, [wantAssistantData, localRun, allPlotFiles, rValueFile, rValueVersion]);
+    }, [wantAssistantData, localRun, allPlotFiles, files, rValueFile, rValueVersion]);
+
+    // Flask mode: each xPDF chart's data (its own request, plotDataCache), for
+    // its error ribbon, caption and Problems row. A chart that cannot load
+    // lists that failure itself (InteractivePlot's plot-load issue).
+    const xpdfTargets = useMemo(() => {
+        if (localRun || isStaticMode()) return NO_TARGETS;
+        return allPlotFiles
+            .filter((file) => file.plotKind === 'xpdf')
+            .map((file) => ({ file, version: plotDataVersion(file, files) }));
+    }, [localRun, allPlotFiles, files]);
+
+    useEffect(() => {
+        let cancelled = false;
+        xpdfTargets.forEach(({ file, version }) => {
+            fetchPlotData(file.path, version).then(
+                (plotData) => {
+                    if (!cancelled) setChartData((current) => ({ ...current, [file.path]: { version, plotData } }));
+                },
+                () => {} // InteractivePlot lists the failure under this file's name.
+            );
+        });
+        return () => { cancelled = true; };
+    }, [xpdfTargets]);
+
+    // The file an xPDF card's ribbon reads: with its data (a browser-loaded
+    // run's own; in Flask mode the chart's latest answer), else null.
+    const ribbonFile = useCallback((file) => {
+        if (file.plotKind !== 'xpdf') return null;
+        if (file.plotData) return file;
+        const entry = chartData[file.path];
+        return entry ? { ...file, plotData: entry.plotData } : null;
+    }, [chartData]);
 
     // Each target is asked for once per version, through the cache the charts
     // share (plotDataCache.js): a chart already drawn costs no second request,
@@ -485,6 +536,14 @@ const Dashboard = ({
         .map(({ file }) => ({ key: file.path, message: serverPlots[file.path].parseError, source: file.name })),
     [serverPlotTargets, serverPlots]);
     useIssueSet('plot-data', serverPlotIssues);
+    // An xPDF plot whose error ribbon failed (a reproduction test, a check or
+    // a read): the caption says why, and so does the Problems section. A ribbon
+    // that is merely not possible (no σ, a missing file) is the caption's alone.
+    const ribbonProblemRows = useMemo(
+        () => ribbonIssues(allPlotFiles.map(ribbonFile).filter(Boolean)),
+        [allPlotFiles, ribbonFile]
+    );
+    useIssueSet('ribbon', ribbonProblemRows);
     const reportIssue = useReportIssue();
 
     // Publish the run as this page holds it for App's Copilot run module
@@ -574,7 +633,7 @@ const Dashboard = ({
         );
     };
 
-    const renderPlotBody = (file, variant, marks = null, refreshKey = plotVersion(file)) => {
+    const renderPlotBody = (file, variant, marks = null, refreshKey = plotVersion(file), ribbon = null) => {
         if (file.sourceFile && !file.plotData && !file.parseError) {
             return <div className="ui-loading ui-loading--sm">Parsing plot file…</div>;
         }
@@ -588,6 +647,7 @@ const Dashboard = ({
                 refreshKey={refreshKey}
                 variant={variant}
                 marks={marks}
+                ribbon={ribbon}
             />
         );
     };
@@ -595,6 +655,11 @@ const Dashboard = ({
     const renderPlotCard = (file) => {
         const meta = metadata[file.path];
         const title = meta?.title || file.name;
+        // An xPDF plot's error ribbon: the file's σ, else the propagated one
+        // (GrRibbon.jsx), with the toggle when both exist and its caption.
+        const ribbon = file.plotKind === 'xpdf' ? ribbonSources(ribbonFile(file)) : null;
+        const choice = ribbonChoices[file.path] || null;
+        const chooseRibbon = (value) => setRibbonChoices((current) => ({ ...current, [file.path]: value }));
         return (
             <Card as="article" clip lift data-figure-card="" data-copilot-card={`plot:${file.name}`} key={file.path}>
                 <div className="ui-card__header-flush">
@@ -604,9 +669,17 @@ const Dashboard = ({
                             <span className="ui-card__source" title={file.path}>{file.name}</span>
                         )}
                     </div>
-                    {renderRwpChip(meta)}
+                    {ribbon?.fileSigma && ribbon?.propagated ? (
+                        <div className="ui-card__header-actions">
+                            <RibbonToggle sources={ribbon} choice={choice} onChoose={chooseRibbon} />
+                            {renderRwpChip(meta)}
+                        </div>
+                    ) : renderRwpChip(meta)}
                 </div>
-                {renderPlotBody(file, undefined, cardMarks[`plot:${file.name}`] || null)}
+                {renderPlotBody(
+                    file, undefined, cardMarks[`plot:${file.name}`] || null, plotDataVersion(file, files), ribbonProp(ribbon, choice)
+                )}
+                {ribbon && <RibbonNote sources={ribbon} choice={choice} />}
                 {renderDashboardError(`plot:${file.path}:${file.parseError}`, file.parseError)}
             </Card>
         );
