@@ -372,7 +372,7 @@ const HINT_WORDS = /\bhints?\b|\btentative(?:ly)?\b|\bnot\s+(?:yet\s+)?a\s+findi
 const isFinding = (analysis) => (analysis.tier ? analysis.tier === 'finding' : Boolean(analysis.significant));
 const TIER_TEXT = {
     below_sigma: 'between 2.5σ and 3σ', small_enhancement: 'under 1.2× isotropic', not_held: 'not held at the neighbouring resolution',
-    not_auto: 'not at the engine\'s resolution', unchecked: 'not checked at a second resolution', below_hint_sigma: 'below 2.5σ'
+    not_auto: 'neither at the engine\'s resolution nor beside it', unchecked: 'not checked at a second resolution', below_hint_sigma: 'below 2.5σ'
 };
 
 const directionRule = (reading, facts) => {

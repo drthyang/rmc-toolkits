@@ -1368,8 +1368,9 @@ const TOLERANCE_RULE = `a group counts where it holds to ${NOISE_FLOOR_MARGIN} �
 const DIRECTION_TIERS_RULE = `a finding at a peak σ ≥ ${SIGNIFICANCE_SIGMA} (unrounded) and ≥ ${DIRECTION_FINDING_ENHANCEMENT}× isotropic that holds at a `
     + `neighbouring resolution; a hint at ≥ ${SIGNIFICANCE_SIGMA}σ under ${DIRECTION_FINDING_ENHANCEMENT}×, at ${DIRECTION_HINT_SIGMA}–${SIGNIFICANCE_SIGMA}σ `
     + `or not held; nothing below ${DIRECTION_HINT_SIGMA}σ (directionTier; the answer check "direction" takes a finding only)`;
-const DIRECTION_RESOLUTION_RULE = 'a finding holds at the Auto ν and at a neighbouring ν — the tool reads ν − 1 (ν + 1 at ν = 1) for a candidate — '
-    + 'passing its own peak test on the same axis within the two cells\' radii; one resolution alone is a hint (directionHolds, neighbourFrequency)';
+const DIRECTION_RESOLUTION_RULE = 'a finding holds at the Auto ν and at ν ± 1 — the tool reads ν − 1 (ν + 1 at ν = 1) for a candidate, and a call at '
+    + 'ν ± 1 the Auto ν — passing its own peak test on the same axis within the two cells\' radii; one resolution alone is a hint '
+    + '(directionHolds, neighbourFrequency)';
 // Order between cells as the answer checks and arm A+ read the diffuse verdict
 // (the interview answer checks, 2026-10-24): antiphase only.
 const BETWEEN_CELLS_RULE = 'the diffuse verdict in antiphase past its bar is order between cells (short-range order), read by the answer checks '

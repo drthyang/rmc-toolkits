@@ -322,8 +322,9 @@ export const directionHolds = (first, second) => {
 /**
  * A peak direction's tier: { tier: 'finding' | 'hint' | 'none', because }.
  * `first` is the engine's payload at the call's resolution, `second` at the
- * neighbouring one (null when not asked), `auto` whether the call's
- * resolution is the engine's own: a finding is judged there.
+ * other of the pair (null when not asked), `auto` whether the call's
+ * resolution is the engine's own or beside it (Auto ± 1): a finding is
+ * judged on the Auto resolution and a neighbour.
  */
 export const directionTier = (first, second = null, { auto = true } = {}) => {
     const sigma = first?.peakSignificance;
@@ -487,7 +488,7 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0, neigh
             below_sigma: `the peak is ${sigma}σ, between ${DIRECTION_HINT_SIGMA}σ and ${SIGNIFICANCE_SIGMA}σ`,
             small_enhancement: `${strength}, under the ${DIRECTION_FINDING_ENHANCEMENT}× a finding needs`,
             not_held: `${strength}, but it does not hold: ${atNeighbour}`,
-            not_auto: `${strength}, but at ν = ${payload.frequency}, not the engine's resolution (ν = ${payload.recommendedFrequency}), where a finding is judged`,
+            not_auto: `${strength}, but at ν = ${payload.frequency}, neither the engine's resolution (ν = ${payload.recommendedFrequency}) nor beside it, where a finding is judged`,
             unchecked: `${strength}, not checked at a neighbouring resolution`
         }[because];
         checks.push({ level: 'note', text: `A hint of a direction, not a finding: ${why}; toward ${where}.` });
@@ -1921,18 +1922,23 @@ export const buildCopilotTools = ({ request, structure, elements = [], plotFiles
                 else params.element = element;
                 if (frequency != null) params.frequency = frequency;
                 const payload = await request('orientation', params, { signal });
-                // A finding is judged at the engine's own resolution and holds
-                // at the neighbouring one (the user's tiers, 2026-10-24): a
-                // second engine call, only for a candidate (≥ 3σ, ≥ 1.2×).
-                const auto = frequency == null || frequency === payload.recommendedFrequency;
-                const neighbour = auto && directionCandidate(payload)
-                    ? await request('orientation', { ...params, frequency: neighbourFrequency(payload.frequency) }, { signal })
+                // A finding holds at the engine's own (Auto) resolution and at
+                // a neighbouring one, Auto ± 1 (the user's tiers, 2026-10-24):
+                // a second engine call, only for a candidate (≥ 3σ, ≥ 1.2×) —
+                // at the Auto ν it reads ν − 1 (neighbourFrequency), and at
+                // Auto ± 1 (a call the displacement-anisotropy skill asks for)
+                // the Auto ν itself.
+                const recommended = payload.recommendedFrequency;
+                const auto = frequency == null || frequency === recommended;
+                const besideAuto = !auto && Number.isFinite(recommended) && Math.abs(payload.frequency - recommended) === 1;
+                const neighbour = (auto || besideAuto) && directionCandidate(payload)
+                    ? await request('orientation', { ...params, frequency: auto ? neighbourFrequency(payload.frequency) : recommended }, { signal })
                     : null;
                 const basis = structure?.basis || [];
                 const pooledSites = referenceNumber != null
                     ? 0
                     : (element === 'all' ? basis.length : basis.filter((site) => site.el === element).length);
-                return summarizeOrientation(payload, unitCellFrom(payload), { pooledSites, neighbour, auto });
+                return summarizeOrientation(payload, unitCellFrom(payload), { pooledSites, neighbour, auto: auto || besideAuto });
             }
         });
 

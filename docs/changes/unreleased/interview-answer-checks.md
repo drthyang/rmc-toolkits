@@ -27,7 +27,8 @@
 - **displacement-anisotropy.** `analyze_displacement_directions` labels its peak in the user's
   three tiers: a **finding** at ≥ 3σ (unrounded) and ≥ 1.2× isotropic that holds at the
   neighbouring resolution (ν − 1; ν + 1 at ν = 1), which the tool reads for a candidate — the peak
-  test passes there and the two peaks lie on one axis within the two cells' radii; a **hint** at
+  test passes there and the two peaks lie on one axis within the two cells' radii; a call at
+  Auto ± 1, as the skill asks, reads the Auto resolution as the other; a **hint** at
   ≥ 3σ under 1.2×, at 2.5–3σ or not held; **nothing** below 2.5σ. The second reading costs 0.7 ms
   on the Demo and about 240 tokens per finding. On the Demo, Ta site 17 and Se site 34 are
   findings and Ta site 25 (4.47σ at ν = 2, 2.33σ at ν = 1) is now a hint; every dev split site is

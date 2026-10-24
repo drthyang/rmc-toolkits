@@ -92,11 +92,17 @@ describe('the tiers through the tool (analyze_displacement_directions)', () => {
         const none = await read(2);
         expect(none.data.peak.tier).toBe('none');
         expect(none.asked).toEqual(['auto']);
-        // At another resolution than the engine's, no second call and a hint at most.
+        // Beside the engine's resolution (Auto − 1, the call the skill asks for): the other of the pair is the Auto ν itself.
         asked.length = 0;
-        const fine = await tool.run({ site_ref: 17, frequency: 3 });
-        expect(fine.facts.direction.tier === 'finding').toBe(false);
-        expect(asked).toEqual([3]);
+        const beside = await tool.run({ site_ref: 17, frequency: 1 });
+        expect(asked).toEqual([1, 2]);
+        expect(beside.data.neighbour).toMatchObject({ frequency: 2, significance_sigma: 3.15, holds: true });
+        expect(beside.facts.direction).toMatchObject({ tier: 'finding', because: 'holds', frequency: 1 });
+        // Two away from it: no second call, a hint at most.
+        asked.length = 0;
+        const far = await tool.run({ site_ref: 17, frequency: 4 });
+        expect(asked).toEqual([4]);
+        expect(far.facts.direction.tier === 'finding').toBe(false);
     }, 120000);
 
     it('a dev split site: dev-jahn-teller\'s F holds on the opposite well at the neighbouring resolution, the same axis', async () => {
