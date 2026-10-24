@@ -256,15 +256,26 @@ describe('coordination-shells: the user\'s interview answers (2026-10-24)', () =
         expect(toolMessages.flatMap((message) => message.checks).filter((check) => /average structure/.test(check.text))).toEqual([]);
     });
 
+    // The title is the one its decision record names (2026-10-24-coordination-shells-interview); the
+    // Demo now offers polyhedral_distortion, so both cases run: offered, then not.
     it('answer 7: distorted polyhedra need a distortion index where the run offers one, else the cluster analysis (the Demo offers no polyhedral_distortion today)', async () => {
+        // Offered (the Demo's tools): the gate asks for polyhedral_distortion.
+        expect(shellTools.find((tool) => tool.name === 'polyhedral_distortion')).toBeDefined();
+        const offered = await replay([
+            { text: 'The TaSe6 octahedra are distorted.\nOutcome: achieved — obvious.' },
+            { calls: [{ name: 'polyhedral_distortion', args: { centre: 'Ta', ligand: 'Se', r_min: 2.21, r_max: 3.23 } }] },
+            { text: 'In this one configuration, polyhedral_distortion reads the TaSe6 octahedra.\nOutcome: partial — one configuration.' }
+        ], { run: demoRun, offered: shellTools });
+        expect(offered.done.gates).toEqual([{ round: 0, id: 'polyhedra', missing: ['polyhedral_distortion'] }]);
+        expect(offered.requests[1].at(-1).content).toMatch(/concludes a distortion of the coordination polyhedra, but this question has not run polyhedral_distortion\./);
+        // Not offered: the cluster analysis.
         const { done, requests } = await replay([
             { text: 'The TaSe6 octahedra are distorted.\nOutcome: achieved — obvious.' },
             { calls: [{ name: 'analyze_clusters', args: { element: 'Ta', r_min: 2.65, r_max: 3.33 } }] },
             { text: 'In this one configuration, analyze_clusters reads the Ta4 clusters, not the TaSe6 octahedra.\nOutcome: partial — no distortion index.' }
-        ], { run: demoRun, offered: shellTools });
+        ], { run: demoRun, offered: shellTools.filter((tool) => tool.name !== 'polyhedral_distortion') });
         expect(done.gates).toEqual([{ round: 0, id: 'polyhedra', missing: ['analyze_clusters'] }]);
         expect(requests[1].at(-1).content).toMatch(/concludes a distortion of the coordination polyhedra, but this question has not run analyze_clusters\./);
-        expect(shellTools.find((tool) => tool.name === 'polyhedral_distortion')).toBeUndefined();
     });
 });
 
@@ -421,7 +432,7 @@ describe('local-order: the user\'s interview answers (2026-10-24)', () => {
         }
     });
 
-    // Runs the real modulation, direction and cluster engines on the 52,000-atom Demo three times (~1.4 s alone; over 5 s on a loaded CI runner).
+    // Runs the real modulation, direction and cluster engines on the 52,000-atom Demo three times, and the polyhedra engine once (over 5 s on a loaded CI runner).
     it('answer 5: "no order" needs polyhedral_distortion on the Demo\'s GaSe₄ only where the run offers it; its diffuse verdict is analyze_modulations\' own', async () => {
         const list = { calls: [
             { name: 'analyze_modulations', args: {} },
@@ -430,8 +441,9 @@ describe('local-order: the user\'s interview answers (2026-10-24)', () => {
         ] };
         const answer = { text: 'There is no local order beyond thermal motion in the tests that ran: in phase only, the Ga, Se and Ta correlation is '
             + 'correlated motion.\nOutcome: partial — the tests that ran.' };
-        // Without polyhedral_distortion (the Demo today): the list as before, met.
-        const without = await replay([list, answer], { run: demoRun, offered: orderTools });
+        // Without polyhedral_distortion: the list as before, met.
+        const withoutTools = orderTools.filter((tool) => tool.name !== 'polyhedral_distortion');
+        const without = await replay([list, answer], { run: demoRun, offered: withoutTools });
         expect(without.done.gates).toEqual([]);
         expect(rulesOf(without.done)).toEqual([]);
         // With it offered: Ga's tetrahedra (no finite cluster) are asked for, and a call centred on Ga meets the list.
@@ -442,10 +454,15 @@ describe('local-order: the user\'s interview answers (2026-10-24)', () => {
             run: async () => ({ data: { measured: true }, checks: [] })
         };
         const asked = await replay([list, answer, { calls: [{ name: 'polyhedral_distortion', args: { centre: 'Ga', ligand: 'Se' } }] }, answer],
-            { run: demoRun, offered: [...orderTools, polyhedra] });
+            { run: demoRun, offered: [...withoutTools, polyhedra] });
         expect(asked.done.gates).toEqual([{ round: 1, id: 'no-order', missing: ['polyhedral_distortion for Ga (centre Ga: its polyhedra form no finite cluster)'] }]);
         expect(rulesOf(asked.done)).toEqual([]);
-    }, 20_000);
+        // The real tool, as the Demo offers it: the same gate, met by a call centred on Ga in its whole shell.
+        const real = await replay([list, answer, { calls: [{ name: 'polyhedral_distortion', args: { centre: 'Ga', ligand: 'Se', r_min: 2.18, r_max: 2.79 } }] }, answer],
+            { run: demoRun, offered: orderTools });
+        expect(real.done.gates).toEqual([{ round: 1, id: 'no-order', missing: ['polyhedral_distortion for Ga (centre Ga: its polyhedra form no finite cluster)'] }]);
+        expect(rulesOf(real.done)).toEqual([]);
+    }, 30_000);
 });
 
 describe('the real model\'s correct answers (gemma4:26b, 2026-10-11)', () => {

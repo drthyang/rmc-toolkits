@@ -3,7 +3,7 @@
 
 ## The gate, as recorded (the model never reads the record)
 id: no-order
-missing: ["analyze_modulations","analyze_displacement_directions on each kind of site (site_ref)"]
+missing: ["analyze_modulations","analyze_displacement_directions on each kind of site (site_ref)","polyhedral_distortion for Nb (centre Nb: its polyhedra form no finite cluster)"]
 
 ## The request it makes (why: gate), its last message · messages[5] · user
 (From the app, not the user.) Your answer concludes "no order beyond thermal motion", but this conclusion needs its evidence from an analysis run in this question. Answer from the analysis's result (quote its numbers by reference). If none can run, say so in the answer instead of concluding.
