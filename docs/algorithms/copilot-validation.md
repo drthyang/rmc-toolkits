@@ -1229,8 +1229,8 @@ and the regression `tests` that pin it. An approved or implemented finding that 
 records it; an implemented one names its commit, and an implemented code change names its tests.
 Batch 1 (`validation/findings/batch-1.jsonl`) holds every tool change of the
 [review](copilot-review.md), approved by the user on 2026-10-14 and implemented on 2026-10-17:
-L1–L5 (L4 is two analyses), six findings; the five skill proposals are added by the skills PR,
-which waits for the user's review. `split.test.js` validates the file.
+L1–L5 (L4 is two analyses) and the five skill proposals, eleven findings (the skill ones came with
+the skills PR, which waits for the user's review). `split.test.js` validates the file.
 Decisions on the validation itself take the same form, one JSON file per record in
 `validation/findings/decisions/`, named by the record's id (the date and a slug,
 `2026-10-19-list-sites-split.json`), so that parallel changes never edit the same file.
