@@ -1,0 +1,27 @@
+{
+ "frozen": "2026-10-24",
+ "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
+ "protocol": "2026-10-24.4",
+ "test_set_sha256": "1f782a560f65484602e68c6615eb8634883862db66de25efef937c59f7acea19",
+ "tag": null,
+ "arms": {
+  "dev": {
+   "cases": 15,
+   "A": 0.8135,
+   "A+": 0.9516,
+   "D": 1.0
+  },
+  "test": {
+   "cases": 14,
+   "A": 0.8002,
+   "A+": 0.9481,
+   "D": 1.0
+  }
+ },
+ "records": {
+  "dev": "validation/baseline/arm-a-dev.json",
+  "test": "validation/holdout/arm-a-test.json (sealed)"
+ },
+ "how": "run.js arm-a --split dev --final and --split test --final, from a clean tree at the frozen commit; no model run",
+ "note": "The freeze before the live runs (arms B and C), which wait for the user's go/no-go. No tag: tags are the user's."
+}

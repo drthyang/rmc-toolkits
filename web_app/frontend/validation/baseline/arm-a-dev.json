@@ -1,8 +1,8 @@
 [
  {
   "id": "dev-offcentre__A",
-  "protocol": "2026-10-19.17",
-  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-offcentre",
   "split": "dev",
   "arm": "A",
@@ -219,8 +219,8 @@
  },
  {
   "id": "dev-offcentre__A+",
-  "protocol": "2026-10-19.17",
-  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-offcentre",
   "split": "dev",
   "arm": "A+",
@@ -389,20 +389,23 @@
      "K": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      },
      "Nb": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      },
      "O": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      }
     },
-    "reading": "cell doubling: none; order at a general q: none; long wave: none"
+    "reading": "cell doubling: none; order at a general q: none; long wave: none; diffuse order (antiphase): none; correlated motion (in phase, not order): none"
    },
    {
     "page": "Displacement Directions",
@@ -417,9 +420,12 @@
       -1
      ],
      "radius_deg": 20.9,
-     "map_sigma": 37
+     "map_sigma": 37,
+     "tier": "finding",
+     "neighbour_frequency": 1,
+     "neighbour_sigma": 9.38
     },
-    "reading": "preferred direction [0 0 -1] ± 20.9°, the cell radius at ν = 2: not resolved finer than that, so the claim takes PC1"
+    "reading": "preferred direction [0 0 -1] ± 20.9°, the cell radius at ν = 2 (a finding: it holds at ν = 1, 9.38σ): not resolved finer than that, so the claim takes PC1"
    },
    {
     "page": "Dashboard partial g(r)",
@@ -467,8 +473,8 @@
  },
  {
   "id": "dev-offcentre__D",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-offcentre",
   "split": "dev",
   "arm": "D",
@@ -554,8 +560,8 @@
  },
  {
   "id": "dev-zone-boundary__A",
-  "protocol": "2026-10-19.17",
-  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-zone-boundary",
   "split": "dev",
   "arm": "A",
@@ -775,8 +781,8 @@
  },
  {
   "id": "dev-zone-boundary__A+",
-  "protocol": "2026-10-19.12",
-  "commit": "1bc6557c475dc9a718d1453b749526e88717cde9",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-zone-boundary",
   "split": "dev",
   "arm": "A+",
@@ -953,17 +959,20 @@
      "O": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (below_ratio)"
+      "longWave": "false (below_ratio)",
+      "diffuseOrder": "false (below_sigma)"
      },
      "Sr": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "true (long_wave_dominates)"
+      "longWave": "true (long_wave_dominates)",
+      "diffuseOrder": "false (below_sigma)"
      },
      "Ti": {
       "cellDoubling": "true (ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
       "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)",
       "polarisation": [
        {
         "q": "(0, 0, 0.5)",
@@ -977,7 +986,7 @@
       ]
      }
     },
-    "reading": "cell doubling: Ti at (0, 0, 0.5); order at a general q: none; long wave: Sr at (0.125, 0, 0)"
+    "reading": "cell doubling: Ti at (0, 0, 0.5); order at a general q: none; long wave: Sr at (0.125, 0, 0); diffuse order (antiphase): none; correlated motion (in phase, not order): none"
    }
   ],
   "truth": {
@@ -1018,8 +1027,8 @@
  },
  {
   "id": "dev-zone-boundary__D",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-zone-boundary",
   "split": "dev",
   "arm": "D",
@@ -1118,8 +1127,8 @@
  },
  {
   "id": "dev-breathing__A",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-breathing",
   "split": "dev",
   "arm": "A",
@@ -1252,8 +1261,8 @@
  },
  {
   "id": "dev-breathing__A+",
-  "protocol": "2026-10-19.8",
-  "commit": "63569f340cf81501c131d3e16144664861ea2c9b",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-breathing",
   "split": "dev",
   "arm": "A+",
@@ -1385,15 +1394,17 @@
      "Mo": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      },
      "O": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      }
     },
-    "reading": "cell doubling: none; order at a general q: none; long wave: none"
+    "reading": "cell doubling: none; order at a general q: none; long wave: none; diffuse order (antiphase): none; correlated motion (in phase, not order): none"
    },
    {
     "page": "analyze_clusters",
@@ -1443,8 +1454,8 @@
  },
  {
   "id": "dev-breathing__D",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-breathing",
   "split": "dev",
   "arm": "D",
@@ -1502,8 +1513,8 @@
  },
  {
   "id": "dev-jahn-teller__A",
-  "protocol": "2026-10-19.17",
-  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-jahn-teller",
   "split": "dev",
   "arm": "A",
@@ -1804,8 +1815,8 @@
  },
  {
   "id": "dev-jahn-teller__A+",
-  "protocol": "2026-10-19.17",
-  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-jahn-teller",
   "split": "dev",
   "arm": "A+",
@@ -2066,20 +2077,23 @@
      "Cu": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      },
      "F": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      },
      "K": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (below_ratio)"
+      "longWave": "false (below_ratio)",
+      "diffuseOrder": "false (below_sigma)"
      }
     },
-    "reading": "cell doubling: none; order at a general q: none; long wave: none"
+    "reading": "cell doubling: none; order at a general q: none; long wave: none; diffuse order (antiphase): none; correlated motion (in phase, not order): none"
    },
    {
     "page": "Displacement Directions",
@@ -2094,9 +2108,12 @@
       -0.62
      ],
      "radius_deg": 37.4,
-     "map_sigma": 14.9
+     "map_sigma": 14.9,
+     "tier": "finding",
+     "neighbour_frequency": 2,
+     "neighbour_sigma": 10.4
     },
-    "reading": "preferred direction [-1 0 -0.62] ± 37.4°, the cell radius at ν = 1: not resolved finer than that, so the claim takes PC1"
+    "reading": "preferred direction [-1 0 -0.62] ± 37.4°, the cell radius at ν = 1 (a finding: it holds at ν = 2, 10.4σ): not resolved finer than that, so the claim takes PC1"
    },
    {
     "page": "Dashboard partial g(r)",
@@ -2211,8 +2228,8 @@
  },
  {
   "id": "dev-jahn-teller__D",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-jahn-teller",
   "split": "dev",
   "arm": "D",
@@ -2308,8 +2325,8 @@
  },
  {
   "id": "dev-cell-wrap__A",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-cell-wrap",
   "split": "dev",
   "arm": "A",
@@ -2415,8 +2432,8 @@
  },
  {
   "id": "dev-cell-wrap__A+",
-  "protocol": "2026-10-19.8",
-  "commit": "63569f340cf81501c131d3e16144664861ea2c9b",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-cell-wrap",
   "split": "dev",
   "arm": "A+",
@@ -2513,10 +2530,11 @@
      "V": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      }
     },
-    "reading": "cell doubling: none; order at a general q: none; long wave: none"
+    "reading": "cell doubling: none; order at a general q: none; long wave: none; diffuse order (antiphase): none; correlated motion (in phase, not order): none"
    },
    {
     "page": "analyze_clusters",
@@ -2572,8 +2590,8 @@
  },
  {
   "id": "dev-cell-wrap__D",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-cell-wrap",
   "split": "dev",
   "arm": "D",
@@ -2642,8 +2660,8 @@
  },
  {
   "id": "dev-thermal-null__A",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-thermal-null",
   "split": "dev",
   "arm": "A",
@@ -2793,8 +2811,8 @@
  },
  {
   "id": "dev-thermal-null__A+",
-  "protocol": "2026-10-19.8",
-  "commit": "63569f340cf81501c131d3e16144664861ea2c9b",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-thermal-null",
   "split": "dev",
   "arm": "A+",
@@ -2937,20 +2955,23 @@
      "Ba": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "true (long_wave_dominates)"
+      "longWave": "true (long_wave_dominates)",
+      "diffuseOrder": "false (below_sigma)"
      },
      "O": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      },
      "Ti": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      }
     },
-    "reading": "cell doubling: none; order at a general q: none; long wave: Ba at (0.25, -0.25, -0.125)"
+    "reading": "cell doubling: none; order at a general q: none; long wave: Ba at (0.25, -0.25, -0.125); diffuse order (antiphase): none; correlated motion (in phase, not order): none"
    }
   ],
   "truth": {
@@ -2972,8 +2993,8 @@
  },
  {
   "id": "dev-thermal-null__D",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-thermal-null",
   "split": "dev",
   "arm": "D",
@@ -3021,8 +3042,8 @@
  },
  {
   "id": "dev-symmetry-lowering__A",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-symmetry-lowering",
   "split": "dev",
   "arm": "A",
@@ -3198,8 +3219,8 @@
  },
  {
   "id": "dev-symmetry-lowering__A+",
-  "protocol": "2026-10-19.8",
-  "commit": "63569f340cf81501c131d3e16144664861ea2c9b",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-symmetry-lowering",
   "split": "dev",
   "arm": "A+",
@@ -3366,20 +3387,23 @@
      "K": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      },
      "O": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      },
      "Ta": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      }
     },
-    "reading": "cell doubling: none; order at a general q: none; long wave: none"
+    "reading": "cell doubling: none; order at a general q: none; long wave: none; diffuse order (antiphase): none; correlated motion (in phase, not order): none"
    },
    {
     "page": "measure_symmetry_lowering",
@@ -3436,8 +3460,8 @@
  },
  {
   "id": "dev-symmetry-lowering__D",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-symmetry-lowering",
   "split": "dev",
   "arm": "D",
@@ -3524,8 +3548,8 @@
  },
  {
   "id": "dev-chirality-trap__A",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-chirality-trap",
   "split": "dev",
   "arm": "A",
@@ -3731,8 +3755,8 @@
  },
  {
   "id": "dev-chirality-trap__A+",
-  "protocol": "2026-10-19.8",
-  "commit": "63569f340cf81501c131d3e16144664861ea2c9b",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-chirality-trap",
   "split": "dev",
   "arm": "A+",
@@ -3935,15 +3959,17 @@
      "Br": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      },
      "Cu": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      }
     },
-    "reading": "cell doubling: none; order at a general q: none; long wave: none"
+    "reading": "cell doubling: none; order at a general q: none; long wave: none; diffuse order (antiphase): none; correlated motion (in phase, not order): none"
    }
   ],
   "truth": {
@@ -3964,8 +3990,8 @@
  },
  {
   "id": "dev-chirality-trap__D",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-chirality-trap",
   "split": "dev",
   "arm": "D",
@@ -4012,8 +4038,8 @@
  },
  {
   "id": "dev-chiral__A",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-chiral",
   "split": "dev",
   "arm": "A",
@@ -4219,8 +4245,8 @@
  },
  {
   "id": "dev-chiral__A+",
-  "protocol": "2026-10-19.8",
-  "commit": "63569f340cf81501c131d3e16144664861ea2c9b",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-chiral",
   "split": "dev",
   "arm": "A+",
@@ -4423,15 +4449,17 @@
      "Fe": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      },
      "Si": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (below_ratio)"
+      "longWave": "false (below_ratio)",
+      "diffuseOrder": "false (below_sigma)"
      }
     },
-    "reading": "cell doubling: none; order at a general q: none; long wave: none"
+    "reading": "cell doubling: none; order at a general q: none; long wave: none; diffuse order (antiphase): none; correlated motion (in phase, not order): none"
    }
   ],
   "truth": {
@@ -4452,8 +4480,8 @@
  },
  {
   "id": "dev-chiral__D",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-chiral",
   "split": "dev",
   "arm": "D",
@@ -4500,8 +4528,8 @@
  },
  {
   "id": "dev-fit-unconverged__A",
-  "protocol": "2026-10-19.2",
-  "commit": "2383578a3388678c26409fea133ee571c5aa4713",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-fit-unconverged",
   "split": "dev",
   "arm": "A",
@@ -4726,8 +4754,8 @@
  },
  {
   "id": "dev-fit-unconverged__A+",
-  "protocol": "2026-10-19.8",
-  "commit": "63569f340cf81501c131d3e16144664861ea2c9b",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-fit-unconverged",
   "split": "dev",
   "arm": "A+",
@@ -4930,15 +4958,17 @@
      "Mg": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      },
      "O": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      }
     },
-    "reading": "cell doubling: none; order at a general q: none; long wave: none"
+    "reading": "cell doubling: none; order at a general q: none; long wave: none; diffuse order (antiphase): none; correlated motion (in phase, not order): none"
    }
   ],
   "truth": {
@@ -4978,8 +5008,8 @@
  },
  {
   "id": "dev-fit-unconverged__D",
-  "protocol": "2026-10-19.2",
-  "commit": "2383578a3388678c26409fea133ee571c5aa4713",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-fit-unconverged",
   "split": "dev",
   "arm": "D",
@@ -5045,8 +5075,8 @@
  },
  {
   "id": "dev-jt-off-centre__A",
-  "protocol": "2026-10-19.17",
-  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-jt-off-centre",
   "split": "dev",
   "arm": "A",
@@ -5392,8 +5422,8 @@
  },
  {
   "id": "dev-jt-off-centre__A+",
-  "protocol": "2026-10-19.17",
-  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-jt-off-centre",
   "split": "dev",
   "arm": "A+",
@@ -5666,20 +5696,23 @@
      "Ag": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      },
      "Cs": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      },
      "F": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      }
     },
-    "reading": "cell doubling: none; order at a general q: none; long wave: none"
+    "reading": "cell doubling: none; order at a general q: none; long wave: none; diffuse order (antiphase): none; correlated motion (in phase, not order): none"
    },
    {
     "page": "Displacement Directions",
@@ -5694,9 +5727,12 @@
       1
      ],
      "radius_deg": 37.4,
-     "map_sigma": 14.5
+     "map_sigma": 14.5,
+     "tier": "finding",
+     "neighbour_frequency": 2,
+     "neighbour_sigma": 9.79
     },
-    "reading": "preferred direction [0 -0.62 1] ± 37.4°, the cell radius at ν = 1: not resolved finer than that, so the claim takes PC1"
+    "reading": "preferred direction [0 -0.62 1] ± 37.4°, the cell radius at ν = 1 (a finding: it holds at ν = 2, 9.79σ): not resolved finer than that, so the claim takes PC1"
    },
    {
     "page": "Displacement Directions",
@@ -5711,9 +5747,12 @@
       1
      ],
      "radius_deg": 37.4,
-     "map_sigma": 15.1
+     "map_sigma": 15.1,
+     "tier": "finding",
+     "neighbour_frequency": 2,
+     "neighbour_sigma": 11
     },
-    "reading": "preferred direction [0 -0.62 1] ± 37.4°, the cell radius at ν = 1: not resolved finer than that, so the claim takes PC1"
+    "reading": "preferred direction [0 -0.62 1] ± 37.4°, the cell radius at ν = 1 (a finding: it holds at ν = 2, 11σ): not resolved finer than that, so the claim takes PC1"
    },
    {
     "page": "Dashboard partial g(r)",
@@ -5816,8 +5855,8 @@
  },
  {
   "id": "dev-jt-off-centre__D",
-  "protocol": "2026-10-19.9",
-  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-jt-off-centre",
   "split": "dev",
   "arm": "D",
@@ -5953,8 +5992,8 @@
  },
  {
   "id": "dev-eight-site__A",
-  "protocol": "2026-10-19.9",
-  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-eight-site",
   "split": "dev",
   "arm": "A",
@@ -6158,8 +6197,8 @@
  },
  {
   "id": "dev-eight-site__A+",
-  "protocol": "2026-10-19.9",
-  "commit": "3de8fc5eb093a09fdafccfa58a0a7703c57e2267",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-eight-site",
   "split": "dev",
   "arm": "A+",
@@ -6326,20 +6365,23 @@
      "Na": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      },
      "Nb": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "true (long_wave_dominates)"
+      "longWave": "true (long_wave_dominates)",
+      "diffuseOrder": "false (below_sigma)"
      },
      "O": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      }
     },
-    "reading": "cell doubling: none; order at a general q: none; long wave: Nb at (0.25, 0.125, -0.125)"
+    "reading": "cell doubling: none; order at a general q: none; long wave: Nb at (0.25, 0.125, -0.125); diffuse order (antiphase): none; correlated motion (in phase, not order): none"
    },
    {
     "page": "Dashboard partial g(r)",
@@ -6391,8 +6433,8 @@
  },
  {
   "id": "dev-eight-site__D",
-  "protocol": "2026-10-19.9",
-  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-eight-site",
   "split": "dev",
   "arm": "D",
@@ -6482,8 +6524,8 @@
  },
  {
   "id": "dev-octahedral-clusters__A",
-  "protocol": "2026-10-19.17",
-  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-octahedral-clusters",
   "split": "dev",
   "arm": "A",
@@ -6737,8 +6779,8 @@
  },
  {
   "id": "dev-octahedral-clusters__A+",
-  "protocol": "2026-10-19.17",
-  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-octahedral-clusters",
   "split": "dev",
   "arm": "A+",
@@ -6969,15 +7011,17 @@
      "Br": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      },
      "W": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      }
     },
-    "reading": "cell doubling: none; order at a general q: none; long wave: none"
+    "reading": "cell doubling: none; order at a general q: none; long wave: none; diffuse order (antiphase): none; correlated motion (in phase, not order): none"
    },
    {
     "page": "Displacement Directions",
@@ -6992,9 +7036,12 @@
       0
      ],
      "radius_deg": 20.9,
-     "map_sigma": 37
+     "map_sigma": 37,
+     "tier": "finding",
+     "neighbour_frequency": 1,
+     "neighbour_sigma": 13.6
     },
-    "reading": "preferred direction [-1 0 0] ± 20.9°, the cell radius at ν = 2: not resolved finer than that, so the claim takes PC1"
+    "reading": "preferred direction [-1 0 0] ± 20.9°, the cell radius at ν = 2 (a finding: it holds at ν = 1, 13.6σ): not resolved finer than that, so the claim takes PC1"
    },
    {
     "page": "analyze_clusters",
@@ -7063,8 +7110,8 @@
  },
  {
   "id": "dev-octahedral-clusters__D",
-  "protocol": "2026-10-19.9",
-  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-octahedral-clusters",
   "split": "dev",
   "arm": "D",
@@ -7146,8 +7193,8 @@
  },
  {
   "id": "dev-weak-order-a__A",
-  "protocol": "2026-10-19.19",
-  "commit": "c9fea9c4b9bca3dbf9f71fc5284553ba75560d95",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-weak-order-a",
   "split": "dev",
   "arm": "A",
@@ -7319,8 +7366,8 @@
  },
  {
   "id": "dev-weak-order-a__A+",
-  "protocol": "2026-10-19.19",
-  "commit": "c9fea9c4b9bca3dbf9f71fc5284553ba75560d95",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-weak-order-a",
   "split": "dev",
   "arm": "A+",
@@ -7493,12 +7540,14 @@
      "Ag": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      },
      "Nb": {
       "cellDoubling": "true (ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
       "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)",
       "polarisation": [
        {
         "q": "(0.5, 0.5, 0)",
@@ -7514,10 +7563,11 @@
      "O": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      }
     },
-    "reading": "cell doubling: Nb at (0.5, 0.5, 0); order at a general q: none; long wave: none"
+    "reading": "cell doubling: Nb at (0.5, 0.5, 0); order at a general q: none; long wave: none; diffuse order (antiphase): none; correlated motion (in phase, not order): none"
    }
   ],
   "truth": {
@@ -7555,8 +7605,8 @@
  },
  {
   "id": "dev-weak-order-a__D",
-  "protocol": "2026-10-19.19",
-  "commit": "c9fea9c4b9bca3dbf9f71fc5284553ba75560d95",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-weak-order-a",
   "split": "dev",
   "arm": "D",
@@ -7645,8 +7695,8 @@
  },
  {
   "id": "dev-weak-order-b__A",
-  "protocol": "2026-10-19.19",
-  "commit": "c9fea9c4b9bca3dbf9f71fc5284553ba75560d95",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-weak-order-b",
   "split": "dev",
   "arm": "A",
@@ -7818,8 +7868,8 @@
  },
  {
   "id": "dev-weak-order-b__A+",
-  "protocol": "2026-10-19.19",
-  "commit": "c9fea9c4b9bca3dbf9f71fc5284553ba75560d95",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-weak-order-b",
   "split": "dev",
   "arm": "A+",
@@ -7968,20 +8018,23 @@
      "Ag": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      },
      "Nb": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      },
      "O": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "diffuseOrder": "false (below_sigma)"
      }
     },
-    "reading": "cell doubling: none; order at a general q: none; long wave: none"
+    "reading": "cell doubling: none; order at a general q: none; long wave: none; diffuse order (antiphase): none; correlated motion (in phase, not order): none"
    }
   ],
   "truth": {
@@ -8019,8 +8072,8 @@
  },
  {
   "id": "dev-weak-order-b__D",
-  "protocol": "2026-10-19.19",
-  "commit": "c9fea9c4b9bca3dbf9f71fc5284553ba75560d95",
+  "protocol": "2026-10-24.4",
+  "commit": "226f6f2c08cac14e8a79f6053db24b5061fa0b69",
   "case": "dev-weak-order-b",
   "split": "dev",
   "arm": "D",

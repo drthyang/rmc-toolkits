@@ -1143,6 +1143,14 @@ records add the tool to `tools_offered`, and each request's length and hash move
 manager on the user's delegation, 2026-10-24
 (`validation/findings/decisions/2026-10-24-polyhedral-distortion.json`).
 
+**The freeze (2026-10-24).** The validation is frozen at commit 226f6f2 (protocol 2026-10-24.4;
+`TEST_SET_SHA256` as pinned in `split.test.js`), recorded in `validation/baseline/freeze.json`. Arms
+A, A+ and D were re-recorded with `--final` from a clean tree at that commit (`arm-a --split dev
+--final`, `arm-a --split test --final`): on dev A 0.814, A+ 0.952 and D 1.000 over 15 cases; on test
+A 0.800, A+ 0.948 and D 1.000 over 14. No score differs from the baselines before it; the records
+gain only the readings later changes added (the direction tier, the diffuse reading). No tag: tags
+are the user's. The live arms B and C wait for the user's go/no-go.
+
 ### The report beside the case score (plan item 1.6, part i)
 
 The engines alone (A+) score 0.99, because most components of a case are facts they get right every
