@@ -1596,7 +1596,7 @@ has converged" is a claim; "To check whether the run has converged" is not). "Co
   mode, modal share, share; peaks / centred at …), a share of it ("80 % cis", "20 % of the angles
   lie …") or a coordination histogram ("3 948 of 4 000 Ga atoms having 4 …"), in a sentence that names
   a distribution (angles, distribution, histogram, neighbours, coordination counts, cluster shapes,
-  edges, a direction map) or gives degrees — and nowhere says they come from one configuration ("one /
+  edges or the edge ladder, breathing, a direction map) or gives degrees — and nowhere says they come from one configuration ("one /
   a single / this one configuration, snapshot, box or run", "single-configuration", "configuration
   alone") is flagged. A test's σ is no number of the distribution ("no preferred direction (peak
   −0.89σ)" is left), nor is a first-shell distance or CN from `find_gr_peaks` (no distribution facts:

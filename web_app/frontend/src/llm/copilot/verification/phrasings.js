@@ -52,8 +52,8 @@ export const SAYS_NOTHING = /\bnothing\b/i;
 // number (mean 109.4°, sd 4.1°, mode 109.5°, peaks at 100–110°), a share of
 // it (80 % cis, 20 % of the angles lie …), or a coordination histogram
 // (3 948 of 4 000 Ga atoms having 4 neighbours) — in a sentence that names a
-// distribution (angles, a histogram, neighbours, cluster shapes or edges, a
-// direction map) or gives degrees. A test's σ is no number of the
+// distribution (angles, a histogram, neighbours, cluster shapes, edges or the
+// edge ladder, breathing, a direction map) or gives degrees. A test's σ is no number of the
 // distribution.
 export const DISTRIBUTION_STAT = new RegExp([
     '\\b(?:mean|average|median|sd|s\\.d\\.|standard deviation|spread|width|mode|modal(?: share)?|share)\\b\\s*(?:of|is|=|:|at)?\\s*[~≈]?\\s*[-−]?\\d',
@@ -61,7 +61,7 @@ export const DISTRIBUTION_STAT = new RegExp([
     '\\d+(?:\\.\\d+)?\\s?%\\s+(?:of\\s+(?:the|these|all)\\s+|cis\\b|trans\\b|lie\\b|lies\\b|fall\\b|falls\\b|are\\b|have\\b|has\\b)',
     '\\d[\\d\\s,]*\\s+of\\s+[\\d\\s,]+\\s*(?:[A-Z][a-z]?\\s+)?atoms?\\s+(?:have|having|with)\\s+\\d'
 ].join('|'), 'i');
-export const DISTRIBUTION_NOUN = /\b(?:bond[- ])?angles?\b|\bangular\b|\bdistributions?\b|\bhistograms?\b|\bneighbou?rs\b|\bcoordination counts?\b|\b(?:cluster|shape)s?\s+(?:shapes?|rms)\b|\bedge(?:[- ]lengths?|s)\b|\bdirection(?:al)?\s+(?:map|distribution|histogram)s?\b|\d\s?°/i;
+export const DISTRIBUTION_NOUN = /\b(?:bond[- ])?angles?\b|\bangular\b|\bdistributions?\b|\bhistograms?\b|\bneighbou?rs\b|\bcoordination counts?\b|\b(?:cluster|shape)s?\s+(?:shapes?|rms)\b|\bedge(?:[- ]lengths?|s|\s+ladder)\b|\bbreathing\b|\bdirection(?:al)?\s+(?:map|distribution|histogram)s?\b|\d\s?°/i;
 // The answer says the numbers come from one configuration.
 export const SINGLE_CONFIGURATION = /\b(?:one|a single|single|only one|just one|this one|the one)\s+(?:RMC\s+|RMCProfile\s+)?(?:configuration|snapshot|box|run|realisation|realization)s?\b|\bsingle[- ](?:configuration|snapshot)\b|\b(?:configuration|snapshot)\s+alone\b/i;
 

@@ -344,6 +344,12 @@ describe('the single-configuration check: a distribution quoted without saying i
         ]) {
             expect({ text, rules: rules(text, { facts: angles }) }).toEqual({ text, rules: ['single-configuration'] });
         }
+        // A cluster-shape distribution: its edge ladder's width, its breathing sd.
+        const clusters = [{ distribution: { kind: 'cluster_shape', subject: 'the Ta4 cluster-shape distribution', configurations: 1 } }];
+        for (const text of ['The Ta4 edge ladder width is 0.12 Å against 0.10 Å for independent atoms.', 'Their breathing sd is 0.05 Å.']) {
+            expect({ text, rules: rules(text, { facts: clusters }) }).toEqual({ text, rules: ['single-configuration'] });
+        }
+        expect(rules('The Ta4 clusters breathe: their size fluctuates 0.27 (relative) more than for independent atoms, z = 27.', { facts: clusters })).toEqual([]);
         expect(audit('Se–Ga–Se angles: mean 109.4°, sd 4.1°.', { facts: angles })[0].text).toBe('The answer quotes the numbers of the Se–Ga–Se '
             + 'bond-angle distribution without saying they come from one configuration: every analysis here reads the run\'s one '
             + 'configuration, so its distribution carries no spread between runs; say so.');

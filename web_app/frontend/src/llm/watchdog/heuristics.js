@@ -225,11 +225,14 @@ export const detectStall = (values) => classifyConvergence(values) === 'stalled'
 // self-describing — never the full history.
 const round = (value, digits) => (Number.isFinite(value) ? Number(value.toPrecision(digits)) : null);
 
-/** One series' summary for the watchdog prompt (watchdogRunStats builds the run's). */
-export const watchdogStats = (values) => {
+/**
+ * One series' summary for the watchdog prompt (watchdogRunStats builds the
+ * run's); `start` is the last restart's row, as seriesTrend takes it.
+ */
+export const watchdogStats = (values, { start = 0 } = {}) => {
     const stats = seriesStats(values);
     if (!stats) return null;
-    const { change } = seriesTrend(values);
+    const { change } = seriesTrend(values, { start });
     const summary = {
         n_steps: stats.nSteps,
         first: round(stats.first, 3),
@@ -250,7 +253,7 @@ export const watchdogRunStats = (plotData) => {
     const series = chiSeries(plotData);
     if (!series) return null;
     const judgement = judgeConvergence(series);
-    const summary = watchdogStats(series.total || series.terms[0].values);
+    const summary = watchdogStats(series.total || series.terms[0].values, { start: series.start });
     if (!summary) return null;
     if (series.total) summary.of = 'total';
     if (judgement.falling.length) summary.still_falling = judgement.falling;
