@@ -158,7 +158,10 @@ snapshot files pass unchanged).
   delegation, 2026-10-19), but its send-back names no analysis and no tool: "… Your answer concludes
   "no order beyond thermal motion", but this conclusion needs its evidence from an analysis run in
   this question. Answer from the analysis's result (quote its numbers by reference). If none can
-  run, say so in the answer instead of concluding." (arm B's names the analyses missing). The record
+  run, say so in the answer instead of concluding." (arm B's names the analyses missing); where an
+  analysis that would back it refused (protocol 2026-10-24.5), "… but an analysis that refused is no
+  evidence: this conclusion needs its evidence from an analysis that answered in this question. …"
+  (arm B's names the refusal and, for a window cut, both fixes). The record
   keeps the rule and the missing analyses for the reviewer (`gates`), and the end-of-turn finding
   names them too; the model reads neither (`harness/gate-send-back.arm-B.txt`, `.arm-C.txt`).
 
@@ -1150,6 +1153,24 @@ A, A+ and D were re-recorded with `--final` from a clean tree at that commit (`a
 A 0.800, A+ 0.948 and D 1.000 over 14. No score differs from the baselines before it; the records
 gain only the readings later changes added (the direction tier, the diffuse reading). No tag: tags
 are the user's. The live arms B and C wait for the user's go/no-go.
+
+**Protocol 2026-10-24.5 (a refused analysis backs no claim, the user's decision A5).** The user's
+words: "A5: option 2. A refused analysis doesn't count: the gate sends the claim back, and the model
+re-runs on the whole shell or asks me to confirm the window. Land it before the B/C runs." The
+evidence gate counts only a call that answered: a `refused` one (the tool's own `fail` check, such as
+`compute_bond_angles` refusing a window that cuts the shell) backs no claim, under `anyOf`,
+`firstOffered` and `allOf` alike; until now it ran and backed its claim. It is still an analysis (the
+dock's footer, each record step's `analysis`, `refused_calls`) and the Outcome still reads it as a
+failure. The send-back for a claim a refusal would have backed says it refused: arm B's names the
+tool and, for a window cut (a refusal whose data carry `refused`), both fixes — the whole shell, or
+the user's own window through `ask_user` and `window_confirmed` —, any other refusal only "Run it so
+that it answers"; arm C's names no tool, window or remedy. The end-of-turn finding and the Outcome's
+reason name the refusal ("did not run or refused"). The system prompt, the tools and every
+model-visible snapshot are unchanged (the 48k headroom stays 4,241 tokens for the dock's worst turn
+and 7,044 for arm B's). Arms A, A+ and D run no model and no gate: on dev their 45 records are
+identical apart from protocol and commit. The test set was not run; one re-freeze follows the next
+change. Approved by the user, 2026-10-24
+(`validation/findings/decisions/2026-10-24-refused-not-evidence.json`).
 
 ### The report beside the case score (plan item 1.6, part i)
 

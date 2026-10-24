@@ -216,6 +216,124 @@ describe('the evidence gate', () => {
     });
 });
 
+describe('a refused analysis backs no claim (the user\'s decision A5, 2026-10-24)', () => {
+    // A window-cut refusal, as compute_bond_angles and polyhedral_distortion
+    // return it: the fail check, and `refused` in the data saying what is withheld.
+    const cut = (name, args = {}) => ({ name, args, resultStatus: 'refused', checks: REFUSAL, data: { refused: 'the window cuts the coordination shell' } });
+    // Any other refusal: the fail check alone.
+    const refusal = (name, args = {}) => ({ name, args, resultStatus: 'refused', checks: REFUSAL });
+    const CN = 'Each Ta has CN 6.';
+    const WINDOW_NUDGE = '(From the app, not the user.) Your answer concludes a coordination number or a split shell, but compute_bond_angles '
+        + 'refused its window (it cuts the coordination shell), and a refused call is no evidence. Run it again on the whole shell, or, if the '
+        + 'user wants that window, ask them (ask_user) and call again with window_confirmed: true; then answer from its result (quote its '
+        + 'numbers by reference). If it cannot answer, say so in the answer instead of concluding.';
+    const OFF_REFUSED = (what) => `(From the app, not the user.) Your answer concludes ${what}, but an analysis that refused is no evidence: `
+        + 'this conclusion needs its evidence from an analysis that answered in this question. Answer from that analysis\'s result (quote its '
+        + 'numbers by reference). If none can answer, say so in the answer instead of concluding.';
+
+    it('a refused call followed by the claim is sent back: the window cut with both fixes under method full, no tool and no method under off', () => {
+        const full = sendBack({}, CN, [cut('compute_bond_angles')]);
+        expect(full).toMatchObject({ id: 'coordination', missing: ['find_gr_peaks'] });
+        expect(full.nudge).toBe(WINDOW_NUDGE);
+        expect(full.notice).toBe('The answer concluded a coordination number or a split shell on a refused call (compute_bond_angles), which is no '
+            + 'evidence; the app asked for an analysis that answers first.');
+        const off = sendBack({ method: 'off' }, CN, [cut('compute_bond_angles')]);
+        // The same claim, the same missing analysis and notice (for the record); the model reads no tool, window or remedy.
+        expect({ ...off, nudge: null }).toEqual({ ...full, nudge: null });
+        expect(off.nudge).toBe(OFF_REFUSED('a coordination number or a split shell'));
+        expect(off.nudge).not.toMatch(TOOLS);
+        expect(off.nudge.split(', but ')[1]).not.toMatch(/window|shell/);
+        // Only compute_bond_angles offered: the same.
+        expect(sendBack({ offered: ['compute_bond_angles'] }, CN, [cut('compute_bond_angles')])).toMatchObject({ id: 'coordination', missing: ['compute_bond_angles'], nudge: WINDOW_NUDGE });
+    });
+
+    it('another tool\'s refusal is said as a refusal only: run it so that it answers', () => {
+        const sent = sendBack({}, 'The Mo3 clusters breathe.', [refusal('analyze_clusters', { element: 'Mo' })]);
+        expect(sent).toMatchObject({ id: 'clusters', missing: ['analyze_clusters'] });
+        expect(sent.nudge).toBe('(From the app, not the user.) Your answer concludes the clusters\' distortion, breathing or rigidity, but '
+            + 'analyze_clusters refused, and a refused call is no evidence. Run it so that it answers, then answer from its result (quote its '
+            + 'numbers by reference). If it cannot answer, say so in the answer instead of concluding.');
+        expect(sent.nudge).not.toMatch(/window|whole shell|ask_user/);
+        expect(sendBack({ method: 'off' }, 'The Mo3 clusters breathe.', [refusal('analyze_clusters', { element: 'Mo' })]).nudge)
+            .toBe(OFF_REFUSED('the clusters\' distortion, breathing or rigidity'));
+        // A compute_bond_angles refusal that is no window cut (no angles in the window) offers no window to confirm.
+        expect(sendBack({}, CN, [refusal('compute_bond_angles')]).nudge).toMatch(/but compute_bond_angles refused, and a refused call is no evidence\. Run it so that it answers,/);
+    });
+
+    it('a refused call, then a successful re-run, then the claim: verified, nothing sent back', () => {
+        expect(sendBack({}, CN, [cut('compute_bond_angles'), 'compute_bond_angles'])).toBeNull();
+        const done = verifying({}, [cut('compute_bond_angles'), 'compute_bond_angles']).judge(CN).done;
+        expect(done.audit).toEqual([]);
+        expect(done.outcome.status).toBe('achieved');
+        // Confirmed by the user (window_confirmed): the call answers, with its warn.
+        const confirmed = { name: 'compute_bond_angles', args: { window_confirmed: true }, checks: [{ level: 'warn', text: 'kept: the user chose this window' }] };
+        expect(sendBack({}, CN, [cut('compute_bond_angles'), confirmed])).toBeNull();
+        // A repeat of the refusal from the cache is still a refusal.
+        expect(sendBack({}, CN, [cut('compute_bond_angles'), { ...cut('compute_bond_angles'), cached: true }])?.id).toBe('coordination');
+    });
+
+    it('anyOf: a refusal of one option and an answer of another passes; a refusal of every option goes back, naming each', () => {
+        const polyhedra = 'The TaSe6 octahedra are distorted.';
+        expect(sendBack({}, polyhedra, [cut('polyhedral_distortion'), 'analyze_clusters'])).toBeNull();
+        expect(sendBack({}, CN, [cut('compute_bond_angles'), 'find_gr_peaks'])).toBeNull();
+        const both = sendBack({}, polyhedra, [cut('polyhedral_distortion'), refusal('analyze_clusters')]);
+        expect(both).toMatchObject({ id: 'polyhedra', missing: ['polyhedral_distortion'] });
+        expect(both.nudge).toMatch(/but polyhedral_distortion refused its window \(it cuts the coordination shell\) and analyze_clusters refused, and a refused call is no evidence\. Run it again on the whole shell, or, if the user wants that window, ask them \(ask_user\) and call again with window_confirmed: true;/);
+        // At the end, the finding names the refusals, and the Outcome says so.
+        const done = verifying({}, [cut('polyhedral_distortion'), refusal('analyze_clusters')]).judge(polyhedra).done;
+        expect(done.audit).toEqual([{
+            rule: 'evidence', id: 'polyhedra', missing: ['polyhedral_distortion'], refused: ['polyhedral_distortion', 'analyze_clusters'], unrun: [],
+            text: 'The answer concludes a distortion of the coordination polyhedra, but polyhedral_distortion and analyze_clusters refused in this '
+                + 'question, and a refused call is no evidence.'
+        }]);
+        expect(done.outcome).toMatchObject({ status: 'not verified' });
+        expect(done.outcome.note).toBe('the analysis a conclusion needs did not run or refused (polyhedral_distortion, analyze_clusters).');
+    });
+
+    it('firstOffered: the needed analysis must have answered; a refusal of it, or an answer of the fallback, goes back', () => {
+        const lowering = 'Ta is coherently shifted along c, lowering the symmetry to P4mm.';
+        const sent = sendBack({}, lowering, [refusal('measure_symmetry_lowering')]);
+        expect(sent).toMatchObject({ id: 'lowering', missing: ['measure_symmetry_lowering'] });
+        expect(sent.nudge).toMatch(/but measure_symmetry_lowering refused, and a refused call is no evidence\. Run it so that it answers/);
+        // The fallback is not the needed one while measure_symmetry_lowering is offered.
+        expect(sendBack({}, lowering, [refusal('measure_symmetry_lowering'), 'detect_symmetry'])?.id).toBe('lowering');
+        expect(sendBack({}, lowering, [refusal('measure_symmetry_lowering'), 'measure_symmetry_lowering'])).toBeNull();
+        // detect_symmetry where measure_symmetry_lowering is not offered: its refusal goes back, its answer passes.
+        const offered = ['detect_symmetry'];
+        expect(sendBack({ offered }, lowering, [refusal('detect_symmetry')])).toMatchObject({ id: 'lowering', missing: ['detect_symmetry'] });
+        expect(sendBack({ offered }, lowering, [refusal('detect_symmetry'), 'detect_symmetry'])).toBeNull();
+    });
+
+    it('allOf: every requirement needs a call that answered; the send-back names what refused and what did not run', () => {
+        const answer = 'There is no local order beyond thermal motion.';
+        const directions = { name: 'analyze_displacement_directions', args: { site_ref: 2 } };
+        const clusters = { name: 'analyze_clusters', args: { element: 'Mo' } };
+        expect(sendBack({ catalog: MO_CLUSTERS }, answer, ['analyze_modulations', directions, clusters])).toBeNull();
+        const refused = sendBack({ catalog: MO_CLUSTERS }, answer, ['analyze_modulations', directions, refusal('analyze_clusters', { element: 'Mo' })]);
+        expect(refused).toMatchObject({ id: 'no-order', missing: ['analyze_clusters for Mo (its first Mo–Mo shell is a finite cluster\'s)'] });
+        expect(refused.nudge).toMatch(/but analyze_clusters refused, and a refused call is no evidence\. Run it so that it answers/);
+        // A refusal on one requirement beside one that never ran: both said.
+        const mixed = sendBack({ catalog: MO_CLUSTERS }, answer, [refusal('analyze_modulations'), clusters]);
+        expect(mixed.missing).toEqual(['analyze_modulations', 'analyze_displacement_directions on each kind of site (site_ref)']);
+        expect(mixed.nudge).toMatch(/but analyze_modulations refused, and a refused call is no evidence; this question has not run analyze_displacement_directions on each kind of site \(site_ref\)\. Run it so that it answers/);
+        expect(mixed.notice).toBe('The answer concluded "no order beyond thermal motion" on a refused call (analyze_modulations), which is no evidence, '
+            + 'and without analyze_displacement_directions on each kind of site (site_ref); the app asked for an analysis that answers first.');
+        const done = verifying({ catalog: MO_CLUSTERS }, [refusal('analyze_modulations'), clusters]).judge(answer).done;
+        expect(done.audit[0]).toMatchObject({ refused: ['analyze_modulations'], unrun: ['analyze_displacement_directions on each kind of site (site_ref)'] });
+        expect(done.audit[0].text).toBe('The answer concludes "no order beyond thermal motion", but analyze_modulations refused in this question, and a '
+            + 'refused call is no evidence; analyze_displacement_directions on each kind of site (site_ref) did not run.');
+        expect(done.outcome.note).toBe('the analysis a conclusion needs did not run or refused (analyze_displacement_directions on each kind of site (site_ref), analyze_modulations).');
+        // Under off: the toolless refusal text.
+        expect(sendBack({ catalog: MO_CLUSTERS, method: 'off' }, answer, [refusal('analyze_modulations'), clusters]).nudge).not.toMatch(TOOLS);
+    });
+
+    it('a refused call is still an analysis: the footer counts it and the Outcome reads it as a failure', () => {
+        const verification = createVerification();
+        expect(verification.record(step('compute_bond_angles', cut('compute_bond_angles')), () => ({ data: null }))).toMatchObject({ ref: 'r1', analysis: true });
+        expect(verification.judge('No conclusion.').done.outcome).toMatchObject({ status: 'not achieved' });
+    });
+});
+
 describe('judge: the fixed order', () => {
     it('decides the send-back on the answer with its references filled', () => {
         const verification = createVerification({ context: { structure: { elements: { Ti: 1, O: 3 } } } });
@@ -302,7 +420,7 @@ describe('record', () => {
         const analysis = (extra) => verification.record(step('x', extra), () => ({ data: null })).analysis;
         expect(analysis({})).toBe(true);
         expect(analysis({ resultStatus: 'error', error: 'bad arguments' })).toBe(true);
-        // The tool's own refusal ran: an analysis (a compute_bond_angles refusal backs its claim).
+        // The tool's own refusal ran: an analysis (the footer counts it), though it backs no claim (decision A5).
         expect(analysis({ resultStatus: 'refused', checks: REFUSAL })).toBe(true);
         // A call that never ran is none.
         expect(analysis({ resultStatus: 'unknown_tool', error: 'unknown tool "x"' })).toBe(false);
