@@ -20,7 +20,7 @@ tools: 12, in the order sent (each definition in full: harness/tools.arm-B.json)
   12. read_skill
 
 ## messages[0] · system
-(the system prompt, variant "tools-ask-skills": system-prompt/tools-ask-skills.txt, 11035 characters, sha256 3cc617dc3f91c602)
+(the system prompt, variant "tools-ask-skills": system-prompt/tools-ask-skills.txt, 11507 characters, sha256 c7def4b75ef1fadb)
 
 ## messages[1] · user
 Context for this RMC modeling run:

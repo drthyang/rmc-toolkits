@@ -95,6 +95,7 @@
  "skills_offered": [
   "coordination-shells",
   "displacement-anisotropy",
+  "local-order",
   "local-symmetry",
   "rmc-fit-assessment"
  ],
@@ -126,25 +127,25 @@
   {
    "round": 0,
    "why": "first",
-   "sent": "28330 characters, sha256 57a3aec537665cdf",
+   "sent": "28823 characters, sha256 a9b8c4f4d955d948",
    "num_ctx": null
   },
   {
    "round": 1,
    "why": "tools",
-   "sent": "29942 characters, sha256 08c03e461095cc83",
+   "sent": "30435 characters, sha256 dd6b24a380c27beb",
    "num_ctx": null
   },
   {
    "round": 1,
    "why": "gate",
-   "sent": "30561 characters, sha256 91ab03caeae08db7",
+   "sent": "31054 characters, sha256 46fd5fcfd10ed7b9",
    "num_ctx": null
   },
   {
    "round": 2,
    "why": "tools",
-   "sent": "34258 characters, sha256 9ad1233cb4254581",
+   "sent": "34751 characters, sha256 a0c2f45be8a2220c",
    "num_ctx": null
   }
  ],

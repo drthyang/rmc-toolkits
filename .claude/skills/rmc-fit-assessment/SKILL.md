@@ -13,8 +13,9 @@ description: >-
 
 **Status: Draft: awaiting the user's interview.** Written from the Workbench's own record (the
 llm README's spot check of 2026-10-10 and the referee-style review that followed it), the run
-dashboard's algorithm notes and the tools' checks. A step marked "(to confirm with the user)" is
-not yet the user's own practice: say in the answer which choice you made.
+dashboard's algorithm notes and the tools' checks; step 7 was added in validation batch 1 (the
+2026-10-14 tool review, approved by the user that day). A step marked "(to confirm with the
+user)" is not yet the user's own practice: say in the answer which choice you made.
 
 RMCProfile moves atoms to fit the data under constraints. It is a configuration optimization, not
 a Rietveld refinement: never call it a refinement, and there are no esds of refined parameters.
@@ -45,6 +46,14 @@ a Rietveld refinement: never call it a refinement, and there are no esds of refi
    detailed claim about a partial the data barely weight; structure at the box scale
    (`analyze_modulations` reports the strongest box-scale waves; in a 10×10×10 box they are not
    physics).
+7. **When box-scale waves void a modulation claim.** A long wave (every |q_i| ≤ 0.25 of the
+   cell's reciprocal axes) is a correlation RMC leaves in a finite box. It voids any claim of
+   order at its own q: never report it as a superstructure, a modulation or a cell doubling. It
+   does not void a zone-boundary point, or a mode at a general wavevector, that passes its own
+   test (ratio ≥ 3 and ≥ 3σ against independent displacements, corrected over the points
+   tested): the test already leaves long waves out of the background it compares with. A long
+   wave that dominates every element says the box is small or lightly sampled for statements
+   about long-range order (to confirm with the user).
 
 ## Judgment calls
 
@@ -63,6 +72,7 @@ a Rietveld refinement: never call it a refinement, and there are no esds of refi
 - [ ] `compare_fit` ran on every dataset the answer judges.
 - [ ] Constraint-limited peaks are named, with the constraint distance.
 - [ ] Sampling (moves per atom) and weakly weighted partials are stated.
+- [ ] No order is claimed at a box-scale wavevector (every |q_i| ≤ 0.25).
 - [ ] Every number comes from a tool or the context; no invented uncertainty.
 
 ## Known failure modes
@@ -76,8 +86,9 @@ a Rietveld refinement: never call it a refinement, and there are no esds of refi
 - **Missed the Ga–Se pile-up at the 2.2 Å constraint** (review): `find_gr_peaks` now checks
   each pair's constraint.
 - **Judged one space only** (the 5 K run: G(r) misfit checked, F(Q) not, still "achieved").
-- **The verdict is a self-assessment:** models wrote "achieved" even over a cut coordination
-  shell. The step cards' checks are the part to trust.
+- **The verdict was a self-assessment:** models wrote "achieved" even over a cut coordination
+  shell. *Firm rule in the app (THY-18):* the Outcome is computed from the checks; the model's
+  line only explains it.
 
 ## Report
 

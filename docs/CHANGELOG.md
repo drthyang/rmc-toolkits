@@ -149,6 +149,9 @@ approved by the user that day, each with a regression test and a finding in
 - **L4, two analyses:** `measure_symmetry_lowering` gives the coherent shift of a lowering (Å,
   direction, against the noise floor); `analyze_modulations` also tests general wavevectors.
 - **L5, answer checks:** cluster claims (distorted, breathing, rigid) and coordination numbers.
+- **Skills** (a PR of their own, for the user's review): the four drafts take the review's
+  proposals, and a new draft, `local-order`, says when "no order" may be concluded. All five await
+  the user's interview.
 
 The A+ control follows the new engines (dev-symmetry-lowering 0.83 → 1).
 

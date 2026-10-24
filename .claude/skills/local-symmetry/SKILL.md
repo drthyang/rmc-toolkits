@@ -13,8 +13,10 @@ description: >-
 
 **Status: Draft: awaiting the user's interview.** Written from the 2026-10-10 spot check (the
 space-group question with the chirality error), the review that followed, the Detected SG card's
-rules and the symmetry finder's notes. A step marked "(to confirm with the user)" is not yet the
-user's own practice: say in the answer which choice you made.
+rules and the symmetry finder's notes; the reporting rule of step 5 and the shift measurement were
+added in validation batch 1 (the 2026-10-14 tool review, approved by the user that day). A step
+marked "(to confirm with the user)" is not yet the user's own practice: say in the answer which
+choice you made.
 
 The finder analyses the **average** structure: the configuration folded into one cell, each
 reference site at its mean position. It says nothing directly about local distortions, which
@@ -38,7 +40,14 @@ average out: those are the displacement and cluster analyses' job.
 4. **Is the change real?** A rung below `noise_floor_A` is within the noise of the site means. A
    rung above it is a distortion of the average structure; say how large (the tolerance at which
    it appears) and compare with the published low-temperature structure when there is one.
-5. **Local versus average.** A cubic average with locally distorted clusters is possible and
+5. **The group to report.** Report the group of the lowest rung clearly above the noise floor
+   (from 1.25 × `noise_floor_A` up) as the average structure's group, with the Detected SG card's
+   0.2 Å group beside it when they differ: the card's default can hide a real lowering (a 0.07 Å
+   polar shift of every Ta reads Pm-3m at 0.2 Å, P4mm above the 0.026 Å floor). When they differ,
+   call `measure_symmetry_lowering`: which sites move from the parent positions, by how much (Å),
+   along which direction, against the noise floor. That shift is shared by every copy of the
+   site, so the displacement analyses cannot see it.
+6. **Local versus average.** A cubic average with locally distorted clusters is possible and
    common: for local distortion, use `analyze_clusters` and the displacement analyses, not the
    ladder.
 
@@ -54,8 +63,9 @@ average out: those are the displacement and cluster analyses' job.
 
 ## Judgment calls
 
-- The tolerance to quote as "the" space group of an RMC configuration: the card's 0.2 Å default,
-  the lowest rung above the noise floor, or both (to confirm with the user).
+- The tolerance to quote as "the" space group of an RMC configuration: the draft reports the
+  lowest rung above the noise floor with the card's 0.2 Å group beside it (batch 1; to confirm
+  with the user).
 - Whether a rung just above the noise floor is reported as a distortion or as "at the limit of
   the sampling" (to confirm with the user).
 - How to name a non-standard result ("≥" lower bounds, a crystal class without a number) in a
@@ -67,6 +77,8 @@ average out: those are the displacement and cluster analyses' job.
 - [ ] What changes between rungs is stated as lost operations (axes, centring, mirrors).
 - [ ] Inversion, chirality and polarity come from the point-group facts the tools report.
 - [ ] Rungs below the noise floor are called noise, not symmetry breaking.
+- [ ] The group reported is the lowest rung above the noise floor, with the card's group beside it
+      when it differs; a lowering is sized with `measure_symmetry_lowering`.
 - [ ] The average structure is not used as evidence for or against a local distortion.
 
 ## Known failure modes
@@ -78,6 +90,10 @@ average out: those are the displacement and cluster analyses' job.
   or says an inversion centre is lost from a group without one, gets a warning under it.
 - **Lower rungs read as symmetry breaking** (review): the Demo's P-42₁m … P1 rungs lie below the
   0.031 Å noise floor; the average structure is F-43m.
+- **The 0.2 Å card read as the group** (validation arm A, the symmetry-lowering dev case): every Ta
+  shifted 0.07 Å along [001] lies inside the card's tolerance, so the card says Pm-3m — the wrong
+  group, called centrosymmetric and non-polar. The ladder and the noise floor show P4mm, and
+  `measure_symmetry_lowering` gives Ta 0.065 Å along [0 0 1].
 
 ## Report
 

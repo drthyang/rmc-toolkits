@@ -767,9 +767,10 @@ from the spot check and the review:
 | `coordination-shells` | bond windows from the partial g(r), coordination against the ideal polyhedron, reading angle distributions | `compute_bond_angles` **refuses** a window that cuts the shell — by the one cut rule the Workbench's window question asks on (`context/shells.js` `windowCut`, approved by the user 2026-10-19): a window that meets its shell and holds fewer partner atoms than the whole shell by ≥ max(0.5, 15 % of its CN); the coordination counts (fewer than 60 % with the most common count, or most with none) decide only where the run reads no shell to compare — and returns the counts and the shell reading that show the cut (`shell_ab.cn_in_window` of `shell_ab.cn`), not the angles, unless `window_confirmed`, which the Workbench's window question sets when the user keeps their window; the polyhedron reading. The skill still states the counts rule (skill-lint allow-list, until the skill fact-sync PR) |
 | `local-symmetry` | the tolerance ladder, what breaks between rungs, the noise floor, point-group facts | the point-group facts and the chirality / centrosymmetry / polar / inversion checks |
 | `displacement-anisotropy` | ellipsoids, kurtosis, preferred directions and their σ, effect sizes | the preferred-direction check; the Workbench's one-site-or-pooled question |
+| `local-order` (validation batch 1) | when to say "no order": every analysis that could show one came back empty | the superstructure, cluster and direction checks |
 
 - **Progressive disclosure** (`copilot/skills.js`). The system prompt lists only each skill's name
-  and description (`skillIndex`, 2,150 characters for the four); the agent reads a skill
+  and description (`skillIndex`, 2,622 characters for the five); the agent reads a skill
   (4,700–5,500 characters each) with `read_skill(name)` and a reference file beside it with
   `read_skill(name, reference)`. `read_skill` has its own result budget (`resultBudget` 9,000) and
   is never compacted later in the question (`keep: true` in the tool contract), so the agent can
