@@ -423,7 +423,7 @@ describe('where a finding stands, and validation batch 1', () => {
             '2026-10-19-engine-verdicts', '2026-10-19-f5-shell-join', '2026-10-19-jt-split', '2026-10-19-judgment-dev-cases',
             '2026-10-19-list-sites-split', '2026-10-19-marginal-reset-dev', '2026-10-19-mode-polarisation', '2026-10-19-modulation-bar-and-family',
             '2026-10-19-modulation-null', '2026-10-19-provenance-told', '2026-10-19-shell-catalogue', '2026-10-19-shell-cut-rule',
-            '2026-10-24-fit-assessment-interview'
+            '2026-10-24-fit-assessment-interview', '2026-10-24-ft-error-propagation'
         ]);
         expect(existsSync(join(FRONTEND, 'validation/findings/decisions.jsonl'))).toBe(false);
         const record = readFileSync(join(DECISIONS, `${recomposed}.json`), 'utf8');
@@ -607,6 +607,23 @@ describe('where a finding stands, and validation batch 1', () => {
         expect(interview.commit).toMatch(/^[0-9a-f]{40}$/);
         expect(interview.tests.length).toBeGreaterThan(0);
         interview.tests.forEach((test) => {
+            const [path, title] = test.split(' › ');
+            expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+        });
+    });
+
+    it('decisions: the FT error propagation (the G(r) ribbon, compare_fit against σ(r)), approved on the user\'s delegation and implemented with its known-answer tests', () => {
+        const ribbon = decisions()['2026-10-24-ft-error-propagation'];
+        expect(ribbon).toMatchObject({
+            case: 'dev-fit-unconverged', kind: 'missing-tool', needs_user_approval: true, status: 'implemented',
+            approval: { by: 'user', date: '2026-10-24', batch: 3 }
+        });
+        for (const field of ['evidence', 'proposed_fix']) {
+            expect(ribbon[field], field).toMatch(/Approved by the manager on the user's delegation, 2026-10-24\./);
+        }
+        expect(ribbon.commit).toMatch(/^[0-9a-f]{40}$/);
+        expect(ribbon.tests.length).toBeGreaterThan(0);
+        ribbon.tests.forEach((test) => {
             const [path, title] = test.split(' › ');
             expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
         });

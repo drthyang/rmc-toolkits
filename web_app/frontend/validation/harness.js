@@ -198,7 +198,18 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // wavevector (long-wave) and a distribution's numbers quoted without saying
 // they come from one configuration (single-configuration). Arms A and A+ on
 // dev are unchanged.
-export const PROTOCOL_VERSION = '2026-10-24.1';
+// 2026-10-24.4: the FT error propagation (approved by the manager on the
+// user's delegation, 2026-10-24) — compare_fit reads an X-ray G(r)'s residual
+// features against σ(r), the G(r) file's own σ or the one propagated from the
+// input F(Q)'s σ through RMCProfile's transform (reproduced on the run's own
+// files first): each feature's relative_to_sigma and above_noise (≥ 3 σ), the
+// result's noise block (its source, the residual's rms in σ, the reproduction
+// residual and tolerance, the correlation between r points), and a note; a
+// G(r) without σ(r) says so and calls nothing above noise. Its description
+// says it (+56 tokens on the worst turns). The run module attaches the
+// ribbon's payload to an xPDF plot (dev-fit-unconverged's has no .dat: "No
+// σ(r)"). Arms A and A+ on dev are unchanged (they do not call compare_fit).
+export const PROTOCOL_VERSION = '2026-10-24.4';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one
 // follows the full method.
