@@ -141,7 +141,11 @@ snapshot files pass unchanged).
   crystal has A–B distances there", `compute_bond_angles`' octahedron note "Read the shape from
   histogram_10deg_sin_corrected (1 = random directions), not from the raw modes", and
   `detect_symmetry`'s point-group note "Take inversion, chirality and polarity from this, not from
-  memory".
+  memory". Two `analyze_modulations` notes say what a pattern is evidence of, an inference that arm
+  C drops as it drops the domain rules' (decided by the manager on the user's delegation,
+  2026-10-19; protocol 2026-10-19.19): the long-wave note loses "(common in RMC)" and the in-phase
+  diffuse note "(as RMC's long waves and acoustic-like thermal motion give)". Their facts and limits
+  ("not a crystallographic superstructure", "not a superstructure") stay.
 - **The evidence gate** runs and checks the same rules (decided by the manager on the user's
   delegation, 2026-10-19), but its send-back names no analysis and no tool: "… Your answer concludes
   "no order beyond thermal motion", but this conclusion needs its evidence from an analysis run in
@@ -309,8 +313,10 @@ ambiguous or wrong, so a model that reads the tools with judgment has room to ad
   only where the situation says, so each measures its own situation. The situation's own failure
   held on every seed tried (the octahedral case's under the cluster window before protocol
   2026-10-19.8). The side failures seen are reported with the PR as findings for the engines. The
-  weak-order pair shares one amplitude, set so the expected significance is 3σ. Its seeds come from
-  an outcome-neutral rule: one realised on each side of the bar (`judgmentCases.js`).
+  weak-order pair shares one amplitude, set so the expected significance is 3σ: since protocol
+  2026-10-19.19, the median realised σ against the modulation engine's independent-cell null, by the
+  spec's formula and checked with the engine on fresh configurations. Its seeds come from an
+  outcome-neutral rule: one realised on each side of the bar (`judgmentCases.js`).
 - **Scoring is unchanged.** Three things to read with it:
   - the verdict has no confidence field, so an honest "marginal" shows in the prose, the answer
     checks and the computed verdict, not in the score;
@@ -937,6 +943,7 @@ item 4.4).** What `analyze_modulations` returns changes for every arm that calls
 - **The marginal situation.** Both dev weak orders are now far above the 3σ bar, so the dev pair
   no longer straddles it; their amplitude was set from the null before F1. Re-setting it (and its
   held-out match's, set by the same rule) is the user's call; the case definitions are unchanged.
+  (The dev pair was re-set at protocol 2026-10-19.19, below.)
 - **Arm A+** reads cellDoubling, generalOrder and longWave as before; the diffuse finding is not
   among its readings (the verdict has no feature kind for it, and adding one changes the scoring).
 
@@ -994,6 +1001,43 @@ changes for every arm:
 **Arms A, A+ and D on dev** (`arm-a --split dev`, before and after): none of the 45 records moves
 (A+ reads no bond-angle window); `arm-a-dev.json` stays as recorded. The test set was not run.
 Approved by the user, 2026-10-19 (`validation/findings/decisions/2026-10-19-shell-cut-rule.json`).
+
+**Protocol 2026-10-19.19 (the marginal situation re-set for the independent-cell null).** The
+calibrated null of protocol 2026-10-19.16 gives an isotropic site three components where the
+earlier null took one. The dev weak-order pair's amplitude had been set from that one-component
+bound to an expected 3σ, so against the calibrated null both of its seeds sat far above the bar:
+the situation was no longer marginal.
+- **The knob** ([`judgment-spec.md`](../../web_app/frontend/validation/judgment-spec.md), the
+  held-out author's only description of it). The B power at q is a scaled noncentral χ² of three
+  degrees of freedom. The null is three weighted χ²₁ terms whose weights come from the site's own
+  cell covariance. σ is Šidák-corrected over every zone-boundary point of every element. The
+  expected significance is the median realised σ, which is the σ of the median power. The spec says
+  how to evaluate it and how to check it with the engine on fresh configurations, and its scan
+  (`judgment.test.js`) still finds no dev value. `judgment.test.js` evaluates the formula with the
+  engine's own functions (the noncentral χ² median against scipy's).
+- **The dev pair.** The pair's amplitude is re-set by that formula to an expected 3σ. Over 5,000
+  fresh configurations the engine clears the bar on about half. The seeds are re-taken by the
+  pair's rule, fixed before any σ was read at the new amplitude: the same sequence, the first
+  realised in [3, 4] and the first in [2.5, 3). Every other parameter is kept. The values are in
+  the decision record and the PR, not here, since the held-out author may read this document.
+- **Arm C.** `analyze_modulations`' long-wave and in-phase notes lose their causal parentheticals
+  ([Arm C](#arm-c-the-copilot-without-the-method)). Arm B and the dock read them byte for byte as
+  before. Arm C's samples are `tool-results/analyze_modulations.method-off.json` and
+  `analyze_modulations.element.method-off.json`. On the dev set three cases carry a long-wave note
+  and none an in-phase note.
+
+**Arms A, A+ and D on dev** (`arm-a --split dev` before at f0979a7, after at c9fea9c): the six
+records of the two re-set cases move, with their configurations and truths. One A+ record claims
+the weak order as before. The other no longer does, since its order is below the bar, so A+ misses
+there as the situation intends; its score falls. Every other record is identical apart from
+protocol and commit, and so is every arm A and D score. The six are re-recorded in
+`arm-a-dev.json`. The test set was not run; its two marginal matches are to be re-set from the spec
+by their author, in a separate change. What the model is sent is unchanged for arm B and the dock
+(every model-visible snapshot). The scripted record `judgment.edge-above` moves with its case (the
+tool's rows and check, the truth, and each request's length and hash); `judgment.edge-below` keeps
+its configuration and does not change. Approved by the manager on the user's delegation,
+2026-10-19; the user may reverse it before the freeze
+(`validation/findings/decisions/2026-10-19-marginal-reset-dev.json`).
 
 ### The report beside the case score (plan item 1.6, part i)
 
@@ -1447,7 +1491,8 @@ folder, with no model and no network:
   `ask_user` answer, a `read_skill` and a window that cuts the Ta–Se shell, as the `tool` message
   the agent loop appends (budget applied, checks, `ref`, note); `*.method-off.json`: the Demo's
   results whose checks carry method advice (`find_gr_peaks` on Ta–Se and Ta–Ta, `compute_bond_angles`
-  on the whole shell and in the refused cut window, `detect_symmetry`), as arm C reads them;
+  on the whole shell and in the refused cut window, `detect_symmetry`, `analyze_modulations` with
+  and without an element named), as arm C reads them;
 - `tool-messages/<path>.txt`: every tool message no other file covers, as the raw string the model
   reads, byte for byte and in order: a call that did not run (an unknown tool, a fifth call), the
   questions (refused, malformed, unasked, skipped with and without a default, typed), arguments

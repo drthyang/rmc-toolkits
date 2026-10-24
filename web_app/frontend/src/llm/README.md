@@ -921,7 +921,9 @@ tool with either name is refused, and the dock says so in its error line.
     refusal still refuses. In this repository: `compute_bond_angles`' cut-window refusal,
     no-angles failure and octahedron note, the pooled-directions note, `analyze_clusters`' window
     failures and split-site note, `find_gr_peaks`' split-shell notes and unseparated-shell warning,
-    `detect_symmetry`'s point-group note.
+    `detect_symmetry`'s point-group note, and `analyze_modulations`' long-wave and in-phase notes,
+    whose causal parentheticals (what the pattern is evidence of) are inference, as in the domain
+    rules: arm C reads their facts and limits without them.
 - `signal` aborts on Stop or timeout. Stop the work if you can.
 - `focus` is the dock's card-focus controller, for view tools: `await focus.show(ids, { marks })`,
   `focus.onClear(undo)` (runs when the highlight ends), `focus.state()`.

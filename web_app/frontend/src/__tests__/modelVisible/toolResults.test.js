@@ -77,14 +77,18 @@ const SAMPLES = [
 // plan item 1.8): the Demo's results whose checks carry method advice, each
 // sent without it — the split-shell note keeps its reading, the cut window is
 // still refused, the octahedron counts, the point group's facts and the
-// unseparated Ta–Ta shell keep their facts. With method 'full' the first four
-// are the files above (Ta–Ta has no full-method file).
+// unseparated Ta–Ta shell keep their facts, and the modulations' long-wave and
+// in-phase notes keep their limits without what the pattern is evidence of
+// (protocol 2026-10-19.19). With method 'full' every one but Ta–Ta is a file
+// above.
 const METHOD_OFF_SAMPLES = [
     ['find_gr_peaks.method-off', 'find_gr_peaks', { pair: 'Ta-Se' }, { method: 'off' }],
     ['find_gr_peaks.Ta-Ta.method-off', 'find_gr_peaks', { pair: 'Ta-Ta' }, { method: 'off' }],
     ['compute_bond_angles.method-off', 'compute_bond_angles', { end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.21, r12_max: 3.23 }, { method: 'off' }],
     ['compute_bond_angles.cut-window-refused.method-off', 'compute_bond_angles', CUT, { workbench: false, method: 'off' }],
-    ['detect_symmetry.method-off', 'detect_symmetry', { tolerance_A: 0.2 }, { method: 'off' }]
+    ['detect_symmetry.method-off', 'detect_symmetry', { tolerance_A: 0.2 }, { method: 'off' }],
+    ['analyze_modulations.method-off', 'analyze_modulations', {}, { method: 'off' }],
+    ['analyze_modulations.element.method-off', 'analyze_modulations', { element: 'Ta' }, { method: 'off' }]
 ];
 
 describe('tool results as the model reads them (the Demo run)', () => {

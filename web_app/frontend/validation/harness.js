@@ -175,8 +175,14 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // shell_ab.cn), and every result adds the shell reading (shell_ab, shell_bc)
 // and the counts' modal, modal_share and unbonded_share. A whole shell is
 // never refused (dev-offcentre's Nb–Nb), a sub-shell first peak always unless
-// the user chose it (the Demo's Ta–Se, dev-jahn-teller's Cu–F).
-export const PROTOCOL_VERSION = '2026-10-19.18';
+// the user chose it (the Demo's Ta–Se, dev-jahn-teller's Cu–F);
+// 2026-10-19.19: the marginal situation re-set for the independent-cell null
+// — the dev weak-order pair's amplitude set so its expected (median)
+// significance at q is 3σ (judgment-spec.md's new formula), its seeds by its
+// rule, one on each side of the bar again — and arm C reads analyze_modulations'
+// long-wave and in-phase notes without what the pattern is evidence of
+// (inference); arm B unchanged.
+export const PROTOCOL_VERSION = '2026-10-19.19';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one
 // follows the full method.

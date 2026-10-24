@@ -46,6 +46,10 @@ const runBoth = async (item) => {
 // peak cell's radius (± 37.4° there): A+ applies the tool's bound and takes
 // PC1 where the cell is wider than 15° (every dev case: ν = 1 or 2), so its
 // pin is 0.8571 again; arm A reads the page as a user would, 0.7857.
+// The marginal pair re-set (protocol 2026-10-19.19: its amplitude from the
+// calibrated null, its seeds by its rule): dev-weak-order-b's A+ is 0.8333
+// again — its weak order is below the bar, 2.63σ — and no other pin moved
+// (dev-weak-order-a's A+ claims its order at 3.02σ, as before at 6.41σ).
 const BAR = [
     ['dev-offcentre', 1, [], 1, []],
     ['dev-zone-boundary', 0.6667, ['off_centre Ti'], 1, []],
@@ -61,7 +65,7 @@ const BAR = [
     ['dev-eight-site', 0.6667, ['jahn_teller Nb'], 0.6667, ['jahn_teller Nb']],
     ['dev-octahedral-clusters', 0.8333, [], 1, []],
     ['dev-weak-order-a', 0.8333, [], 1, []],
-    ['dev-weak-order-b', 0.8333, [], 1, []]
+    ['dev-weak-order-b', 0.8333, [], 0.8333, []]
 ];
 
 describe('the model-free arms on the dev cases (the bar)', () => {
@@ -121,9 +125,9 @@ describe('the model-free arms on the dev cases (the bar)', () => {
         expect(reading.value.Sr.polarisation).toBeUndefined();
         // dev-weak-order-a: no Nb site is prolate (the order is far below the
         // thermal width), so the claim had no direction; the polarisation gives
-        // one (10° from the planted axis, which the truth does not score).
+        // one (5.6° from the planted axis, which the truth does not score).
         const weak = await runBoth(DEV_CASES.find((item) => item.id === 'dev-weak-order-a'));
-        expect(weak.sweep.verdict.features).toEqual([{ kind: 'modulation', element: 'Nb', q: [0.5, 0.5, 0], direction_uvw: [0.17, 0.06, 1] }]);
+        expect(weak.sweep.verdict.features).toEqual([{ kind: 'modulation', element: 'Nb', q: [0.5, 0.5, 0], direction_uvw: [-0.1, -0.02, 1] }]);
     });
 
     it('A+ reads a Jahn–Teller claim\'s long − short from the app\'s split where the shell is joined (plan item 4.2)', async () => {
@@ -259,23 +263,28 @@ describe('the model-free arms on the dev cases (the bar)', () => {
         const cut = await run.engine('clusters', { element: 'W', rMin: shell.firstPeak.window[0], rMax: shell.firstPeak.window[1] });
         expect(cut.verdict.window.extendedNetwork.because).toBe('no_clusters');
 
-        // A signal at the edge of significance: one weak order, a seed on
-        // each side of the fixed 3σ bar as the null before F1 read them
-        // (realised 3–4σ and 2.5–3σ). Against the independent-cell null (F1,
-        // protocol 2026-10-19.16) one isotropic Nb site has three components,
-        // not the one the bound took, and both are far above the bar: A+ claims
-        // both. The situation needs its amplitude re-set from the calibrated
-        // null (the case definitions are the user's call).
-        for (const [id, sigma] of [['dev-weak-order-a', 6.41], ['dev-weak-order-b', 5.65]]) {
+        // A signal at the edge of significance: one weak order at the
+        // amplitude whose expected (median) significance against the
+        // independent-cell null is 3σ (re-set at protocol 2026-10-19.19), a
+        // seed on each side of the fixed 3σ bar by the pair's rule (realised
+        // 3–4σ and 2.5–3σ, the B point at rank 1 among the compared modes in
+        // both). The fixed bar claims the one and misses the other, though the
+        // engines read the same weak order in both; until the re-set both sat
+        // far above the bar (6.41σ and 5.65σ) and A+ claimed both.
+        for (const [id, sigma, ordered] of [['dev-weak-order-a', 3.02, true], ['dev-weak-order-b', 2.63, false]]) {
             const weak = await judged(id);
             const payload = await (await weak.run).engine('modulations', {});
             const nb = payload.elements.find((entry) => entry.element === 'Nb');
             const point = nb.zoneBoundary.find((entry) => entry.q.join() === '0.5,0.5,0');
-            expect(point.sigma, id).toBeCloseTo(sigma, 1);
-            expect(point.ordered, id).toBe(true);
-            expect(found(weak.scoreSweep), id).toEqual(['modulation:true']);
-            // The bound before F1 (one component per site) put them on either side of the bar.
-            expect(zoneBoundarySigma(point.ratio * nb.medianPower, nb.sites, payload.family.zoneBoundaryPoints) >= 3, id).toBe(id === 'dev-weak-order-a');
+            expect(point.sigma, id).toBeCloseTo(sigma, 2);
+            expect(point.rank, id).toBe(1);
+            expect(point.ordered, id).toBe(ordered);
+            expect(nb.verdict.cellDoubling.answer, id).toBe(ordered);
+            expect(found(weak.scoreSweep), id).toEqual([`modulation:${ordered}`]);
+            // One isotropic site, three null components; the one-component
+            // bound the null took before F1 would put both far below the bar.
+            expect(nb.nullDof, id).toBeCloseTo(3, 1);
+            expect(zoneBoundarySigma(point.ratio * nb.medianPower, nb.sites, payload.family.zoneBoundaryPoints), id).toBeLessThan(2);
         }
     }, 120000);
 });

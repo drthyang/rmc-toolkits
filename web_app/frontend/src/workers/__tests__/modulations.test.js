@@ -272,8 +272,10 @@ describe('the Šidák family is every element of the configuration (F3)', () => 
     });
 
     it('dev-weak-order-b (F3\'s case): the same point and verdict whether or not the call names its element', () => {
-        // Against the independent-cell null (F1) the weak order is 5.6σ,
-        // ordered; the bound χ²₁ the null took until F1 read it at 2.96σ.
+        // The pair re-set at protocol 2026-10-19.19 (its amplitude from the
+        // independent-cell null): the weak order reads 2.63σ, below the bar,
+        // whether or not the call names Nb. (At F3 it read 2.96σ under the
+        // null before F1, at F1 5.6σ; its own 7 points now give 2.99σ.)
         const item = DEV_CASES.find((entry) => entry.id === 'dev-weak-order-b');
         const parsed = siteDisplacementsFromRmc6f(buildCase(item, { partials: false }).rmc6f);
         const element = item.params.elements[1];
@@ -283,10 +285,12 @@ describe('the Šidák family is every element of the configuration (F3)', () => 
         expect(every.family.zoneBoundaryPoints).toBe(21);
         const point = atQ(named, element, item.params.q);
         expect(point).toEqual(atQ(every, element, item.params.q));
-        expect(point.sigma).toBeCloseTo(5.647, 3);
-        expect(point.ordered).toBe(true);
-        expect(named.elements[0].verdict.cellDoubling).toMatchObject({ answer: true, because: 'ordered_point' });
-        expect(zoneBoundarySigma(point.ratio * named.elements[0].medianPower, 1, 21)).toBeCloseTo(2.959, 3);
+        expect(point.sigma).toBeCloseTo(2.633, 3);
+        expect(point).toMatchObject({ ordered: false, because: 'below_sigma' });
+        expect(named.elements[0].verdict.cellDoubling).toMatchObject({ answer: false, because: 'no_ordered_point' });
+        const power = point.ratio * named.elements[0].medianPower;
+        expect(zoneBoundarySigma(power, independentCellNull(parsed, element), 7)).toBeCloseTo(2.987, 3);
+        expect(zoneBoundarySigma(power, 1, 21)).toBeCloseTo(0.860, 3);
     });
 });
 
@@ -339,9 +343,15 @@ describe('the independent-cell null (F1; independent_cell_null and null_tail are
     });
 
     it('dev-weak-order-a and -b: one isotropic site has three components, so the weak order reads 6.4σ and 5.6σ', () => {
+        // F1's known answer, on the pair as it was then (protocol
+        // 2026-10-19.16): its amplitude and seeds before the re-set of
+        // protocol 2026-10-19.19, which took the amplitude down to an expected
+        // 3σ against this null (validation/__tests__/judgment.test.js).
+        const atF1 = { 'dev-weak-order-a': { delta: 0.018, seed: 132 }, 'dev-weak-order-b': { delta: 0.018, seed: 133 } };
         for (const [id, sigma] of [['dev-weak-order-a', 6.413], ['dev-weak-order-b', 5.647]]) {
-            const item = DEV_CASES.find((entry) => entry.id === id);
-            const result = displacementModulations(builtCase(id));
+            const current = DEV_CASES.find((entry) => entry.id === id);
+            const item = { ...current, params: { ...current.params, ...atF1[id] } };
+            const result = displacementModulations(siteDisplacementsFromRmc6f(buildCase(item, { partials: false }).rmc6f));
             const entry = result.elements.find((candidate) => candidate.element === item.params.elements[1]);
             const point = entry.zoneBoundary.find((candidate) => candidate.q.join() === item.params.q.join());
             expect(point.sigma, id).toBeCloseTo(sigma, 2);

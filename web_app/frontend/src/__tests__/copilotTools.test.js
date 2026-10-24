@@ -797,8 +797,9 @@ describe('Copilot summarizers', () => {
         // The modulations fixture's weak doubling: Nb at (0, 0, ½), 2.99σ over
         // the 21 zone-boundary points against the independent-cell null (F1).
         // Its usual rounding (3.0 in the row, "3σ" in the sentence) would read
-        // the bar. (Until F1 the known answer was dev-weak-order-b at 2.96σ:
-        // the calibrated null reads that order at 5.6σ.)
+        // the bar. (Until F1 the known answer was dev-weak-order-b at 2.96σ,
+        // which the calibrated null read at 5.6σ until the pair was re-set at
+        // protocol 2026-10-19.19.)
         const weak = modulationsFixture.cases.find((entry) => entry.name.startsWith('weak doubling'));
         const synthetic = summarizeModulations(displacementModulations(siteDisplacementsFromRmc6f(weak.text)));
         expect(synthetic.checks[0].text).toBe('No order that doubles the cell: no zone-boundary point stands out of the diffuse background '
@@ -832,12 +833,11 @@ describe('Copilot summarizers', () => {
         // No single mode is ordered: the per-mode tests say no order, the facts hold none.
         expect(anti.facts.modulation).toEqual({ elements: ['Ag', 'Nb'], ordered: [], general: [] });
         const inPhase = run('diffuse order in phase');
-        expect(inPhase.checks.find((check) => /correlated in phase/.test(check.text))).toEqual({
-            level: 'note',
-            text: 'Nb displacements are correlated in phase between neighbouring cells (+0.47 between cells [0 0 1] apart, 4.6σ against '
-                + 'independent cells): the power beyond the long waves leans toward the zone centre — neighbouring cells moving together '
-                + '(as RMC\'s long waves and acoustic-like thermal motion give), not a superstructure.'
-        });
+        const together = inPhase.checks.find((check) => /correlated in phase/.test(check.text));
+        expect(together.level).toBe('note');
+        expect(together.text).toBe('Nb displacements are correlated in phase between neighbouring cells (+0.47 between cells [0 0 1] apart, 4.6σ against '
+            + 'independent cells): the power beyond the long waves leans toward the zone centre — neighbouring cells moving together '
+            + '(as RMC\'s long waves and acoustic-like thermal motion give), not a superstructure.');
         // Too few compared modes (a 4 × 4 × 4 grid): no row, no word.
         const small = run('doubled (4, 4, 4)');
         expect(small.data.elements.every((entry) => entry.diffuse === undefined)).toBe(true);
@@ -902,12 +902,16 @@ describe('Copilot summarizers', () => {
         expect(named.data.elements[0]).toEqual(every.data.elements.find((entry) => entry.element === 'Nb'));
         expect(named.data.note).toContain('corrected over all 21 zone-boundary points of the configuration\'s 3 elements, whichever the call names');
         expect(named.facts.modulation).toEqual({ elements: ['Nb'], ordered: [], general: [] });
-        // dev-weak-order-b (F3's case until F1): the same Nb data whether or not the call names it, now ordered.
+        // dev-weak-order-b (F3's case until F1; below the bar again since its
+        // re-set, protocol 2026-10-19.19): the same Nb data and the same "no
+        // order" whether or not the call names it.
         const tools = devTools('dev-weak-order-b');
         const all = await tools.analyze_modulations.run({});
         const nb = await tools.analyze_modulations.run({ element: 'Nb' });
         expect(nb.data.elements[0]).toEqual(all.data.elements.find((entry) => entry.element === 'Nb'));
-        expect(nb.facts.modulation).toEqual({ elements: ['Nb'], ordered: [{ element: 'Nb', q: [0.5, 0.5, 0] }], general: [] });
+        expect(nb.checks[0].text).toBe(all.checks[0].text);
+        expect(nb.checks[0].text).toMatch(/^No order that doubles the cell: .* \(the strongest, Nb at \(½, ½, 0\), is 7\.7× the median, 2\.6σ after the correction\)\.$/);
+        expect(nb.facts.modulation).toEqual({ elements: ['Nb'], ordered: [], general: [] });
     });
 
     it('cluster summary: other_sizes never lists the analysed kind, on a tie too (review 2026-10-12 #17)', () => {
@@ -1004,5 +1008,45 @@ describe('the engine tools\' method advice: what arm C reads without it', () => 
         expect(split.text).toMatch(/does not make the clusters regular\. Read the pattern \(axis families, trigonality\), the partial g\(r\) shell \(find_gr_peaks\) and the bond angles\.$/);
         expect(checkText(split, 'off')).toMatch(/^Split sites: 2 of the 3 member sites \(3, 5\) have two positions .* does not make the clusters regular\.$/);
         for (const check of [extended, none, split]) expect(toolNames(checkText(check, 'off'))).toEqual([]);
+    });
+
+    it('analyze_modulations: the long-wave and in-phase notes keep their facts and limits; arm C reads them without what the pattern is evidence of', async () => {
+        // A causal explanation is an inference (as in the domain rules): arm C
+        // drops it, and keeps the definition and the limit. Arm B reads each
+        // note byte for byte as before (the Demo's tool-result snapshots).
+        const { checks } = await tools.analyze_modulations.run({});
+        const longWaves = checks.filter((check) => /strongest mode is a long-wavelength wave/.test(check.text));
+        expect(longWaves.map((check) => check.text)).toEqual([
+            'Ga\'s strongest mode is a long-wavelength wave, q = (0.2, 0, 0) at 13× the median: box-scale displacement correlations '
+                + '(common in RMC), not a crystallographic superstructure.',
+            'Se\'s strongest mode is a long-wavelength wave, q = (0.1, 0.2, -0.1) at 33× the median: box-scale displacement correlations '
+                + '(common in RMC), not a crystallographic superstructure.',
+            'Ta\'s strongest mode is a long-wavelength wave, q = (0.1, 0.2, -0.1) at 13× the median: box-scale displacement correlations '
+                + '(common in RMC), not a crystallographic superstructure.'
+        ]);
+        for (const check of longWaves) {
+            expect(check.level).toBe('note');
+            expect(checkText(check, 'full')).toBe(check.text);
+            expect(checkText(check, 'off')).toBe(check.text.replace(' (common in RMC)', ''));
+            expect(checkText(check, 'off')).toMatch(/× the median: box-scale displacement correlations, not a crystallographic superstructure\.$/);
+        }
+        const together = checks.find((check) => /correlated in phase/.test(check.text));
+        expect(together.level).toBe('note');
+        expect(checkText(together, 'full')).toBe('Ga, Se and Ta displacements are correlated in phase between neighbouring cells (the strongest, Se, '
+            + '+0.22 between cells [0 0 1] apart, > 8σ against independent cells): the power beyond the long waves leans toward the zone '
+            + 'centre — neighbouring cells moving together (as RMC\'s long waves and acoustic-like thermal motion give), not a superstructure.');
+        expect(checkText(together, 'off')).toBe('Ga, Se and Ta displacements are correlated in phase between neighbouring cells (the strongest, Se, '
+            + '+0.22 between cells [0 0 1] apart, > 8σ against independent cells): the power beyond the long waves leans toward the zone '
+            + 'centre — neighbouring cells moving together, not a superstructure.');
+        // The sentences themselves, as any engine payload reaches them: the
+        // same advice, listed apart (methodCheck).
+        expect(MODULATION_SENTENCES.longWave.long_wave_dominates({ element: 'Sr', mode: { q: [0.125, 0, 0], ratio: 100 } }).method)
+            .toEqual([' (common in RMC)']);
+        expect(MODULATION_SENTENCES.diffuseOrder.correlated_in_phase({
+            elements: ['Nb'], strongest: 'Nb', diffuse: { correlation: 0.3, lag: [0, 0, 1], sigma: 5 }
+        }).method).toEqual([' (as RMC\'s long waves and acoustic-like thermal motion give)']);
+        // Every other modulation check carries no advice: arm C reads it whole.
+        checks.filter((check) => check !== together && !longWaves.includes(check))
+            .forEach((check) => expect(checkText(check, 'off'), check.text).toBe(check.text));
     });
 });

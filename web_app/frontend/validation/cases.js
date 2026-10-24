@@ -302,7 +302,8 @@ const perovskiteSites = ([A, B, X]) => [
     { el: X, frac: [0.5, 0, 0.5], bond: 1 },
     { el: X, frac: [0, 0.5, 0.5], bond: 0 }
 ];
-const THERMAL = { A: 0.08, B: 0.06, X_PAR: 0.05, X_PERP: 0.09 };
+// Exported for the marginal situation's expected significance (judgment-spec.md).
+export const THERMAL = Object.freeze({ A: 0.08, B: 0.06, X_PAR: 0.05, X_PERP: 0.09 });
 const perovskiteThermal = (sites, index, rng) => {
     const site = sites[index];
     if (index === 0) return gauss3(rng, THERMAL.A);
