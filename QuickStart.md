@@ -89,8 +89,9 @@ What the Copilot can do:
 - With a model that can call tools (e.g. `gemma4`, `qwen3`), it runs the analyses itself: the
   site table, displacement directions, bond angles, symmetry at a tolerance, g(r) peaks and
   coordination shells, convergence, where the fit misses the data (`compare_fit`), cluster
-  distortion against independent atoms (`analyze_clusters`) and order that enlarges the cell
-  (`analyze_modulations`).
+  distortion against independent atoms (`analyze_clusters`), the distortion of coordination
+  polyhedra against the average structure's (`polyhedral_distortion`) and order that enlarges the
+  cell (`analyze_modulations`).
 - It checks each result and retries when a check fails, for example by widening an empty bond
   window.
 - When a choice changes the result (which coordination shell, which neighbours, one site or all),

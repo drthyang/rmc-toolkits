@@ -586,11 +586,11 @@ the model's own `ask_user` still works beside it.
   (whether the answer keeps the user's own window: the clarifier choice's flag, true for "Keep …",
   never read from the label).
 - **Before an analysis runs** (`beforeCall`, for tools that declare `shellWindows(args)`:
-  `compute_bond_angles`, `analyze_clusters`): a window that overlaps a first shell but holds less
-  of it by the same margin is put to the user — the whole first shell (default) or the window as
-  asked — and the analysis runs in the one chosen, its tool message saying so. It is the one cut
-  rule (`context/shells.js` `windowCut`): `compute_bond_angles` refuses exactly such a window
-  unless the user chose it. The spot check's
+  `compute_bond_angles`, `polyhedral_distortion`, `analyze_clusters`): a window that overlaps a
+  first shell but holds less of it by the same margin is put to the user — the whole first shell
+  (default) or the window as asked — and the analysis runs in the one chosen, its tool message
+  saying so. It is the one cut rule (`context/shells.js` `windowCut`): `compute_bond_angles` and
+  `polyhedral_distortion` refuse exactly such a window unless the user chose it. The spot check's
   2.3–2.7 Å Se–Ta–Se window: "it holds 3.8 Se per Ta of the shell's 6". Once per question: the
   choice is remembered by (centre, partner, window), and a later call with that window runs in the
   chosen one unasked (a model that repeats its cut window every round is asked once); a call
@@ -1054,6 +1054,7 @@ In this repository the host tools live in `src/copilotTools.js`:
 | `list_sites` | the per-site PCA table, through the worker or `/api/pca/sites`: per-axis kurtosis on resolved axes, PC1 as `[u v w]`, and a split site's static displacement with its sampling error (`delta_A`, `delta_se_A`) |
 | `analyze_displacement_directions` | the orientation engine with calibrated significances and `[u v w]` (Show in Displacement Directions selects the site and resolution) |
 | `compute_bond_angles` | the triplets engine (Show in Bond Geometry fills the triplet and windows, then computes); the sin θ-corrected histogram, and a whole shell of ~6 or ~4 neighbours read against an ideal octahedron or tetrahedron |
+| `polyhedral_distortion` | the polyhedral-distortion engine (`workers/distortion.js`, `/api/distortion`): a centre element's coordination polyhedra of the most common count, by Baur's bond-length distortion index and, for octahedra and tetrahedra, Robinson's quadratic elongation and bond-angle variance, over the configuration's polyhedra (mean, sd, percentiles) and the average structure's, so a static distortion separates from thermal spread — for polyhedra isolated or in an extended network, where `analyze_clusters`' null does not apply. A window that cuts the shell is refused by `compute_bond_angles`' rule (`windowCut`, its `shellWindows`) unless `window_confirmed`; no facts |
 | `analyze_clusters` | the cluster engine (`workers/clusters.js`, `/api/clusters`): the shape of an element's finite clusters (M₄ tetrahedra, dimers, trimers) against a shuffle null of independent atoms, and the average cluster's own distortion. The engine returns its own verdict (distorted, breathing, rigid, split member sites, …); the tool shapes the data and says each finding (`CLUSTER_SENTENCES`), and its `facts` are the verdict's answers |
 | `analyze_modulations` | the modulation engine (`workers/modulations.js`, `/api/modulations`): each element's displacement power at the zone-boundary points and its strongest modes against the configuration's diffuse background — order that enlarges the cell, which the folded average cannot show, and correlation between cells at a general wavevector (incommensurate or short-range). The engine returns each point's calibrated σ against independent cells, each cell's own correlations kept (corrected over every element's points, whichever the call names), each point's polarisation (the direction the atoms move in that mode, with its share of the power) and each element's verdict (cell doubling, general order, long wave, and diffuse order between cells: correlation between neighbouring cells spread over many q); the tool renders them (`MODULATION_SENTENCES`), the polarisation of ordered points only, a `diffuse` row per element, antiphase correlation as short-range order and in-phase correlation as neighbouring cells moving together, and never prints a ratio, σ or correlation below its bar rounded onto it |
 | `detect_symmetry` | the symmetry finder at any tolerance, without changing the card, with the point group's facts (inversion, Sohncke, polar); offered when the run's structure has an average-structure basis (a browser-loaded run, or a server folder through `/api/structure`, which above the finder's 2000-site cap sends only its size; not a coords-only file). Above the cap it answers "not analysed", in both runtimes |
