@@ -226,7 +226,22 @@ export const summarizeSites = (payload, { element = null, unitCell = undefined }
     if (sites.length && !checks.some((check) => check.level === 'warn' || check.level === 'fail')) {
         checks.push({ level: 'ok', text: `${sites.length} sites, ${payload?.totalAtoms ?? '?'} atoms.` });
     }
-    return { data, checks };
+    // For the disorder check (the displacement-anisotropy interview,
+    // 2026-10-24): which sites are split (the app's rule) or flat-topped (a
+    // negative Mardia kurtosis that misses it), with their species.
+    const facts = {
+        sites: picked.map((site) => {
+            const split = isSplitSite(site);
+            return {
+                ref: site.referenceNumber,
+                element: site.element,
+                elements: Object.keys(site.elementCounts || { [site.element]: 1 }),
+                split,
+                flat: !split && Number.isFinite(site.nonGaussianity) && site.nonGaussianity < 0
+            };
+        })
+    };
+    return { data, checks, facts };
 };
 
 // --- analyze_displacement_directions ---------------------------------------------
@@ -259,6 +274,72 @@ const anglesToCell = (direction, unitCell) => unitCell.map((edge) => {
 // (validation/armA.js, SWEEP_RULES.directionResolved).
 export const directionResolved = (radiusDeg) => Number.isFinite(radiusDeg) && radiusDeg <= LOW_INDEX_CONE_DEG;
 
+// --- a direction's tier (the displacement-anisotropy interview, 2026-10-24) -----
+
+// The user's three tiers for a peak direction, on its unrounded σ and its
+// enhancement: a finding at ≥ 3σ and ≥ 1.2× isotropic that holds at a
+// neighbouring resolution; a hint at ≥ 3σ under 1.2×, or 2.5–3σ, or one
+// that holds only at the engine's own resolution; nothing below 2.5σ.
+export const DIRECTION_FINDING_ENHANCEMENT = 1.2;
+export const DIRECTION_HINT_SIGMA = 2.5;
+
+/**
+ * The neighbouring resolution a finding is checked at: ν − 1, or ν + 1 at
+ * ν = 1. The engine's resolution (recommended_frequency) is the finest tiling
+ * whose cells keep at least 12 points each on average; ν − 1 keeps that
+ * occupancy (coarser cells, more points each), ν + 1 would take it below the
+ * engine's own floor.
+ */
+export const neighbourFrequency = (frequency) => (frequency > 1 ? frequency - 1 : frequency + 1);
+
+// The angle (degrees) between two directions taken as axes (±u one axis).
+const axisAngleDeg = (u, v) => {
+    const norm = Math.hypot(...u) * Math.hypot(...v);
+    if (!(norm > 0)) return null;
+    const cosine = Math.abs(u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / norm;
+    return Math.acos(Math.min(1, cosine)) * 180 / Math.PI;
+};
+
+/**
+ * Whether a peak direction holds at the neighbouring resolution (`second`,
+ * the engine's payload there): its own peak test passes (≥ 3σ, corrected over
+ * its own cells) and its peak cell can hold the same axis as the first's —
+ * the two directions, taken as axes, lie within the sum of the two cells'
+ * radii (every direction assigned to a cell lies within its radius of its
+ * centre). An axis, not a sense: the map is not antipodally folded, and a
+ * site with two equal wells puts its peak on either well from one tiling to
+ * the next (dev-jahn-teller's F: 148° apart at ν = 1 and 2); the +u/−u
+ * imbalance has its own test. Returns { holds, apartDeg }.
+ */
+export const directionHolds = (first, second) => {
+    const apartDeg = Array.isArray(first?.peakDirection) && Array.isArray(second?.peakDirection)
+        ? axisAngleDeg(first.peakDirection, second.peakDirection) : null;
+    const within = apartDeg != null && Number.isFinite(first.peakCellRadiusDeg) && Number.isFinite(second.peakCellRadiusDeg)
+        && apartDeg <= first.peakCellRadiusDeg + second.peakCellRadiusDeg + 1e-9;
+    return { holds: Boolean(within && second.peakSignificance >= SIGNIFICANCE_SIGMA), apartDeg };
+};
+
+/**
+ * A peak direction's tier: { tier: 'finding' | 'hint' | 'none', because }.
+ * `first` is the engine's payload at the call's resolution, `second` at the
+ * other of the pair (null when not asked), `auto` whether the call's
+ * resolution is the engine's own or beside it (Auto ± 1): a finding is
+ * judged on the Auto resolution and a neighbour.
+ */
+export const directionTier = (first, second = null, { auto = true } = {}) => {
+    const sigma = first?.peakSignificance;
+    if (!(sigma >= DIRECTION_HINT_SIGMA)) return { tier: 'none', because: 'below_hint_sigma' };
+    if (sigma < SIGNIFICANCE_SIGMA) return { tier: 'hint', because: 'below_sigma' };
+    if (!(first.peakEnhancement >= DIRECTION_FINDING_ENHANCEMENT)) return { tier: 'hint', because: 'small_enhancement' };
+    if (!auto) return { tier: 'hint', because: 'not_auto' };
+    if (!second) return { tier: 'hint', because: 'unchecked' };
+    return directionHolds(first, second).holds ? { tier: 'finding', because: 'holds' } : { tier: 'hint', because: 'not_held' };
+};
+
+/** Whether a peak is a finding candidate: ≥ 3σ and ≥ 1.2× isotropic (what the neighbouring resolution then checks). */
+export const directionCandidate = (payload) => payload?.peakSignificance >= SIGNIFICANCE_SIGMA
+    && payload.peakEnhancement >= DIRECTION_FINDING_ENHANCEMENT;
+
 // The peak direction as the checks write it: the crystal [u v w], else the
 // Cartesian triple.
 const peakDirectionText = (peak) => {
@@ -267,7 +348,19 @@ const peakDirectionText = (peak) => {
     return 'the peak cell\'s centre';
 };
 
-// direction_uvw, angles_to_abc_deg and principal_axis_uvw need the unit cell.
+// The engine's payload at the neighbouring resolution, as the result holds it.
+const NEIGHBOUR_SHAPE = {
+    frequency: 'number',
+    significance_sigma: 'number|null',
+    enhancement: 'number|null',
+    radius_deg: 'number|null',
+    apart_deg: 'number|null',
+    holds: 'boolean'
+};
+
+// direction_uvw, angles_to_abc_deg and principal_axis_uvw need the unit cell;
+// neighbour only when the neighbouring resolution was asked (a finding
+// candidate at the engine's own resolution).
 const ORIENTATION_SHAPE = {
     note: 'string',
     site: 'number|null',
@@ -285,8 +378,10 @@ const ORIENTATION_SHAPE = {
         direction_cartesian: oneOf(XYZ, 'null'),
         'direction_uvw?': oneOf(XYZ, 'null'),
         'angles_to_abc_deg?': XYZ,
-        radius_deg: 'number|null'
+        radius_deg: 'number|null',
+        tier: 'string'
     },
+    'neighbour?': NEIGHBOUR_SHAPE,
     map_significance_sigma: 'number|null',
     antipodal_asymmetry: 'number|null',
     antipodal_asymmetry_z: 'number|null',
@@ -300,8 +395,16 @@ const ORIENTATION_SHAPE = {
     recommended_frequency: 'number'
 };
 
-export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}) => {
+/**
+ * The directions result the model reads. `neighbour` is the engine's payload
+ * at the neighbouring resolution (neighbourFrequency), asked for a finding
+ * candidate at the engine's own resolution; `auto` whether the call ran at
+ * the engine's own resolution. The peak's tier (directionTier) leads its
+ * check, and the answer check reads it (facts.direction.tier).
+ */
+export const summarizeOrientation = (payload, unitCell, { pooledSites = 0, neighbour = null, auto = true } = {}) => {
     const direction = payload.peakDirection;
+    const { tier, because } = directionTier(payload, neighbour, { auto });
     const peak = {
         enhancement: round(payload.peakEnhancement),
         count: payload.peakCount,
@@ -316,6 +419,8 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
     // How finely the peak names its direction: the peak cell's radius.
     const radius = Number.isFinite(payload.peakCellRadiusDeg) ? roundFixed(payload.peakCellRadiusDeg, 1) : null;
     peak.radius_deg = radius;
+    peak.tier = tier;
+    const held = neighbour ? directionHolds(payload, neighbour) : null;
     const tensor = {
         eigenvalues: (payload.orientationEigenvalues || []).map((value) => round(value)),
         anisotropy: round(payload.orientationAnisotropy),
@@ -328,7 +433,10 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
     const data = {
         note: 'enhancement = density / isotropic (1 = isotropic); significances are calibrated one-sided sigma; '
             + 'the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal; '
-            + 'peak.radius_deg is the peak cell\'s radius: the peak names its direction only to within it',
+            + 'peak.radius_deg is the peak cell\'s radius: the peak names its direction only to within it; '
+            + `peak.tier: finding (≥ ${SIGNIFICANCE_SIGMA}σ, ≥ ${DIRECTION_FINDING_ENHANCEMENT}×, held at the neighbouring resolution), hint, `
+            + `or none (below ${DIRECTION_HINT_SIGMA}σ); the first check says why`
+            + (neighbour ? '; neighbour: the peak at that resolution (held: ≥ 3σ, the same axis within the two cells\' radii)' : ''),
         site: payload.referenceNumber ?? null,
         element: payload.element ?? 'all',
         frequency: payload.frequency,
@@ -337,6 +445,16 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
         rejected_points: payload.rejectedPoints,
         enhancement_range: [round(payload.vmin), round(payload.vmax)],
         peak,
+        ...(neighbour ? {
+            neighbour: {
+                frequency: neighbour.frequency,
+                significance_sigma: round(neighbour.peakSignificance),
+                enhancement: round(neighbour.peakEnhancement),
+                radius_deg: Number.isFinite(neighbour.peakCellRadiusDeg) ? roundFixed(neighbour.peakCellRadiusDeg, 1) : null,
+                apart_deg: held.apartDeg == null ? null : roundFixed(held.apartDeg, 1),
+                holds: held.holds
+            }
+        } : {}),
         map_significance_sigma: round(payload.mapSignificance),
         antipodal_asymmetry: round(payload.antipodalAsymmetry),
         antipodal_asymmetry_z: round(payload.antipodalAsymmetryZ),
@@ -348,35 +466,53 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
     if (payload.usedPoints < MIN_ORIENTATION_POINTS) {
         checks.push({ level: 'warn', text: `Only ${payload.usedPoints} displacement vectors: the map is noisy.` });
     }
-    if (payload.peakSignificance >= SIGNIFICANCE_SIGMA) {
-        const strength = `the peak cell is ${round(payload.peakEnhancement)}× isotropic at ${round(payload.peakSignificance)}σ (corrected over all cells)`;
-        const where = `${peakDirectionText(peak)}${radius == null ? '' : ` ± ${radius}°, the cell radius at ν = ${payload.frequency}`}`;
+    const sigma = round(payload.peakSignificance);
+    const strength = `the peak cell is ${round(payload.peakEnhancement)}× isotropic at ${sigma}σ (corrected over all cells)`;
+    const where = `${peakDirectionText(peak)}${radius == null ? '' : ` ± ${radius}°, the cell radius at ν = ${payload.frequency}`}`;
+    const atNeighbour = neighbour
+        ? `at ν = ${neighbour.frequency} the peak is ${round(neighbour.peakSignificance)}σ, ${held.apartDeg == null ? 'its direction unknown' : `${roundFixed(held.apartDeg, 1)}° from it as an axis`} `
+            + `(the two cells' radii ${roundFixed(payload.peakCellRadiusDeg + neighbour.peakCellRadiusDeg, 1)}°)`
+        : '';
+    if (tier === 'finding') {
         checks.push({
             level: 'ok',
             // A cell wider than LOW_INDEX_CONE_DEG cannot say which low-index
             // family the direction belongs to: say so, and name none.
             text: radius != null && !directionResolved(radius)
-                ? `Preferred direction: ${strength}, toward ${where}. The direction is not resolved finer than ${radius}° `
-                    + `(over ${LOW_INDEX_CONE_DEG}°), so it names no <100>, <110> or <111> family.`
-                : `Preferred direction: ${where}; ${strength}.`
+                ? `Preferred direction (a finding): ${strength}, toward ${where}; it holds: ${atNeighbour}. The direction is not resolved `
+                    + `finer than ${radius}° (over ${LOW_INDEX_CONE_DEG}°), so it names no <100>, <110> or <111> family.`
+                : `Preferred direction (a finding): ${where}; ${strength}; it holds: ${atNeighbour}.`
         });
+    } else if (tier === 'hint') {
+        const why = {
+            below_sigma: `the peak is ${sigma}σ, between ${DIRECTION_HINT_SIGMA}σ and ${SIGNIFICANCE_SIGMA}σ`,
+            small_enhancement: `${strength}, under the ${DIRECTION_FINDING_ENHANCEMENT}× a finding needs`,
+            not_held: `${strength}, but it does not hold: ${atNeighbour}`,
+            not_auto: `${strength}, but at ν = ${payload.frequency}, neither the engine's resolution (ν = ${payload.recommendedFrequency}) nor beside it, where a finding is judged`,
+            unchecked: `${strength}, not checked at a neighbouring resolution`
+        }[because];
+        checks.push({ level: 'note', text: `A hint of a direction, not a finding: ${why}; toward ${where}.` });
     } else {
-        checks.push({ level: 'note', text: `No significant peak direction (${round(payload.peakSignificance)}σ < ${SIGNIFICANCE_SIGMA}σ).` });
+        checks.push({
+            level: 'note',
+            text: `No preferred direction: the peak is ${sigma}σ, below ${DIRECTION_HINT_SIGMA}σ: nothing to report.`
+        });
     }
     if (payload.mapSignificance == null) {
         checks.push({ level: 'note', text: 'The whole-map test is undefined here (too few points per cell).' });
     } else if (payload.mapSignificance >= SIGNIFICANCE_SIGMA) {
         // Any anisotropic Gaussian ellipsoid passes the map test (a
         // thermal-only O flattened across its bond: map 7.2σ, peak 2.3σ):
-        // it shows anisotropy, and only the peak test a preferred direction.
+        // it shows anisotropy, and only a finding of the peak test a
+        // preferred direction.
         checks.push({
             level: 'ok',
             text: `The displacements are anisotropic: the map departs from isotropy at ${round(payload.mapSignificance)}σ. `
-                + (payload.peakSignificance >= SIGNIFICANCE_SIGMA
+                + (tier === 'finding'
                     ? (radius != null && !directionResolved(radius)
                         ? 'The peak test above places the preferred direction only to within its cell.'
                         : 'The peak test above names the preferred direction.')
-                    : 'Thermal ellipsoids pass this test too: it is not a preferred direction, which needs the peak test.')
+                    : 'Thermal ellipsoids pass this test too: it is not a preferred direction, which needs a finding of the peak test.')
         });
     }
     if (payload.peakTieCount > 1) {
@@ -400,18 +536,22 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
                 + 'against a per-site or cluster distortion.',
             { method: ' Test single sites (site_ref), or analyze_clusters for a cluster\'s shape.' }));
     }
-    // For the answer check: no "preferred direction" unless the peak test of
-    // one of the question's analyses found it at ≥ 3σ. The map test alone is
-    // anisotropy (review L3, approved 2026-10-14): before, it counted too, and
-    // let a preferred direction through on plain thermal anisotropy.
+    // For the answer check: no "preferred direction" unless one of the
+    // question's analyses found one — a finding of the user's tiers
+    // (2026-10-24); before, any peak at ≥ 3σ. The map test alone is
+    // anisotropy (review L3, approved 2026-10-14).
     const subject = payload.referenceNumber != null ? `site ${payload.referenceNumber}` : (payload.element || 'all atoms');
     const facts = {
         direction: {
             subject,
             significant: payload.peakSignificance >= SIGNIFICANCE_SIGMA,
             anisotropic: payload.mapSignificance >= SIGNIFICANCE_SIGMA,
-            peak_sigma: round(payload.peakSignificance),
-            map_sigma: payload.mapSignificance == null ? null : round(payload.mapSignificance)
+            peak_sigma: sigma,
+            map_sigma: payload.mapSignificance == null ? null : round(payload.mapSignificance),
+            tier,
+            because,
+            enhancement: round(payload.peakEnhancement),
+            frequency: payload.frequency
         },
         // For the single-configuration check (the user's rule, 2026-10-24):
         // a distribution read from the run's one configuration.
@@ -750,10 +890,225 @@ const bondShellWindows = (args) => [
     }] : [])
 ];
 
+// --- polyhedral_distortion -----------------------------------------------------
+
+// One index over the configuration's polyhedra (mean, sd and percentiles) and
+// over the average structure's (mean and sd: one polyhedron per centre site).
+const DISTRIBUTION = { mean: 'number|null', sd: 'number|null', p10: 'number|null', median: 'number|null', p90: 'number|null' };
+const MEAN_SD = { mean: 'number|null', sd: 'number|null' };
+// A refused window keeps the counts and the shell reading that show the cut
+// and drops what was measured (measured, configuration, average_structure),
+// with `refused` saying why; `shell` only where the run reads a first shell
+// for the pair; ⟨λ⟩ and σ²θ only for octahedra and tetrahedra (null when every
+// polyhedron is flat), the trans angle only for octahedra; the average
+// structure's indices only where it has polyhedra of the measured count, its
+// `note` saying why it has none.
+const POLYHEDRA_SHAPE = {
+    pair: 'string',
+    window_A: ['number', 'number'],
+    coordination: {
+        note: 'string', counts: ['number'], mean: 'number|null', modal: 'number|null', modal_share: 'number|null', unbonded_share: 'number|null'
+    },
+    'shell?': SHELL_READING,
+    'refused?': 'string',
+    'measured?': { coordination: 'number', shape: 'string', centres: 'number', polyhedra: 'number', skipped: 'number' },
+    'configuration?': {
+        bond_length_A: oneOf(MEAN_SD, 'null'),
+        distortion_index: oneOf(DISTRIBUTION, 'null'),
+        'quadratic_elongation?': oneOf(DISTRIBUTION, 'null'),
+        'angle_variance_deg2?': oneOf(DISTRIBUTION, 'null'),
+        'trans_angle_deg?': oneOf(MEAN_SD, 'null')
+    },
+    'average_structure?': {
+        polyhedra: 'number',
+        'note?': 'string',
+        'bond_ladder_A?': ['number|null'],
+        'distortion_index?': oneOf(MEAN_SD, 'null'),
+        'quadratic_elongation?': oneOf(MEAN_SD, 'null'),
+        'angle_variance_deg2?': oneOf(MEAN_SD, 'null'),
+        'trans_angle_deg?': oneOf(MEAN_SD, 'null')
+    }
+};
+
+// Each index at the precision it is read at: DI and σ²θ to 3 significant
+// digits, ⟨λ⟩ (near 1) to 4 decimals, angles to 0.1°, lengths to 0.001 Å;
+// every spread to 2 significant digits (an angle's to 0.1°).
+const INDEX_FORMS = {
+    distortion_index: { key: 'distortionIndex', value: (v) => round(v, 3), spread: (v) => round(v, 2) },
+    quadratic_elongation: { key: 'quadraticElongation', value: (v) => roundFixed(v, 4), spread: (v) => round(v, 2) },
+    angle_variance_deg2: { key: 'angleVariance', value: (v) => round(v, 3), spread: (v) => round(v, 2) },
+    trans_angle_deg: { key: 'transAngle', value: (v) => roundFixed(v, 1), spread: (v) => roundFixed(v, 1), meanSd: true }
+};
+
+const distributionOf = (summary, { value, spread }, keys) => {
+    if (!summary) return null;
+    const out = {};
+    keys.forEach((key) => { out[key] = key === 'sd' ? (summary.sd == null ? null : spread(summary.sd)) : value(summary[key]); });
+    return out;
+};
+
+// The engine's index summaries as the model reads them: the configuration's
+// with percentiles (the trans angle's mean and sd), the average structure's
+// mean and sd; ⟨λ⟩ and σ²θ only for an ideal polyhedron, the trans angle only
+// for an octahedron.
+const indexRows = (stats, shape, { percentiles }) => {
+    const rows = {};
+    Object.entries(INDEX_FORMS).forEach(([name, form]) => {
+        if (name !== 'distortion_index' && !shape) return;
+        if (name === 'trans_angle_deg' && shape !== 'octahedron') return;
+        const keys = percentiles && !form.meanSd ? Object.keys(DISTRIBUTION) : Object.keys(MEAN_SD);
+        rows[name] = distributionOf(stats[form.key], form, keys);
+    });
+    return rows;
+};
+
+// Why the average structure has no polyhedron of the measured count
+// (listText: the modulations section's).
+const averageNote = (average, centre, ligand, n) => {
+    if (average.reason === 'no_basis') return 'no average structure: the configuration has no reference sites (coordinates-only lines)';
+    if (average.reason === 'no_centre_sites') return `no average-structure site holds mostly ${centre}: there is no average ${centre} polyhedron`;
+    const counts = [...new Set(average.sites.map((site) => site.coordination))].sort((a, b) => a - b);
+    return `the average structure's ${centre} sites have ${listText(counts.map(String))} ${ligand} in this window, not ${n}: no average polyhedron of the measured count`;
+};
+
+/**
+ * The polyhedral-distortion result the model reads, with deterministic
+ * checks. A window that cuts the coordination shell is refused — its
+ * polyhedra are not the whole shell's — unless the user chose it
+ * (`windowConfirmed`), by compute_bond_angles' rule, the Workbench's
+ * (llm/context/shells.js windowCut): `shell` is the run's shell catalogue's
+ * reading of the window (null where the run reads no shell for the pair),
+ * and the engine's coordinationSummary decides only where there is none.
+ * The counts and the shell reading stay in the data either way.
+ */
+export const summarizePolyhedra = (payload, { windowConfirmed = false, shell = null } = {}) => {
+    const { centre, ligand } = payload;
+    const summary = payload.coordinationSummary;
+    if (!summary || typeof summary !== 'object') {
+        throw new Error('the polyhedral-distortion engine returned no coordinationSummary (distortion.py polyhedral_distortion, workers/distortion.js polyhedralDistortion)');
+    }
+    const coordination = Array.isArray(payload.coordination) ? payload.coordination : [];
+    const data = {
+        pair: `${centre}–${ligand} (${centre} central)`,
+        window_A: payload.window,
+        coordination: {
+            note: `counts[n] = ${centre} atoms with exactly n ${ligand} in the window`,
+            counts: coordination,
+            mean: round(summary.mean),
+            modal: Number.isFinite(summary.modal) ? summary.modal : null,
+            modal_share: round(summary.modalShare, 2),
+            unbonded_share: round(summary.unbondedShare, 2)
+        }
+    };
+    if (shell) data.shell = shellReadingOf(shell, centre, ligand);
+    const checks = [...parseWarningCheck(payload)];
+    // The one cut rule (shells.js windowCut): the CN margin against the run's
+    // shell, the engine's counts where there is no shell to compare.
+    const verdict = windowCut(shell, summary);
+    let cutText = null;
+    if (verdict.cut) {
+        if (verdict.by === 'cn-margin') {
+            cutText = `The window cuts the first ${centre}–${ligand} shell: it holds ${round(shell.cn)} ${ligand} per ${centre} (shell.cn_in_window) `
+                + `of the shell's ${round(shell.shell.cn)} (shell.cn, in shell.window_A), fewer by at least max(0.5, 15 % of the shell's CN).`;
+        } else if (verdict.by === 'unbonded') {
+            cutText = `${Math.round(summary.unbondedShare * 100)} % of the ${centre} atoms have no ${ligand} in the window: it misses most of the shell.`;
+        } else {
+            const present = coordination.map((count, n) => (count > 0 ? n : null)).filter((n) => n != null);
+            cutText = `Only ${Math.round(summary.modalShare * 100)} % of the ${centre} atoms have the most common count (${summary.modal} ${ligand}); `
+                + `the counts spread from ${present[0]} to ${present.at(-1)}. The window cuts through a coordination shell.`;
+        }
+    }
+    if (cutText && !windowConfirmed) {
+        // Refused: keep what shows the cut, never the polyhedra.
+        data.refused = 'the window cuts the coordination shell, so its polyhedra are not the whole shell\'s and are not returned';
+        // Arm C's method 'off' still refuses; only the advice on which window goes.
+        checks.push(methodCheck('fail',
+            `Refused: ${cutText}`,
+            { method: ' Use the whole shell (find_gr_peaks\' first_shell.window_A).' },
+            ' If the user wants this window, ask them (ask_user) and call again with window_confirmed: true.'));
+        return { data, checks };
+    }
+    if (cutText) checks.push({ level: 'warn', text: `${cutText} Kept: the user chose this window; say that its polyhedra are of a partial shell.` });
+
+    const { coordination: n, shape } = payload.polyhedron;
+    const measured = payload.configuration;
+    data.measured = {
+        coordination: n,
+        shape: shape ?? `${n}-coordinated (no ideal polyhedron)`,
+        centres: payload.centres,
+        polyhedra: measured.polyhedra,
+        skipped: payload.skipped
+    };
+    data.configuration = {
+        bond_length_A: distributionOf(measured.bondLength, { value: (v) => roundFixed(v, 3), spread: (v) => round(v, 2) }, Object.keys(MEAN_SD)),
+        ...indexRows(measured, shape, { percentiles: true })
+    };
+    const average = payload.average;
+    data.average_structure = { polyhedra: average.polyhedra };
+    if (average.polyhedra) {
+        // The average polyhedra's bond lengths, sorted, averaged position by
+        // position over the centre sites of the measured count.
+        const ladders = average.sites.filter((site) => site.coordination === n).map((site) => site.bondLengths);
+        data.average_structure.bond_ladder_A = ladders[0].map((_, k) => roundFixed(ladders.reduce((sum, ladder) => sum + ladder[k], 0) / ladders.length, 3));
+        Object.assign(data.average_structure, indexRows(average, shape, { percentiles: false }));
+    } else {
+        data.average_structure.note = averageNote(average, centre, ligand, n);
+    }
+
+    const where = `within ${payload.window[0]}–${payload.window[1]} Å`;
+    const named = shape ?? `${n}-coordinated`;
+    checks.push({
+        level: 'ok',
+        text: payload.skipped
+            ? `${measured.polyhedra} of ${payload.centres} ${centre} atoms have ${n} ${ligand} ${where} (${named}): measured; the ${payload.skipped} with another count are left out.`
+            : `Every ${centre} atom (${payload.centres}) has ${n} ${ligand} ${where} (${named}): measured.`
+    });
+    if (!shape) {
+        checks.push({ level: 'note', text: `${n} ${ligand} per ${centre}: no ideal polyhedron, so DI alone (⟨λ⟩ and σ²θ are defined for octahedra and tetrahedra).` });
+    }
+    const elongated = measured.quadraticElongation?.count ?? 0;
+    if (shape && elongated < measured.polyhedra) {
+        checks.push({ level: 'warn', text: `${measured.polyhedra - elongated} of the ${measured.polyhedra} polyhedra are flat (zero volume): they have no ⟨λ⟩.` });
+    }
+    return { data, checks };
+};
+
+/**
+ * polyhedral_distortion's bond window (its `shellWindows`): the ligands around
+ * the centre. The Workbench asks about it before the tool runs (llm
+ * clarify.js), and the tool refuses on the same window by the same rule as
+ * compute_bond_angles; `apply` puts a chosen window back into the arguments,
+ * confirmed when it is the user's own.
+ */
+const polyhedronShellWindows = (args) => [{
+    centre: args.centre,
+    partner: args.ligand,
+    window: [args.r_min, args.r_max],
+    apply: ([lo, hi], { confirmed = false } = {}) => ({ ...args, r_min: lo, r_max: hi, ...(confirmed ? { window_confirmed: true } : {}) })
+}];
+
 // --- analyze_clusters ------------------------------------------------------------
 
 // analyze_clusters' own result budget (characters of the tool message).
 export const CLUSTER_RESULT_BUDGET = 4500;
+
+/**
+ * analyze_clusters' method advice (llm copilot/method.js; arm C reads none):
+ * where its window comes from, and which questions it answers — finite
+ * clusters, never a corner-sharing polyhedron or another extended network,
+ * which has no finite clusters for its null (the coordination-shells
+ * interview, 2026-10-24, answer 7: a distortion index there). `polyhedra`:
+ * the run offers polyhedral_distortion, which the advice then names.
+ */
+// (A constant: written inline before a ternary's colon, the tool name read as
+// a result field to the skill lint's key scan.)
+const POLYHEDRA_ADVICE = ': use polyhedral_distortion';
+export const clusterMethod = ({ polyhedra = false } = {}) => [
+    { after: 'in the average structure', text: ' (take the window from find_gr_peaks: first_shell.window_A of that element pair)' },
+    'Use it for finite clusters (dimers, trimers, M4 tetrahedra, isolated polyhedra): their distortion, Jahn–Teller, '
+        + 'dimerization or trimerization; single-site displacement directions cannot show these. Corner-sharing polyhedra '
+        + `or another extended network have no finite clusters for its null${polyhedra ? POLYHEDRA_ADVICE : ''}.`
+];
 
 // One statistic against its null: change = obs/null − 1, when both are finite.
 const NULL_ROW = { obs: 'number|null', null: 'number|null', z: 'number|null', 'change?': 'number' };
@@ -1253,6 +1608,17 @@ const polarisedText = (row) => {
 // "Ga", "Ga and Se", "Ga, Se and Ta".
 const listText = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0]);
 
+/**
+ * How the diffuse verdict (the modulation engine's diffuseOrder finding) is
+ * read (the local-order interview, 2026-10-24): only a correlation in
+ * antiphase that passes its bar is order between cells; one in phase is
+ * correlated motion — neighbouring cells moving together — never order, and
+ * correlation all the same. The tool's facts and arm A+
+ * (validation/armA.js, SWEEP_RULES.diffuseOrder) read these.
+ */
+export const isDiffuseOrder = (finding) => finding?.because === 'correlated_antiphase';
+export const isCorrelatedMotion = (finding) => finding?.because === 'correlated_in_phase';
+
 export const MODULATION_SENTENCES = {
     cellDoubling: {
         ordered_point: ({ element, point, family, polarisation }) => ({
@@ -1296,7 +1662,9 @@ export const MODULATION_SENTENCES = {
     },
     // Plan item 4.4: correlation between neighbouring cells spread over many
     // q. In antiphase it is short-range order, said per element; in phase it
-    // is neighbouring cells moving together, said once for every element.
+    // is neighbouring cells moving together, correlated motion and not order
+    // (the local-order interview, 2026-10-24: only antiphase or general-q
+    // order past its bar is order), said once for every element.
     diffuseOrder: {
         correlated_antiphase: ({ element, diffuse, family }) => ({
             level: 'ok',
@@ -1308,9 +1676,10 @@ export const MODULATION_SENTENCES = {
         correlated_in_phase: ({ elements, strongest, diffuse }) => methodCheck('note',
             `${listText(elements)} displacements are correlated in phase between neighbouring cells (${elements.length > 1 ? `the strongest, ${strongest}, ` : ''}`
                 + `${signedText(round(diffuse.correlation, 2))} between cells ${lagLabel(diffuse.lag)} apart, ${sigmaText(diffuse.sigma)} against `
-                + 'independent cells): the power beyond the long waves leans toward the zone centre — neighbouring cells moving together',
-            { method: ' (as RMC\'s long waves and acoustic-like thermal motion give)' },
-            ', not a superstructure.'),
+                + 'independent cells): the power beyond the long waves leans toward the zone centre — neighbouring cells moving together '
+                + '(correlated motion',
+            { method: '; as RMC\'s long waves and acoustic-like thermal motion give' },
+            '), not order.'),
         below_correlation: null,
         below_sigma: null,
         undefined_statistic: null,
@@ -1446,7 +1815,19 @@ export const summarizeModulations = (payload, { unitCell = null } = {}) => {
             long_wave_q: rules.longWaveQ,
             long_waves: tested.flatMap((entry) => entry.strongest.slice(0, 3)
                 .filter((mode) => mode.kind === 'long_wave')
-                .map((mode) => ({ element: entry.element, q: mode.q })))
+                .map((mode) => ({ element: entry.element, q: mode.q }))),
+            // The diffuse verdicts that passed their bar (the local-order
+            // interview, 2026-10-24): antiphase is order between cells, in
+            // phase correlated motion — correlation, never order.
+            diffuse: tested
+                .filter((entry) => isDiffuseOrder(entry.verdict.diffuseOrder) || isCorrelatedMotion(entry.verdict.diffuseOrder))
+                .map((entry) => ({
+                    element: entry.element,
+                    phase: isDiffuseOrder(entry.verdict.diffuseOrder) ? 'antiphase' : 'in_phase',
+                    lag: [...entry.diffuse.lag],
+                    correlation: round(entry.diffuse.correlation, 2),
+                    sigma: round(entry.diffuse.sigma, 3)
+                }))
         }
     };
     return { data, checks, facts };
@@ -1509,9 +1890,13 @@ export const summarizeSymmetry = (described, tolerance) => {
     }
     // For the answer check (llm/copilot/verification/facts.js): the group and what its
     // point group implies.
+    // Its operations in the cell and its tolerance, for the group–subgroup
+    // check (the local-symmetry interview, 2026-10-24).
     const result = { data, checks };
     if (facts && !String(described.spaceGroup).startsWith('≥') && described.spaceGroup !== 'undetermined') {
-        result.facts = { groups: [{ symbol: described.spaceGroup, ...facts }] };
+        result.facts = {
+            groups: [{ symbol: described.spaceGroup, ...facts, ...(Number.isFinite(described.nSpace) ? { n_ops: described.nSpace } : {}), tolerance_A: tolerance }]
+        };
     }
     return result;
 };
@@ -1707,7 +2092,8 @@ export const buildCopilotTools = ({ request, structure, elements = [], plotFiles
             name: 'analyze_displacement_directions',
             description: 'Histogram the displacement directions of one site (site_ref, from list_sites) or of every atom '
                 + 'of one element (element; "all" pools every atom) on the sphere, and test them: the peak direction '
-                + '(Cartesian and crystal [u v w], ± its cell\'s radius) with its calibrated significance, the whole-map test against '
+                + '(Cartesian and crystal [u v w], ± its cell\'s radius) with its calibrated significance, labelled a finding, a hint '
+                + 'or nothing (a finding is checked at a neighbouring resolution), the whole-map test against '
                 + 'isotropy, the +u/−u asymmetry, and the orientation-tensor anisotropy.',
             parameters: {
                 type: 'object',
@@ -1733,11 +2119,23 @@ export const buildCopilotTools = ({ request, structure, elements = [], plotFiles
                 else params.element = element;
                 if (frequency != null) params.frequency = frequency;
                 const payload = await request('orientation', params, { signal });
+                // A finding holds at the engine's own (Auto) resolution and at
+                // a neighbouring one, Auto ± 1 (the user's tiers, 2026-10-24):
+                // a second engine call, only for a candidate (≥ 3σ, ≥ 1.2×) —
+                // at the Auto ν it reads ν − 1 (neighbourFrequency), and at
+                // Auto ± 1 (a call the displacement-anisotropy skill asks for)
+                // the Auto ν itself.
+                const recommended = payload.recommendedFrequency;
+                const auto = frequency == null || frequency === recommended;
+                const besideAuto = !auto && Number.isFinite(recommended) && Math.abs(payload.frequency - recommended) === 1;
+                const neighbour = (auto || besideAuto) && directionCandidate(payload)
+                    ? await request('orientation', { ...params, frequency: auto ? neighbourFrequency(payload.frequency) : recommended }, { signal })
+                    : null;
                 const basis = structure?.basis || [];
                 const pooledSites = referenceNumber != null
                     ? 0
                     : (element === 'all' ? basis.length : basis.filter((site) => site.el === element).length);
-                return summarizeOrientation(payload, unitCellFrom(payload), { pooledSites });
+                return summarizeOrientation(payload, unitCellFrom(payload), { pooledSites, neighbour, auto: auto || besideAuto });
             }
         });
 
@@ -1817,6 +2215,56 @@ export const buildCopilotTools = ({ request, structure, elements = [], plotFiles
         });
 
         tools.push({
+            name: 'polyhedral_distortion',
+            description: 'Distortion of the coordination polyhedra of a centre element: its ligand atoms within [r_min, r_max] Å, '
+                + 'for the centres with the most common count n. Returns Baur\'s bond-length distortion index DI and, for octahedra '
+                + '(n = 6) and tetrahedra (n = 4), Robinson\'s quadratic elongation ⟨λ⟩ and bond-angle variance σ²θ (deg²), which are '
+                + '0, 1 and 0 for a regular polyhedron: over the configuration\'s polyhedra (mean, sd, percentiles) and for the '
+                + 'average structure\'s (the site means).',
+            // Where the window comes from (inside the first sentence), which
+            // questions need the tool, and how to read the two sets.
+            method: [
+                { after: 'within [r_min, r_max] Å', text: ' (the whole first shell: find_gr_peaks\' first_shell.window_A)' },
+                'Use it for octahedra or tetrahedra, isolated or sharing corners, edges or faces (an extended network, where '
+                    + 'analyze_clusters\' shuffle null does not apply); a window that cuts the shell is put to the user first, and '
+                    + 'refused unless the user chose it (window_confirmed). A distortion the average structure\'s polyhedron shares is '
+                    + 'static; one only the configuration\'s polyhedra show is local (thermal motion alone raises DI, ⟨λ⟩ and σ²θ).'
+            ],
+            parameters: {
+                type: 'object',
+                properties: {
+                    centre: elementProperty(elements, 'Element at the centre of the polyhedra.'),
+                    ligand: elementProperty(elements, 'Element at their vertices.'),
+                    r_min: { type: 'number', minimum: 0, maximum: 8, description: 'Bond window minimum (Å).' },
+                    r_max: { type: 'number', minimum: 0.5, maximum: 8, description: 'Bond window maximum (Å).' },
+                    window_confirmed: {
+                        type: 'boolean',
+                        description: 'true only when the user chose or typed this window (in the question, or through ask_user). '
+                            + 'A window that cuts the coordination shell is refused unless it is set.'
+                    }
+                },
+                required: ['centre', 'ligand', 'r_min', 'r_max']
+            },
+            // The bond window, for the Workbench's check that it does not cut
+            // the coordination shell before this runs (llm clarify.js), and for
+            // this tool's own refusal: compute_bond_angles' rule.
+            shellWindows: polyhedronShellWindows,
+            dataShape: POLYHEDRA_SHAPE,
+            label: ({ centre, ligand, r_min: lo, r_max: hi }) => (
+                `Polyhedra ${centre}–${ligand}${Number.isFinite(lo) && Number.isFinite(hi) ? ` · ${lo}–${hi} Å` : ''}`
+            ),
+            run: async (args, { signal } = {}) => {
+                if (args.r_min >= args.r_max) throw new Error('r_min must be below r_max');
+                const payload = await request('distortion', {
+                    centre: args.centre, ligand: args.ligand, rMin: args.r_min, rMax: args.r_max
+                }, { signal });
+                // The window against the run's shell of its pair, as the Workbench reads it.
+                const reading = shells()?.window(args.centre, args.ligand, [args.r_min, args.r_max]) ?? null;
+                return summarizePolyhedra(payload, { windowConfirmed: args.window_confirmed === true, shell: reading });
+            }
+        });
+
+        tools.push({
             name: 'analyze_clusters',
             description: 'Shape of the finite clusters one element forms — the M4 tetrahedra of a lacunar spinel, '
                 + 'dimers, trimers — with bonds in [r_min, r_max] Å in the average structure. Every cluster in the '
@@ -1824,12 +2272,10 @@ export const buildCopilotTools = ({ request, structure, elements = [], plotFiles
                 + 'a random other cluster: is there a distortion beyond independent atoms, which edge pattern '
                 + '(tetrahedra: E/T2 modes, trigonal vs one edge), along which lattice axis (<100>/<110>/<111>), and is '
                 + 'the average cluster itself distorted.',
-            // Where the window comes from (inside the first sentence), and which questions need the tool.
-            method: [
-                { after: 'in the average structure', text: ' (take the window from find_gr_peaks: first_shell.window_A of that element pair)' },
-                'Use it for cluster or polyhedron distortion, Jahn–Teller, '
-                    + 'dimerization or trimerization questions; single-site displacement directions cannot show these.'
-            ],
+            // Where the window comes from (inside the first sentence), and which
+            // questions need the tool: set below, once the list shows whether
+            // the run offers polyhedral_distortion (clusterMethod).
+            method: clusterMethod({ polyhedra: false }),
             parameters: {
                 type: 'object',
                 properties: {
@@ -1953,5 +2399,10 @@ export const buildCopilotTools = ({ request, structure, elements = [], plotFiles
             )
         });
     }
+    // analyze_clusters' method names polyhedral_distortion for an extended
+    // network only where the run offers it (that tool is its own PR: with or
+    // without it, the advice names no tool the model lacks).
+    const clusters = tools.find((tool) => tool.name === 'analyze_clusters');
+    if (clusters) clusters.method = clusterMethod({ polyhedra: tools.some((tool) => tool.name === 'polyhedral_distortion') });
     return tools;
 };

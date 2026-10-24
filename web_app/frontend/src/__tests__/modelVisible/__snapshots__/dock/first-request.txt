@@ -9,7 +9,7 @@ session: "session object (contextGuard.js context sizes)"
 signal: "AbortSignal"
 temperature: 0.2
 toolChoice: "auto"
-tools: 16, in the order sent (each definition in full: dock/tools.json)
+tools: 17, in the order sent (each definition in full: dock/tools.json)
   1. read_run_data
   2. assess_convergence
   3. find_gr_peaks
@@ -18,17 +18,18 @@ tools: 16, in the order sent (each definition in full: dock/tools.json)
   6. list_sites
   7. analyze_displacement_directions
   8. compute_bond_angles
-  9. analyze_clusters
-  10. analyze_modulations
-  11. detect_symmetry
-  12. measure_symmetry_lowering
-  13. orient_3d_view
-  14. current_view
-  15. ask_user
-  16. read_skill
+  9. polyhedral_distortion
+  10. analyze_clusters
+  11. analyze_modulations
+  12. detect_symmetry
+  13. measure_symmetry_lowering
+  14. orient_3d_view
+  15. current_view
+  16. ask_user
+  17. read_skill
 
 ## messages[0] · system
-(the system prompt, variant "tools-view-ask-skills": system-prompt/tools-view-ask-skills.txt, 12582 characters, sha256 5b8f0568dbdd182b)
+(the system prompt, variant "tools-view-ask-skills": system-prompt/tools-view-ask-skills.txt, 12626 characters, sha256 aea4fd6479d033d2)
 
 ## messages[1] · user
 Context for this RMC modeling run:

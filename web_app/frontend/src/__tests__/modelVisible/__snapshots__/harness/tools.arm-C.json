@@ -21,7 +21,7 @@
     "type": "function",
     "function": {
       "name": "find_gr_peaks",
-      "description": "Analyse one partial g(r) (from the run's partial-PDF file): its peaks below r_max (position, approximate FWHM) and its first coordination shell, which does not depend on r_max — the window from onset to the first deep minimum (it holds the whole shell, split shells included), mean distance and spread from r²g(r), coordination numbers in both directions with their sensitivity to the cut, whether the shell is separated from the next, for a split shell joined across a deep trough its parts (CN, share, mean distance) and the long − short bond difference, and whether the pair's hard minimum-distance constraint cuts the distribution.",
+      "description": "Analyse one partial g(r) (from the run's partial-PDF file): its peaks below r_max (position, approximate FWHM) and its first coordination shell, which does not depend on r_max — the window from onset to the first deep minimum (it holds the whole shell, split shells included), mean distance and spread from r²g(r), coordination numbers in both directions with their sensitivity to the cut, whether the shell is separated from the next, for a split shell joined across a deep trough its parts (CN, share, mean distance) and the long − short bond difference, the average structure's bond lengths for the pair against the window, and whether the pair's hard minimum-distance constraint cuts the distribution.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -68,7 +68,7 @@
     "type": "function",
     "function": {
       "name": "analyze_displacement_directions",
-      "description": "Histogram the displacement directions of one site (site_ref, from list_sites) or of every atom of one element (element; \"all\" pools every atom) on the sphere, and test them: the peak direction (Cartesian and crystal [u v w], ± its cell's radius) with its calibrated significance, the whole-map test against isotropy, the +u/−u asymmetry, and the orientation-tensor anisotropy.",
+      "description": "Histogram the displacement directions of one site (site_ref, from list_sites) or of every atom of one element (element; \"all\" pools every atom) on the sphere, and test them: the peak direction (Cartesian and crystal [u v w], ± its cell's radius) with its calibrated significance, labelled a finding, a hint or nothing (a finding is checked at a neighbouring resolution), the whole-map test against isotropy, the +u/−u asymmetry, and the orientation-tensor anisotropy.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -151,6 +151,45 @@
           }
         },
         "required": ["end1", "apex", "end2", "r12_min", "r12_max"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "polyhedral_distortion",
+      "description": "Distortion of the coordination polyhedra of a centre element: its ligand atoms within [r_min, r_max] Å, for the centres with the most common count n. Returns Baur's bond-length distortion index DI and, for octahedra (n = 6) and tetrahedra (n = 4), Robinson's quadratic elongation ⟨λ⟩ and bond-angle variance σ²θ (deg²), which are 0, 1 and 0 for a regular polyhedron: over the configuration's polyhedra (mean, sd, percentiles) and for the average structure's (the site means).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "centre": {
+            "type": "string",
+            "enum": ["K", "Nb", "O"],
+            "description": "Element at the centre of the polyhedra."
+          },
+          "ligand": {
+            "type": "string",
+            "enum": ["K", "Nb", "O"],
+            "description": "Element at their vertices."
+          },
+          "r_min": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 8,
+            "description": "Bond window minimum (Å)."
+          },
+          "r_max": {
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 8,
+            "description": "Bond window maximum (Å)."
+          },
+          "window_confirmed": {
+            "type": "boolean",
+            "description": "true only when the user chose or typed this window (in the question, or through ask_user). A window that cuts the coordination shell is refused unless it is set."
+          }
+        },
+        "required": ["centre", "ligand", "r_min", "r_max"]
       }
     }
   },

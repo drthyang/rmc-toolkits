@@ -312,7 +312,7 @@ describe('Flask mode: the Copilot gets the run a picked folder gives it', () => 
         const names = flask.tools.map((tool) => tool.name);
         expect(names).toEqual(browser.tools.map((tool) => tool.name));
         expect(names).toEqual(expect.arrayContaining(['assess_convergence', 'find_gr_peaks', 'compare_fit', 'read_run_data']));
-        expect(names).toHaveLength(11);
+        expect(names).toHaveLength(12);
         expect(definitions(flask.tools)).toEqual(definitions(browser.tools));
         expect(flask.cards).toEqual(browser.cards);
 

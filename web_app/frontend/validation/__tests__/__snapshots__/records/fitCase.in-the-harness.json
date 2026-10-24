@@ -86,6 +86,7 @@
   "list_sites",
   "analyze_displacement_directions",
   "compute_bond_angles",
+  "polyhedral_distortion",
   "analyze_clusters",
   "analyze_modulations",
   "detect_symmetry",
@@ -128,19 +129,25 @@
   {
    "round": 0,
    "why": "first",
-   "sent": "30299 characters, sha256 440f3c6280e954ad",
+   "sent": "32258 characters, sha256 1c6d668dd75c4836",
    "num_ctx": null
   },
   {
    "round": 1,
    "why": "tools",
-   "sent": "32994 characters, sha256 8f86f88479654112",
+   "sent": "34680 characters, sha256 883cc40938e2b4eb",
    "num_ctx": null
   },
   {
    "round": 2,
    "why": "tools",
-   "sent": "38315 characters, sha256 be4d0748274800e7",
+   "sent": "40349 characters, sha256 752a6b7a998b2ceb",
+   "num_ctx": null
+  },
+  {
+   "round": 3,
+   "why": "tools",
+   "sent": "43550 characters, sha256 cb7694dc0016aeb1",
    "num_ctx": null
   }
  ],
@@ -221,10 +228,6 @@
     {
      "level": "ok",
      "text": "Rw 0.0208 over r = 1.005–7.995 Å; the misfit is concentrated in r = 2.17–3.33 Å: 97 % of the squared residual (Rw 0.036 there)."
-    },
-    {
-     "level": "note",
-     "text": "No σ(r) for this G(r) (no run-control file rmc_run.dat beside rmc_run_FT_XFQ1.csv): whether a residual feature is above noise is not judged."
     }
    ],
    "data": {
@@ -314,11 +317,7 @@
       "model_minus_data": -0.0055,
       "relative_to_data_rms": -0.0053
      }
-    ],
-    "noise": {
-     "sigma": null,
-     "why": "no run-control file rmc_run.dat beside rmc_run_FT_XFQ1.csv"
-    }
+    ]
    },
    "error": null,
    "ms": "<ms>",
@@ -520,7 +519,7 @@
    "checks": [
     {
      "level": "note",
-     "text": "No significant peak direction (-1.02σ < 3σ)."
+     "text": "No preferred direction: the peak is -1.02σ, below 2.5σ: nothing to report."
     },
     {
      "level": "note",
@@ -528,7 +527,7 @@
     }
    ],
    "data": {
-    "note": "enhancement = density / isotropic (1 = isotropic); significances are calibrated one-sided sigma; the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal; peak.radius_deg is the peak cell's radius: the peak names its direction only to within it",
+    "note": "enhancement = density / isotropic (1 = isotropic); significances are calibrated one-sided sigma; the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal; peak.radius_deg is the peak cell's radius: the peak names its direction only to within it; peak.tier: finding (≥ 3σ, ≥ 1.2×, held at the neighbouring resolution), hint, or none (below 2.5σ); the first check says why",
     "site": 1,
     "element": "Mg",
     "frequency": 1,
@@ -559,7 +558,8 @@
       90,
       121.7
      ],
-     "radius_deg": 37.4
+     "radius_deg": 37.4,
+     "tier": "none"
     },
     "map_significance_sigma": -0.593,
     "antipodal_asymmetry": 0.102,
@@ -602,11 +602,11 @@
    "checks": [
     {
      "level": "note",
-     "text": "No significant peak direction (-0.181σ < 3σ)."
+     "text": "No preferred direction: the peak is -0.181σ, below 2.5σ: nothing to report."
     }
    ],
    "data": {
-    "note": "enhancement = density / isotropic (1 = isotropic); significances are calibrated one-sided sigma; the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal; peak.radius_deg is the peak cell's radius: the peak names its direction only to within it",
+    "note": "enhancement = density / isotropic (1 = isotropic); significances are calibrated one-sided sigma; the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal; peak.radius_deg is the peak cell's radius: the peak names its direction only to within it; peak.tier: finding (≥ 3σ, ≥ 1.2×, held at the neighbouring resolution), hint, or none (below 2.5σ); the first check says why",
     "site": 5,
     "element": "O",
     "frequency": 1,
@@ -637,7 +637,8 @@
       58.3,
       31.7
      ],
-     "radius_deg": 37.4
+     "radius_deg": 37.4,
+     "tier": "none"
     },
     "map_significance_sigma": -1.22,
     "antipodal_asymmetry": 0.0926,
@@ -662,11 +663,261 @@
    "error": null,
    "ms": "<ms>",
    "cached": false
+  },
+  {
+   "step": 6,
+   "round": 3,
+   "id": "call_3_0#6",
+   "name": "polyhedral_distortion",
+   "by": "model",
+   "args": {
+    "centre": "Mg",
+    "ligand": "O",
+    "r_min": 1.81,
+    "r_max": 2.44
+   },
+   "why": {
+    "reasoning": "",
+    "text": ""
+   },
+   "status": "ok",
+   "checks": [
+    {
+     "level": "ok",
+     "text": "Every Mg atom (864) has 6 O within 1.81–2.44 Å (octahedron): measured."
+    }
+   ],
+   "data": {
+    "pair": "Mg–O (Mg central)",
+    "window_A": [
+     1.81,
+     2.44
+    ],
+    "coordination": {
+     "note": "counts[n] = Mg atoms with exactly n O in the window",
+     "counts": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      864
+     ],
+     "mean": 6,
+     "modal": 6,
+     "modal_share": 1,
+     "unbonded_share": 0
+    },
+    "shell": {
+     "note": "the first Mg–O shell (find_gr_peaks); cn, cn_in_window: O per Mg",
+     "window_A": [
+      1.81,
+      2.44
+     ],
+     "cn": 6,
+     "cn_in_window": 6,
+     "holds": "whole"
+    },
+    "measured": {
+     "coordination": 6,
+     "shape": "octahedron",
+     "centres": 864,
+     "polyhedra": 864,
+     "skipped": 0
+    },
+    "configuration": {
+     "bond_length_A": {
+      "mean": 2.11,
+      "sd": 0.09
+     },
+     "distortion_index": {
+      "mean": 0.0323,
+      "sd": 0.012,
+      "p10": 0.0182,
+      "median": 0.031,
+      "p90": 0.0476
+     },
+     "quadratic_elongation": {
+      "mean": 1.0057,
+      "sd": 0.0028,
+      "p10": 1.0027,
+      "median": 1.0051,
+      "p90": 1.0096
+     },
+     "angle_variance_deg2": {
+      "mean": 13.3,
+      "sd": 7.2,
+      "p10": 5.36,
+      "median": 11.9,
+      "p90": 23.4
+     },
+     "trans_angle_deg": {
+      "mean": 174.7,
+      "sd": 1.9
+     }
+    },
+    "average_structure": {
+     "polyhedra": 4,
+     "bond_ladder_A": [
+      2.097,
+      2.102,
+      2.105,
+      2.107,
+      2.11,
+      2.115
+     ],
+     "distortion_index": {
+      "mean": 0.00224,
+      "sd": 0.0007
+     },
+     "quadratic_elongation": {
+      "mean": 1,
+      "sd": 0.0000095
+     },
+     "angle_variance_deg2": {
+      "mean": 0.0635,
+      "sd": 0.024
+     },
+     "trans_angle_deg": {
+      "mean": 179.6,
+      "sd": 0.1
+     }
+    }
+   },
+   "error": null,
+   "ms": "<ms>",
+   "cached": false
+  },
+  {
+   "step": 7,
+   "round": 3,
+   "id": "call_3_1#7",
+   "name": "polyhedral_distortion",
+   "by": "model",
+   "args": {
+    "centre": "O",
+    "ligand": "Mg",
+    "r_min": 1.81,
+    "r_max": 2.44
+   },
+   "why": {
+    "reasoning": "",
+    "text": ""
+   },
+   "status": "ok",
+   "checks": [
+    {
+     "level": "ok",
+     "text": "Every O atom (864) has 6 Mg within 1.81–2.44 Å (octahedron): measured."
+    }
+   ],
+   "data": {
+    "pair": "O–Mg (O central)",
+    "window_A": [
+     1.81,
+     2.44
+    ],
+    "coordination": {
+     "note": "counts[n] = O atoms with exactly n Mg in the window",
+     "counts": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      864
+     ],
+     "mean": 6,
+     "modal": 6,
+     "modal_share": 1,
+     "unbonded_share": 0
+    },
+    "shell": {
+     "note": "the first O–Mg shell (find_gr_peaks); cn, cn_in_window: Mg per O",
+     "window_A": [
+      1.81,
+      2.44
+     ],
+     "cn": 6,
+     "cn_in_window": 6,
+     "holds": "whole"
+    },
+    "measured": {
+     "coordination": 6,
+     "shape": "octahedron",
+     "centres": 864,
+     "polyhedra": 864,
+     "skipped": 0
+    },
+    "configuration": {
+     "bond_length_A": {
+      "mean": 2.11,
+      "sd": 0.09
+     },
+     "distortion_index": {
+      "mean": 0.0326,
+      "sd": 0.012,
+      "p10": 0.0189,
+      "median": 0.0315,
+      "p90": 0.0478
+     },
+     "quadratic_elongation": {
+      "mean": 1.0057,
+      "sd": 0.0029,
+      "p10": 1.0027,
+      "median": 1.005,
+      "p90": 1.0095
+     },
+     "angle_variance_deg2": {
+      "mean": 13.3,
+      "sd": 7.6,
+      "p10": 5.23,
+      "median": 11.5,
+      "p90": 24
+     },
+     "trans_angle_deg": {
+      "mean": 174.6,
+      "sd": 2
+     }
+    },
+    "average_structure": {
+     "polyhedra": 4,
+     "bond_ladder_A": [
+      2.097,
+      2.102,
+      2.105,
+      2.107,
+      2.11,
+      2.115
+     ],
+     "distortion_index": {
+      "mean": 0.00224,
+      "sd": 0.0011
+     },
+     "quadratic_elongation": {
+      "mean": 1,
+      "sd": 0.000012
+     },
+     "angle_variance_deg2": {
+      "mean": 0.0635,
+      "sd": 0.035
+     },
+     "trans_angle_deg": {
+      "mean": 179.6,
+      "sd": 0.1
+     }
+    }
+   },
+   "error": null,
+   "ms": "<ms>",
+   "cached": false
   }
  ],
  "retracted": [],
  "gates": [],
- "rounds": 2,
+ "rounds": 3,
  "final": {
   "text": "The run has converged and the fit is good. Thermal motion only: no order beyond the average structure.\n\nVERDICT {\"features\": [], \"space_group\": \"Fm-3m\", \"chiral\": false, \"centrosymmetric\": true, \"polar\": false}",
   "raw_text": "The run has converged and the fit is good. Thermal motion only: no order beyond the average structure.\n\nVERDICT {\"features\": [], \"space_group\": \"Fm-3m\", \"chiral\": false, \"centrosymmetric\": true, \"polar\": false}",

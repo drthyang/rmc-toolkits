@@ -21,7 +21,9 @@
 //                 ladder's groups) and the gate its elements;
 //   catalog       the run's shell catalogue (context/shells.js); its finite
 //                 clusters (clusterElementsOf) need analyze_clusters before
-//                 "no order";
+//                 "no order", and the centres of polyhedra no finite cluster
+//                 holds (networkCentresOf) polyhedral_distortion where the
+//                 turn offers it;
 //   offered       the tool names the turn offers, tools on or off; null: every
 //                 tool; []: no claim row, so no gate, while references are
 //                 still filled and the checks and the Outcome computed;
@@ -68,7 +70,7 @@
 // Pure, no React.
 
 import { contextToJson } from '../../context/runContext';
-import { clusterElementsOf } from '../../context/shells';
+import { clusterElementsOf, networkCentresOf } from '../../context/shells';
 import { createReferenceStore, fillReferences } from '../references';
 import { TURN_METHODS } from '../method';
 import { RESULT_STATUSES, ran as toolRan, severityOf } from '../tools';
@@ -130,7 +132,7 @@ export const createVerification = ({
     if (!TURN_METHODS.includes(method)) invalid(`method must be one of ${TURN_METHODS.join(', ')}`);
     const extra = readPhrasings(phrasings);
     const elements = Object.keys(context?.structure?.elements || {});
-    const reader = claimsOf({ offered, extra, elements, values: { clusterElement: clusterElementsOf(catalog) } });
+    const reader = claimsOf({ offered, extra, elements, values: { clusterElement: clusterElementsOf(catalog), networkCentre: networkCentresOf(catalog) } });
     const references = createReferenceStore({ context: shownContext(context) });
     const auditContext = contextAuditFacts(context);
     // The turn so far: its recorded steps, its tools' facts, the claims sent

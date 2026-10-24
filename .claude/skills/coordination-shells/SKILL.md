@@ -64,8 +64,9 @@ analysis.
    a shuffle null at each cluster's own size, size against independent atoms) where the
    element's own first shell is a finite cluster's (0.5–4.5 neighbours of its own kind). For a
    corner-sharing polyhedron or another extended network, use angle spreads plus a standard
-   polyhedral distortion index such as Baur's (no Workbench tool computes it yet), never the
-   cluster null.
+   polyhedral distortion index such as Baur's (`polyhedral_distortion`: Baur's DI and, for
+   octahedra and tetrahedra, Robinson's quadratic elongation and bond-angle variance, over the
+   configuration's polyhedra and the average structure's), never the cluster null.
 
 ## Acceptance checklist
 

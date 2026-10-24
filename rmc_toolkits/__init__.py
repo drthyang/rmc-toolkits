@@ -65,6 +65,12 @@ from .parsers import (
     write_frac_from_rmc6f,
     write_stog_xy,
 )
+from .distortion import (
+    DistortionConfiguration,
+    polyhedral_distortion,
+    polyhedral_distortion_from_file,
+    read_distortion_configuration,
+)
 from .ft_uncertainty import (
     CONVOLUTION_CHECK_LIMIT,
     RMC_FT_TOLERANCE,
@@ -143,6 +149,10 @@ __all__ = [
     "bond_angle_summary_from_file",
     "bond_angles_from_rmc6f",
     "cached_bond_angle_summary",
+    "DistortionConfiguration",
+    "polyhedral_distortion",
+    "polyhedral_distortion_from_file",
+    "read_distortion_configuration",
     "CsvSeries",
     "MAX_KDE_FIT_POINTS",
     "MAX_PCA_FIT_POINTS",

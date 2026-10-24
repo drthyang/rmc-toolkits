@@ -43,6 +43,7 @@ from rmc_toolkits.pca_kde import (
 )
 from rmc_toolkits.triplets import APP_MAX_ANGLES, bond_angle_summary_from_file
 from rmc_toolkits.clusters import cluster_distortion
+from rmc_toolkits.distortion import APP_MAX_BONDS, polyhedral_distortion_from_file
 from rmc_toolkits.structure_basis import MAX_BASIS_SITES, basis_site_count, structure_basis
 from rmc_toolkits.modulations import displacement_modulations
 from rmc_toolkits.parsers import (
@@ -519,6 +520,7 @@ _POSITIONS_CACHE = _FileCache(16)  # /api/kde/slice: per (file, element)
 _SITES_CACHE = _FileCache(8)  # /api/pca/sites, /api/pca/kde, /api/pca/orientation
 _TRIPLETS_CACHE = _FileCache(16)  # /api/triplets: per (file, every parameter)
 _CLUSTERS_CACHE = _FileCache(16)  # /api/clusters: per (file, element, window)
+_DISTORTION_CACHE = _FileCache(16)  # /api/distortion: per (file, every engine argument)
 _SCALING_CACHE = _FileCache(8)  # /api/scaling/*: per (data file, config, mode, a, b, sigma)
 _FT_UNCERTAINTY_CACHE = _FileCache(8)  # /api/plot/data (xPDF): per (transform file, its companions' signatures)
 
@@ -1278,6 +1280,61 @@ def clusters_endpoint():
                 rmc6f_path,
                 (element, r_min, r_max),
                 lambda: cluster_distortion(sites, element, (r_min, r_max)),
+            )
+        )
+        result["source"] = str(rmc6f_path)
+        return _strict_result_response(result)
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except SourceChangedError as exc:
+        return jsonify({"error": str(exc)}), 409
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# A polyhedron's bonds are first-shell distances (the browser worker's
+# MAX_DISTORTION_WINDOW), and the bonds one request may hold are the engine's
+# APP_MAX_BONDS, counted before any is stored (the worker's budget too).
+MAX_DISTORTION_WINDOW = 8.0
+DISTORTION_MAX_BONDS = APP_MAX_BONDS
+
+
+@app.route("/api/distortion", methods=["GET"])
+def distortion_endpoint():
+    """Polyhedral distortion of one centre element's coordination polyhedra.
+
+    Params: centre and ligand (elements, case-insensitive), rMin and rMax (the
+    bond window in angstrom, inclusive; rMax <= 8). Payload shape is defined
+    by rmc_toolkits.distortion.polyhedral_distortion (Baur's DI, Robinson's
+    quadratic elongation and bond-angle variance over the configuration's
+    polyhedra and the average structure's) and mirrored by the browser
+    worker's 'distortion' request.
+    """
+    try:
+        target = _resolve_inside_root(request.args.get("dir", "."))
+        rmc6f_path = _find_rmc6f(target)
+        centre = (request.args.get("centre") or "").strip().capitalize()
+        ligand = (request.args.get("ligand") or "").strip().capitalize()
+        r_min = _query_number("rMin", None, ge=0.0)
+        r_max = _query_number("rMax", None, gt=0.0, le=MAX_DISTORTION_WINDOW)
+        missing = [
+            name
+            for name, value in (("centre", centre), ("ligand", ligand), ("rMin", r_min), ("rMax", r_max))
+            if value is None or value == ""
+        ]
+        if missing:
+            raise ValueError(f"{', '.join(missing)} required")
+        # The cache key is the engine's argument list, the work budget included.
+        params = (centre, ligand, r_min, r_max, DISTORTION_MAX_BONDS)
+        result = dict(
+            _DISTORTION_CACHE.get(
+                rmc6f_path,
+                params,
+                lambda: polyhedral_distortion_from_file(str(rmc6f_path), *params),
             )
         )
         result["source"] = str(rmc6f_path)

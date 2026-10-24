@@ -4035,7 +4035,9 @@ of the cell's atom counts when they are integers, else the gcd of the multiplici
 
 #### Step C5. The file (`writeCif`)
 
-CIF 1.1, ASCII only (Å, ×, ≥ are spelled out). A header comment records the source, the group,
+CIF 1.1, ASCII only (Å, ×, ≥ are spelled out). The file calls itself an "average-structure model of an
+RMC configuration" (the header's first line and `_audit_creation_method`; never a refined structure:
+the local-symmetry interview, 2026-10-24). A header comment records the source, the group,
 its ladder range, $\tau_\mathrm{CIF}$, the operation count and worst residual, the cell
 transformation, $\boldsymbol\delta$, the largest and rms symmetrization shift, and the definitions of
 $U$ and the occupancy. Then come `_cell_*`, `_space_group_crystal_system`,

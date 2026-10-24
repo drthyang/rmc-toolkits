@@ -114,7 +114,9 @@ export function writeCif(model, { dataName = 'rmc_average', date = null, tolRang
   const lines = [];
   const comment = (text = '') => lines.push(`# ${ascii(text)}`.trimEnd());
 
-  comment('Symmetry-averaged RMC average structure, written by rmc-toolkits.');
+  // The user's label (the local-symmetry interview, 2026-10-24): an
+  // average-structure model of an RMC configuration, never a refined structure.
+  comment('Average-structure model of an RMC configuration (symmetry-averaged), written by rmc-toolkits.');
   comment();
   const box = p.supercell ? `, supercell ${p.supercell.join('x')}` : '';
   const atoms = Number.isFinite(p.atoms) ? `${p.atoms} atoms, ` : '';
@@ -148,7 +150,7 @@ export function writeCif(model, { dataName = 'rmc_average', date = null, tolRang
   lines.push('');
 
   lines.push(`data_${block}`);
-  lines.push(`_audit_creation_method                 ${value('rmc-toolkits symmetry-averaged RMC structure')}`);
+  lines.push(`_audit_creation_method                 ${value('rmc-toolkits: average-structure model of an RMC configuration')}`);
   if (date) lines.push(`_audit_creation_date                   ${date}`);
   lines.push(`_chemical_formula_sum                  '${formulaText(formula.counts)}'`);
   lines.push(`_cell_formula_units_Z                  ${formula.Z}`);

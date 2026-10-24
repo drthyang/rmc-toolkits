@@ -13,8 +13,11 @@
 //     shuffle null (the AI Copilot's analyze_clusters)
 //   { kind: 'modulations', element? } -> displacement power per wavevector
 //     (the AI Copilot's analyze_modulations)
+//   { kind: 'distortion', centre, ligand, rMin, rMax } -> polyhedral distortion
+//     of the configuration and its average structure (the AI Copilot's
+//     polyhedral_distortion)
 // mirroring the Flask /api/pca/sites, /api/pca/kde, /api/pca/orientation,
-// /api/triplets, /api/clusters and /api/modulations endpoints so both runtime modes present the
+// /api/triplets, /api/clusters, /api/modulations and /api/distortion endpoints so both runtime modes present the
 // identical shape to the UI. The kinds are requestGuards' ANALYSIS_ROUTES; what
 // each accepts and refuses on both runtimes is the request contract,
 // src/__tests__/fixtures/analysis_requests.json. inProcessEngine (below) is the
@@ -31,7 +34,9 @@ import { siteOrientationHistogram } from './orientation.js';
 import { APP_MAX_ANGLES, bondAngleSummary, isBlankValue } from './triplets.js';
 import { clusterDistortion } from './clusters.js';
 import { displacementModulations } from './modulations.js';
+import { APP_MAX_BONDS, polyhedralDistortion } from './distortion.js';
 import { analysisRoute, ANALYSIS_ROUTES, assertFiniteResult, requestNumber, requestObject } from './requestGuards.js';
+import { structureFromRmc6f } from '../browserData.js';
 
 // Parsing the whole configuration into clouds is the expensive part, so cache it
 // and re-parse only when the .rmc6f text itself changes. The key MUST come from
@@ -59,6 +64,18 @@ const parseCached = (text, clusterThreshold, name) => {
         cache = { key, parsed: siteDisplacementsFromRmc6f(text, { clusterThreshold, name }) };
     }
     return cache.parsed;
+};
+
+// The average-structure basis of the same text (browserData.structureFromRmc6f,
+// the rows /api/structure's `basis` holds for a server folder), read once per
+// text: the 'distortion' request measures its polyhedra too.
+let basisCache = { key: null, basis: null };
+const basisCached = (text, name) => {
+    const key = textSignature(text);
+    if (basisCache.key !== key || !basisCache.basis) {
+        basisCache = { key, basis: structureFromRmc6f({ text, path: name }, 1).basis };
+    }
+    return basisCache.basis;
 };
 
 // As app.MAX_ORIENTATION_SMOOTHING (the UI offers 0-12); both copies are
@@ -104,6 +121,9 @@ const KINDS = Object.keys(ANALYSIS_ROUTES);
 // a wider window only links everything into one network. Both copies are
 // pinned by the request contract (fixtures/analysis_requests.json).
 export const MAX_CLUSTER_WINDOW = 8;
+// As app.MAX_DISTORTION_WINDOW: a polyhedron's bonds are first-shell
+// distances (pinned by the request contract too).
+export const MAX_DISTORTION_WINDOW = 8;
 
 export const handlePcaMessage = async (data, getText) => {
     const { kind = 'kde', probability = 0.5, clusterThreshold = DEFAULT_CLUSTER_THRESHOLD } = requestObject(data);
@@ -189,6 +209,28 @@ export const handlePcaMessage = async (data, getText) => {
         const rMax = requestNumber(data.rMax, 'rMax', { gt: 0, le: MAX_CLUSTER_WINDOW });
         const rMin = requestNumber(data.rMin, 'rMin', { ge: 0 });
         return assertFiniteResult(clusterDistortion(parsed, String(data.element), [rMin, rMax]));
+    }
+
+    if (kind === 'distortion') {
+        // Flat scalars (centre, ligand, rMin, rMax), as the /api/distortion
+        // query, under the same caps: rMax <= 8 A and the APP_MAX_BONDS budget.
+        const missing = ['centre', 'ligand', 'rMin', 'rMax'].filter((key) => isBlankValue(data[key]));
+        if (missing.length) throw new Error(`${missing.join(', ')} required`);
+        const rMax = requestNumber(data.rMax, 'rMax', { gt: 0, le: MAX_DISTORTION_WINDOW });
+        const rMin = requestNumber(data.rMin, 'rMin', { ge: 0 });
+        const config = {
+            fractional: parsed.atomList.fractional,
+            elements: parsed.atomList.elements,
+            latticeVectors: parsed.latticeVectors,
+            supercell: parsed.supercell,
+            basis: basisCached(text, name)
+        };
+        const result = polyhedralDistortion(config, {
+            centre: String(data.centre), ligand: String(data.ligand), rMin, rMax, maxBonds: APP_MAX_BONDS
+        });
+        // As /api/distortion: the parse warning rides along, and a result
+        // holding NaN/Infinity is an error (_strict_result_response).
+        return assertFiniteResult({ ...result, parseWarning: parsed.parseWarning ?? null });
     }
 
     if (kind === 'orientation') {

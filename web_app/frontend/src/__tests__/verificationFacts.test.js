@@ -22,11 +22,14 @@ import { loadDemoAssistantRun } from './modelVisible/helpers';
 // refused, and still returns its count.
 const CALLS = [
     ['assess_convergence', {}],
+    ['list_sites', {}],
     ['find_gr_peaks', { pair: 'Ta-Se' }],
     ['find_gr_peaks', { pair: 'Ta-Ta' }],
     ['compute_bond_angles', { end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.21, r12_max: 3.23 }],
     ['compute_bond_angles', { end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.3, r12_max: 2.7 }],
     ['analyze_displacement_directions', { site_ref: 1 }],
+    // A finding candidate (its neighbouring resolution asked): Ta site 17.
+    ['analyze_displacement_directions', { site_ref: 17 }],
     ['analyze_displacement_directions', { element: 'Ga' }],
     ['analyze_clusters', { element: 'Ta', r_min: 2.65, r_max: 3.33 }],
     ['analyze_modulations', {}],

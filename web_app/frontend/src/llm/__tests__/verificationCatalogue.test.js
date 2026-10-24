@@ -35,16 +35,21 @@ describe('the binding test: EVIDENCE_RULES and the claim catalogue', () => {
     // a requirement changed moves this table, and so does a prompt edit.
     it('what the sentence does not say is the gap table', () => {
         expect(promptGaps(CLAIMS)).toEqual({
+            // "distorted polyhedra, polyhedral_distortion": the gate takes analyze_clusters too, and asks for it
+            // where the run does not offer polyhedral_distortion (the coordination-shells interview, 2026-10-24).
+            polyhedra: ['analyze_clusters'],
             // "a coordination number or split shell, find_gr_peaks": the gate takes compute_bond_angles too.
             coordination: ['compute_bond_angles'],
             // "a lowering …, measure_symmetry_lowering": where it is not offered, the gate asks for detect_symmetry.
             lowering: ['detect_symmetry'],
-            // '"no order", every one of them': the gate asks for a per-site directions map and analyze_clusters
-            // on each element whose own first shell is a finite cluster's, and for neither find_gr_peaks nor
-            // measure_symmetry_lowering.
+            // '"no order", every one of them': the gate asks for a per-site directions map, analyze_clusters
+            // on each element whose own first shell is a finite cluster's and polyhedral_distortion on each
+            // centre of polyhedra no finite cluster holds (the local-order interview, 2026-10-24; only where
+            // the turn offers it), and for neither find_gr_peaks nor measure_symmetry_lowering.
             'no-order': [
                 'analyze_displacement_directions with site_ref',
                 'analyze_clusters with element for each clusterElement',
+                'polyhedral_distortion with centre for each networkCentre',
                 'not find_gr_peaks',
                 'not measure_symmetry_lowering'
             ]
@@ -54,7 +59,7 @@ describe('the binding test: EVIDENCE_RULES and the claim catalogue', () => {
 
 describe('the catalogues\' order and shape', () => {
     it('CLAIMS: one row per claim, in send-back order, each with what it reads and what backs it', () => {
-        expect(CLAIMS.map((claim) => claim.id)).toEqual(['order-between-cells', 'split-site', 'direction', 'clusters', 'coordination', 'lowering', 'no-order']);
+        expect(CLAIMS.map((claim) => claim.id)).toEqual(['order-between-cells', 'split-site', 'direction', 'clusters', 'polyhedra', 'coordination', 'lowering', 'no-order']);
         for (const claim of CLAIMS) {
             expect(Object.keys(claim).sort(), claim.id).toEqual(['backedBy', 'id', 'phrasings', 'prompt', 'scope', 'what']);
             expect(['run', 'always'], claim.id).toContain(claim.scope);
@@ -76,11 +81,12 @@ describe('the catalogues\' order and shape', () => {
     });
 
     it('FACTS: one row per facts key, in check order, the producing tools named; a lowering has no check yet', () => {
-        expect(FACTS.map((fact) => fact.key)).toEqual(['convergence', 'groups', 'direction', 'modulation', 'cluster', 'coordination', 'distribution', 'lowering']);
+        expect(FACTS.map((fact) => fact.key)).toEqual(['convergence', 'groups', 'direction', 'sites', 'modulation', 'cluster', 'coordination', 'distribution', 'lowering']);
         expect(Object.fromEntries(FACTS.map((fact) => [fact.key, fact.from]))).toEqual({
             convergence: ['assess_convergence'],
             groups: ['detect_symmetry'],
             direction: ['analyze_displacement_directions'],
+            sites: ['list_sites'],
             modulation: ['analyze_modulations'],
             cluster: ['analyze_clusters'],
             coordination: ['find_gr_peaks', 'compute_bond_angles'],

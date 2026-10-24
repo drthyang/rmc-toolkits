@@ -40,8 +40,8 @@ back empty. What was not run is "not tested", never "absent".
    octahedron 4 per member), `analyze_clusters` in its `first_shell.window_A`.
    Empty means no shape distortion or pattern beyond independent atoms at the clusters' own size,
    no breathing, no rigidity, and a regular average cluster. An extended network (the tool says
-   so) has no clusters to test: test its polyhedra with `polyhedral_distortion` where the
-   Workbench offers it.
+   so) has no clusters to test: test its polyhedra with `polyhedral_distortion` (Baur's DI and
+   Robinson's indices, against the average structure's polyhedra).
 5. **Polyhedra:** `find_gr_peaks` for each bonded pair: the whole first shell's CN and peaks against
    the average structure. A split shell the average structure does not explain is a distorted
    polyhedron (coordination-shells); a split explained by a split centre site is that site's

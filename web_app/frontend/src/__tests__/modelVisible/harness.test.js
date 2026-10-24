@@ -118,9 +118,9 @@ describe(`the harness's first request (${CASE})`, () => {
         const run = await loadRun(buildCase(DEV_CASES.find((item) => item.id === CASE)));
         const advice = [...buildRunTools(run.props, { cards: [] }), ...run.tools]
             .flatMap((tool) => [].concat(tool.method ?? []).map((part) => (typeof part === 'string' ? part : part.text).trim()));
-        // find_gr_peaks, list_sites, compute_bond_angles, analyze_clusters (2),
-        // analyze_modulations, detect_symmetry, measure_symmetry_lowering.
-        expect(advice).toHaveLength(8);
+        // find_gr_peaks, list_sites, compute_bond_angles, polyhedral_distortion (2),
+        // analyze_clusters (2), analyze_modulations, detect_symmetry, measure_symmetry_lowering.
+        expect(advice).toHaveLength(10);
         const armB = descriptions(b.tools).join('\n');
         for (const piece of advice) {
             expect(armB).toContain(piece);
