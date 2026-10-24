@@ -30,9 +30,9 @@
   "expected": {
     "claims": [],
     "gateSendBack": null,
-    "auditFindings": []
+    "auditFindings": ["single-configuration"]
   },
   "judgements": [
-    { "on": "silence", "right": true, "reason": "A correct whole-shell answer (CN 3.99, 109.4 ± 4.1°). The gate does not read \"That is the ideal tetrahedral coordination.\" as a claim about the run (no element or run noun in that sentence); harmless here, since the shell analysis ran." }
+    { "on": "audit:single-configuration", "right": true, "reason": "Right under the user's rule of 2026-10-24 (the single-configuration check): the answer quotes the Se–Ga–Se angle distribution (mean 109.4°, sd 4.1°, mode share 0.94, the 10° histogram) and the Ga coordination counts (3 948 of 4 000 with four) from the run's one configuration without saying so; \"within the sampling of this run\" names no configuration. Otherwise a correct whole-shell answer (CN 3.99, 109.4 ± 4.1°); the gate does not read \"That is the ideal tetrahedral coordination.\" as a claim about the run, harmless here since the shell analysis ran." }
   ]
 }

@@ -60,6 +60,15 @@ const toolsWithoutPartials = Object.fromEntries(
     buildCopilotTools({ request, structure, elements }).map((tool) => [tool.name, tool])
 );
 
+
+// facts.modulation without the long-wave check's two keys, which are checked
+// here: the engine's bound and long waves only (every |q_i| within it).
+const withoutLongWaves = (modulation) => {
+    const { long_wave_q: bound, long_waves: waves, ...rest } = modulation;
+    expect(bound).toBe(0.25);
+    waves.forEach(({ q }) => expect(q.every((value) => Math.abs(value) <= bound)).toBe(true));
+    return rest;
+};
 describe('Copilot tools on the demo run', () => {
     it('offers the engine tools with the run\'s elements', () => {
         expect(Object.keys(tools)).toEqual([
@@ -615,7 +624,10 @@ describe('Copilot summarizers', () => {
         // Ratios to two significant digits (204 reads 200), σ past SIGMA_MAX as '>8'.
         expect(data.elements[0].zone_boundary).toEqual([['(0, 0, ½)', 200, 99.5, '>8'], ['(½, 0, 0)', 0.9, 40, -2.4]]);
         expect(data.elements[0].strongest.map((row) => row[3])).toEqual([null, null]);
-        expect(facts.modulation).toEqual({ elements: ['Nb'], ordered: [{ element: 'Nb', q: [0, 0, 0.5] }], general: [] });
+        // The long-wave check's facts (the user's rule, 2026-10-24): the bound and the strongest modes that are long waves.
+        expect(facts.modulation).toEqual({
+            elements: ['Nb'], ordered: [{ element: 'Nb', q: [0, 0, 0.5] }], general: [], long_wave_q: 0.25, long_waves: [{ element: 'Nb', q: [0.1, 0, 0] }]
+        });
         const odd = summarizeModulations({
             supercell: [3, 4, 4], wavevectors: 47, untestable: [[1, 0, 0]], family: { zoneBoundaryPoints: 0, comparedModes: 0 },
             rules: { ratio: 3, sigma: 3, longWaveRatio: 5, longWaveQ: 0.25, sigmaMax: SIGMA_MAX },
@@ -787,7 +799,7 @@ describe('Copilot summarizers', () => {
         // The decoy long wave and the other elements carry no polarisation row: none is ordered.
         expect(data.elements.filter((entry) => entry.polarisation).map((entry) => entry.element)).toEqual(['Ti']);
         // facts.modulation keeps its shape.
-        expect(facts.modulation).toEqual({ elements: ['O', 'Sr', 'Ti'], ordered: [{ element: 'Ti', q: [0, 0, 0.5] }], general: [] });
+        expect(withoutLongWaves(facts.modulation)).toEqual({ elements: ['O', 'Sr', 'Ti'], ordered: [{ element: 'Ti', q: [0, 0, 0.5] }], general: [] });
         // Its own result budget holds it whole, with room for a fourth element.
         expect(devTools('dev-zone-boundary').analyze_modulations.resultBudget).toBe(MODULATION_RESULT_BUDGET);
         expect(JSON.stringify({ ref: 'r1', checks, data }).length).toBeLessThan(MODULATION_RESULT_BUDGET - 1000);
@@ -831,7 +843,7 @@ describe('Copilot summarizers', () => {
         expect(anti.data.elements.find((entry) => entry.element === 'Nb').diffuse).toEqual(['[1 0 0]', -0.29, 3.7]);
         expect(anti.data.note).toMatch(/ diffuse is \[lag, correlation, sigma\]: /);
         // No single mode is ordered: the per-mode tests say no order, the facts hold none.
-        expect(anti.facts.modulation).toEqual({ elements: ['Ag', 'Nb'], ordered: [], general: [] });
+        expect(withoutLongWaves(anti.facts.modulation)).toEqual({ elements: ['Ag', 'Nb'], ordered: [], general: [] });
         const inPhase = run('diffuse order in phase');
         const together = inPhase.checks.find((check) => /correlated in phase/.test(check.text));
         expect(together.level).toBe('note');
@@ -901,7 +913,7 @@ describe('Copilot summarizers', () => {
         expect(named.data.elements.map((entry) => entry.element)).toEqual(['Nb']);
         expect(named.data.elements[0]).toEqual(every.data.elements.find((entry) => entry.element === 'Nb'));
         expect(named.data.note).toContain('corrected over all 21 zone-boundary points of the configuration\'s 3 elements, whichever the call names');
-        expect(named.facts.modulation).toEqual({ elements: ['Nb'], ordered: [], general: [] });
+        expect(withoutLongWaves(named.facts.modulation)).toEqual({ elements: ['Nb'], ordered: [], general: [] });
         // dev-weak-order-b (F3's case until F1; below the bar again since its
         // re-set, protocol 2026-10-19.19): the same Nb data and the same "no
         // order" whether or not the call names it.
@@ -911,7 +923,7 @@ describe('Copilot summarizers', () => {
         expect(nb.data.elements[0]).toEqual(all.data.elements.find((entry) => entry.element === 'Nb'));
         expect(nb.checks[0].text).toBe(all.checks[0].text);
         expect(nb.checks[0].text).toMatch(/^No order that doubles the cell: .* \(the strongest, Nb at \(½, ½, 0\), is 7\.7× the median, 2\.6σ after the correction\)\.$/);
-        expect(nb.facts.modulation).toEqual({ elements: ['Nb'], ordered: [], general: [] });
+        expect(withoutLongWaves(nb.facts.modulation)).toEqual({ elements: ['Nb'], ordered: [], general: [] });
     });
 
     it('cluster summary: other_sizes never lists the analysed kind, on a tie too (review 2026-10-12 #17)', () => {

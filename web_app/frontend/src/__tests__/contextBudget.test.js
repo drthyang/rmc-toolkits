@@ -119,22 +119,28 @@ const TWO_LARGEST_SKILLS_TODAY = Object.freeze([
 // skills +853 (10,324 → 11,177); the prompt index and the tools are unchanged.
 // The coordination-shells interview adds 333 (11,177 → 11,510), the
 // displacement-anisotropy interview 868 (11,510 → 12,378).
+// The fit-assessment interview's code (2026-10-24) added 428: convergence
+// judged on every χ² term of the .log and their total — the Demo context's
+// convergence.last_10pct (the context block +194, the context budget raised
+// to 6,500 characters so its second g(r) peaks stay), the system prompt's
+// sentence on watchdog_status and last_10pct (+90), and assess_convergence's
+// description of the rule (the tools +144).
 const DOCK_WORST_TURN_TODAY = Object.freeze({
-    systemPrompt: 4951,
-    toolJson: 6868,
-    contextBlock: 2286,
+    systemPrompt: 5041,
+    toolJson: 7012,
+    contextBlock: 2480,
     question: 70,
     skills: 12378,
     analyses: 8724,
     replyReserve: 8192,
-    firstRequest: 14174,
-    prompt: 35275,
-    needed: 43467,
-    headroom: -10699,
-    lmStudioHeadroom: -6603
+    firstRequest: 14602,
+    prompt: 35704,
+    needed: 43896,
+    headroom: -11128,
+    lmStudioHeadroom: -7032
 });
 // By how much the dock's worst turn overflows the window today.
-const DOCK_OVERFLOW_TOKENS_TODAY = 10699;
+const DOCK_OVERFLOW_TOKENS_TODAY = 11128;
 
 // Arm B's first request on each dev case is 9.7k–11.2k tokens; the largest,
 // since plan item 4.6, is the fit-data case: its fit tools (assess_convergence,
@@ -149,22 +155,25 @@ const ARM_B_LARGEST_DEV_CASE = 'dev-fit-unconverged';
 // adds 854 (the two largest skills, 10,324 → 11,177), the coordination-shells
 // interview 332 more (11,177 → 11,510), the displacement-anisotropy interview
 // 868 more (11,510 → 12,378).
+// The fit-assessment interview's code (2026-10-24) added 360: the context's
+// last_10pct for the case's two χ² terms and their total (+126), the system
+// prompt (+91) and assess_convergence's description (+143).
 const ARM_B_WORST_TURN_TODAY = Object.freeze({
-    systemPrompt: 4611,
-    toolJson: 4651,
-    contextBlock: 1574,
+    systemPrompt: 4702,
+    toolJson: 4794,
+    contextBlock: 1700,
     question: 610,
     skills: 12378,
     analyses: 8723,
     replyReserve: 8192,
-    firstRequest: 11445,
-    prompt: 32545,
-    needed: 40737,
-    headroom: -7969,
-    lmStudioHeadroom: -3873
+    firstRequest: 11805,
+    prompt: 32905,
+    needed: 41097,
+    headroom: -8329,
+    lmStudioHeadroom: -4233
 });
 // By how much arm B's worst turn (largest dev case) overflows the window today.
-const ARM_B_OVERFLOW_TOKENS_TODAY = 7969;
+const ARM_B_OVERFLOW_TOKENS_TODAY = 8329;
 
 // --- the turn ------------------------------------------------------------------------
 
@@ -373,8 +382,9 @@ describe('the worst realistic turn in a 32,768-token window (plan 5.5)', () => {
     // The run policy's minimum for an LM Studio model (48k) holds both worst
     // turns with the full reply reserve, under both of the guard's rules
     // (planContext's, and LM Studio's prompt + LMSTUDIO_REPLY_MIN_TOKENS):
-    // the dock's with 5,685 tokens to spare, arm B's (dev-fit-unconverged since 4.6) with 8,415
-    // (6,553 and 9,283 before the displacement-anisotropy interview; 6,886 and 9,615 before the coordination-shells interview;
+    // the dock's with 5,256 tokens to spare, arm B's (dev-fit-unconverged since 4.6) with 8,055
+    // (5,685 and 8,415 before the fit-assessment interview's convergence block; 6,553 and 9,283 before the
+    // displacement-anisotropy interview; 6,886 and 9,615 before the coordination-shells interview;
     // 7,739 and 10,469 before the skill fact sync; 10,444 and 13,173 before the batch-1 skill drafts).
     it('fits both worst turns in the live runs\' LM Studio minimum (48k, validation/runPolicy.js)', () => {
         const window = MIN_CONTEXT_TOKENS.lmstudio;
@@ -385,6 +395,6 @@ describe('the worst realistic turn in a 32,768-token window (plan 5.5)', () => {
             expect(plan.needed).toBe(turn.numbers.needed);
             expect(turn.numbers.prompt + LMSTUDIO_REPLY_MIN_TOKENS).toBeLessThanOrEqual(window);
         }
-        expect([window - dockTurn.numbers.needed, window - armBTurn.numbers.needed]).toEqual([5685, 8415]);
+        expect([window - dockTurn.numbers.needed, window - armBTurn.numbers.needed]).toEqual([5256, 8055]);
     });
 });

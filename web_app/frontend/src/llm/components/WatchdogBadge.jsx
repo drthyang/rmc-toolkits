@@ -24,10 +24,13 @@ const WatchdogBadge = ({ rValueFile }) => {
     if (watch.status === 'off') return null;
 
     const source = watch.source === 'llm' ? settings.model || 'LLM' : 'heuristic';
-    // The status is classified from ONE fit term's chi^2 (the last .log
-    // column), so the badge names that term instead of implying the total.
-    const term = watch.column ? `${watch.column}: ` : '';
-    const scope = watch.column ? ` — χ² of ${watch.column} only, not the total` : '';
+    // The status judges every chi^2 term of the .log and their total when the
+    // log names its columns (watchdog/heuristics.js); otherwise ONE fit
+    // term's chi^2 (the last .log column), and the badge names that term
+    // instead of implying the total.
+    const term = !watch.allTerms && watch.column ? `${watch.column}: ` : '';
+    let scope = watch.column ? ` — χ² of ${watch.column} only, not the total` : '';
+    if (watch.allTerms) scope = ' — every χ² term of the .log and their total: converged only when none still falls beyond its noise over the last tenth';
     const title = watch.note
         ? `${watch.note} — ${source}${scope}`
         : `Convergence watchdog (${source})${scope}`;

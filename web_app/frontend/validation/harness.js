@@ -185,7 +185,20 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // 2026-10-19.20: the held-out marginal pair re-set by a fresh blind author
 // from the updated spec (the marginal situation was re-set after F1's
 // corrected null raised the test's power, 2026-10-19).
-export const PROTOCOL_VERSION = '2026-10-19.20';
+// 2026-10-24.1: the user's fit-assessment interview (approved by the user,
+// 2026-10-24) — convergence judged on every χ² term of the .log and their
+// total, converged only when none still falls beyond 3 × its noise over the
+// last tenth (assess_convergence's description and result, the context's
+// convergence.last_10pct in place of change_over_last_10pct and
+// recent_slope_per_step, the system prompt's watchdog_status sentence; the
+// context budget 6,500 characters); find_gr_peaks calls a peak
+// constraint-limited above 5 % of the peak at the cut, and advises (method)
+// interpreting nothing on its low-r side and rerunning with the constraint
+// loosened; and two checks on the answer, order claimed at a box-scale
+// wavevector (long-wave) and a distribution's numbers quoted without saying
+// they come from one configuration (single-configuration). Arms A and A+ on
+// dev are unchanged.
+export const PROTOCOL_VERSION = '2026-10-24.1';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one
 // follows the full method.

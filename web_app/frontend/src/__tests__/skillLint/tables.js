@@ -36,9 +36,13 @@ import { toolResult } from '../../llm/copilot/tools';
 import { createVerification, FACTS } from '../../llm/copilot/verification';
 import { buildRunContext, lowerGroupTolerance, NOISE_FLOOR_MARGIN } from '../../llm/context/runContext';
 import {
-    CLUSTER_CN_MAX, CN_CHANGE_ABS, CN_CHANGE_REL, CN_MATCH_TOLERANCE, clusterElementsOf, cnMarginCut, cnMatches, IDEAL_COORDINATION,
-    isIdealCoordination, MODAL_COORDINATION_SHARE, SEPARATION_G_FRACTION, shellCatalogue, SPLIT_SHELL_REACH_A, UNBONDED_APEX_FRACTION
+    CLUSTER_CN_MAX, CN_CHANGE_ABS, CN_CHANGE_REL, CN_MATCH_TOLERANCE, clusterElementsOf, cnMarginCut, cnMatches, CONSTRAINT_LIMIT_FRACTION,
+    IDEAL_COORDINATION, isIdealCoordination, MODAL_COORDINATION_SHARE, SEPARATION_G_FRACTION, shellCatalogue, SPLIT_SHELL_REACH_A,
+    UNBONDED_APEX_FRACTION
 } from '../../llm/context/shells';
+import {
+    classifyConvergence, MIN_TOTAL_DROP, TREND_MIN_ROWS, TREND_NOISE_FACTOR, TREND_WINDOW_FRACTION
+} from '../../llm/watchdog/heuristics';
 import { SWEEP_RULES } from '../../../validation/armA';
 import {
     AXIS_CONE_DEG, AXIS_ENHANCEMENT, CLUSTER_EFFECT, CLUSTER_Z, SPLIT_SITE_KURTOSIS, SPLIT_SITE_SE, TRIGONALITY_EFFECT, isSplitSite
@@ -176,6 +180,59 @@ const cuF = (options) => shellCatalogue(splitShellRun(options)).shell('Cu', 'F')
 // An analysis with one A–B window (compute_bond_angles' shellWindows, in brief).
 const windowedAnalysis = {
     shellWindows: (args) => [{ centre: 'Cu', partner: 'F', window: [args.lo, args.hi], apply: ([lo, hi]) => ({ ...args, lo, hi }) }]
+};
+
+// A Ga–Se peak at 2.42 Å (σ 0.1 Å, height 8) cut at its closest-approach
+// constraint `limit`: g is 0 below it, and just above it the share of the
+// first peak the cut's position sets (2.13 Å: 3 %; 2.18 Å: 9 %).
+const constrainedGaSe = (limit) => {
+    const x = Array.from({ length: 1000 }, (_, i) => Number((i * 0.01).toFixed(6)));
+    const y = x.map((r) => (r <= limit ? 0 : 8 * Math.exp(-((r - 2.42) ** 2) / (2 * 0.1 ** 2))));
+    return {
+        plotFiles: [{ name: 'gase.csv', plotKind: 'pdf_partials', plotData: { series: [{ label: 'Ga-Se', x, y }] } }],
+        runSettings: { atoms: ['Ga', 'Se'], minimumDistancesA: [3.0, limit, 3.0] }
+    };
+};
+// The constraint-limited test (shells.js, the user's 5 %): 3 % of the peak at the
+// cut is not limited (it was under the separation's 2 %), 9 % is, and
+// find_gr_peaks says so with the user's advice.
+const verifyConstraintLimit = async () => {
+    const reading = (limit) => shellCatalogue(constrainedGaSe(limit)).shell('Ga', 'Se').constraint;
+    const low = reading(2.13);
+    assert.ok(low.gFraction > SEPARATION_G_FRACTION && low.gFraction < CONSTRAINT_LIMIT_FRACTION, `3 %: g_fraction ${low.gFraction}`);
+    assert.equal(low.limited, false, '3 % of the peak at the cut was called constraint-limited');
+    const high = reading(2.18);
+    assert.ok(high.gFraction > CONSTRAINT_LIMIT_FRACTION, `9 %: g_fraction ${high.gFraction}`);
+    assert.equal(high.limited, true, '9 % of the peak at the cut was not called constraint-limited');
+    const tool = buildRunTools(constrainedGaSe(2.18)).find((item) => item.name === 'find_gr_peaks');
+    const { checks } = await tool.run({ pair: 'Ga-Se' });
+    assert.ok(checks.some((check) => check.level === 'warn'
+        && /constraint-limited: interpret nothing on its low-r side; consider rerunning with the constraint loosened/.test(check.text)),
+    'find_gr_peaks does not say constraint-limited with the user\'s advice');
+};
+
+// A run whose small F(Q)_1 term still falls (0.01 → 0.006 in χ² over the run)
+// while a large flat constraint term, charted last, holds the total flat
+// within its noise: the convergence rule on every term and the total.
+const termStillFalling = () => {
+    let seed = 17;
+    const uniform = () => {
+        seed = (seed * 16807) % 2147483647;
+        return seed / 2147483647;
+    };
+    const noise = () => Math.sqrt(-2 * Math.log(uniform())) * Math.cos(2 * Math.PI * uniform());
+    const n = 400;
+    const small = Array.from({ length: n }, (_, t) => 0.01 * Math.exp(-t / 800) * Math.exp(0.002 * noise()));
+    const large = Array.from({ length: n }, (_, t) => (t < 60 ? 20 - 0.15 * t : 11) * Math.exp(0.01 * noise()));
+    const ln = (values) => values.map((value) => Math.log(value));
+    return {
+        name: 'run-00.log',
+        plotData: {
+            chiColumn: 'Curvature',
+            series: [{ y: ln(large) }],
+            chiTerms: { names: ['F(Q)_1', 'Curvature'], series: [ln(small), ln(large)], total: ln(small.map((value, t) => value + large[t])), segments: [n] }
+        }
+    };
 };
 
 // --- BINDINGS -------------------------------------------------------------------------
@@ -659,14 +716,15 @@ export const BINDINGS = [
         constants: [LONG_WAVE]
     },
     {
-        // The user's line (interview 2026-10-24): 5 %; today's code flags a constraint-limited pair at
-        // SEPARATION_G_FRACTION (2 %). The fit-assessment code PR adds the 5 % constant.
+        // The user's line (interview 2026-10-24): 5 %, the shell module's own constant since the
+        // fit-assessment code PR (the shell separation keeps SEPARATION_G_FRACTION, 2 %).
         file: FIT,
         gate: 'a constraint-limited peak (step 4)',
         find: 'When g(r) just above the cut is above',
         number: /is above (?<n>\d+(?:\.\d+)?) % of the peak/,
         unit: '%',
-        constants: [constant('SEPARATION_G_FRACTION', SEPARATION_G_FRACTION, 'llm/context/shells.js, the constraint pile-up (find_gr_peaks\' g_at_constraint_fraction)')]
+        constants: [constant('CONSTRAINT_LIMIT_FRACTION', CONSTRAINT_LIMIT_FRACTION, 'llm/context/shells.js, the constraint-limited test (find_gr_peaks\' warning and g_at_constraint_fraction, the context\'s cut_at_min_distance)')],
+        verify: () => verifyConstraintLimit()
     }
 ];
 
@@ -696,7 +754,7 @@ export const NOT_GATES = [
     {
         file: FIT,
         find: 'at least 3 independent runs or configurations and at least 10 accepted moves per atom',
-        why: 'the user\'s sampling bar (interview 2026-10-24): no module decides it; the fit-assessment code PR flags a distribution quoted from a single configuration without saying so'
+        why: 'the user\'s sampling bar (interview 2026-10-24): no module decides the 3 runs or the 10 moves; the answer check "single-configuration" flags a distribution quoted without saying it is one configuration\'s'
     },
     { file: FIT, find: 'a partial under 5 % of the signal', why: 'the user\'s line for a weakly weighted partial (interview 2026-10-24): the context gives the weights, no module decides at 5 %' },
     {
@@ -829,6 +887,53 @@ export const FIRM_RULES = [
             assert.equal(context.convergence?.watchdog_status, 'improving', 'the context\'s watchdog_status is not improving');
             findsRule('The run has converged.', { context }, 'convergence');
             lowersOutcome('The run has converged.', { context });
+        }
+    },
+    {
+        file: FIT,
+        find: 'an answer that claims order at a box-scale wavevector',
+        enforcedBy: 'the answer check "long-wave" (the verification\'s FACTS, the modulation row), from analyze_modulations\' facts.modulation.long_wave_q (the engine\'s LONG_WAVE_Q, isLongWave)',
+        probe: async ({ tools } = {}) => {
+            // The facts as analyze_modulations returns them: the engine's bound, a long wave among the strongest modes.
+            const q = [0.1, 0.2, -0.1];
+            assert.equal(isLongWave(q), true);
+            const facts = { modulation: { elements: ['Se'], ordered: [], general: [], long_wave_q: MODULATION_RULES.longWaveQ, long_waves: [{ element: 'Se', q }] } };
+            findsRule('Se is ordered at q = (0.1, 0.2, -0.1).', { facts: [facts] }, 'long-wave');
+            findsRule('The Se displacements show a long-wavelength modulation.', { facts: [facts] }, 'long-wave');
+            lowersOutcome('Se is ordered at q = (0.1, 0.2, -0.1).', { facts: [facts] });
+            // The user's own wording, and a point that passed its own test at another q, raise no finding.
+            const said = judgeAnswer('Se\'s strongest mode, q = (0.1, 0.2, -0.1), is a long wave: a correlation the finite box can\'t represent, so it says nothing about order at its own q.', { facts: [facts] });
+            assert.deepEqual(said.audit, []);
+            const ordered = { modulation: { ...facts.modulation, ordered: [{ element: 'Se', q: [0, 0, 0.5] }] } };
+            assert.deepEqual(judgeAnswer('Se is ordered at q = (0, 0, ½).', { facts: [ordered] }).audit, []);
+            // On the Demo: the tool's facts carry the engine's bound.
+            const modulations = tools?.get('analyze_modulations');
+            if (modulations) {
+                const result = await modulations.run({});
+                assert.equal(result.facts.modulation.long_wave_q, LONG_WAVE_Q, 'analyze_modulations\' facts do not carry the long-wave bound');
+                assert.ok(result.facts.modulation.long_waves.every((wave) => isLongWave(wave.q)));
+            }
+        }
+    },
+    {
+        file: FIT,
+        find: 'an answer that quotes a distribution from a single configuration without saying so',
+        enforcedBy: 'the answer check "single-configuration" (the verification\'s FACTS, the distribution row), from compute_bond_angles\', analyze_displacement_directions\' and analyze_clusters\' facts.distribution',
+        probe: async ({ tools } = {}) => {
+            // A bond-angle distribution the tool returned (the counts uniform: not refused).
+            const { facts } = summarizeBondAngles(bondAnglePayload([0, 0, 0, 0, 0, 0, 1000]));
+            assert.equal(facts.distribution?.configurations, 1, 'compute_bond_angles returns no distribution fact');
+            findsRule('Se–Ta–Se angles: mean 100°, sd 20°.', { facts: [facts] }, 'single-configuration');
+            lowersOutcome('Se–Ta–Se angles: mean 100°, sd 20°.', { facts: [facts] });
+            assert.deepEqual(judgeAnswer('In this one configuration the Se–Ta–Se angles have mean 100°, sd 20°.', { facts: [facts] }).audit, []);
+            const directions = summarizeOrientation(orientationPayload({ peak: 1.2, map: 0.5 }), null).facts;
+            assert.equal(directions.distribution?.kind, 'directions', 'analyze_displacement_directions returns no distribution fact');
+            // On the Demo: the whole GaSe4 shell's angles.
+            const angles = tools?.get('compute_bond_angles');
+            if (angles) {
+                const result = await angles.run({ end1: 'Se', apex: 'Ga', end2: 'Se', r12_min: 2.18, r12_max: 2.79 });
+                findsRule('Se–Ga–Se angles: mean 109.4°, sd 4.1°.', { facts: [result.facts] }, 'single-configuration');
+            }
         }
     },
     {
@@ -1107,7 +1212,9 @@ export const VALUES = [
 // entry repeats them), and `verify` checks the app and A+ apply `app`.
 const SPLIT_RULE = `PC1 resolved, its excess kurtosis ≤ ${String(SPLIT_SITE_KURTOSIS).replace('-', '−')} and ≥ ${SPLIT_SITE_SE} sampling errors below 0 (isSplitSite)`;
 const CLUSTER_RULE = `analyze_clusters for each element whose own first shell holds 0.5–${CLUSTER_CN_MAX} neighbours (clusterElementsOf, CLUSTER_CN_MAX)`;
-const CONVERGENCE_RULE = 'assess_convergence and the watchdog read one fit term, the last .log column (runTools.js convergenceTool, chiColumn)';
+const CONVERGENCE_RULE = `every χ² term of the .log and their total, none still falling beyond ${TREND_NOISE_FACTOR} × its noise (the scatter about `
+    + `its least-squares line) over the last tenth (≥ ${TREND_MIN_ROWS} rows, from the last restart): assess_convergence, the watchdog and the `
+    + 'context\'s watchdog_status (watchdog/heuristics.js judgeConvergence)';
 const TOLERANCE_RULE = `a group counts where it holds to ${NOISE_FLOOR_MARGIN} × the noise floor (lowerGroupTolerance, NOISE_FLOOR_MARGIN)`;
 // analyze_displacement_directions today: one test, one tier, one resolution.
 const DIRECTION_TIERS_RULE = `a preferred direction at a peak σ ≥ ${SIGNIFICANCE_SIGMA} (unrounded) whatever its enhancement, else "no significant peak direction": no hint tier (summarizeOrientation)`;
@@ -1149,17 +1256,30 @@ const verifyToleranceRule = () => {
 
 export const RULES = [
     {
+        // The user's convergence rule (interview 2026-10-24, answer 1), the fit-assessment code PR's.
         file: FIT,
         rule: 'convergence',
         find: 'Judge every fit term and the total',
-        states: /\bone fit term\b|\blast `?\.log`? column\b/,
+        after: 160,
+        states: /every fit term and the total[\s\S]*\bstill falling beyond its noise over the\s+last tenth\b/,
         skill: 'every fit term and the total, none still falling beyond its noise over the last tenth',
         app: CONVERGENCE_RULE,
         verify: async () => {
-            // Today the tool takes no term and reads the one history it is given: the chiColumn's.
-            const tool = buildRunTools({ rValueFile: fallingHistory }).find((item) => item.name === 'assess_convergence');
-            assert.deepEqual(Object.keys(tool.parameters.properties), [], 'assess_convergence takes a term: update this rule');
-            assert.equal((await tool.run({})).data.column, 'X_ray_(R)1');
+            // The window is the last tenth (≥ 10 rows), "beyond its noise" 3 × the residual sd.
+            assert.deepEqual([TREND_WINDOW_FRACTION, TREND_MIN_ROWS, TREND_NOISE_FACTOR, MIN_TOTAL_DROP], [0.1, 10, 3, 0.1]);
+            // One term still falling keeps the run improving, though the charted column alone reads converged.
+            const rValueFile = termStillFalling();
+            assert.equal(classifyConvergence(rValueFile.plotData.series[0].y), 'converged', 'the probe\'s charted column no longer reads flat');
+            const tool = buildRunTools({ rValueFile }).find((item) => item.name === 'assess_convergence');
+            const { data, facts } = await tool.run({});
+            assert.equal(data.status, 'improving', 'assess_convergence judges the charted column only');
+            assert.deepEqual(data.terms.map((term) => [term.term, term.trend]), [['F(Q)_1', 'falling'], ['Curvature', 'flat']]);
+            assert.equal(data.total.trend, 'flat');
+            assert.equal(facts.convergence, 'improving');
+            const context = buildRunContext({ rValueFile });
+            assert.equal(context.convergence.watchdog_status, 'improving', 'the context\'s watchdog_status judges the charted column only');
+            assert.equal(context.convergence.last_10pct.terms['F(Q)_1'].trend, 'falling');
+            findsRule('The run has converged.', { context }, 'convergence');
         }
     },
     {
@@ -1259,8 +1379,10 @@ export const RULES = [
         app: BETWEEN_CELLS_RULE,
         verify: () => {
             // The modulation fact the answer checks read holds no diffuse verdict today.
+            // (long_wave_q and long_waves, the long-wave check's, since the fit-assessment code PR.)
             const modulation = FACTS.find((fact) => fact.key === 'modulation');
-            assert.deepEqual(Object.keys(modulation.shape), ['elements', 'ordered', 'general'], 'the modulation fact reads the diffuse verdict: update this rule');
+            assert.deepEqual(Object.keys(modulation.shape), ['elements', 'ordered', 'general', 'long_wave_q', 'long_waves'],
+                'the modulation fact reads the diffuse verdict: update this rule');
         }
     },
     // local-order (batch 1) states the same three rules for "no order".
@@ -1313,8 +1435,9 @@ export const RULES = [
 // user's interviews of 2026-10-24. AWAITS CODE: an interviewed skill states the
 // user's rule, which a code PR still has to build (each names its PR); the
 // entry leaves when that code lands.
-// The user's interview of rmc-fit-assessment (2026-10-24): the code half is its own PR off main.
-const FIT_CODE_PR = 'awaits the fit-assessment code PR';
+// The user's interview of rmc-fit-assessment (2026-10-24): its four entries (the every-term
+// convergence rule, the 5 % constraint and two firm rules) left with the fit-assessment code PR,
+// which bound them above (RULES, BINDINGS, FIRM_RULES).
 // The user's interview of coordination-shells (2026-10-24): the firm rule's code is a later PR.
 const SHELLS_CODE_PR = 'awaits the coordination code PR';
 // The user's interview of local-symmetry (2026-10-24): the firm rules' code is a later PR.
@@ -1401,35 +1524,5 @@ export const ALLOW_LIST = [
         file: SHELLS,
         fragment: 'every CN or angle in an answer carries its window in Å',
         why: `AWAITS CODE: the user's firm rule (interview 2026-10-24, answer 8); no answer check flags a CN or angle without its window today: ${SHELLS_CODE_PR} (its answer check), then mapped in FIRM_RULES`
-    },
-    {
-        check: 'rule',
-        file: FIT,
-        fragment: 'Judge every fit term and the total',
-        line: 26,
-        skill: 'every fit term and the total, none still falling beyond its noise over the last tenth',
-        app: CONVERGENCE_RULE,
-        why: `AWAITS CODE: the user's convergence rule (interview 2026-10-24, answer 1); assess_convergence and the watchdog judge one term today: ${FIT_CODE_PR} (every-term convergence)`
-    },
-    {
-        check: 'gate',
-        file: FIT,
-        fragment: 'When g(r) just above the cut is above 5 % of the',
-        line: 38,
-        skill: '5 %',
-        tool: 'SEPARATION_G_FRACTION = 0.02',
-        why: `AWAITS CODE: the user's line for a constraint-limited peak (interview 2026-10-24, answer 4); find_gr_peaks flags it at 2 % today: ${FIT_CODE_PR} (the 5 % constraint constant)`
-    },
-    {
-        check: 'firm-rule',
-        file: FIT,
-        fragment: 'an answer that claims order at a box-scale wavevector',
-        why: `AWAITS CODE: the user's firm rule (interview 2026-10-24, answer 8a); no answer check flags it today: ${FIT_CODE_PR} (its answer check), then mapped in FIRM_RULES`
-    },
-    {
-        check: 'firm-rule',
-        file: FIT,
-        fragment: 'an answer that quotes a distribution from a single',
-        why: `AWAITS CODE: the user's firm rule (interview 2026-10-24, answer 8b); no answer check flags it today: ${FIT_CODE_PR} (its answer check), then mapped in FIRM_RULES`
     }
 ];

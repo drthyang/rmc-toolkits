@@ -404,14 +404,18 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
     // one of the question's analyses found it at ≥ 3σ. The map test alone is
     // anisotropy (review L3, approved 2026-10-14): before, it counted too, and
     // let a preferred direction through on plain thermal anisotropy.
+    const subject = payload.referenceNumber != null ? `site ${payload.referenceNumber}` : (payload.element || 'all atoms');
     const facts = {
         direction: {
-            subject: payload.referenceNumber != null ? `site ${payload.referenceNumber}` : (payload.element || 'all atoms'),
+            subject,
             significant: payload.peakSignificance >= SIGNIFICANCE_SIGMA,
             anisotropic: payload.mapSignificance >= SIGNIFICANCE_SIGMA,
             peak_sigma: round(payload.peakSignificance),
             map_sigma: payload.mapSignificance == null ? null : round(payload.mapSignificance)
-        }
+        },
+        // For the single-configuration check (the user's rule, 2026-10-24):
+        // a distribution read from the run's one configuration.
+        distribution: { kind: 'directions', subject: `the ${subject} displacement-direction distribution`, configurations: 1 }
     };
     return { data, checks, facts };
 };
@@ -694,6 +698,10 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false, shells =
             ' If the user wants this window, ask them (ask_user) and call again with window_confirmed: true.'));
         return { data, checks, facts };
     }
+    // For the single-configuration check (the user's rule, 2026-10-24): the
+    // angle distribution and the coordination counts of the run's one
+    // configuration (a refused window returns no distribution).
+    if (total > 0) facts.distribution = { kind: 'bond_angles', subject: `the ${a}–${b}–${c} bond-angle distribution`, configurations: 1 };
     if (cutText) checks.push({ level: 'warn', text: `${cutText} Kept: the user chose this window; say that its angles are of a partial shell.` });
     if (!cutText) {
         checks.push({ level: 'ok', text: `${total} angles around ${apexTotal} ${b} atoms (mean coordination ${round(meanCoordination)}).` });
@@ -1099,7 +1107,10 @@ export const summarizeClusters = (payload) => {
             rigid: verdict.rigid.answer,
             split: verdict.splitMemberSites.answer,
             families: favoured.map((family) => `${AXIS_VERB[family.axis]} <${family.family}>`)
-        }
+        },
+        // For the single-configuration check (the user's rule, 2026-10-24):
+        // the clusters' shape distribution in the run's one configuration.
+        distribution: { kind: 'cluster_shape', subject: `the ${element}${kind.members} cluster-shape distribution`, configurations: 1 }
     };
     return { data, checks, facts };
 };
@@ -1421,13 +1432,21 @@ export const summarizeModulations = (payload, { unitCell = null } = {}) => {
         checks.push({ level: 'note', text: `An odd supercell axis cannot hold ${data.untestable_zone_boundary.join(', ')}: not tested.` });
     }
     // For the answer check: a superstructure claim needs an ordered point.
+    // A claim of order at a box-scale wavevector (a long wave: every
+    // |q_i| ≤ rules.longWaveQ, the engine's isLongWave) is flagged whatever
+    // the mode's power (the user's rule, 2026-10-24): the rule's bound and the
+    // long waves among each element's strongest modes, as the data shows them.
     const facts = {
         modulation: {
             elements: tested.map((entry) => entry.element),
             ordered: tested.flatMap((entry) => entry.verdict.cellDoubling.decidedBy.map((q) => ({ element: entry.element, q }))),
             general: tested
                 .filter((entry) => entry.verdict.generalOrder.answer === true)
-                .map((entry) => ({ element: entry.element, q: entry.verdict.generalOrder.decidedBy[0] }))
+                .map((entry) => ({ element: entry.element, q: entry.verdict.generalOrder.decidedBy[0] })),
+            long_wave_q: rules.longWaveQ,
+            long_waves: tested.flatMap((entry) => entry.strongest.slice(0, 3)
+                .filter((mode) => mode.kind === 'long_wave')
+                .map((mode) => ({ element: entry.element, q: mode.q })))
         }
     };
     return { data, checks, facts };

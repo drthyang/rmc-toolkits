@@ -282,9 +282,99 @@ describe('cluster and coordination claims (review L5)', () => {
     });
 });
 
+describe('the long-wave check: order at a box-scale wavevector (the user\'s rule, 2026-10-24)', () => {
+    // analyze_modulations' facts: the engine's bound (every |q_i| ≤ 0.25 is a
+    // long wave), Ta's strongest mode a long wave, an ordered zone-boundary point.
+    const facts = [{
+        modulation: {
+            elements: ['Ta'], ordered: [{ element: 'Ta', q: [0, 0, 0.5] }], general: [], long_wave_q: 0.25,
+            long_waves: [{ element: 'Ta', q: [0.1, 0, 0] }]
+        }
+    }];
+
+    it('flags order claimed at a long wave, by its q or in words', () => {
+        for (const text of [
+            'There is long-range order at q = (0.1, 0, 0): the strongest Ta mode, 6× the median.',
+            'The Ta displacements are modulated with q = (0.1 0.1 0).',
+            'Ta shows ordered displacements at q=[1/8, 0, 0].',
+            'A superstructure with wavevector (0.25, 0, 0) appears in the Ta modes.',
+            'Ta shows a long-wavelength modulation, which indicates incommensurate order.',
+            'The box-scale wave is evidence of ordered Ta displacements.'
+        ]) {
+            expect({ text, rules: rules(text, { facts }) }).toEqual({ text, rules: ['long-wave'] });
+        }
+        expect(audit('Ta is ordered at q = (0.1, 0, 0).', { facts })[0].text).toBe('The answer claims order at q = (0.1, 0, 0), a box-scale '
+            + 'wavevector (every |q_i| ≤ 0.25: a long wave), but a long wave is a correlation the finite box can\'t represent, so it says '
+            + 'nothing about order at its own q; a point or mode that passes its own test at another q is judged on that test alone.');
+    });
+
+    it('stays quiet on the user\'s own wording, a denial, a long wave named without order, and order that passed its own test elsewhere', () => {
+        for (const text of [
+            'The strongest Ta mode is a long wave at q = (0.1, 0, 0): a correlation the finite box can\'t represent, so it says nothing about order at its own q.',
+            'Ta\'s strongest mode is a long-wavelength wave, q = (0.1, 0, 0) at 6× the median: box-scale displacement correlations, not a crystallographic superstructure.',
+            'The modulation at q = (0.1, 0, 0) is a long wave, not order.',
+            'No order: the long waves are box-scale correlations.',
+            'Ordered Ta displacements at q = (0, 0, ½): a superstructure doubling the cell along c.',
+            'Order at q = (0.3, 0, 0) passed its own test.',
+            'Ta displacements are ordered along [0 0 1].',
+            'In order to judge the long waves, I ran analyze_modulations.'
+        ]) {
+            expect({ text, rules: rules(text, { facts }) }).toEqual({ text, rules: [] });
+        }
+    });
+
+    it('needs an analyze_modulations of the question (its bound), as the superstructure check', () => {
+        expect(rules('There is order at q = (0.1, 0, 0).', {})).toEqual([]);
+        // The superstructure rule still judges a claim without an ordered point.
+        expect(rules('Ta is ordered at q = (0.1, 0, 0) — a superstructure.', { facts: [{ modulation: { ...facts[0].modulation, ordered: [] } }] }))
+            .toEqual(['superstructure', 'long-wave']);
+    });
+});
+
+describe('the single-configuration check: a distribution quoted without saying it is one configuration\'s (the user\'s rule, 2026-10-24)', () => {
+    const angles = [{ distribution: { kind: 'bond_angles', subject: 'the Se–Ga–Se bond-angle distribution', configurations: 1 } }];
+
+    it('flags a distribution\'s numbers quoted without saying they come from one configuration', () => {
+        for (const text of [
+            'Se–Ga–Se angles: mean 109.4°, sd 4.1°, mode 109.5° with share 0.94.',
+            'An octahedral split: 80 % cis near 89°, 20 % trans near 159°.',
+            'The sin θ-corrected histogram peaks at 100–110°.',
+            '3 948 of 4 000 Ga atoms have 4 neighbours, mean 3.99.',
+            'The angle distribution is centred at 109.4° with a spread of 4.1°.'
+        ]) {
+            expect({ text, rules: rules(text, { facts: angles }) }).toEqual({ text, rules: ['single-configuration'] });
+        }
+        // A cluster-shape distribution: its edge ladder's width, its breathing sd.
+        const clusters = [{ distribution: { kind: 'cluster_shape', subject: 'the Ta4 cluster-shape distribution', configurations: 1 } }];
+        for (const text of ['The Ta4 edge ladder width is 0.12 Å against 0.10 Å for independent atoms.', 'Their breathing sd is 0.05 Å.']) {
+            expect({ text, rules: rules(text, { facts: clusters }) }).toEqual({ text, rules: ['single-configuration'] });
+        }
+        expect(rules('The Ta4 clusters breathe: their size fluctuates 0.27 (relative) more than for independent atoms, z = 27.', { facts: clusters })).toEqual([]);
+        expect(audit('Se–Ga–Se angles: mean 109.4°, sd 4.1°.', { facts: angles })[0].text).toBe('The answer quotes the numbers of the Se–Ga–Se '
+            + 'bond-angle distribution without saying they come from one configuration: every analysis here reads the run\'s one '
+            + 'configuration, so its distribution carries no spread between runs; say so.');
+    });
+
+    it('stays quiet when the answer says one configuration, quotes no distribution, or no distribution analysis ran', () => {
+        for (const text of [
+            'In this one configuration the Se–Ga–Se angles have mean 109.4°, sd 4.1°.',
+            'Se–Ga–Se angles: mean 109.4°, sd 4.1° (a single RMC configuration; independent runs would give the spread).',
+            'From one configuration: 80 % cis near 89°, 20 % trans near 159°.',
+            'The GaSe4 tetrahedron is regular.',
+            'There are no near-180° angles.',
+            'Ga–Se 2.434 Å, sd 0.095 Å.',
+            'No preferred direction (peak −0.89σ, map 0.56σ).'
+        ]) {
+            expect({ text, rules: rules(text, { facts: angles }) }).toEqual({ text, rules: [] });
+        }
+        expect(rules('Se–Ga–Se angles: mean 109.4°, sd 4.1°.', {})).toEqual([]);
+        expect(rules('Se–Ga–Se angles: mean 109.4°, sd 4.1°.', { facts: [{ coordination: { centre: 'Ga', partner: 'Se', window: [2.18, 2.79], cn: 4, whole_shell: true, confirmed: false } }] })).toEqual([]);
+    });
+});
+
 describe('the order of the checks', () => {
     it('runs in FACTS order, and a lowering\'s shifts have no check yet', () => {
-        expect(FACTS.map((row) => row.key)).toEqual(['convergence', 'groups', 'direction', 'modulation', 'cluster', 'coordination', 'lowering']);
+        expect(FACTS.map((row) => row.key)).toEqual(['convergence', 'groups', 'direction', 'modulation', 'cluster', 'coordination', 'distribution', 'lowering']);
         const facts = [
             { coordination: { centre: 'Cu', partner: 'F', window: [1.7, 2.52], cn: 6, whole_shell: true, confirmed: false } },
             { cluster: { element: 'Cu', members: 4, distorted: false, static: false, breathing: false, rigid: false, split: false } },

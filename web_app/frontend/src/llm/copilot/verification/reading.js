@@ -114,6 +114,27 @@ const SYMBOL_LIKE = /(?<![a-z0-9])[pifcabr](?=[a-z/-]*\d)(?:-?\d(?:_?\d)?|\/?[mn
 /** Whether a text names something written like a space-group symbol. */
 export const namesSymbol = (text) => SYMBOL_LIKE.test(symbolText(text).replace(/[\s{}$\\]/g, (char) => (/\s/.test(char) ? ' ' : '')));
 
+// --- wavevectors ----------------------------------------------------------------
+
+const UNICODE_FRACTIONS = { '½': 0.5, '⅓': 1 / 3, '⅔': 2 / 3, '¼': 0.25, '¾': 0.75, '⅕': 0.2, '⅙': 1 / 6, '⅛': 0.125 };
+const COMPONENT = '[-−+]?(?:\\d+(?:\\.\\d+)?(?:\\/\\d+)?|\\.\\d+|[½⅓⅔¼¾⅕⅙⅛])';
+// A wavevector as written after q, k or "wavevector": q = (0.1, 0, 0),
+// q=[½ 0 0], wave vector (1/10, 0, 0) — never a bare [u v w] direction.
+const Q_VECTOR = new RegExp(`\\b(?:q|k|wave[- ]?vectors?)\\s*(?:=|≈|~|:|of|at)?\\s*[([]\\s*(${COMPONENT})\\s*[,;\\s]\\s*(${COMPONENT})\\s*[,;\\s]\\s*(${COMPONENT})\\s*[)\\]]`, 'gi');
+
+const componentValue = (token) => {
+    const sign = /^[-−]/.test(token) ? -1 : 1;
+    const body = token.replace(/^[-−+]/, '');
+    if (UNICODE_FRACTIONS[body] !== undefined) return sign * UNICODE_FRACTIONS[body];
+    const [top, bottom] = body.split('/');
+    return sign * (bottom ? Number(top) / Number(bottom) : Number(top));
+};
+
+/** The wavevectors a text writes after q, k or "wavevector" ([q1, q2, q3] in cell fractions), in order. */
+export const qVectorsIn = (text) => [...String(text || '').matchAll(Q_VECTOR)]
+    .map((match) => match.slice(1, 4).map(componentValue))
+    .filter((q) => q.every(Number.isFinite));
+
 // --- element symbols --------------------------------------------------------------
 
 /** An element symbol as written in a formula or alone (Mo, Mo3, Ta₄), not inside a word. */

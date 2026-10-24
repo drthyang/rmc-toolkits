@@ -409,9 +409,38 @@ describe('pair correlations integration', () => {
 describe('scientific provenance in the context', () => {
     it('gives the watchdog verdict and the recent change of the convergence series', () => {
         const context = buildRunContext(fixtureProps());
-        // 2.3 − 0.003·i: still falling.
+        // 2.3 − 0.003·i: still falling (the fixture's log names no χ² terms: the charted column alone).
         expect(context.convergence.watchdog_status).toBe('improving');
-        expect(context.convergence.change_over_last_10pct).toBeCloseTo(-0.15, 2);
+        expect(context.convergence.quantity).toMatch(/one fit term of the run, not a total$/);
+        expect(context.convergence.last_10pct.rows).toBe(50);
+        expect(Object.keys(context.convergence.last_10pct.terms)).toEqual(['last .log column']);
+        const [only] = Object.values(context.convergence.last_10pct.terms);
+        expect(only).toMatchObject({ noise_sd: 0, trend: 'falling' });
+        expect(only.change).toBe(-0.15);
+        expect(context.convergence.last_10pct).not.toHaveProperty('total');
+        expect(context.convergence).not.toHaveProperty('change_over_last_10pct');
+    });
+
+    it('judges every χ² term and their total in last_10pct when the log names them', () => {
+        const props = fixtureProps();
+        const { y } = props.rValueFile.plotData.series[0];
+        const flat = Array(y.length).fill(-5);
+        props.rValueFile.plotData = {
+            ...props.rValueFile.plotData,
+            chiTerms: {
+                names: ['F(Q)_1', 'Curvature', 'Curvature', 'X_ray_(R)1'],
+                series: [flat, Array(y.length).fill(Math.log(1e-12)), Array(y.length).fill(Math.log(1e-12)), y],
+                total: y.map((value) => Math.log(Math.exp(value) + Math.exp(-5))),
+                segments: [y.length]
+            }
+        };
+        const { convergence } = buildRunContext(props);
+        expect(convergence.watchdog_status).toBe('improving');
+        expect(convergence.quantity).toMatch(/last_10pct: every chi\^2 term and their total$/);
+        expect(Object.keys(convergence.last_10pct.terms)).toEqual(['F(Q)_1', 'X_ray_(R)1']);
+        expect(convergence.last_10pct.terms['F(Q)_1']).toEqual({ change: 0, noise_sd: 0, trend: 'flat' });
+        expect(convergence.last_10pct.total.trend).toBe('falling');
+        expect(convergence.last_10pct.zero_terms).toBe(2);
     });
 
     it('marks one measurement fitted in both spaces, and an FT file as the same measurement', () => {

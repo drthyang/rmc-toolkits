@@ -175,6 +175,27 @@ def chi_history_ln(chi: np.ndarray) -> np.ndarray:
     return out
 
 
+def chi_terms_payload(log) -> dict | None:
+    """Every chi^2 term of a run's logs and their total, for the Copilot.
+
+    ``{names, series, total, segments}`` in the chart's ln transform
+    (:func:`chi_history_ln`): the terms' header names and one ln chi^2 series
+    per term (both ``None`` when the logs name different terms), the ln of
+    each row's sum of terms and the rows per log; ``None`` when a log has no
+    terms (:class:`~rmc_toolkits.parsers.ChiLog`). The chart draws the last
+    column only. Mirrors ``chiTermsPlotData`` / ``combineChiTerms`` in
+    browserData.js.
+    """
+    if log.total is None:
+        return None
+    return {
+        "names": list(log.term_names) if log.term_names is not None else None,
+        "series": [chi_history_ln(series).tolist() for series in log.terms] if log.terms is not None else None,
+        "total": chi_history_ln(log.total).tolist(),
+        "segments": list(log.segments),
+    }
+
+
 CHI_HISTORY_Y_LABEL = "ln(χ²)"
 UNNAMED_CHI_COLUMN = "last log column"
 

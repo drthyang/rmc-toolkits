@@ -3,7 +3,7 @@
     "type": "function",
     "function": {
       "name": "read_run_data",
-      "description": "Read one section of the run summary in full (the context you were given is trimmed to fit). Sections: structure (cell lengths/angles of one unit cell, supercell, atom counts); configuration_optimization (move counters from the .rmc6f header); run_settings (the RMCProfile .dat control file: constraints, move sizes, fitted data); symmetry (detected space group, tolerance ladder, Wyckoff orbits with displacement); pair_correlations (partial g(r) first peaks vs the average-structure neighbour distance); datasets (per-dataset Rwp); convergence (ln(chi^2) history of the last .log column).",
+      "description": "Read one section of the run summary in full (the context you were given is trimmed to fit). Sections: structure (cell lengths/angles of one unit cell, supercell, atom counts); configuration_optimization (move counters from the .rmc6f header); run_settings (the RMCProfile .dat control file: constraints, move sizes, fitted data); symmetry (detected space group, tolerance ladder, Wyckoff orbits with displacement); pair_correlations (partial g(r) first peaks vs the average-structure neighbour distance); datasets (per-dataset Rwp); convergence (ln(chi^2) history of the last .log column; the last-tenth trend of every chi^2 term and their total).",
       "parameters": {
         "type": "object",
         "properties": {
@@ -21,7 +21,7 @@
     "type": "function",
     "function": {
       "name": "assess_convergence",
-      "description": "Classify the convergence of the ln(chi^2) history (the last .log column — one fit term, not the total) with the dashboard watchdog heuristics, and report the slope per log row over the last 10 %, 25 % and 50 % of the run. Status: improving | converged | stalled | diverging.",
+      "description": "Classify the convergence of every chi^2 term of the .log and of their total (ln chi^2 per log row; the dashboard charts only the last column), with the dashboard watchdog's rule: a series is still falling when the least-squares line through its last tenth (at least 10 rows, never back past the last restart) drops by more than 3 × the scatter of its points about that line; the run is converged only when no term and not the total still falls (or rises), stalled when it is flat without any of them ever dropping by 10 %. Status: improving | converged | stalled | diverging.",
       "parameters": {
         "type": "object",
         "properties": {}

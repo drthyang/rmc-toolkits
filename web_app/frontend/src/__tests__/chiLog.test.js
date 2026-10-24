@@ -7,7 +7,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { plotDataFromText, readChi } from '../browserData';
+import { chiTermsPlotData, combineChiTerms, plotDataFromText, readChi } from '../browserData';
 import { buildRunContext } from '../llm/context/runContext';
 import { classifyConvergence } from '../llm/watchdog/heuristics';
 
@@ -59,6 +59,45 @@ describe('readChi', () => {
         expect(log.values).toEqual([10, 30]);
         expect(log.column).toBeNull();
         expect(log.skippedRows).toBe(1);
+        // No column names: which columns are χ² terms is unknown.
+        expect(log.terms).toBeNull();
+    });
+
+    it('reads every χ² term (the columns after Time, moves_acc, moves_gen), as test_parsers.py', () => {
+        const header = 'Time  moves_acc moves_gen  F(Q)_1  Curvature  X_ray_(R)1\nh/m/s/.th WEIGHT PARAMETERS 0.1E+01 0.1E+01 0.1E+01\n';
+        const log = readChi(`${header}1.0 10 20 0.3E-02 0.000E+00 0.2E-03\n2.0 20 40 0.117\n3.0 30 60 0.2D-02 NaN 0.1D-03\n`);
+        expect(log.terms.names).toEqual(['F(Q)_1', 'Curvature', 'X_ray_(R)1']);
+        expect(log.terms.values[0]).toEqual([0.3e-2, 0.2e-2]);
+        expect(log.terms.values[1][0]).toBe(0);
+        expect(Number.isNaN(log.terms.values[1][1])).toBe(true);
+        expect(log.terms.values[2]).toEqual(log.values);
+        const plot = chiTermsPlotData(log.terms);
+        expect(plot.total[0]).toBe(Math.log(0.3e-2 + 0 + 0.2e-3));
+        expect(Number.isNaN(plot.total[1])).toBe(true);
+        expect(plot.series[1][0]).toBe(Math.log(1e-12));
+        expect(plot.segments).toEqual([2]);
+    });
+
+    it('gives the demo log\'s eight terms, the last one the charted column', () => {
+        const plot = plotDataFromText({ plotKind: 'r_value', name: 'GTS_250K-02.log', text });
+        expect(plot.chiTerms.names).toEqual(['F(Q)_1', ...Array(6).fill('Curvature'), 'X_ray_(R)1']);
+        expect(plot.chiTerms.series.at(-1)).toEqual(plot.series[0].y);
+        expect(plot.chiTerms.total).toHaveLength(complete.length);
+        expect(plot.chiTerms.segments).toEqual([complete.length]);
+    });
+});
+
+describe('combineChiTerms: one run\'s logs end to end', () => {
+    const part = (names, series) => ({ names, series, total: series[0].map((_, i) => series.reduce((sum, s) => sum + s[i], 0)), segments: [series[0].length] });
+
+    it('concatenates the terms when every log names the same, the total and segments always', () => {
+        const a = part(['F(Q)_1', 'X_ray_(R)1'], [[1, 2], [3, 4]]);
+        const b = part(['F(Q)_1', 'X_ray_(R)1'], [[5], [6]]);
+        expect(combineChiTerms([a, b])).toEqual({ names: ['F(Q)_1', 'X_ray_(R)1'], series: [[1, 2, 5], [3, 4, 6]], total: [4, 6, 11], segments: [2, 1] });
+        const changed = part(['F(Q)_1', 'X_ray_(R)1_new'], [[7], [8]]);
+        expect(combineChiTerms([a, changed])).toEqual({ names: null, series: null, total: [4, 6, 15], segments: [2, 1] });
+        // A log without terms (no column names): none for the run.
+        expect(combineChiTerms([a, null])).toBeNull();
     });
 });
 
