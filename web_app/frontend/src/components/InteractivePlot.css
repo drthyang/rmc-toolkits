@@ -143,6 +143,12 @@
     fill-opacity: var(--plot-area-opacity);
 }
 
+/* A ±σ band around a series (the ribbon prop), in the series color, under it. */
+.series-ribbon {
+    stroke: none;
+    fill-opacity: var(--plot-area-opacity);
+}
+
 /* Measured data markers: colored outline with a white face, with the
    calculated curve drawn over them. */
 .series-markers {
@@ -218,6 +224,14 @@
     border: 2px solid;
     width: 0.45rem;
     height: 0.45rem;
+}
+
+/* The ribbon's entry: a short translucent band. */
+.plot-legend span.swatch-band {
+    width: 0.9333rem;
+    height: 0.45rem;
+    border-radius: 0.15rem;
+    opacity: 0.35;
 }
 
 .plot-tooltip {

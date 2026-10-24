@@ -27,10 +27,15 @@ const entries = new Map();
 
 const nanForNull = (values) => (Array.isArray(values) ? values.map((value) => (value === null ? NaN : value)) : values);
 
-/** A Flask plot payload as plotDataFromText gives it: null in a series' x or y is NaN. */
+/** A Flask plot payload as plotDataFromText gives it: null in a series' x, y or sigma is NaN. */
 export const plotDataFromServer = (payload) => ({
     ...payload,
-    series: payload.series.map((series) => ({ ...series, x: nanForNull(series.x), y: nanForNull(series.y) }))
+    series: payload.series.map((series) => ({
+        ...series,
+        x: nanForNull(series.x),
+        y: nanForNull(series.y),
+        ...(Array.isArray(series.sigma) ? { sigma: nanForNull(series.sigma) } : {})
+    }))
 });
 
 const failure = (message, invalidPayload = false) => Object.assign(new Error(message), { invalidPayload });

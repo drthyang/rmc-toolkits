@@ -485,11 +485,17 @@ class RunFolderTests(unittest.TestCase):
         self.assertGreater(payload["correlation"]["neighbour"], 0.5)
 
     def test_the_resolver_guards_the_input_path(self):
+        # A path the caller's guard refuses is never read: as if it were absent.
         def refuse(path):
             raise PermissionError(f"{path.name} is outside the data root")
 
-        with self.assertRaisesRegex(PermissionError, "outside the data root"):
-            self.run_folder(synthetic_run(), resolve=refuse)
+        payload = self.run_folder(synthetic_run(), resolve=refuse)
+        self.assertEqual(payload["status"], "unavailable")
+        self.assertEqual(
+            payload["reason"],
+            "F(Q) carries no uncertainties: scale_ft_rmc.fq (named in rmc_run.dat) is not in the run folder",
+        )
+        self.assertNotIn("input", payload["sources"])
 
     def test_a_file_that_is_not_a_transform_is_refused(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -83,9 +83,9 @@ CONVOLUTION_CHECK_POINTS = 8
 #: The run's transform file and its dataset number.
 FT_FILE_RE = re.compile(r"^(.+)_FT_XFQ(\d+)\.csv$")
 
-#: A column header naming an uncertainty (a G(r) file's own σ column).
-SIGMA_LABEL_RE = re.compile(r"sigma|σ|uncert|error|\berr\b|\besd\b", re.IGNORECASE)
-
+_SIGMA_WORDS_RE = re.compile(r"sigma|σ|uncert|error")
+_LABEL_SPLIT_RE = re.compile(r"[^a-z0-9σ]+")
+_NUMBER_RE = re.compile(r"^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$")
 _LINE_BREAK_RE = re.compile(r"\r\n|\r|\n")
 _DAT_KEY_RE = re.compile(r"^([A-Z_\d]+)\s*::\s*(.*)$")
 _DAT_SUB_RE = re.compile(r"^([A-Z_]+)\s*(?:::\s*(.*))?$")
@@ -347,15 +347,12 @@ def reproduce_input(q, f_run, f_input, *, radius: Optional[float] = None, tolera
 
 
 def _leading_numbers(value: str) -> list[float]:
+    """The plain decimal numbers a value starts with (``1 2619 1 Angstrom`` → [1, 2619, 1])."""
     numbers: list[float] = []
     for token in value.split():
-        try:
-            number = float(token)
-        except ValueError:
+        if not _NUMBER_RE.match(token):
             break
-        if not math.isfinite(number):
-            break
-        numbers.append(number)
+        numbers.append(float(token))
     return numbers
 
 
@@ -427,10 +424,18 @@ def xray_dataset(settings: dict, number: int) -> Optional[dict]:
     return blocks[number - 1] if 0 < number <= len(blocks) else None
 
 
+def is_sigma_label(label) -> bool:
+    """A header that names an uncertainty: sigma, σ, uncert…, error, or the word err / esd."""
+    text = str(label).lower()
+    if _SIGMA_WORDS_RE.search(text):
+        return True
+    return any(word in ("err", "esd") for word in _LABEL_SPLIT_RE.split(text))
+
+
 def file_sigma_column(labels: list[str]) -> Optional[int]:
     """The index of a column whose header names an uncertainty (never the x column), or None."""
     for index, label in enumerate(labels[1:], start=1):
-        if SIGMA_LABEL_RE.search(str(label)):
+        if is_sigma_label(label):
             return index
     return None
 
@@ -646,6 +651,20 @@ def assess_ft_uncertainty(
 # ---------------------------------------------------------------------------
 
 
+def ft_failure(message: str) -> dict:
+    """The payload of a computation that raised: no ribbon, the message as the reason (``ftFailure``)."""
+    return {
+        "status": "failed",
+        "reason": message,
+        "sigma": None,
+        "transform": None,
+        "reproduction": {"tolerance": RMC_FT_TOLERANCE, "gr": None, "fq": None},
+        "convolutionCheck": None,
+        "correlation": None,
+        "sources": {},
+    }
+
+
 def _experimental_column(labels: list[str], data: np.ndarray) -> np.ndarray:
     from .parsers import rwp_columns
 
@@ -707,11 +726,15 @@ def ft_uncertainty_for_run(
     input_columns = None
     radius = None
     if dataset is not None and dataset.get("file"):
-        input_path = folder / dataset["file"]
+        relative = dataset["file"].replace("\\", "/")
+        names["input"] = relative.split("/")[-1]
+        input_path: Optional[Path] = folder / relative
         if resolve is not None:
-            input_path = resolve(input_path)
-        names["input"] = Path(dataset["file"]).name
-        if input_path.is_file():
+            try:
+                input_path = resolve(input_path)
+            except (PermissionError, ValueError):
+                input_path = None  # outside what the caller may read: as if absent
+        if input_path is not None and input_path.is_file():
             input_columns = read_stog_xy(input_path)
         if dataset.get("convolve"):
             partials_path = folder / f"{stem}_PDFpartials.csv"
@@ -730,13 +753,14 @@ __all__ = [
     "CONVOLUTION_CHECK_POINTS",
     "FT_FILE_RE",
     "RMC_FT_TOLERANCE",
-    "SIGMA_LABEL_RE",
     "UNIFORM_GRID_RTOL",
     "box_convolution",
     "convolution_check_points",
     "convolution_sigma_change",
     "correlation_summary",
     "file_sigma_column",
+    "ft_failure",
+    "is_sigma_label",
     "assess_ft_uncertainty",
     "ft_uncertainty_for_run",
     "noise_autocorrelation",

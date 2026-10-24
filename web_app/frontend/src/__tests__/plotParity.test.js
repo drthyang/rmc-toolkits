@@ -29,6 +29,8 @@ const summarize = (plot, metadata) => ({
             finite: finite.length,
             first: finite.length ? finite[0] : null,
             last: finite.length ? finite[finite.length - 1] : null,
+            // An xPDF series' error bar from the file's own sigma column (its length), else null.
+            sigma: series.sigma ? series.sigma.length : null,
         };
     }),
 });
@@ -48,8 +50,8 @@ describe('browser plot payloads match Flask', () => {
             .toEqual([expected.kind, expected.title, expected.metadataTitle, expected.xLabel, expected.yLabel]);
         expect(Object.keys(actual.metrics).sort()).toEqual(Object.keys(expected.metrics).sort());
         Object.entries(expected.metrics).forEach(([key, value]) => expectClose(actual.metrics[key], value));
-        expect(actual.series.map(({ label, n, finite }) => [label, n, finite]))
-            .toEqual(expected.series.map(({ label, n, finite }) => [label, n, finite]));
+        expect(actual.series.map(({ label, n, finite, sigma }) => [label, n, finite, sigma]))
+            .toEqual(expected.series.map(({ label, n, finite, sigma }) => [label, n, finite, sigma]));
         actual.series.forEach((series, index) => {
             expectClose(series.first, expected.series[index].first);
             expectClose(series.last, expected.series[index].last);
