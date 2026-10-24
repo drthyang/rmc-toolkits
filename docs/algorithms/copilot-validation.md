@@ -1155,7 +1155,9 @@ gain only the readings later changes added (the direction tier, the diffuse read
 are the user's. Re-frozen the same day at commit bf72b11 (protocol 2026-10-24.6), after the
 refused-analysis rule (2026-10-24.5) and Claude Sonnet 5.5's request policy (2026-10-24.6): the same
 commands give the same scores on both splits, and `TEST_SET_SHA256` is unchanged. The live arms B and
-C run at this protocol (the user's go, 2026-10-24).
+C run at this protocol (the user's go, 2026-10-24). `freeze.json` was then re-pointed to 7456af9, which
+adds only `run.js live --limits` (a runner flag, no protocol change); the records stay those made at
+bf72b11, and arms A, A+ and D on dev re-run at 7456af9 give the same records apart from the commit.
 
 **Protocol 2026-10-24.5 (a refused analysis backs no claim, the user's decision A5).** The user's
 words: "A5: option 2. A refused analysis doesn't count: the gate sends the claim back, and the model
