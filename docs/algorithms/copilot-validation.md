@@ -1129,6 +1129,20 @@ case, the question, the scoring or the verdict schema:
   `2026-10-24-local-symmetry-interview.json`, `2026-10-24-displacement-anisotropy-interview.json`,
   `2026-10-24-local-order-interview.json`).
 
+**Protocol 2026-10-24.3 (a new tool, `polyhedral_distortion`).** The user's interview answer 7 for
+the coordination-shells skill: corner-sharing or extended networks of polyhedra are judged by angle
+spreads plus a standard polyhedral distortion index, never by the cluster null. Arms B and C are now
+offered `polyhedral_distortion` (Baur's DI, Robinson's quadratic elongation and bond-angle variance
+of a centre's coordination polyhedra, over the configuration and the average structure;
+[ai-assistant.md](ai-assistant.md), Step 21). It refuses a window that cuts the shell by
+`compute_bond_angles`' rule, and arm C reads its description without the method advice. Arms A and
+A+ do not read it: their 45 dev records are identical apart from protocol and commit, and the
+baseline is not re-recorded. The test set was not run. What the model is sent changes by the tool's
+definition (arm B +1,741 characters, arm C +1,246) and the first request's tool list. The scripted
+records add the tool to `tools_offered`, and each request's length and hash move. Approved by the
+manager on the user's delegation, 2026-10-24
+(`validation/findings/decisions/2026-10-24-polyhedral-distortion.json`).
+
 ### The report beside the case score (plan item 1.6, part i)
 
 The engines alone (A+) score 0.99, because most components of a case are facts they get right every

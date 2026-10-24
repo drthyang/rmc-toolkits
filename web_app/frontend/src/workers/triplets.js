@@ -218,8 +218,9 @@ const visitNeighbors = (wrapped, centerRows, candidateRows, lattice, windows, vi
 };
 
 // All bonds grouped per center (grouping replaces the numpy sort-by-center
-// step). Each bond: { row, ix, iy, iz, vx, vy, vz, length, member }.
-const neighborBonds = (wrapped, centerRows, candidateRows, lattice, windows) => {
+// step). Each bond: { row, ix, iy, iz, vx, vy, vz, length, member }. The
+// polyhedral-distortion engine (distortion.js) reads its polyhedra from it.
+export const neighborBonds = (wrapped, centerRows, candidateRows, lattice, windows) => {
   const perCenter = Array.from({ length: centerRows.length }, () => []);
   visitNeighbors(wrapped, centerRows, candidateRows, lattice, windows,
     (center, row, ix, iy, iz, vx, vy, vz, distSq, member) => {

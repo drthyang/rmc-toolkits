@@ -1605,13 +1605,6 @@ export const RULES = [
 // The interviews of coordination-shells, local-symmetry, displacement-anisotropy and local-order
 // (2026-10-24): their nine entries (five firm rules, two gates, three rules but one) left with the
 // interview answer checks, which bound them above (FIRM_RULES, BINDINGS, RULES). The extended
-// networks' tool is its own PR.
-const POLYHEDRAL_PR = 'awaits the polyhedral_distortion PR';
-export const ALLOW_LIST = [
-    {
-        check: 'tool',
-        file: LOCAL_ORDER,
-        fragment: 'polyhedral_distortion',
-        why: `AWAITS CODE: the user's test for an extended network's polyhedra (interview 2026-10-24, answer 1b); the tool is being built and is not on main: ${POLYHEDRAL_PR}`
-    }
-];
+// networks' tool, polyhedral_distortion, landed in its own PR (2026-10-24): the tool check finds it
+// among the tools the Copilot offers (buildCopilotTools), so it needs no entry.
+export const ALLOW_LIST = [];

@@ -5,18 +5,19 @@
 signal: "AbortSignal"
 toolChoice: "auto"
 temperature: (not in the request)
-tools: 11, in the order sent (each definition in full: harness/tools.arm-B.json)
+tools: 12, in the order sent (each definition in full: harness/tools.arm-B.json)
   1. read_run_data
   2. find_gr_peaks
   3. list_sites
   4. analyze_displacement_directions
   5. compute_bond_angles
-  6. analyze_clusters
-  7. analyze_modulations
-  8. detect_symmetry
-  9. measure_symmetry_lowering
-  10. ask_user
-  11. read_skill
+  6. polyhedral_distortion
+  7. analyze_clusters
+  8. analyze_modulations
+  9. detect_symmetry
+  10. measure_symmetry_lowering
+  11. ask_user
+  12. read_skill
 
 ## messages[0] · system
 (the system prompt, variant "tools-ask-skills": system-prompt/tools-ask-skills.txt, 11777 characters, sha256 8ccf63abe765f3ea)

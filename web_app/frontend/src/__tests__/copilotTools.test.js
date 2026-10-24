@@ -14,6 +14,7 @@ import { displacementModulations } from '../workers/modulations';
 import { siteDisplacementsFromRmc6f } from '../workers/pcaKde';
 import modulationsFixture from './fixtures/modulations_fixture.json';
 import clustersFixture from './fixtures/clusters_fixture.json';
+import distortionFixture from './fixtures/distortion_fixture.json';
 import { CLUSTER_BECAUSE, clusterDistortion } from '../workers/clusters';
 import { MODULATION_BECAUSE, SIGMA_MAX } from '../workers/modulations';
 import { coordinationSummaryOf } from '../workers/triplets';
@@ -36,6 +37,7 @@ import {
     isCorrelatedMotion,
     isDiffuseOrder,
     summarizeBondAngles,
+    summarizePolyhedra,
     tenDegreeBins,
     summarizeClusters,
     summarizeModulations,
@@ -82,7 +84,7 @@ const withoutLongWaves = (modulation) => {
 describe('Copilot tools on the demo run', () => {
     it('offers the engine tools with the run\'s elements', () => {
         expect(Object.keys(tools)).toEqual([
-            'list_sites', 'analyze_displacement_directions', 'compute_bond_angles', 'analyze_clusters',
+            'list_sites', 'analyze_displacement_directions', 'compute_bond_angles', 'polyhedral_distortion', 'analyze_clusters',
             'analyze_modulations', 'detect_symmetry', 'measure_symmetry_lowering'
         ]);
         expect(tools.compute_bond_angles.parameters.properties.apex.enum).toEqual(['Ga', 'Se', 'Ta']);
@@ -429,6 +431,173 @@ describe('compute_bond_angles: one cut rule with the Workbench, the CN margin (a
             'Se–Ta–Se 2.21–2.65', 'Se–Se–Se 3.02–3.5', 'Se–Ta–Se 2.3–2.7', 'Se–Ta–Se 2.33–2.71'
         ]);
     }, 120000);
+});
+
+describe('polyhedral_distortion (approved by the manager on the user\'s delegation, 2026-10-24)', () => {
+    // The tools as the run module builds them, on the Demo and dev-jahn-teller
+    // (validation/runFolder.js, as the harness builds a run).
+    const runs = {};
+    const toolOf = (id, name) => runs[id].tools.find((tool) => tool.name === name);
+    const polyhedra = (id, centre, ligand, [lo, hi], extra = {}) => toolOf(id, 'polyhedral_distortion').run({
+        centre, ligand, r_min: lo, r_max: hi, ...extra
+    });
+    const refused = (result) => typeof result.data.refused === 'string';
+    const catalogueShell = (id, centre, ligand) => shellCatalogue(runs[id].props).shell(centre, ligand);
+
+    beforeAll(async () => {
+        runs.demo = (await loadDemoAssistantRun()).copilot;
+        runs['dev-jahn-teller'] = await loadRun(buildCase(DEV_CASES.find((item) => item.id === 'dev-jahn-teller')), { ladder: false });
+    }, 120000);
+
+    it('the Demo\'s TaSe6 octahedra: a static 3 + 3 distortion the average octahedron carries, the configuration a little more', async () => {
+        const { data, checks, facts } = await polyhedra('demo', 'Ta', 'Se', [2.21, 3.23]);
+        expect(facts).toBeUndefined();
+        expect(data.measured).toEqual({ coordination: 6, shape: 'octahedron', centres: 16000, polyhedra: 15932, skipped: 68 });
+        expect(data.shell).toMatchObject({ window_A: [2.21, 3.23], cn: 6, cn_in_window: 6, holds: 'whole' });
+        expect(data.configuration.distortion_index).toEqual({ mean: 0.0469, sd: 0.017, p10: 0.0261, median: 0.0459, p90: 0.0683 });
+        expect(data.configuration.quadratic_elongation.mean).toBe(1.0405);
+        expect(data.configuration.angle_variance_deg2.mean).toBe(127);
+        expect(data.configuration.trans_angle_deg).toEqual({ mean: 158.8, sd: 3.7 });
+        expect(data.average_structure).toMatchObject({
+            polyhedra: 16,
+            bond_ladder_A: [2.523, 2.525, 2.527, 2.74, 2.744, 2.747],
+            distortion_index: { mean: 0.0415, sd: 0.0013 },
+            quadratic_elongation: { mean: 1.0341, sd: 0.0011 },
+            angle_variance_deg2: { mean: 111, sd: 3.1 }
+        });
+        expect(checks).toEqual([{
+            level: 'ok',
+            text: '15932 of 16000 Ta atoms have 6 Se within 2.21–3.23 Å (octahedron): measured; the 68 with another count are left out.'
+        }]);
+    });
+
+    it('the Demo\'s GaSe4 tetrahedra: regular on average, distorted by thermal motion only', async () => {
+        const { data } = await polyhedra('demo', 'Ga', 'Se', [2.0, 2.8]);
+        expect(data.measured.shape).toBe('tetrahedron');
+        expect(data.configuration).not.toHaveProperty('trans_angle_deg');
+        expect(data.configuration.distortion_index.mean).toBe(0.0278);
+        expect(data.configuration.angle_variance_deg2.mean).toBe(19.8);
+        expect(data.average_structure.distortion_index.mean).toBe(0.00101);
+        expect(data.average_structure.angle_variance_deg2.mean).toBe(0.0303);
+        expect(data.average_structure.quadratic_elongation.mean).toBe(1);
+    });
+
+    it('dev-jahn-teller: every CuF6 is 4 + 2 while the average octahedron is regular (local, not static)', async () => {
+        const { data } = await polyhedra('dev-jahn-teller', 'Cu', 'F', catalogueShell('dev-jahn-teller', 'Cu', 'F').window);
+        expect(data.measured).toMatchObject({ coordination: 6, shape: 'octahedron', polyhedra: 216, skipped: 0 });
+        // 0.0698 for 1.93 / 2.25 Å, raised a little by 0.05 Å of thermal motion.
+        expect(data.configuration.distortion_index.mean).toBeGreaterThan(0.0698);
+        expect(data.configuration.distortion_index.mean).toBeLessThan(0.085);
+        // The long axis is drawn per cell, so each F site is long in about a
+        // third of the 216 cells: its mean sits within ~0.01 Å of the regular
+        // position, and the average octahedron's DI is a tenth of the configuration's.
+        expect(data.average_structure.polyhedra).toBe(1);
+        expect(data.average_structure.distortion_index.mean).toBeLessThan(0.1 * data.configuration.distortion_index.mean);
+        // Six bonds at the mean distance to within a tenth of the 0.32 Å split.
+        data.average_structure.bond_ladder_A.forEach((length) => expect(Math.abs(length - (2.25 + 2 * 1.93) / 3)).toBeLessThan(0.032));
+    });
+
+    it('a window that cuts the shell is refused unless the user chose it, by compute_bond_angles\' rule (the Workbench\'s)', async () => {
+        const cut = await polyhedra('demo', 'Ta', 'Se', [2.3, 2.7]);
+        expect(refused(cut)).toBe(true);
+        expect(cut.data).not.toHaveProperty('measured');
+        expect(cut.data).not.toHaveProperty('configuration');
+        expect(cut.data.shell).toMatchObject({ cn: 6, cn_in_window: 3.75, holds: 'part' });
+        expect(cut.checks.map((check) => check.level)).toEqual(['fail']);
+        expect(checkText(cut.checks[0], 'off')).toBe('Refused: The window cuts the first Ta–Se shell: it holds 3.75 Se per Ta (shell.cn_in_window) of the shell\'s 6 '
+            + '(shell.cn, in shell.window_A), fewer by at least max(0.5, 15 % of the shell\'s CN). If the user wants this window, ask them (ask_user) '
+            + 'and call again with window_confirmed: true.');
+        expect(cut.checks[0].text).toContain('Use the whole shell (find_gr_peaks\' first_shell.window_A).');
+        const chosen = await polyhedra('demo', 'Ta', 'Se', [2.3, 2.7], { window_confirmed: true });
+        expect(refused(chosen)).toBe(false);
+        expect(chosen.checks[0]).toMatchObject({ level: 'warn' });
+        expect(chosen.checks[0].text).toMatch(/Kept: the user chose this window; say that its polyhedra are of a partial shell\.$/);
+        expect(chosen.data.measured.coordination).toBe(3);
+        expect(chosen.checks.at(-1).text).toBe('3 Se per Ta: no ideal polyhedron, so DI alone (⟨λ⟩ and σ²θ are defined for octahedra and tetrahedra).');
+        expect(chosen.data.configuration).not.toHaveProperty('quadratic_elongation');
+    });
+
+    it('refuses exactly where compute_bond_angles refuses and the Workbench asks: every natural window of the Demo', async () => {
+        const catalogue = shellCatalogue(runs.demo.props);
+        const clarifier = buildClarifier(runs.demo.props);
+        const tool = toolOf('demo', 'polyhedral_distortion');
+        const bondAngles = toolOf('demo', 'compute_bond_angles');
+        const windows = naturalTriplets(catalogue, runs.demo.props.structure.elementCounts).flatMap(({ apex, end, shell }) => [
+            shell.window, ...(shell.firstPeak ? [shell.firstPeak.window] : []), shell.cut.earlier.window, shell.cut.later.window
+        ].filter(([lo, hi]) => hi > lo).map((window) => [apex, end, window]));
+        windows.push(['Ta', 'Se', [2.3, 2.7]], ['Ta', 'Se', [3.5, 4.5]], ['Ga', 'Se', [2.9, 3.6]]);
+        const verdicts = [];
+        const engineRefusals = [];
+        for (const [centre, ligand, [lo, hi]] of windows) {
+            const args = { centre, ligand, r_min: lo, r_max: hi };
+            const label = `${centre}–${ligand} ${lo}–${hi}`;
+            const asks = clarifier.beforeCall(tool, args, { questionText: '' })?.kind === 'cut';
+            const angles = await bondAngles.run({ end1: ligand, apex: centre, end2: ligand, r12_min: lo, r12_max: hi });
+            let refuses;
+            try {
+                refuses = refused(await tool.run(args));
+            } catch (error) {
+                // The engine's own refusal: no polyhedra to measure.
+                expect(error.message).toMatch(/^no polyhedra: /);
+                engineRefusals.push(label);
+                refuses = true;
+            }
+            verdicts.push({ window: label, asks, refuses, bondAnglesRefuse: typeof angles.data.refused === 'string' });
+        }
+        expect(verdicts.filter((verdict) => verdict.refuses !== verdict.bondAnglesRefuse)).toEqual([]);
+        // The Workbench asks only where the run reads a shell; a window apart from it is the counts' (both tools).
+        expect(verdicts.filter((verdict) => verdict.asks && !verdict.refuses)).toEqual([]);
+        expect(verdicts.filter((verdict) => verdict.refuses).map((verdict) => verdict.window)).toEqual([
+            'Ta–Se 2.21–2.65', 'Se–Se 3.02–3.5', 'Ta–Se 2.3–2.7', 'Ta–Se 3.5–4.5', 'Ga–Se 2.9–3.6'
+        ]);
+        // The gap after the GaSe4 shell holds one Se at most per Ga: the
+        // engine finds no polyhedra before any window is judged.
+        expect(engineRefusals).toEqual(['Ga–Se 2.9–3.6']);
+    }, 120000);
+
+    it('without the run\'s partials no shell is compared: the engine\'s counts decide, as for compute_bond_angles', async () => {
+        const cut = await toolsWithoutPartials.polyhedral_distortion.run({ centre: 'Ta', ligand: 'Se', r_min: 2.3, r_max: 2.7 });
+        expect(cut.data).not.toHaveProperty('shell');
+        expect(cut.checks[0].text).toMatch(/^Refused: Only 47 % of the Ta atoms have the most common count \(3 Se\); the counts spread from 1 to 6\. The window cuts through a coordination shell\. Use the whole shell/);
+        expect(cut.data.coordination.modal_share).toBeLessThan(MODAL_COORDINATION_SHARE);
+        const whole = await toolsWithoutPartials.polyhedral_distortion.run({ centre: 'Ta', ligand: 'Se', r_min: 2.21, r_max: 3.23 });
+        expect(whole.checks[0].level).toBe('ok');
+    });
+
+    it('the engine\'s refusals reach the model as errors, and a bad window is refused before any request', async () => {
+        await expect(tools.polyhedral_distortion.run({ centre: 'Ta', ligand: 'Se', r_min: 0.5, r_max: 1 }))
+            .rejects.toThrow('no polyhedra: no Ta atom has a Se neighbour within [0.5, 1] A');
+        await expect(tools.polyhedral_distortion.run({ centre: 'Ta', ligand: 'Se', r_min: 3, r_max: 2 }))
+            .rejects.toThrow('r_min must be below r_max');
+    });
+});
+
+describe('polyhedral_distortion: the summary of every engine path (distortion_fixture.json)', () => {
+    const payload = (name, index) => distortionFixture.cases.find((entry) => entry.name === name).expected[index];
+
+    it('says why the average structure has no polyhedron of the measured count', () => {
+        const noBasis = summarizePolyhedra(payload('coords-only', 0));
+        expect(noBasis.data.average_structure).toEqual({
+            polyhedra: 0, note: 'no average structure: the configuration has no reference sites (coordinates-only lines)'
+        });
+        const noSite = summarizePolyhedra(payload('mixed-site', 1));
+        expect(noSite.data.average_structure.note).toBe('no average-structure site holds mostly Zr: there is no average Zr polyhedron');
+        const differs = summarizePolyhedra(payload('jahn-teller', 1), { windowConfirmed: true });
+        expect(differs.data.average_structure.note).toBe('the average structure\'s Cu sites have 6 F in this window, not 4: no average polyhedron of the measured count');
+    });
+
+    it('a flat polyhedron has no ⟨λ⟩, and the check says how many', () => {
+        const square = payload('random-triclinic', 0);
+        const flat = { ...square, configuration: { ...square.configuration, quadraticElongation: { ...square.configuration.quadraticElongation, count: 4 } } };
+        const { checks } = summarizePolyhedra(flat, { windowConfirmed: true });
+        expect(checks.map((check) => check.text)).toContain('2 of the 6 polyhedra are flat (zero volume): they have no ⟨λ⟩.');
+    });
+
+    it('fails loudly without the engine\'s coordinationSummary', () => {
+        const { coordinationSummary, ...rest } = payload('perovskite-thermal', 0);
+        expect(coordinationSummary).toBeTruthy();
+        expect(() => summarizePolyhedra(rest)).toThrow(/no coordinationSummary/);
+    });
 });
 
 describe('Copilot summarizers', () => {
@@ -980,7 +1149,10 @@ describe('the engine tools\' method advice: what arm C reads without it', () => 
 
     it('each description keeps what the tool does and returns: no other tool named but site_ref\'s source', () => {
         const advised = Object.values(tools).filter((tool) => tool.method != null).map((tool) => tool.name);
-        expect(advised).toEqual(['list_sites', 'compute_bond_angles', 'analyze_clusters', 'analyze_modulations', 'detect_symmetry', 'measure_symmetry_lowering']);
+        expect(advised).toEqual([
+            'list_sites', 'compute_bond_angles', 'polyhedral_distortion', 'analyze_clusters', 'analyze_modulations', 'detect_symmetry',
+            'measure_symmetry_lowering'
+        ]);
         for (const tool of Object.values(tools)) {
             const off = toolDescription(tool, 'off');
             expect(off).toBe(tool.description);
@@ -993,17 +1165,27 @@ describe('the engine tools\' method advice: what arm C reads without it', () => 
         expect(toolDescription(tools.detect_symmetry, 'full')).toMatch(/Wyckoff orbits\. Compare tolerances to see which symmetry the local distortion breaks\. Does not change the card\.$/);
         // The refusal stays stated in arm C: on window_confirmed.
         expect(tools.compute_bond_angles.parameters.properties.window_confirmed.description).toMatch(/A window that cuts the coordination shell is refused unless it is set\./);
+        // polyhedral_distortion: what it computes alone in arm C; where the
+        // window comes from, which questions need it and how to read it, in B.
+        expect(tools.polyhedral_distortion.parameters.properties.window_confirmed)
+            .toEqual(tools.compute_bond_angles.parameters.properties.window_confirmed);
+        const full = toolDescription(tools.polyhedral_distortion, 'full');
+        expect(full).toContain('within [r_min, r_max] Å (the whole first shell: find_gr_peaks\' first_shell.window_A), for the centres');
+        expect(full).toMatch(/\(the site means\)\. Use it for octahedra or tetrahedra, isolated or sharing corners, edges or faces /);
+        expect(full).toMatch(/one only the configuration's polyhedra show is local \(thermal motion alone raises DI, ⟨λ⟩ and σ²θ\)\.$/);
+        expect(toolDescription(tools.polyhedral_distortion, 'off')).not.toMatch(/Use it|find_gr_peaks|static|local|thermal/);
     });
 
     it('analyze_clusters: finite clusters only; an extended network goes to polyhedral_distortion only where the run offers it (the coordination-shells interview, 2026-10-24)', () => {
-        // The tools as built on this branch: no polyhedral_distortion, so the advice names no tool the model lacks.
-        expect(Object.keys(tools)).not.toContain('polyhedral_distortion');
-        expect(tools.analyze_clusters.method).toEqual(clusterMethod({ polyhedra: false }));
-        const full = toolDescription(tools.analyze_clusters, 'full');
-        expect(full).toMatch(/ Use it for finite clusters \(dimers, trimers, M4 tetrahedra, isolated polyhedra\): their distortion, Jahn–Teller, dimerization or trimerization; single-site displacement directions cannot show these\. Corner-sharing polyhedra or another extended network have no finite clusters for its null\.$/);
-        expect(full).not.toMatch(/polyhedral_distortion/);
-        // Offered (its own PR), the advice names it; arm C reads neither.
-        expect(clusterMethod({ polyhedra: true }).at(-1)).toMatch(/have no finite clusters for its null: use polyhedral_distortion\.$/);
+        // The tools as built: polyhedral_distortion is offered, so the advice names it.
+        expect(Object.keys(tools)).toContain('polyhedral_distortion');
+        expect(tools.analyze_clusters.method).toEqual(clusterMethod({ polyhedra: true }));
+        expect(toolDescription(tools.analyze_clusters, 'full')).toMatch(/have no finite clusters for its null: use polyhedral_distortion\.$/);
+        // Not offered, the advice names no tool the model lacks.
+        const without = toolDescription({ ...tools.analyze_clusters, method: clusterMethod({ polyhedra: false }) }, 'full');
+        expect(without).toMatch(/ Use it for finite clusters \(dimers, trimers, M4 tetrahedra, isolated polyhedra\): their distortion, Jahn–Teller, dimerization or trimerization; single-site displacement directions cannot show these\. Corner-sharing polyhedra or another extended network have no finite clusters for its null\.$/);
+        expect(without).not.toMatch(/polyhedral_distortion/);
+        // Arm C reads neither.
         expect(toolDescription({ ...tools.analyze_clusters, method: clusterMethod({ polyhedra: true }) }, 'off')).toBe(tools.analyze_clusters.description);
     });
 

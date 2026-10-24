@@ -232,8 +232,47 @@
   {
     "type": "function",
     "function": {
+      "name": "polyhedral_distortion",
+      "description": "Distortion of the coordination polyhedra of a centre element: its ligand atoms within [r_min, r_max] Å (the whole first shell: find_gr_peaks' first_shell.window_A), for the centres with the most common count n. Returns Baur's bond-length distortion index DI and, for octahedra (n = 6) and tetrahedra (n = 4), Robinson's quadratic elongation ⟨λ⟩ and bond-angle variance σ²θ (deg²), which are 0, 1 and 0 for a regular polyhedron: over the configuration's polyhedra (mean, sd, percentiles) and for the average structure's (the site means). Use it for octahedra or tetrahedra, isolated or sharing corners, edges or faces (an extended network, where analyze_clusters' shuffle null does not apply); a window that cuts the shell is put to the user first, and refused unless the user chose it (window_confirmed). A distortion the average structure's polyhedron shares is static; one only the configuration's polyhedra show is local (thermal motion alone raises DI, ⟨λ⟩ and σ²θ).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "centre": {
+            "type": "string",
+            "enum": ["Ga", "Se", "Ta"],
+            "description": "Element at the centre of the polyhedra."
+          },
+          "ligand": {
+            "type": "string",
+            "enum": ["Ga", "Se", "Ta"],
+            "description": "Element at their vertices."
+          },
+          "r_min": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 8,
+            "description": "Bond window minimum (Å)."
+          },
+          "r_max": {
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 8,
+            "description": "Bond window maximum (Å)."
+          },
+          "window_confirmed": {
+            "type": "boolean",
+            "description": "true only when the user chose or typed this window (in the question, or through ask_user). A window that cuts the coordination shell is refused unless it is set."
+          }
+        },
+        "required": ["centre", "ligand", "r_min", "r_max"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
       "name": "analyze_clusters",
-      "description": "Shape of the finite clusters one element forms — the M4 tetrahedra of a lacunar spinel, dimers, trimers — with bonds in [r_min, r_max] Å in the average structure (take the window from find_gr_peaks: first_shell.window_A of that element pair). Every cluster in the configuration is compared with a shuffle null in which each atom keeps its own site's displacements but takes them from a random other cluster: is there a distortion beyond independent atoms, which edge pattern (tetrahedra: E/T2 modes, trigonal vs one edge), along which lattice axis (<100>/<110>/<111>), and is the average cluster itself distorted. Use it for finite clusters (dimers, trimers, M4 tetrahedra, isolated polyhedra): their distortion, Jahn–Teller, dimerization or trimerization; single-site displacement directions cannot show these. Corner-sharing polyhedra or another extended network have no finite clusters for its null.",
+      "description": "Shape of the finite clusters one element forms — the M4 tetrahedra of a lacunar spinel, dimers, trimers — with bonds in [r_min, r_max] Å in the average structure (take the window from find_gr_peaks: first_shell.window_A of that element pair). Every cluster in the configuration is compared with a shuffle null in which each atom keeps its own site's displacements but takes them from a random other cluster: is there a distortion beyond independent atoms, which edge pattern (tetrahedra: E/T2 modes, trigonal vs one edge), along which lattice axis (<100>/<110>/<111>), and is the average cluster itself distorted. Use it for finite clusters (dimers, trimers, M4 tetrahedra, isolated polyhedra): their distortion, Jahn–Teller, dimerization or trimerization; single-site displacement directions cannot show these. Corner-sharing polyhedra or another extended network have no finite clusters for its null: use polyhedral_distortion.",
       "parameters": {
         "type": "object",
         "properties": {

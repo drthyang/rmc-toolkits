@@ -98,10 +98,12 @@ const WINDOW_TOKENS = 32768;
 // distortion bar, extended networks, a firm rule). The user's interview of
 // displacement-anisotropy (2026-10-24) adds 1,215 / 868 and makes it the
 // largest (the ranking, pooling, the three tiers, two resolutions, ± R°, the
-// cluster bar, a firm rule).
+// cluster bar, a firm rule). polyhedral_distortion's fact sync (2026-10-24)
+// adds 160 / 114 to coordination-shells (step 7 names the tool and what it
+// returns).
 const TWO_LARGEST_SKILLS_TODAY = Object.freeze([
     { name: 'displacement-anisotropy', chars: 8896, tokens: 6363 },
-    { name: 'coordination-shells', chars: 8324, tokens: 5954 }
+    { name: 'coordination-shells', chars: 8484, tokens: 6068 }
 ]);
 
 // Candidate #6 (2026-10-19) added 90 tokens: the Demo's pair_correlations
@@ -132,22 +134,26 @@ const TWO_LARGEST_SKILLS_TODAY = Object.freeze([
 // analyze_displacement_directions' description of the tiers (the tools +36);
 // local-symmetry and local-order nothing in the first request (their changes
 // are checks on the answer, and an analyze_modulations note).
+// polyhedral_distortion (2026-10-24, measured after the merge of main) adds
+// 823: its definition with its method advice and analyze_clusters' method
+// naming it (the tools +709), and its fact sync in coordination-shells (the
+// skills +114, 12,378 → 12,492).
 const DOCK_WORST_TURN_TODAY = Object.freeze({
     systemPrompt: 5059,
-    toolJson: 7130,
+    toolJson: 7839,
     contextBlock: 2480,
     question: 70,
-    skills: 12378,
+    skills: 12492,
     analyses: 8724,
     replyReserve: 8192,
-    firstRequest: 14738,
-    prompt: 35840,
-    needed: 44032,
-    headroom: -11264,
-    lmStudioHeadroom: -7168
+    firstRequest: 15447,
+    prompt: 36663,
+    needed: 44855,
+    headroom: -12087,
+    lmStudioHeadroom: -7991
 });
 // By how much the dock's worst turn overflows the window today.
-const DOCK_OVERFLOW_TOKENS_TODAY = 11264;
+const DOCK_OVERFLOW_TOKENS_TODAY = 12087;
 
 // Arm B's first request on each dev case is 9.7k–11.2k tokens; the largest,
 // since plan item 4.6, is the fit-data case: its fit tools (assess_convergence,
@@ -168,22 +174,24 @@ const ARM_B_LARGEST_DEV_CASE = 'dev-fit-unconverged';
 // The interview answer checks (2026-10-24) add, for coordination-shells, 99
 // (the system prompt +17, the tools +82); for displacement-anisotropy, 37
 // (the tools +37); local-symmetry and local-order nothing.
+// polyhedral_distortion (2026-10-24, measured after the merge of main) adds
+// 818 (the tools +704, its fact sync in coordination-shells +114).
 const ARM_B_WORST_TURN_TODAY = Object.freeze({
     systemPrompt: 4719,
-    toolJson: 4913,
+    toolJson: 5617,
     contextBlock: 1700,
     question: 610,
-    skills: 12378,
+    skills: 12492,
     analyses: 8723,
     replyReserve: 8192,
-    firstRequest: 11941,
-    prompt: 33041,
-    needed: 41233,
-    headroom: -8465,
-    lmStudioHeadroom: -4369
+    firstRequest: 12645,
+    prompt: 33859,
+    needed: 42051,
+    headroom: -9283,
+    lmStudioHeadroom: -5187
 });
 // By how much arm B's worst turn (largest dev case) overflows the window today.
-const ARM_B_OVERFLOW_TOKENS_TODAY = 8465;
+const ARM_B_OVERFLOW_TOKENS_TODAY = 9283;
 
 // --- the turn ------------------------------------------------------------------------
 
@@ -392,8 +400,9 @@ describe('the worst realistic turn in a 32,768-token window (plan 5.5)', () => {
     // The run policy's minimum for an LM Studio model (48k) holds both worst
     // turns with the full reply reserve, under both of the guard's rules
     // (planContext's, and LM Studio's prompt + LMSTUDIO_REPLY_MIN_TOKENS):
-    // the dock's with 5,120 tokens to spare, arm B's (dev-fit-unconverged since 4.6) with 7,919
-    // (5,256 and 8,055 before the interview answer checks;
+    // the dock's with 4,297 tokens to spare, arm B's (dev-fit-unconverged since 4.6) with 7,101
+    // (5,120 and 7,919 before polyhedral_distortion, which took 823 and 818 with its fact sync in
+    // coordination-shells; 5,256 and 8,055 before the interview answer checks;
     // 5,685 and 8,415 before the fit-assessment interview's convergence block; 6,553 and 9,283 before the
     // displacement-anisotropy interview; 6,886 and 9,615 before the coordination-shells interview;
     // 7,739 and 10,469 before the skill fact sync; 10,444 and 13,173 before the batch-1 skill drafts).
@@ -406,6 +415,6 @@ describe('the worst realistic turn in a 32,768-token window (plan 5.5)', () => {
             expect(plan.needed).toBe(turn.numbers.needed);
             expect(turn.numbers.prompt + LMSTUDIO_REPLY_MIN_TOKENS).toBeLessThanOrEqual(window);
         }
-        expect([window - dockTurn.numbers.needed, window - armBTurn.numbers.needed]).toEqual([5120, 7919]);
+        expect([window - dockTurn.numbers.needed, window - armBTurn.numbers.needed]).toEqual([4297, 7101]);
     });
 });

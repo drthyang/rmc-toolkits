@@ -41,6 +41,7 @@ describes the Copilot's messages and Step 17 its tool loop. Section anchors keep
   - [Step 18 — Cluster distortion against a shuffle null (`analyze_clusters`)](#step-18--cluster-distortion-against-a-shuffle-null-analyze_clusters)
   - [Step 19 — Displacement modulations: order that enlarges the cell (`analyze_modulations`)](#step-19--displacement-modulations-order-that-enlarges-the-cell-analyze_modulations)
   - [Step 20 — A split site's static displacement and its sampling error (`list_sites`)](#step-20--a-split-sites-static-displacement-and-its-sampling-error-list_sites)
+  - [Step 21 — Polyhedral distortion: Baur's DI, Robinson's quadratic elongation and angle variance (`polyhedral_distortion`)](#step-21--polyhedral-distortion-baurs-di-robinsons-quadratic-elongation-and-angle-variance-polyhedral_distortion)
   - [Runtime-mode differences (static vs Flask) — read this before quoting the assistant](#runtime-mode-differences-static-vs-flask--read-this-before-quoting-the-assistant)
   - [Parameters and defaults](#parameters-and-defaults)
   - [Caveats / what this is not](#caveats--what-this-is-not)
@@ -1453,6 +1454,7 @@ not answer as asked". A tool is offered only when its inputs exist.
 | `list_sites(element?)` | a browser-loaded run or Flask mode | worker `sites` / `/api/pca/sites` | per site: ref, label (composition if mixed), count, U_iso, rms axes, anisotropy, Mardia kurtosis; `kurtosis_axes`, the excess kurtosis along each principal axis on resolved axes only (null elsewhere; absent when none has one); `pc1_uvw`, PC1 as a direct-lattice `[u v w]` (`crystalOrientationRows`) when PC1 is resolved; on a split site, `delta_A` ± `delta_se_A`, its static displacement and sampling error (Step 20); split sites first (largest `delta_A` first), then by \|kurtosis\| and U_iso; top-3 refs by \|kurtosis\|, U_iso and anisotropy; the note defines only the fields the result holds; `facts.sites` = `[{ref, element, elements, split, flat}]`, every site's species and whether it is split (`isSplitSite`) or flat-topped (a negative Mardia kurtosis that is not split), for the disorder check (2026-10-24) | warn: parse warning; note: reconstructed sites; warn: zero-spread sites; note: the split sites by ref and label (PC1 resolved, κ₁ ≤ −0.5 and ≤ −3√(24/n): `isSplitSite`, the rule `analyze_clusters` uses); fail: no site (holding that element) |
 | `analyze_displacement_directions(site_ref \| element, frequency?)` | same | worker `orientation` / `/api/pca/orientation`, `geometry: false` | used / rejected points; peak enhancement, count, expected and calibrated `peakSignificance`; peak direction as a Cartesian unit vector, as `[u v w]` (direct lattice, $M^{-T}d$ scaled to max \|component\| = 1, sign kept, since the map is not antipodally folded) and as angles to a, b, c, with the peak cell's radius `radius_deg` (the engine's `peakCellRadiusDeg`: the largest angle from the cell's centre to its corners, so the direction is named only to within it; 37.4° at ν = 1, 19.3–20.9° at ν = 2; plan item 2.5); `mapSignificance`; antipodal asymmetry, its z and flag; orientation-tensor eigenvalues, anisotropy and its Bingham significance; the principal axis `[u v w]` (`crystalOrientationRows`); `peak.tier`, the peak's tier (`directionTier`, the displacement-anisotropy interview, 2026-10-24: **finding** at ≥ 3σ unrounded, ≥ 1.2× isotropic (`DIRECTION_FINDING_ENHANCEMENT`) and held at the neighbouring resolution; **hint** at ≥ 3σ under 1.2×, at 2.5–3σ (`DIRECTION_HINT_SIGMA`), or not held; **none** below 2.5σ); `neighbour` `{frequency, significance_sigma, enhancement, radius_deg, apart_deg, holds}`, the engine's peak at the neighbouring resolution (`neighbourFrequency`: ν − 1, ν + 1 at ν = 1), asked only for a candidate (≥ 3σ, ≥ 1.2×: `directionCandidate`) at the engine's own resolution (no `frequency`, or the recommended one); a call at Auto ± 1 (the one the displacement-anisotropy skill asks for) reads the Auto ν itself as the other of the pair. The peak *holds* there when its own peak test passes (≥ 3σ, Šidák over its own cells) and the two peak directions, taken as axes, lie within the sum of the two cells' radii (`directionHolds`): every direction a cell takes lies within its radius, and an axis rather than a sense because a two-well site puts its peak on either well from one tiling to the next (dev-jahn-teller's F, 148° apart at ν = 1 and 2). ν − 1 because the engine's resolution is the finest whose cells keep ≥ 12 points each: ν + 1 would go below its own floor. At a `frequency` neither the Auto ν nor beside it a candidate is a hint (`not_auto`) | warn: < 100 vectors; ok: a finding, "Preferred direction (a finding): [u v w] ± R°, the cell radius at ν = n; … it holds: at ν = n − 1 the peak is xσ, y° from it as an axis (the two cells' radii z°)" — and, where the cell is wider than `LOW_INDEX_CONE_DEG` (15°; `directionResolved`, every cell at ν ≤ 2), "not resolved finer than R° (over 15°), so it names no <100>, <110> or <111> family"; note: a hint, "A hint of a direction, not a finding: …" with why (2.5–3σ, under 1.2×, not held, not at the engine's resolution); note: below 2.5σ, "No preferred direction: … nothing to report" (until 2026-10-24: ok at peak ≥ 3σ, note below); note: map test undefined; ok: map ≥ 3σ, said as *anisotropic* and, without a finding, "not a preferred direction, which needs a finding of the peak test" (with an unresolved finding, the peak "places the preferred direction only to within its cell") (any anisotropic Gaussian ellipsoid passes the map test: the validation's thermal-only O, peak 2.3σ, map 7.2σ; review L3); note: tied peak cells; note: significant ± asymmetry; warn: parse warning; note: an element pooled over > 1 site (the site count from the basis) — where their local axes differ, as for the four vertices of a tetrahedral cluster, a per-site preference cancels, so an isotropic pooled map is not evidence against a per-site or cluster distortion |
 | `compute_bond_angles(end1, apex, end2, r12_min, r12_max, r23_min?, r23_max?, bin_width = 1)` | same | worker `triplets` / `/api/triplets` (`APP_MAX_ANGLES` applies) | angle count, central atoms, mean ± sd; ≤ 3 modes (local maxima of a 5-bin running mean of the counts, each with the share of angles within ± 7.5°); the distribution in 18 bins of 10° (the engine's bins shared by overlap), raw and sin θ-corrected ($S_j = (N_j/N)\,/\,[(\cos\theta_j - \cos\theta_{j+1})/2]$, 1 for random directions); for an A–B–A triplet in one window that holds the whole shell (its CN the shell's within the CN margin; with no shell to compare, not cut by the counts) and a mean coordination within half an atom of 6 (`cnMatches`), the share and mean angle below and above 135° against an ideal octahedron (80 % cis at 90°, 20 % trans at 180°), of 4, the share within 15° of 109.47°; mean bond length, its sd from the engine's 40-bin length histogram, and unique bonds per window; coordination histogram, mean, modal count, `modal_share` and `unbonded_share` (the engine's `coordinationSummary`, information since 2026-10-19); `shell_ab` (and `shell_bc` for a B–C window of its own), each window against the run's first shell of its pair (`window()`): the shell's `window_A` and `cn`, the window's `cn_in_window` from the partial g(r), what it `holds`, absent where the run reads no shell for the pair; `facts.coordination.whole_shell` is that whole-shell reading | fail: 0 angles ("widen the window": find_gr_peaks' first_shell.window_A); a window that cuts its shell by the one cut rule (`windowCut`, the Workbench's; approved by the user, 2026-10-19), for each of its `shellWindows` (A–B, and B–C with a window of its own): it meets the shell and holds fewer partner atoms than the whole shell by ≥ max(0.5, 15 % of its CN), named by path ("it holds 3.75 Se per Ta (shell_ab.cn_in_window) of the shell's 6 (shell_ab.cn, in shell_ab.window_A)"), whatever the counts; only with no shell to compare (no partials, no closed shell, no density, a window apart from the first shell), the counts: > 50 % of central atoms with no A–B bond, else < 60 % with the most common A–B bond count (`countsCut`, the rule until 2026-10-19) — **refused** (fail) unless `window_confirmed`, the modes, mean, sd and histograms withheld (the coordination-shells skill's firm rule), else a warn "kept: the user chose this window"; no note for a count spread under a passing margin (on the dev windows a whole shell running into the next, or a window within 15 % of its shell's CN); note: raw counts deplete 180° (with the octahedron split); warn: parse warning; ok otherwise. Refused before running: min ≥ max, an r23 bound without its pair |
+| `polyhedral_distortion(centre, ligand, r_min, r_max, window_confirmed?)` | a browser-loaded run or Flask mode | worker `distortion` / `/api/distortion` (Step 21; `rMax` ≤ 8 Å, `APP_MAX_BONDS` = 10⁶) | `pair`; `window_A`; the coordination counts, mean, modal count, `modal_share` and `unbonded_share` (the engine's `coordinationSummary`, as `compute_bond_angles`); `shell`, the window against the run's first shell of the pair (`window()`, absent where the run reads none); `measured` (the most common count n among centres with a ligand, its `shape` — octahedron, tetrahedron or "n-coordinated (no ideal polyhedron)" —, centres, polyhedra, skipped); `configuration`: `bond_length_A` (mean, sd), `distortion_index` and, for octahedra and tetrahedra, `quadratic_elongation` and `angle_variance_deg2` (mean, sd, p10, median, p90; DI and σ²θ to 3 s.f., ⟨λ⟩ to 4 decimals, spreads to 2 s.f.), and for octahedra `trans_angle_deg` (mean, sd, 0.1°); `average_structure`: `polyhedra`, the same indices as mean and sd over its polyhedra of count n, `bond_ladder_A` (their sorted bond lengths averaged position by position, 0.001 Å), or `note` (no basis, no site holding mostly the centre, no site of count n). No facts | fail: a window that cuts its shell by `compute_bond_angles`' rule (`windowCut`, its one `shellWindows` entry: the CN margin where the window meets the run's shell, else the engine's counts), **refused** unless `window_confirmed` — the counts and the shell reading kept, `measured`, `configuration` and `average_structure` withheld — else a warn "kept: the user chose this window"; ok: how many centres have n ligands and how many are left out; note: n is neither 4 nor 6 (DI alone); warn: flat polyhedra without ⟨λ⟩; warn: parse warning. Refused before running: min ≥ max. The engine's own refusals (an unknown element, no polyhedra) reach the model as the call's error |
 | `detect_symmetry(tolerance_A ∈ [0.001, 1])` | the structure has a `basis` (a browser-loaded run's `structureFromRmc6f`, or a server folder's `/api/structure`, `structure_basis.py`; not a coords-only file) | `describeSymmetry` (the Detected SG card's finder), *not* changing the card | group, number (only when certain), point group and its facts (`point_group_facts`, as in the context), n ops, max residual, every orbit with `orbitLabel` Wyckoff label, site symmetry and representative fractional coordinates (4 decimals) | ok: group holds; note: the point group's facts ("take inversion, chirality and polarity from this"); note: undetermined; note: "≥" lower bound; warn: not analysed (caps); fail: no basis |
 | `measure_symmetry_lowering(parent_tolerance_A = 0.2, tolerance_A = 1.25 × noise floor)` | the structure has a `basis` | `symmetryShifts` (`symmetryShift.js`): the parent group at `parent_tolerance_A` (`analyseSymmetry`), each orbit averaged over its operations (`averageOrbit`), each member's ideal position the nearest image of that average; a member's shift = its mean − its ideal position, the common part the least-squares origin leaves removed by the geometric median of all members' shifts (Weiszfeld: the parent on the majority of the atoms, the description that moves the fewest); the lower group by `describeSymmetry` at `tolerance_A` | the parent and lower groups (the lower with its point-group facts), the noise floor, up to 12 sites (largest first) with `shift_A`, `direction_uvw`, `nearest_low_index` (within 15°, `LOW_INDEX_CONE_DEG`), `se_A` (the mean's sampling error along the shift) and `above_noise_floor`; `facts.lowering` = `{parent, lower, shifted: [{element, shift_A, direction_uvw}]}` | ok: each element whose largest shift exceeds the noise floor ("Ta shifted 0.065 Å along [0 0 1] (3.7° off) from the Pm-3m positions … a coherent shift every copy shares"); note: the parent → lower change in inversion and polarity; ok: no site above the noise floor; note: the lower tolerance still gives the parent group; warn: not analysed; fail: no basis, or no parent operation (review L4: the shift had to be worked out by hand from the orbit positions) |
 | `compare_fit(dataset, n_ranges = 6)` | a fit file with a model and a measured column (`xpdf`, `npdf`, `xray_sq`, `neutron_sq`, `bragg`; repeated kinds keyed `npdf_2`, …) | `fitTool` in `runTools.js` (roles by label `/exp\|obs/` vs `/calc\|rmc\|fit/`, else column order — `rwpColumns`, duplicated) | the dataset's $R$ (Step 10) over its range; per equal-width range of r or Q: $R$ there and its share of $\sum (y^\mathrm{calc}-y^\mathrm{expt})^2$; the 5 largest local extrema of the 5-point mean residual (position, model − data, relative to the data's rms) | ok (the card's headline): the overall $R$ and where the misfit lives — one range holding ≥ 40 % of the squared residual (`MISFIT_CONCENTRATION`), else spread; note: another range's own $R$ ≥ 3× the dataset's (`RELATIVE_MISFIT_FACTOR`) — weak signal poorly fitted, e.g. high-Q F(Q); fail: < 10 points |
@@ -2458,6 +2460,160 @@ to the 3,000-character budget never drops a split site before another, and a not
 The Demo's 52 sites have none; three of the 13 rows its budget keeps resolve PC1 (heavy-tailed,
 κ₁ 7.4–8.0).
 
+### Step 21 — Polyhedral distortion: Baur's DI, Robinson's quadratic elongation and angle variance (`polyhedral_distortion`)
+
+**Why.** The user's interview answer 7 for the coordination-shells skill (approved by the manager
+on the user's delegation, 2026-10-24): polyhedra that share corners or edges — an extended network,
+the TiO6 of a perovskite, the tetrahedra of a spinel — are judged by their angle spreads and a
+standard polyhedral distortion index, never by `analyze_clusters`' shuffle null, which needs finite
+clusters of one element (Step 18) and reports an extended network instead. The three indices are the
+standard ones, measured over the configuration's polyhedra and over the average structure's, so a
+static distortion separates from the spread thermal motion adds. Code: `polyhedral_distortion` in
+[`rmc_toolkits/distortion.py`](../../rmc_toolkits/distortion.py) (source of truth),
+`polyhedralDistortion` in [`workers/distortion.js`](../../web_app/frontend/src/workers/distortion.js)
+(the port; golden `distortion_fixture.json` from `tests/generate_distortion_fixture.py`, held to
+$10^{-9}$ relative by `distortion.test.js`, stale-checked by `tests/test_distortion_fixture.py`), the
+PCA worker's `distortion` request and `/api/distortion`; the tool's summary `summarizePolyhedra` in
+[`copilotTools.js`](../../web_app/frontend/src/copilotTools.js).
+
+**The polyhedra.** For a centre element C and a ligand element L, the L atoms within $[r_\min,
+r_\max]$ of each C atom, inclusive with `WINDOW_TOL`, from the bond-angle engine's linked-cell search
+with explicit image shifts ([bond-geometry.md](bond-geometry.md), Steps 2–4; `_neighbor_bonds` /
+`neighborBonds`, never a second search): the bond set `compute_bond_angles` reads for L–C–L in that
+window, triclinic cells and boxes smaller than the window included. The coordination histogram and
+its summary (`coordination_summary`, Bond Geometry's) are returned; the polyhedra measured are those
+of the most common count $n$ among the centres with at least one ligand (the lowest count on a tie),
+and every centre with another count is left out and counted (`skipped`). No centre with a ligand, or
+$n = 1$, is the engine's refusal ("no polyhedra"). The app boundaries count the bonds first, with a
+search that stores nothing, and refuse a window holding more than `APP_MAX_BONDS` = 10⁶.
+
+**The indices.** Per polyhedron, with $l_i$ the $n$ centre–ligand distances:
+
+$$\mathrm{DI} = \frac{1}{n}\sum_{i=1}^{n}\frac{\lvert l_i - \bar l\rvert}{\bar l},\qquad \bar l = \frac1n\sum_{i=1}^{n} l_i$$
+
+Baur's bond-length distortion index (W. H. Baur, *Acta Cryst.* B30 (1974) 1195–1215), for any $n$.
+For octahedra ($n = 6$) and tetrahedra ($n = 4$), Robinson's quadratic elongation and bond-angle
+variance (K. Robinson, G. V. Gibbs and P. H. Ribbe, *Science* 172 (1971) 567–570):
+
+$$\langle\lambda\rangle = \frac{1}{n}\sum_{i=1}^{n}\left(\frac{l_i}{l_0}\right)^2,\qquad
+\sigma^2_\theta = \frac{1}{m-1}\sum_{i=1}^{m}\left(\theta_i - \theta_0\right)^2$$
+
+with $l_0$ the centre-to-vertex distance of the regular polyhedron of the same volume $V$:
+$V = \tfrac43 l_0^3$ for the octahedron, $V = \tfrac{8\sqrt3}{27}\,l_0^3$ for the tetrahedron
+(`OCTAHEDRON_RADIUS_CUBED_PER_VOLUME` = 3/4, `TETRAHEDRON_RADIUS_CUBED_PER_VOLUME` = 9√3/8). The
+angles are Robinson's set: the $m$ cis angles L–C–L, those the polyhedron's edges subtend at the
+centre — all $m = 6$ of a tetrahedron with $\theta_0 = \arccos(-\tfrac13) = 109.4712°$ (Robinson's
+109.47°; the exact value, so a regular tetrahedron gives 0), and the $m = 12$ of an octahedron that
+are 90° in the regular one ($\theta_0 = 90°$): its 15 angles less the three trans ones. In degrees
+squared. Each index is 0, 1 and 0 for a regular polyhedron with the atom at its centre and grows
+with any distortion: ⟨λ⟩ ≥ 1, and a regular octahedron with the centre $\delta$ off its middle gives
+$1 + (\delta/l_0)^2$.
+
+*The trans pairs.* In a distorted octahedron the three trans pairs are the perfect matching of its
+six vertices (one of 15, `OCTAHEDRON_MATCHINGS`) whose three angles have the largest sum; a matching
+within `TRANS_TIE_DEG` = $10^{-9}$° of that sum goes to the first in the fixed order (the first vertex
+paired with each later one in turn, the rest recursively). For any octahedron whose trans angles
+exceed its cis ones this is the edge set Robinson counts; a trigonal prism has no such set, and its
+"octahedral" σ²θ is large by construction. The mean of each octahedron's three trans angles is
+returned as `transAngle` (180° when regular), so a polyhedron that is not octahedral shows.
+
+*The volume.* The octahedron's is that of the polyhedron bounded by its 8 faces, each holding one
+vertex of every trans pair: summed over the 8 signed face tetrahedra, multilinearity of the
+determinant gives $V = \lvert\mathbf d_1\cdot(\mathbf d_2\times\mathbf d_3)\rvert/6$ with
+$\mathbf d_k$ the difference of the $k$-th trans pair's vertices (the regular octahedron's diagonals
+$2l_0$ give $\tfrac43 l_0^3$); the tetrahedron's is
+$\lvert(\mathbf v_2-\mathbf v_1)\cdot((\mathbf v_3-\mathbf v_1)\times(\mathbf v_4-\mathbf v_1))\rvert/6$.
+Both are independent of where the centre sits. A flat polyhedron ($V = 0$: a square plane read as a
+tetrahedron) has no ⟨λ⟩ and is left out of that summary, whose `count` then falls short of
+`polyhedra`.
+
+*The summaries.* Each index over the polyhedra as `{count, mean, sd, p10, median, p90}`: the sample
+sd ($n-1$; null for one polyhedron), quantiles by linear interpolation between order statistics
+(written out in both engines, not numpy's). `bondLength` is the same over every bond of the
+polyhedra measured.
+
+**The average structure.** The same indices on the average-structure basis (`structure_basis` /
+`structureFromRmc6f`: one site per reference number at its `mean`, the unit cell $L/N$; [run-dashboard.md](run-dashboard.md)
+Part A), each centre site's polyhedron from the same window and the same search, whatever its
+coordination (`sites`: reference number, species, `mixed`, copies, coordination, sorted
+`bondLengths`, its own indices), summarised over the sites of the configuration's count $n$. A site
+counts as the species holding most of its copies (ties to the code-point first symbol: the PCA
+engine's site label; the basis's `el`, its first atom's species, is what the symmetry finder reads).
+`reason` says why there is no summary: `no_basis` (a coords-only file), `no_centre_sites` (the centre
+species holds no site), `coordination_differs` (no centre site has $n$ ligands in the window). Every
+index is non-negative and 0 (⟨λ⟩: 1) only for a regular polyhedron, so thermal motion and any
+disorder the average folds away raise the configuration's values but not the average's, whose site
+means carry only their sampling error ($\sigma/\sqrt{N}$ per axis over $N$ copies): **a distortion
+the average polyhedron carries too is static; one only the configuration's polyhedra show is local**
+(thermal, or a static distortion whose orientation the average folds away).
+
+**Known answers** ([`tests/test_distortion.py`](../../tests/test_distortion.py)), on isolated
+polyhedra, their bond vectors in closed form:
+
+| Polyhedron (bonds $R$ = 2 Å unless given) | DI | ⟨λ⟩ | σ²θ (deg²) |
+|---|---|---|---|
+| regular octahedron, regular tetrahedron | 0 | 1 | 0 |
+| 4 × 1.93 + 2 × 2.25 Å at right angles (Jahn–Teller) | $(4\lvert1.93-\bar l\rvert + 2\lvert2.25-\bar l\rvert)/(6\bar l)$ = 0.069831, $\bar l$ = 2.03667 | $(4\cdot1.93^2+2\cdot2.25^2)/(6\,l_0^2)$, $l_0^3 = 1.93^2\cdot2.25$: 1.010845 | 0 |
+| trigonal octahedron, bonds at $\psi$ = 50° from the threefold axis | 0 | $\left(\tfrac{3\sqrt3}{2}\sin^2\psi\cos\psi\right)^{-2/3}$ = 1.013558 | $12\delta^2/11$, $\delta = 90° - \arccos\frac{3\cos^2\psi-1}{2}$: 51.61 |
+| tetrahedron $(\pm s, 0, c)$, $(0, \pm s, -c)$, $c$ = 0.5 (flattened) | 0 | $\left(\tfrac{3\sqrt3}{2}\,c\,s^2\right)^{-2/3}$ = 1.017524 | $[2(120°-\theta_0)^2 + 4(\arccos(-c^2)-\theta_0)^2]/5$ = 64.29 |
+| regular octahedron, centre 0.2 Å off along [0 0 1] | 0.034328 (lengths $R\mp\delta$, $4\times\sqrt{R^2+\delta^2}$) | $1+(\delta/R)^2$ = 1.01 | 23.83 |
+
+Each holds to $10^{-12}$ (σ²θ to $10^{-9}$), and the indices do not move under a rigid rotation of
+the whole configuration (a triclinic-looking lattice). On configurations:
+
+- *Orientationally disordered Jahn–Teller octahedra* (CuF6 in 27 cells, 4 × 1.93 + 2 × 2.25 Å with
+  the long axis along x, y or z by cell, each F site long in exactly a third of the cells): every
+  polyhedron's DI is 0.069831 and σ²θ 0, while the average octahedron is regular — six bonds at
+  2.03667 Å, DI $4\times10^{-16}$ — and in the first peak alone (4 F) the average site holds 6
+  (`coordination_differs`).
+- *A thermal-only corner-sharing network* (SrTiO3, 1,000 TiO6 octahedra, only the O displaced,
+  isotropic Gaussian 0.05 Å per axis, each site's displacements centred over its copies): the six
+  bonds of one octahedron are six different O atoms, independent, $l_i = \bar l + \varepsilon_i$ with
+  $\varepsilon_i \sim N(0, s^2)$ to first order in $s/\bar l$, $s$ the bond-length sd, so
+  $\mathrm E\lvert l_i - \tfrac1n\sum_k l_k\rvert = \sqrt{2/\pi}\sqrt{(n-1)/n}\,s$ and
+  $\mathrm E[\mathrm{DI}] = \sqrt{2/\pi}\sqrt{5/6}\,s/\bar l = 0.7284\,s/\bar l$; a cis angle moves by
+  the two tangential components, $\mathrm E[(\theta-90°)^2] = 2(s/\bar l)^2$ rad², so
+  $\mathrm E[\sigma^2_\theta] = \tfrac{24}{11}(s/\bar l)^2(180/\pi)^2$ = 4.71 deg². Measured: DI 0.01862
+  against 0.01880 (−1.0 %), σ²θ 4.74 against 4.71 deg²; over seeds 11–15 the DI departs by −1.0 to
+  +0.6 % and σ²θ by −1.0 to +1.4 %. The test's tolerance is four standard errors of the mean over the
+  polyhedra plus 1 % (DI, 5.2 % in all) or 2 % (σ²θ) for the second-order terms ($(s/\bar l)^2 \approx
+  7\times10^{-4}$). The average octahedron is regular exactly (DI $2\times10^{-17}$); without the
+  centring its DI stays below 0.3 of the configuration's (64 copies: $1/\sqrt{64}$).
+- *A sheared (triclinic) cell* distorts every octahedron alike: the average polyhedron carries more
+  than half the configuration's DI and a σ²θ above 1 deg².
+- *Refusals*: an inverted or empty window, an unknown element (naming the elements present), no
+  polyhedra, a count of one, and the bond budget, before any bond is stored.
+
+On the Demo (GaTa4Se8, 250 K): the TaSe6 octahedra in the whole first shell (2.21–3.23 Å; 15,932 of
+16,000 Ta have six Se) have DI 0.0469 ± 0.017, ⟨λ⟩ 1.0405 ± 0.013 and σ²θ 127 ± 37 deg², and the
+average structure's 16 octahedra DI 0.0415, ⟨λ⟩ 1.0341 and σ²θ 111 deg² with bonds 3 × 2.52 + 3 ×
+2.75 Å and trans angles of 159.6°: the static 3 + 3 trigonal distortion of the lacunar spinel's TaSe6
+(each Ta off its octahedron's middle along a threefold axis, towards its Ta4 cluster), on which
+thermal motion adds a little. The GaSe4 tetrahedra (2.0–2.8 Å) have DI 0.0278 and σ²θ 19.8 deg² in
+the configuration but 0.0010 and 0.03 deg² in the average structure: regular, distorted by thermal
+motion only. dev-jahn-teller's CuF6 (the long axis drawn per cell): the configuration's DI above
+0.0698, the average octahedron's below a tenth of it.
+
+**The tool.** `polyhedral_distortion(centre, ligand, r_min, r_max, window_confirmed?)` sends the
+`distortion` request through the run's engine and shapes the payload (Step 17's table). It declares
+its bond window (`shellWindows`), so the Workbench asks about a window that cuts the shell before the
+call runs (`clarify.js`), and it refuses on the same rule as `compute_bond_angles` (`windowCut`: the
+CN margin where the window meets the run's first shell of the pair, the engine's coordination
+counts only where the run reads no shell), unless `window_confirmed`; on every natural window of
+the Demo the two tools and the Workbench agree (`copilotTools.test.js`). Its description says only
+what it computes, which is what arm C reads; its `method` advice — the window from
+`find_gr_peaks`' `first_shell.window_A`, octahedra or tetrahedra isolated or in an extended
+network, the cut-window question, and the static/local reading of the two sets — is sent in the
+dock and arm B only (`method.js`). It returns no facts: no answer check reads it yet. The
+verification's claim catalogue backs a "distorted octahedra" conclusion with `analyze_clusters`
+only (`verification/claims.js`); see *Caveats*.
+
+**Caveats.** DI sees bond lengths only and σ²θ angles only; ⟨λ⟩ couples both and the centre's
+position. All three are means over polyhedra of non-negative quantities, so the configuration
+always carries a thermal baseline: read it against the average structure's values (and, for
+independent thermal motion, against the expectations above), never against zero. A window that
+cuts the shell measures part-polyhedra, which is why it is refused unless the user chose it.
+
 ---
 
 ### Runtime-mode differences (static vs Flask) — read this before quoting the assistant
@@ -2480,6 +2636,7 @@ basis is the exception since plan item 4.5 (`/api/structure`'s `basis`). What su
 | `pca_displacements` | after opening the PCA Ellipsoid page | after opening the PCA Ellipsoid page (`/api/pca/sites`) |
 | `partial_weights` | yes (element counts + the `.dat` blocks or plot kinds) | from the plot kinds only (no `.dat`) |
 | `analyze_clusters`, `analyze_modulations` | yes (worker; needs site/cell columns) | yes (`/api/clusters`, `/api/modulations`) |
+| `polyhedral_distortion` | yes (worker; a coords-only file has no average structure) | yes (`/api/distortion`) |
 | `compare_fit`, `find_gr_peaks` | yes | **no** — no parsed series |
 
 Two cross-cutting notes: STOG datasets (`.gr`, `.sq`, `.fq`) are filtered out by `isDashboardPlotFile`
@@ -2553,6 +2710,10 @@ Flask analyses read ([run-dashboard.md](run-dashboard.md), Step 9).
 | `DEFAULT_MAX_SEND_BACKS` | 2 | send-backs per turn | `verification/index.js` (`maxSendBacks`; a run's `limits.maxEvidenceGates` sets it) | The evidence gate sends an answer back at most this often, once per rule (THY-18) |
 | `POLYHEDRON_COUNTS` | [4, 6] | neighbours | `context/shells.js` (`networkCentresOf`) | An element that is no cluster element and whose nearest closed first shell of another element holds a tetrahedron or an octahedron (within `CN_MATCH_TOLERANCE`) centres polyhedra no finite cluster holds: "no order" needs `polyhedral_distortion` on it where the turn offers it (the local-order interview, 2026-10-24) |
 | `CLUSTER_CN_MAX` | 4.5 | neighbours | `context/shells.js` (`clusterElementsOf`) | An element whose own first shell holds 0.5 to this many neighbours may form finite clusters: "no order" needs `analyze_clusters` on it, and arm A+ tries its clusters (one rule since candidate 8) |
+| `APP_MAX_BONDS` | 10⁶ | bonds | `distortion.py`, `workers/distortion.js` | The bonds one `polyhedral_distortion` request may hold, counted by a search that stores nothing; above it the route and the worker refuse (the engine is unrestricted) |
+| `MAX_DISTORTION_WINDOW` | 8 | Å | `app.py`, `pcaKdeWorker.js` | `rMax` cap of `/api/distortion` and the worker's `distortion` request (a polyhedron's bonds are first-shell distances) |
+| `TRANS_TIE_DEG` | $10^{-9}$ | degrees | `distortion.py`, `workers/distortion.js` | Two trans matchings of an octahedron whose angle sums lie this close are a tie, which goes to the first in `OCTAHEDRON_MATCHINGS` |
+| `TETRAHEDRAL_ANGLE_DEG` | arccos(−1/3) = 109.4712206 | degrees | `distortion.py`, `workers/distortion.js` | θ₀ of a tetrahedron's bond-angle variance (Robinson's 109.47°, exact so a regular tetrahedron gives 0) |
 | `CLUSTER_RESULT_BUDGET` | 4 500 | characters | `copilotTools.js` | `analyze_clusters`' own result budget |
 | `MODULATION_RESULT_BUDGET` | 4 500 | characters | `copilotTools.js` | `analyze_modulations`' own result budget (the largest results are three elements each: the Demo's 3,687 characters with its notes, dev-zone-boundary's 3,344 with an ordered point's polarisation; a fourth element adds about 500) |
 | `SPLIT_SHELL_REACH_A`, `IDEAL_COORDINATION`, `CN_MATCH_TOLERANCE` | 0.5, [4, 6, 8, 12], 0.5 | Å; atoms; atoms | `context/shells.js` | A later peak within the reach joins a shell cut at a deep trough when the summed CN is an ideal count (review L1); two counts agree within `CN_MATCH_TOLERANCE` (`cnMatches`: the Workbench's named polyhedron, the answer checks, the octahedron/tetrahedron reading; `IDEAL_CN_TOLERANCE` until 2026-10-19) |

@@ -20,7 +20,8 @@
   "orientation": "/api/pca/orientation",
   "triplets": "/api/triplets",
   "clusters": "/api/clusters",
-  "modulations": "/api/modulations"
+  "modulations": "/api/modulations",
+  "distortion": "/api/distortion"
  },
  "limits": [
   {
@@ -138,6 +139,19 @@
    "gt": 0,
    "le": 8,
    "tool": "analyze_clusters.r_max"
+  },
+  {
+   "kind": "distortion",
+   "param": "rMin",
+   "ge": 0,
+   "tool": "polyhedral_distortion.r_min"
+  },
+  {
+   "kind": "distortion",
+   "param": "rMax",
+   "gt": 0,
+   "le": 8,
+   "tool": "polyhedral_distortion.r_max"
   }
  ],
  "cases": [
@@ -2061,6 +2075,252 @@
    },
    "expect": {
     "error": "element"
+   }
+  },
+  {
+   "name": "distortion Nb-Se: the cube of eight Se",
+   "kind": "distortion",
+   "params": {
+    "centre": "Nb",
+    "ligand": "Se",
+    "rMin": 6,
+    "rMax": 7.5
+   },
+   "expect": "ok",
+   "fields": {
+    "centre": "Nb",
+    "ligand": "Se",
+    "window": [
+     6,
+     7.5
+    ],
+    "centres": 64,
+    "polyhedron.coordination": 8,
+    "polyhedron.shape": null,
+    "configuration.polyhedra": 64,
+    "average.polyhedra": 1
+   }
+  },
+  {
+   "name": "distortion elements in any case, numeric strings",
+   "kind": "distortion",
+   "params": {
+    "centre": "nb",
+    "ligand": "se",
+    "rMin": "6",
+    "rMax": 7.5
+   },
+   "expect": "ok",
+   "fields": {
+    "centre": "Nb",
+    "ligand": "Se",
+    "centres": 64,
+    "polyhedron.coordination": 8,
+    "polyhedron.shape": null,
+    "configuration.polyhedra": 64,
+    "average.polyhedra": 1
+   }
+  },
+  {
+   "name": "distortion rMin 0",
+   "kind": "distortion",
+   "params": {
+    "centre": "Nb",
+    "ligand": "Se",
+    "rMin": 0,
+    "rMax": 7.5
+   },
+   "expect": "ok",
+   "fields": {
+    "centres": 64,
+    "polyhedron.coordination": 8,
+    "polyhedron.shape": null,
+    "configuration.polyhedra": 64,
+    "average.polyhedra": 1
+   }
+  },
+  {
+   "name": "distortion rMin -0.1",
+   "kind": "distortion",
+   "params": {
+    "centre": "Nb",
+    "ligand": "Se",
+    "rMin": -0.1,
+    "rMax": 7.5
+   },
+   "expect": {
+    "error": "rMin"
+   }
+  },
+  {
+   "name": "distortion rMin nan",
+   "kind": "distortion",
+   "params": {
+    "centre": "Nb",
+    "ligand": "Se",
+    "rMin": "nan",
+    "rMax": 7.5
+   },
+   "expect": {
+    "error": "rMin"
+   }
+  },
+  {
+   "name": "distortion rMax 8",
+   "kind": "distortion",
+   "params": {
+    "centre": "Nb",
+    "ligand": "Se",
+    "rMin": 6,
+    "rMax": 8
+   },
+   "expect": "ok",
+   "fields": {
+    "centres": 64,
+    "polyhedron.coordination": 8,
+    "polyhedron.shape": null,
+    "configuration.polyhedra": 64,
+    "average.polyhedra": 1
+   }
+  },
+  {
+   "name": "distortion rMax 8.1",
+   "kind": "distortion",
+   "params": {
+    "centre": "Nb",
+    "ligand": "Se",
+    "rMin": 6,
+    "rMax": 8.1
+   },
+   "expect": {
+    "error": "rMax"
+   }
+  },
+  {
+   "name": "distortion rMax 0",
+   "kind": "distortion",
+   "params": {
+    "centre": "Nb",
+    "ligand": "Se",
+    "rMin": 0,
+    "rMax": 0
+   },
+   "expect": {
+    "error": "rMax"
+   }
+  },
+  {
+   "name": "distortion rMax abc",
+   "kind": "distortion",
+   "params": {
+    "centre": "Nb",
+    "ligand": "Se",
+    "rMin": 6,
+    "rMax": "abc"
+   },
+   "expect": {
+    "error": "rMax"
+   }
+  },
+  {
+   "name": "distortion missing rMax",
+   "kind": "distortion",
+   "params": {
+    "centre": "Nb",
+    "ligand": "Se",
+    "rMin": 6
+   },
+   "expect": {
+    "error": "rMax"
+   }
+  },
+  {
+   "name": "distortion missing centre",
+   "kind": "distortion",
+   "params": {
+    "ligand": "Se",
+    "rMin": 6,
+    "rMax": 7.5
+   },
+   "expect": {
+    "error": "centre"
+   }
+  },
+  {
+   "name": "distortion missing ligand",
+   "kind": "distortion",
+   "params": {
+    "centre": "Nb",
+    "rMin": 6,
+    "rMax": 7.5
+   },
+   "expect": {
+    "error": "ligand"
+   }
+  },
+  {
+   "name": "distortion inverted window",
+   "kind": "distortion",
+   "params": {
+    "centre": "Nb",
+    "ligand": "Se",
+    "rMin": 7.5,
+    "rMax": 6
+   },
+   "expect": {
+    "error": "window"
+   }
+  },
+  {
+   "name": "distortion rMin equal to rMax",
+   "kind": "distortion",
+   "params": {
+    "centre": "Nb",
+    "ligand": "Se",
+    "rMin": 6,
+    "rMax": 6
+   },
+   "expect": {
+    "error": "window"
+   }
+  },
+  {
+   "name": "distortion centre Xx",
+   "kind": "distortion",
+   "params": {
+    "centre": "Xx",
+    "ligand": "Se",
+    "rMin": 6,
+    "rMax": 7.5
+   },
+   "expect": {
+    "error": "element"
+   }
+  },
+  {
+   "name": "distortion ligand Xx",
+   "kind": "distortion",
+   "params": {
+    "centre": "Nb",
+    "ligand": "Xx",
+    "rMin": 6,
+    "rMax": 7.5
+   },
+   "expect": {
+    "error": "element"
+   }
+  },
+  {
+   "name": "distortion no polyhedra in the window",
+   "kind": "distortion",
+   "params": {
+    "centre": "Nb",
+    "ligand": "Se",
+    "rMin": 1,
+    "rMax": 2
+   },
+   "expect": {
+    "error": "no polyhedra"
    }
   }
  ]

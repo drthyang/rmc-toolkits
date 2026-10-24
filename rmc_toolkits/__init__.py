@@ -65,6 +65,12 @@ from .parsers import (
     write_frac_from_rmc6f,
     write_stog_xy,
 )
+from .distortion import (
+    DistortionConfiguration,
+    polyhedral_distortion,
+    polyhedral_distortion_from_file,
+    read_distortion_configuration,
+)
 from .plots import PlotResult, close_plot, detect_plot_kind, make_plot, plot_to_png
 from .structure_basis import MAX_BASIS_SITES, basis_site_count, read_structure_basis, structure_basis
 from .triplets import (
@@ -133,6 +139,10 @@ __all__ = [
     "bond_angle_summary_from_file",
     "bond_angles_from_rmc6f",
     "cached_bond_angle_summary",
+    "DistortionConfiguration",
+    "polyhedral_distortion",
+    "polyhedral_distortion_from_file",
+    "read_distortion_configuration",
     "CsvSeries",
     "MAX_KDE_FIT_POINTS",
     "MAX_PCA_FIT_POINTS",

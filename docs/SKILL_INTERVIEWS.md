@@ -114,8 +114,9 @@ not apply as an entry marked "awaits the coordination code PR".
 
 Also answered (the user's answer 7): corner-sharing or extended networks (outside the 0.5–4.5
 own-kind rule) use angle spreads plus a standard polyhedral distortion index such as Baur's, never
-the cluster null. No Workbench tool computes the index yet, and the skill says so. **Landed:** the
-skill (step 7).
+the cluster null. No Workbench tool computed the index then; `polyhedral_distortion` does since
+2026-10-24 (its own PR: Baur's DI and Robinson's indices, for the configuration and the average
+structure). **Landed:** the skill (step 7, which names the tool) and code (the tool).
 
 ## 3. Local symmetry (`local-symmetry`, interviewed 2026-10-24)
 
@@ -211,15 +212,17 @@ Written on 2026-10-17 from the 2026-10-14 tool review's proposal (approved by th
 and the validation's dev cases: how to conclude "no order". Answered by the user on 2026-10-24.
 Each answer, and where it landed: the skill's text or code (a later local-order answer-check code
 PR; the extended networks' tool is its own PR). Until they land, the skill lint holds the lines
-today's code does not apply as entries marked "awaits the local-order answer-check code PR" or
-"awaits the polyhedral_distortion PR".
+today's code does not apply as entries marked "awaits the local-order answer-check code PR" (and,
+until the tool landed on 2026-10-24, "awaits the polyhedral_distortion PR").
 
 1. *Is the draft's list yours; what would you add or drop?* Keep it, and add (a)
    `analyze_modulations`' diffuse short-range-order verdict (#112) and (b), for an extended
    network, `polyhedral_distortion`. **Landed:** the skill (steps 3 and 4, the checklist, the
    firm rule) and its reference (`order-signatures.md`: a row for diffuse order).
-   `polyhedral_distortion` is being built in its own PR: until it is on main the skill names it
-   "where the Workbench offers it", and the lint holds it as a tool that awaits that PR.
+   `polyhedral_distortion` was built in its own PR: until it was on main the skill named it
+   "where the Workbench offers it", and the lint held it as a tool that awaited that PR. Since it
+   landed (2026-10-24) the skill says what it returns, and the lint finds it among the offered
+   tools.
 2. *Every symmetry-inequivalent site, or only the outliers?* Every symmetry-inequivalent site.
    **Landed:** the skill (step 2, the checklist).
 3. *A partial the data barely weight?* A partial under 5 % of the signal is reported as "not

@@ -890,6 +890,203 @@ const bondShellWindows = (args) => [
     }] : [])
 ];
 
+// --- polyhedral_distortion -----------------------------------------------------
+
+// One index over the configuration's polyhedra (mean, sd and percentiles) and
+// over the average structure's (mean and sd: one polyhedron per centre site).
+const DISTRIBUTION = { mean: 'number|null', sd: 'number|null', p10: 'number|null', median: 'number|null', p90: 'number|null' };
+const MEAN_SD = { mean: 'number|null', sd: 'number|null' };
+// A refused window keeps the counts and the shell reading that show the cut
+// and drops what was measured (measured, configuration, average_structure),
+// with `refused` saying why; `shell` only where the run reads a first shell
+// for the pair; ⟨λ⟩ and σ²θ only for octahedra and tetrahedra (null when every
+// polyhedron is flat), the trans angle only for octahedra; the average
+// structure's indices only where it has polyhedra of the measured count, its
+// `note` saying why it has none.
+const POLYHEDRA_SHAPE = {
+    pair: 'string',
+    window_A: ['number', 'number'],
+    coordination: {
+        note: 'string', counts: ['number'], mean: 'number|null', modal: 'number|null', modal_share: 'number|null', unbonded_share: 'number|null'
+    },
+    'shell?': SHELL_READING,
+    'refused?': 'string',
+    'measured?': { coordination: 'number', shape: 'string', centres: 'number', polyhedra: 'number', skipped: 'number' },
+    'configuration?': {
+        bond_length_A: oneOf(MEAN_SD, 'null'),
+        distortion_index: oneOf(DISTRIBUTION, 'null'),
+        'quadratic_elongation?': oneOf(DISTRIBUTION, 'null'),
+        'angle_variance_deg2?': oneOf(DISTRIBUTION, 'null'),
+        'trans_angle_deg?': oneOf(MEAN_SD, 'null')
+    },
+    'average_structure?': {
+        polyhedra: 'number',
+        'note?': 'string',
+        'bond_ladder_A?': ['number|null'],
+        'distortion_index?': oneOf(MEAN_SD, 'null'),
+        'quadratic_elongation?': oneOf(MEAN_SD, 'null'),
+        'angle_variance_deg2?': oneOf(MEAN_SD, 'null'),
+        'trans_angle_deg?': oneOf(MEAN_SD, 'null')
+    }
+};
+
+// Each index at the precision it is read at: DI and σ²θ to 3 significant
+// digits, ⟨λ⟩ (near 1) to 4 decimals, angles to 0.1°, lengths to 0.001 Å;
+// every spread to 2 significant digits (an angle's to 0.1°).
+const INDEX_FORMS = {
+    distortion_index: { key: 'distortionIndex', value: (v) => round(v, 3), spread: (v) => round(v, 2) },
+    quadratic_elongation: { key: 'quadraticElongation', value: (v) => roundFixed(v, 4), spread: (v) => round(v, 2) },
+    angle_variance_deg2: { key: 'angleVariance', value: (v) => round(v, 3), spread: (v) => round(v, 2) },
+    trans_angle_deg: { key: 'transAngle', value: (v) => roundFixed(v, 1), spread: (v) => roundFixed(v, 1), meanSd: true }
+};
+
+const distributionOf = (summary, { value, spread }, keys) => {
+    if (!summary) return null;
+    const out = {};
+    keys.forEach((key) => { out[key] = key === 'sd' ? (summary.sd == null ? null : spread(summary.sd)) : value(summary[key]); });
+    return out;
+};
+
+// The engine's index summaries as the model reads them: the configuration's
+// with percentiles (the trans angle's mean and sd), the average structure's
+// mean and sd; ⟨λ⟩ and σ²θ only for an ideal polyhedron, the trans angle only
+// for an octahedron.
+const indexRows = (stats, shape, { percentiles }) => {
+    const rows = {};
+    Object.entries(INDEX_FORMS).forEach(([name, form]) => {
+        if (name !== 'distortion_index' && !shape) return;
+        if (name === 'trans_angle_deg' && shape !== 'octahedron') return;
+        const keys = percentiles && !form.meanSd ? Object.keys(DISTRIBUTION) : Object.keys(MEAN_SD);
+        rows[name] = distributionOf(stats[form.key], form, keys);
+    });
+    return rows;
+};
+
+// Why the average structure has no polyhedron of the measured count
+// (listText: the modulations section's).
+const averageNote = (average, centre, ligand, n) => {
+    if (average.reason === 'no_basis') return 'no average structure: the configuration has no reference sites (coordinates-only lines)';
+    if (average.reason === 'no_centre_sites') return `no average-structure site holds mostly ${centre}: there is no average ${centre} polyhedron`;
+    const counts = [...new Set(average.sites.map((site) => site.coordination))].sort((a, b) => a - b);
+    return `the average structure's ${centre} sites have ${listText(counts.map(String))} ${ligand} in this window, not ${n}: no average polyhedron of the measured count`;
+};
+
+/**
+ * The polyhedral-distortion result the model reads, with deterministic
+ * checks. A window that cuts the coordination shell is refused — its
+ * polyhedra are not the whole shell's — unless the user chose it
+ * (`windowConfirmed`), by compute_bond_angles' rule, the Workbench's
+ * (llm/context/shells.js windowCut): `shell` is the run's shell catalogue's
+ * reading of the window (null where the run reads no shell for the pair),
+ * and the engine's coordinationSummary decides only where there is none.
+ * The counts and the shell reading stay in the data either way.
+ */
+export const summarizePolyhedra = (payload, { windowConfirmed = false, shell = null } = {}) => {
+    const { centre, ligand } = payload;
+    const summary = payload.coordinationSummary;
+    if (!summary || typeof summary !== 'object') {
+        throw new Error('the polyhedral-distortion engine returned no coordinationSummary (distortion.py polyhedral_distortion, workers/distortion.js polyhedralDistortion)');
+    }
+    const coordination = Array.isArray(payload.coordination) ? payload.coordination : [];
+    const data = {
+        pair: `${centre}–${ligand} (${centre} central)`,
+        window_A: payload.window,
+        coordination: {
+            note: `counts[n] = ${centre} atoms with exactly n ${ligand} in the window`,
+            counts: coordination,
+            mean: round(summary.mean),
+            modal: Number.isFinite(summary.modal) ? summary.modal : null,
+            modal_share: round(summary.modalShare, 2),
+            unbonded_share: round(summary.unbondedShare, 2)
+        }
+    };
+    if (shell) data.shell = shellReadingOf(shell, centre, ligand);
+    const checks = [...parseWarningCheck(payload)];
+    // The one cut rule (shells.js windowCut): the CN margin against the run's
+    // shell, the engine's counts where there is no shell to compare.
+    const verdict = windowCut(shell, summary);
+    let cutText = null;
+    if (verdict.cut) {
+        if (verdict.by === 'cn-margin') {
+            cutText = `The window cuts the first ${centre}–${ligand} shell: it holds ${round(shell.cn)} ${ligand} per ${centre} (shell.cn_in_window) `
+                + `of the shell's ${round(shell.shell.cn)} (shell.cn, in shell.window_A), fewer by at least max(0.5, 15 % of the shell's CN).`;
+        } else if (verdict.by === 'unbonded') {
+            cutText = `${Math.round(summary.unbondedShare * 100)} % of the ${centre} atoms have no ${ligand} in the window: it misses most of the shell.`;
+        } else {
+            const present = coordination.map((count, n) => (count > 0 ? n : null)).filter((n) => n != null);
+            cutText = `Only ${Math.round(summary.modalShare * 100)} % of the ${centre} atoms have the most common count (${summary.modal} ${ligand}); `
+                + `the counts spread from ${present[0]} to ${present.at(-1)}. The window cuts through a coordination shell.`;
+        }
+    }
+    if (cutText && !windowConfirmed) {
+        // Refused: keep what shows the cut, never the polyhedra.
+        data.refused = 'the window cuts the coordination shell, so its polyhedra are not the whole shell\'s and are not returned';
+        // Arm C's method 'off' still refuses; only the advice on which window goes.
+        checks.push(methodCheck('fail',
+            `Refused: ${cutText}`,
+            { method: ' Use the whole shell (find_gr_peaks\' first_shell.window_A).' },
+            ' If the user wants this window, ask them (ask_user) and call again with window_confirmed: true.'));
+        return { data, checks };
+    }
+    if (cutText) checks.push({ level: 'warn', text: `${cutText} Kept: the user chose this window; say that its polyhedra are of a partial shell.` });
+
+    const { coordination: n, shape } = payload.polyhedron;
+    const measured = payload.configuration;
+    data.measured = {
+        coordination: n,
+        shape: shape ?? `${n}-coordinated (no ideal polyhedron)`,
+        centres: payload.centres,
+        polyhedra: measured.polyhedra,
+        skipped: payload.skipped
+    };
+    data.configuration = {
+        bond_length_A: distributionOf(measured.bondLength, { value: (v) => roundFixed(v, 3), spread: (v) => round(v, 2) }, Object.keys(MEAN_SD)),
+        ...indexRows(measured, shape, { percentiles: true })
+    };
+    const average = payload.average;
+    data.average_structure = { polyhedra: average.polyhedra };
+    if (average.polyhedra) {
+        // The average polyhedra's bond lengths, sorted, averaged position by
+        // position over the centre sites of the measured count.
+        const ladders = average.sites.filter((site) => site.coordination === n).map((site) => site.bondLengths);
+        data.average_structure.bond_ladder_A = ladders[0].map((_, k) => roundFixed(ladders.reduce((sum, ladder) => sum + ladder[k], 0) / ladders.length, 3));
+        Object.assign(data.average_structure, indexRows(average, shape, { percentiles: false }));
+    } else {
+        data.average_structure.note = averageNote(average, centre, ligand, n);
+    }
+
+    const where = `within ${payload.window[0]}–${payload.window[1]} Å`;
+    const named = shape ?? `${n}-coordinated`;
+    checks.push({
+        level: 'ok',
+        text: payload.skipped
+            ? `${measured.polyhedra} of ${payload.centres} ${centre} atoms have ${n} ${ligand} ${where} (${named}): measured; the ${payload.skipped} with another count are left out.`
+            : `Every ${centre} atom (${payload.centres}) has ${n} ${ligand} ${where} (${named}): measured.`
+    });
+    if (!shape) {
+        checks.push({ level: 'note', text: `${n} ${ligand} per ${centre}: no ideal polyhedron, so DI alone (⟨λ⟩ and σ²θ are defined for octahedra and tetrahedra).` });
+    }
+    const elongated = measured.quadraticElongation?.count ?? 0;
+    if (shape && elongated < measured.polyhedra) {
+        checks.push({ level: 'warn', text: `${measured.polyhedra - elongated} of the ${measured.polyhedra} polyhedra are flat (zero volume): they have no ⟨λ⟩.` });
+    }
+    return { data, checks };
+};
+
+/**
+ * polyhedral_distortion's bond window (its `shellWindows`): the ligands around
+ * the centre. The Workbench asks about it before the tool runs (llm
+ * clarify.js), and the tool refuses on the same window by the same rule as
+ * compute_bond_angles; `apply` puts a chosen window back into the arguments,
+ * confirmed when it is the user's own.
+ */
+const polyhedronShellWindows = (args) => [{
+    centre: args.centre,
+    partner: args.ligand,
+    window: [args.r_min, args.r_max],
+    apply: ([lo, hi], { confirmed = false } = {}) => ({ ...args, r_min: lo, r_max: hi, ...(confirmed ? { window_confirmed: true } : {}) })
+}];
+
 // --- analyze_clusters ------------------------------------------------------------
 
 // analyze_clusters' own result budget (characters of the tool message).
@@ -2014,6 +2211,56 @@ export const buildCopilotTools = ({ request, structure, elements = [], plotFiles
                 const catalogue = shells();
                 const readings = bondShellWindows(args).map(({ centre, partner, window }) => catalogue?.window(centre, partner, window) ?? null);
                 return summarizeBondAngles(payload, { windowConfirmed: args.window_confirmed === true, shells: readings });
+            }
+        });
+
+        tools.push({
+            name: 'polyhedral_distortion',
+            description: 'Distortion of the coordination polyhedra of a centre element: its ligand atoms within [r_min, r_max] Å, '
+                + 'for the centres with the most common count n. Returns Baur\'s bond-length distortion index DI and, for octahedra '
+                + '(n = 6) and tetrahedra (n = 4), Robinson\'s quadratic elongation ⟨λ⟩ and bond-angle variance σ²θ (deg²), which are '
+                + '0, 1 and 0 for a regular polyhedron: over the configuration\'s polyhedra (mean, sd, percentiles) and for the '
+                + 'average structure\'s (the site means).',
+            // Where the window comes from (inside the first sentence), which
+            // questions need the tool, and how to read the two sets.
+            method: [
+                { after: 'within [r_min, r_max] Å', text: ' (the whole first shell: find_gr_peaks\' first_shell.window_A)' },
+                'Use it for octahedra or tetrahedra, isolated or sharing corners, edges or faces (an extended network, where '
+                    + 'analyze_clusters\' shuffle null does not apply); a window that cuts the shell is put to the user first, and '
+                    + 'refused unless the user chose it (window_confirmed). A distortion the average structure\'s polyhedron shares is '
+                    + 'static; one only the configuration\'s polyhedra show is local (thermal motion alone raises DI, ⟨λ⟩ and σ²θ).'
+            ],
+            parameters: {
+                type: 'object',
+                properties: {
+                    centre: elementProperty(elements, 'Element at the centre of the polyhedra.'),
+                    ligand: elementProperty(elements, 'Element at their vertices.'),
+                    r_min: { type: 'number', minimum: 0, maximum: 8, description: 'Bond window minimum (Å).' },
+                    r_max: { type: 'number', minimum: 0.5, maximum: 8, description: 'Bond window maximum (Å).' },
+                    window_confirmed: {
+                        type: 'boolean',
+                        description: 'true only when the user chose or typed this window (in the question, or through ask_user). '
+                            + 'A window that cuts the coordination shell is refused unless it is set.'
+                    }
+                },
+                required: ['centre', 'ligand', 'r_min', 'r_max']
+            },
+            // The bond window, for the Workbench's check that it does not cut
+            // the coordination shell before this runs (llm clarify.js), and for
+            // this tool's own refusal: compute_bond_angles' rule.
+            shellWindows: polyhedronShellWindows,
+            dataShape: POLYHEDRA_SHAPE,
+            label: ({ centre, ligand, r_min: lo, r_max: hi }) => (
+                `Polyhedra ${centre}–${ligand}${Number.isFinite(lo) && Number.isFinite(hi) ? ` · ${lo}–${hi} Å` : ''}`
+            ),
+            run: async (args, { signal } = {}) => {
+                if (args.r_min >= args.r_max) throw new Error('r_min must be below r_max');
+                const payload = await request('distortion', {
+                    centre: args.centre, ligand: args.ligand, rMin: args.r_min, rMax: args.r_max
+                }, { signal });
+                // The window against the run's shell of its pair, as the Workbench reads it.
+                const reading = shells()?.window(args.centre, args.ligand, [args.r_min, args.r_max]) ?? null;
+                return summarizePolyhedra(payload, { windowConfirmed: args.window_confirmed === true, shell: reading });
             }
         });
 
