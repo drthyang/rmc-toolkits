@@ -1152,7 +1152,7 @@ A, A+ and D were re-recorded with `--final` from a clean tree at that commit (`a
 --final`, `arm-a --split test --final`): on dev A 0.814, A+ 0.952 and D 1.000 over 15 cases; on test
 A 0.800, A+ 0.948 and D 1.000 over 14. No score differs from the baselines before it; the records
 gain only the readings later changes added (the direction tier, the diffuse reading). No tag: tags
-are the user's. Re-frozen the same day at commit 9cdf138 (protocol 2026-10-24.6), after the
+are the user's. Re-frozen the same day at commit bf72b11 (protocol 2026-10-24.6), after the
 refused-analysis rule (2026-10-24.5) and Claude Sonnet 5.5's request policy (2026-10-24.6): the same
 commands give the same scores on both splits, and `TEST_SET_SHA256` is unchanged. The live arms B and
 C run at this protocol (the user's go, 2026-10-24).

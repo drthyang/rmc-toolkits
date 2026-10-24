@@ -96,7 +96,7 @@ PR, and a decision record in `validation/findings/decisions/` and here.
 
 **Frozen (2026-10-24)** at commit 226f6f2 (protocol 2026-10-24.4), after the changelog fold
 (#123): arms A, A+ and D re-recorded with `--final` from a clean tree on dev and test, no score
-moved (`validation/baseline/freeze.json`); no tag (tags are the user's). Re-frozen at commit 9cdf138
+moved (`validation/baseline/freeze.json`); no tag (tags are the user's). Re-frozen at commit bf72b11
 (protocol 2026-10-24.6), after the refused-analysis rule (2026-10-24.5, #126) and Claude Sonnet 5.5's
 request policy (2026-10-24.6): the same scores on dev and test, the test set unchanged.
 

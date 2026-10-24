@@ -2,7 +2,7 @@
  {
   "id": "test-offcentre__A",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-offcentre",
   "split": "test",
   "arm": "A",
@@ -208,7 +208,7 @@
  {
   "id": "test-offcentre__A+",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-offcentre",
   "split": "test",
   "arm": "A+",
@@ -450,7 +450,7 @@
  {
   "id": "test-offcentre__D",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-offcentre",
   "split": "test",
   "arm": "D",
@@ -537,7 +537,7 @@
  {
   "id": "test-zone-boundary__A",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-zone-boundary",
   "split": "test",
   "arm": "A",
@@ -758,7 +758,7 @@
  {
   "id": "test-zone-boundary__A+",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-zone-boundary",
   "split": "test",
   "arm": "A+",
@@ -1004,7 +1004,7 @@
  {
   "id": "test-zone-boundary__D",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-zone-boundary",
   "split": "test",
   "arm": "D",
@@ -1104,7 +1104,7 @@
  {
   "id": "test-breathing__A",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-breathing",
   "split": "test",
   "arm": "A",
@@ -1257,7 +1257,7 @@
  {
   "id": "test-breathing__A+",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-breathing",
   "split": "test",
   "arm": "A+",
@@ -1470,7 +1470,7 @@
  {
   "id": "test-breathing__D",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-breathing",
   "split": "test",
   "arm": "D",
@@ -1529,7 +1529,7 @@
  {
   "id": "test-jahn-teller__A",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-jahn-teller",
   "split": "test",
   "arm": "A",
@@ -1831,7 +1831,7 @@
  {
   "id": "test-jahn-teller__A+",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-jahn-teller",
   "split": "test",
   "arm": "A+",
@@ -2246,7 +2246,7 @@
  {
   "id": "test-jahn-teller__D",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-jahn-teller",
   "split": "test",
   "arm": "D",
@@ -2343,7 +2343,7 @@
  {
   "id": "test-cell-wrap__A",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-cell-wrap",
   "split": "test",
   "arm": "A",
@@ -2450,7 +2450,7 @@
  {
   "id": "test-cell-wrap__A+",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-cell-wrap",
   "split": "test",
   "arm": "A+",
@@ -2608,7 +2608,7 @@
  {
   "id": "test-cell-wrap__D",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-cell-wrap",
   "split": "test",
   "arm": "D",
@@ -2678,7 +2678,7 @@
  {
   "id": "test-thermal-null__A",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-thermal-null",
   "split": "test",
   "arm": "A",
@@ -2829,7 +2829,7 @@
  {
   "id": "test-thermal-null__A+",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-thermal-null",
   "split": "test",
   "arm": "A+",
@@ -3011,7 +3011,7 @@
  {
   "id": "test-thermal-null__D",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-thermal-null",
   "split": "test",
   "arm": "D",
@@ -3060,7 +3060,7 @@
  {
   "id": "test-symmetry-lowering__A",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-symmetry-lowering",
   "split": "test",
   "arm": "A",
@@ -3237,7 +3237,7 @@
  {
   "id": "test-symmetry-lowering__A+",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-symmetry-lowering",
   "split": "test",
   "arm": "A+",
@@ -3478,7 +3478,7 @@
  {
   "id": "test-symmetry-lowering__D",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-symmetry-lowering",
   "split": "test",
   "arm": "D",
@@ -3566,7 +3566,7 @@
  {
   "id": "test-chirality-trap__A",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-chirality-trap",
   "split": "test",
   "arm": "A",
@@ -3773,7 +3773,7 @@
  {
   "id": "test-chirality-trap__A+",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-chirality-trap",
   "split": "test",
   "arm": "A+",
@@ -4014,7 +4014,7 @@
  {
   "id": "test-chirality-trap__D",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-chirality-trap",
   "split": "test",
   "arm": "D",
@@ -4062,7 +4062,7 @@
  {
   "id": "test-chiral__A",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-chiral",
   "split": "test",
   "arm": "A",
@@ -4269,7 +4269,7 @@
  {
   "id": "test-chiral__A+",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-chiral",
   "split": "test",
   "arm": "A+",
@@ -4504,7 +4504,7 @@
  {
   "id": "test-chiral__D",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-chiral",
   "split": "test",
   "arm": "D",
@@ -4552,7 +4552,7 @@
  {
   "id": "test-two-features__A",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-two-features",
   "split": "test",
   "arm": "A",
@@ -4899,7 +4899,7 @@
  {
   "id": "test-two-features__A+",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-two-features",
   "split": "test",
   "arm": "A+",
@@ -5336,7 +5336,7 @@
  {
   "id": "test-two-features__D",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-two-features",
   "split": "test",
   "arm": "D",
@@ -5473,7 +5473,7 @@
  {
   "id": "test-marginal-above__A",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-marginal-above",
   "split": "test",
   "arm": "A",
@@ -5646,7 +5646,7 @@
  {
   "id": "test-marginal-above__A+",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-marginal-above",
   "split": "test",
   "arm": "A+",
@@ -5885,7 +5885,7 @@
  {
   "id": "test-marginal-above__D",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-marginal-above",
   "split": "test",
   "arm": "D",
@@ -5975,7 +5975,7 @@
  {
   "id": "test-marginal-below__A",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-marginal-below",
   "split": "test",
   "arm": "A",
@@ -6148,7 +6148,7 @@
  {
   "id": "test-marginal-below__A+",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-marginal-below",
   "split": "test",
   "arm": "A+",
@@ -6352,7 +6352,7 @@
  {
   "id": "test-marginal-below__D",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-marginal-below",
   "split": "test",
   "arm": "D",
@@ -6442,7 +6442,7 @@
  {
   "id": "test-two-readings__A",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-two-readings",
   "split": "test",
   "arm": "A",
@@ -6647,7 +6647,7 @@
  {
   "id": "test-two-readings__A+",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-two-readings",
   "split": "test",
   "arm": "A+",
@@ -6883,7 +6883,7 @@
  {
   "id": "test-two-readings__D",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-two-readings",
   "split": "test",
   "arm": "D",
@@ -6974,7 +6974,7 @@
  {
   "id": "test-user-choice__A",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-user-choice",
   "split": "test",
   "arm": "A",
@@ -7229,7 +7229,7 @@
  {
   "id": "test-user-choice__A+",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-user-choice",
   "split": "test",
   "arm": "A+",
@@ -7560,7 +7560,7 @@
  {
   "id": "test-user-choice__D",
   "protocol": "2026-10-24.6",
-  "commit": "9cdf13878bba3248c07902b7b5f410f392c52fa4",
+  "commit": "bf72b115331785af1dd1d1204d0a6ab4294e7e74",
   "case": "test-user-choice",
   "split": "test",
   "arm": "D",
