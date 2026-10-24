@@ -198,7 +198,40 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // wavevector (long-wave) and a distribution's numbers quoted without saying
 // they come from one configuration (single-configuration). Arms A and A+ on
 // dev are unchanged.
-export const PROTOCOL_VERSION = '2026-10-24.1';
+// 2026-10-24.2: the user's interview answers for four skills (approved by the
+// user, 2026-10-24), as checks on the answer and on the tools' results —
+// coordination-shells: every CN or bond angle in an answer carries its window
+// in Å (window), the coordination check reads "n A per B" as B's count and a
+// clause stating the whole shell's window as a claim about the shell, and
+// find_gr_peaks cross-checks first_shell.window_A against the average
+// structure's bond lengths for the pair (first_shell.average_structure_d_A;
+// a warning past the first peak's FWHM; its description); the evidence gate
+// backs distorted polyhedra with polyhedral_distortion where the run offers
+// it, else analyze_clusters (EVIDENCE_RULES; an anyOf row asks for the first
+// analysis the turn offers), and analyze_clusters' method keeps it to finite
+// clusters; local-symmetry: a group–subgroup relation that does not hold
+// (subgroup: against the ladder's nested groups — index, t or k — or the
+// point groups alone) and a cell doubling the box cannot hold (cell-doubling:
+// odd along an axis it doubles, or along axes no ordered zone-boundary point
+// doubles); detect_symmetry's facts give its operations and tolerance; the
+// CIF calls itself an average-structure model of an RMC configuration;
+// displacement-anisotropy: analyze_displacement_directions labels its peak a
+// finding (≥ 3σ, ≥ 1.2× isotropic, held at the neighbouring resolution, which
+// it reads for a candidate), a hint (≥ 3σ under 1.2×, 2.5–3σ, not held) or
+// nothing (below 2.5σ), and the direction check and arm A+ take a finding
+// only (A+'s readings record the tier; no dev verdict moves); a split or
+// flat-topped site called disorder when analyze_modulations has not tested
+// its element (disorder, on list_sites' facts), and the gate's split-site
+// row reads a flat-topped site called disordered; local-order: the gate's
+// "no order" also needs polyhedral_distortion on each centre of polyhedra no
+// finite cluster holds (networkCentresOf), where the turn offers it, and the
+// diffuse verdict is read as the user reads it — only antiphase (or
+// general-q) order past its bar is order, in-phase correlation is
+// neighbouring cells moving together (correlated motion), not order, the
+// tool says so, and it never supports "no correlation" (no-order,
+// correlated-motion, no-correlation; arm A+ claims an antiphase verdict as a
+// modulation with no q; no dev verdict moves).
+export const PROTOCOL_VERSION = '2026-10-24.2';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one
 // follows the full method.

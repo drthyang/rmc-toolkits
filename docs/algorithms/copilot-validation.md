@@ -11,7 +11,7 @@ that went with it is [copilot-review.md](copilot-review.md).
 | Arm | What answers | Code |
 | --- | --- | --- |
 | **A** | The default Workbench, no agent: the Detected SG card (0.2 Å), the PCA Ellipsoid table, the Displacement Directions page at its own defaults (the engine's resolution, its readouts from the raw histogram, since protocol 2026-10-19.17; [below](#the-displacement-directions-page-at-its-defaults)) and the partial g(r), read by fixed rules (`ARM_A_RULES`). The cluster and superstructure engines have no page, so A cannot use them | `armA.js` `runArmA` |
-| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules; no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19), a modulation claim with the engine's polarisation as its direction (since protocol 2026-10-19.12). Where the app has a rule, A+ calls the app's function (`SWEEP_RULES`, since 2026-10-19: the split site, the cluster elements, the lower group's tolerance), and a Jahn–Teller claim's long − short is the shell catalogue's split of a joined shell (since protocol 2026-10-19.15), and a split site's direction is the direction map's peak only where the peak cell resolves it, else PC1 (`directionResolved`, 15°; since protocol 2026-10-19.17). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
+| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules; no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19), a modulation claim with the engine's polarisation as its direction (since protocol 2026-10-19.12). Where the app has a rule, A+ calls the app's function (`SWEEP_RULES`, since 2026-10-19: the split site, the cluster elements, the lower group's tolerance), and a Jahn–Teller claim's long − short is the shell catalogue's split of a joined shell (since protocol 2026-10-19.15), and a split site's direction is the direction map's peak only where the peak cell resolves it, else PC1 (`directionResolved`, 15°; since protocol 2026-10-19.17), and only where the tool calls the peak a finding (`directionTier`: ≥ 3σ, ≥ 1.2× isotropic, held at the neighbouring resolution; since protocol 2026-10-24.2); a diffuse verdict in antiphase is order between cells, a modulation claim with no q (`SWEEP_RULES.diffuseOrder`; in phase is correlated motion, never claimed; since protocol 2026-10-24.2). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
 | **B** | The Copilot as the app assembles it: tools, skills, guardrails (refusals, the Workbench's window questions, answer checks) | `harness.js` |
 | **C** | B without the method ([below](#arm-c-the-copilot-without-the-method)): no skills (no `read_skill`, no skills index), no method rules in the prompt, no method advice in a tool's description or check; the tools, refusals, the Workbench's questions, the evidence gate and the answer checks still run. The ablation | `harness.js` |
 | **D** | The planted truth, scored as a verdict; it must score 1 (a test checks this) | `verdict.js` `truthVerdict` |
@@ -77,7 +77,13 @@ centres lie 31.7° from every cube axis; at ν = 2 a cell is 19.3–20.9°, stil
 direction tolerance. Arm A takes a significant peak whatever its radius, as a user reading the
 page. A+ applies the tool's bound (`SWEEP_RULES.directionResolved`: `LOW_INDEX_CONE_DEG`, 15°)
 and takes PC1 where the peak cell is wider, since a cell cannot localise a direction more finely
-than its own size. The page's map opens unsmoothed, which no reading or score depends on.
+than its own size. Since protocol 2026-10-24.2 A+ also follows the tool's tiers
+(`SWEEP_RULES.directionTier`, the displacement-anisotropy interview): a candidate (≥ 3σ, ≥ 1.2×
+isotropic) is read again at the neighbouring resolution (ν − 1, ν + 1 at ν = 1), and the peak names
+the claim only as a finding, held there at ≥ 3σ on the same axis; a hint or nothing takes PC1. The
+reading records the tier, the neighbouring resolution and its σ. On dev it moves no verdict or
+score: every split site's peak is a finding, and every one's cell is wider than 15° (PC1 already).
+Arm A reads the page as before. The page's map opens unsmoothed, which no reading or score depends on.
 The moved dev records are re-recorded in `arm-a-dev.json` (the others as recorded) and pinned in
 `arms.test.js`; the tables under [Arm A results](#arm-a-results-no-model-2026-10-14-commit-b4fe09f)
 were recorded under the earlier default, and the test set's records move at its next scoring.
@@ -144,8 +150,10 @@ snapshot files pass unchanged).
   memory". Two `analyze_modulations` notes say what a pattern is evidence of, an inference that arm
   C drops as it drops the domain rules' (decided by the manager on the user's delegation,
   2026-10-19; protocol 2026-10-19.19): the long-wave note loses "(common in RMC)" and the in-phase
-  diffuse note "(as RMC's long waves and acoustic-like thermal motion give)". Their facts and limits
-  ("not a crystallographic superstructure", "not a superstructure") stay.
+  diffuse note "; as RMC's long waves and acoustic-like thermal motion give" (until protocol
+  2026-10-24.2 "(as RMC's long waves …)"). Their facts and limits ("not a crystallographic
+  superstructure"; the in-phase note's "(correlated motion), not order", until 2026-10-24.2 "not a
+  superstructure") stay.
 - **The evidence gate** runs and checks the same rules (decided by the manager on the user's
   delegation, 2026-10-19), but its send-back names no analysis and no tool: "… Your answer concludes
   "no order beyond thermal motion", but this conclusion needs its evidence from an analysis run in
@@ -1085,6 +1093,41 @@ the scoring or the verdict schema:
 - **Arms A, A+ and D on dev, before (8edf8c0) and after:** all 45 records identical; the baseline is
   not re-recorded. Approved by the user, 2026-10-24
   (`validation/findings/decisions/2026-10-24-fit-assessment-interview.json`).
+
+**Protocol 2026-10-24.2 (the interview answer checks of four skills).** The user's answers in the
+coordination-shells, local-symmetry, displacement-anisotropy and local-order interviews, 2026-10-24,
+change what the model is sent and what the checks on the answer and the evidence gate read, never a
+case, the question, the scoring or the verdict schema:
+- **What the model reads.** `EVIDENCE_RULES` names `polyhedral_distortion` for distorted polyhedra;
+  `analyze_clusters`' method keeps it to finite clusters (arm B; arm C reads no method);
+  `find_gr_peaks`' description and result give the average structure's first shell for the pair
+  (`first_shell.average_structure_d_A`, with a warning past the first peak's FWHM);
+  `analyze_displacement_directions`' description and result label the peak a finding, a hint or
+  nothing (`peak.tier`, the `neighbour` block for a candidate); `analyze_modulations` says in-phase
+  correlation as "neighbouring cells moving together (correlated motion), not order". The symmetry
+  tools' results are unchanged.
+- **Checks on the answer:** `window`, `subgroup`, `cell-doubling`, `disorder`, `no-order`,
+  `correlated-motion` and `no-correlation` are new; `coordination` reads "n A per B" as B's count
+  and a clause stating the whole shell's window as a claim, and `direction` needs a finding of the
+  tiers (ai-assistant.md, *Checks on the answer*). Any finding lowers a run's computed Outcome to
+  "not verified", so arms B and C records under an earlier protocol are not comparable on the
+  Outcome. `audit_eval` still maps a spurious modulation claim to the `superstructure` rule only, so
+  a finding of the new modulation checks on one shows among `unmatched_findings`.
+- **The evidence gate:** distorted polyhedra are met by `polyhedral_distortion` where the turn offers
+  it, else `analyze_clusters` (an `anyOf` row asks for the first analysis the turn offers); a split
+  or flat-topped site called disordered goes back for `analyze_modulations`; "no order" also needs
+  `polyhedral_distortion` on each centre of polyhedra no finite cluster holds, where offered (no dev
+  run offers it yet).
+- **Arm A+** follows the tool's direction tiers and reads the diffuse verdict (antiphase: a
+  modulation claim with no q; in phase: read, never claimed). **Arms A, A+ and D on dev, before
+  (afa45e1, the branch's base) and after each of the four changes:** no verdict or score moves. Four A+
+  records' readings add the tier (dev-offcentre, dev-jahn-teller, dev-jt-off-centre,
+  dev-octahedral-clusters: every split site's peak is a finding), and every A+ record's
+  `analyze_modulations` reading adds the diffuse verdict (no dev case passes it). The baseline is not
+  re-recorded: its verdicts and scores stand. Approved by the user, 2026-10-24
+  (`validation/findings/decisions/2026-10-24-coordination-shells-interview.json`,
+  `2026-10-24-local-symmetry-interview.json`, `2026-10-24-displacement-anisotropy-interview.json`,
+  `2026-10-24-local-order-interview.json`).
 
 ### The report beside the case score (plan item 1.6, part i)
 

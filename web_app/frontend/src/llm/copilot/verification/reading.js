@@ -18,6 +18,8 @@
 // converged" is a claim. A false alarm under a correct answer would teach the
 // user to ignore the checks. Pure, no React.
 
+import { WINDOW_CUTOFF, WINDOW_RANGES } from './phrasings';
+
 const NEGATION = /\b(not|no|never|neither|nor|none|without|lacks?|lacking|absence|absent|cannot|non|yet|stopped|ceased)\b|n't\b/i;
 // What makes a mention hypothetical, conditional or a question about it.
 const NOT_ASSERTED = new RegExp('\\b(whether|if|unless|until|once|when(?:ever)?|before|would|could|might|'
@@ -114,6 +116,37 @@ const SYMBOL_LIKE = /(?<![a-z0-9])[pifcabr](?=[a-z/-]*\d)(?:-?\d(?:_?\d)?|\/?[mn
 /** Whether a text names something written like a space-group symbol. */
 export const namesSymbol = (text) => SYMBOL_LIKE.test(symbolText(text).replace(/[\s{}$\\]/g, (char) => (/\s/.test(char) ? ' ' : '')));
 
+/** A text with its symbols in one spelling, lower case (what symbolTokens' positions index). */
+export const symbolSpelling = (text) => symbolText(text).replace(/[{}$\\]/g, '');
+
+// A symbol written without spaces, known or not (the lattice letter, then
+// axes holding a digit), in symbolSpelling's text.
+const SYMBOL_TOKEN = /(?<![a-z0-9_])([pifcabr])((?:-?\d(?:_\d)?|\/[mnabcde]|[mnabcde])+)(?![a-z0-9_])/g;
+
+/**
+ * The space-group symbols a text names, in order, as `{ at, key, written,
+ * group }` over symbolSpelling(text): each known group (normalized symbol →
+ * group, matched as groupsIn matches it, spaces and marks allowed inside) and
+ * every other symbol written without spaces (`group` null). `written` is the
+ * symbol with its lattice letter in capitals, for pointGroupOfSymbol.
+ */
+export const symbolTokens = (text, groups = new Map()) => {
+    const prepared = symbolSpelling(text);
+    const tokens = [];
+    for (const [key, group] of groups) {
+        const pattern = new RegExp(symbolPattern(key).source, 'g');
+        for (const match of prepared.matchAll(pattern)) {
+            tokens.push({ at: match.index, end: match.index + match[0].length, key, written: group.symbol, group });
+        }
+    }
+    for (const match of prepared.matchAll(SYMBOL_TOKEN)) {
+        const end = match.index + match[0].length;
+        if (!/\d/.test(match[2]) || tokens.some((token) => token.at < end && match.index < token.end)) continue;
+        tokens.push({ at: match.index, end, key: normalizeSymbol(match[0]), written: `${match[1].toUpperCase()}${match[2]}`, group: null });
+    }
+    return tokens.sort((a, b) => a.at - b.at);
+};
+
 // --- wavevectors ----------------------------------------------------------------
 
 const UNICODE_FRACTIONS = { '½': 0.5, '⅓': 1 / 3, '⅔': 2 / 3, '¼': 0.25, '¾': 0.75, '⅕': 0.2, '⅙': 1 / 6, '⅛': 0.125 };
@@ -134,6 +167,31 @@ const componentValue = (token) => {
 export const qVectorsIn = (text) => [...String(text || '').matchAll(Q_VECTOR)]
     .map((match) => match.slice(1, 4).map(componentValue))
     .filter((q) => q.every(Number.isFinite));
+
+// --- windows in Å -----------------------------------------------------------------
+
+// A window's upper edge is a bond length: at least this (Å). A displacement
+// range ("0.1–0.2 Å") or a join's reach ("within 0.5 Å of the first") is
+// no window.
+const WINDOW_MIN_TOP_A = 1;
+
+/**
+ * The windows in Å a text states ([lo, hi], lo < hi; a cutoff is [0, hi]), in
+ * the order they appear: the ranges and cutoffs of phrasings.js WINDOW_RANGES
+ * and WINDOW_CUTOFF, each with its top at least WINDOW_MIN_TOP_A.
+ */
+export const windowsIn = (text) => {
+    const source = String(text || '');
+    const found = [];
+    WINDOW_RANGES.forEach((pattern) => {
+        for (const match of source.matchAll(pattern)) found.push({ at: match.index, window: [Number(match[1]), Number(match[2])] });
+    });
+    for (const match of source.matchAll(WINDOW_CUTOFF)) found.push({ at: match.index, window: [0, Number(match[1])] });
+    return found
+        .filter(({ window: [lo, hi] }) => Number.isFinite(lo) && Number.isFinite(hi) && lo >= 0 && hi > lo && hi >= WINDOW_MIN_TOP_A)
+        .sort((a, b) => a.at - b.at)
+        .map(({ window }) => window);
+};
 
 // --- element symbols --------------------------------------------------------------
 

@@ -398,6 +398,42 @@ describe('buildRunTools', () => {
         expect(checks.some((check) => /poorest at Q = /.test(check.text))).toBe(true);
     });
 
+    it('cross-checks the window against the average structure\'s bond lengths: a 4 + 1 pyramid\'s fifth bond past the shell is flagged (the user\'s rule, 2026-10-24)', async () => {
+        // 200 Cu and 1000 F in a 20 Å box: four F at 1.93 Å and a fifth at 2.40 Å (σ 0.05 Å). Five is no
+        // ideal count, so the shell closes at the deep minimum before the fifth; the average structure (one
+        // CuF5 pyramid in a 10 Å conventional cell) has both bond lengths.
+        const L = 20;
+        const rhoF = 1000 / L ** 3;
+        const normal = (r, r0) => Math.exp(-((r - r0) ** 2) / (2 * 0.05 ** 2)) / (0.05 * Math.sqrt(2 * Math.PI));
+        const x = grid(600, 0.005);
+        const partials = (fifth) => [{
+            plotKind: 'pdf_partials',
+            plotData: { series: [{ label: 'Cu-F', x, y: x.map((r) => (r > 0 ? (4 * normal(r, 1.93) + normal(r, fifth)) / (4 * Math.PI * rhoF * r * r) : 0)) }] }
+        }];
+        const at = (el, p) => ({ el, frac: p.map((value) => value / 10) });
+        const structureWith = (apex) => ({
+            latticeVectors: [[L, 0, 0], [0, L, 0], [0, 0, L]], supercell: [2, 2, 2], elementCounts: { Cu: 200, F: 1000 },
+            basis: [at('Cu', [5, 5, 5]), at('F', [6.93, 5, 5]), at('F', [3.07, 5, 5]), at('F', [5, 6.93, 5]), at('F', [5, 3.07, 5]), at('F', [5, 5, 5 + apex])]
+        });
+        const { find_gr_peaks: tool } = toolMap({ plotFiles: partials(2.4), structure: structureWith(2.4) });
+        const { data, checks } = await tool.run({ pair: 'Cu-F' });
+        expect(data.first_shell.window_A[1]).toBeLessThan(2.25);
+        expect(data.first_shell.average_structure_d_A).toEqual([1.93, 2.4]);
+        const warning = checks.find((check) => /average structure/.test(check.text));
+        expect(warning.level).toBe('warn');
+        expect(warning.text).toMatch(/^The average structure's Cu–F bonds \(1\.93–2\.4 Å between the site means, first_shell\.average_structure_d_A\) lie up to 0\.\d+ Å outside first_shell\.window_A \(1\.\d+–2\.\d+ Å\), more than the shell's width \(its first peak's FWHM, 0\.1\d* Å\): the configuration's first shell and the average structure's disagree; check the window before using it\.$/);
+        // Arm C reads the reading without the advice.
+        expect(checkText(warning, 'off')).toMatch(/the average structure's disagree\.$/);
+        // A regular square (no fifth bond in the average structure): inside the window, no warning.
+        const square = toolMap({ plotFiles: partials(2.4), structure: { ...structureWith(2.4), basis: structureWith(2.4).basis.slice(0, 5) } }).find_gr_peaks;
+        const agreed = await square.run({ pair: 'Cu-F' });
+        expect(agreed.data.first_shell.average_structure_d_A).toEqual([1.93, 1.93]);
+        expect(agreed.checks.some((check) => /average structure/.test(check.text))).toBe(false);
+        // Without a basis, no cross-check.
+        const bare = await toolMap({ plotFiles: partials(2.4), structure: { ...structureWith(2.4), basis: undefined } }).find_gr_peaks.run({ pair: 'Cu-F' });
+        expect(bare.data.first_shell).not.toHaveProperty('average_structure_d_A');
+    });
+
     it('reads the run\'s first shell whatever r_max is, and fails only when the run has none', async () => {
         // No caller picks the range (shells.js): below r_max there is no peak
         // to show, but the shell the context reads is the tool's too.

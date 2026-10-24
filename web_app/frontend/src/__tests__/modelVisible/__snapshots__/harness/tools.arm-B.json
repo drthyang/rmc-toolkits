@@ -21,7 +21,7 @@
     "type": "function",
     "function": {
       "name": "find_gr_peaks",
-      "description": "Analyse one partial g(r) (from the run's partial-PDF file): its peaks below r_max (position, approximate FWHM) and its first coordination shell, which does not depend on r_max — the window from onset to the first deep minimum (use first_shell.window_A for compute_bond_angles: it holds the whole shell, split shells included), mean distance and spread from r²g(r), coordination numbers in both directions with their sensitivity to the cut, whether the shell is separated from the next, for a split shell joined across a deep trough its parts (CN, share, mean distance) and the long − short bond difference, and whether the pair's hard minimum-distance constraint cuts the distribution.",
+      "description": "Analyse one partial g(r) (from the run's partial-PDF file): its peaks below r_max (position, approximate FWHM) and its first coordination shell, which does not depend on r_max — the window from onset to the first deep minimum (use first_shell.window_A for compute_bond_angles: it holds the whole shell, split shells included), mean distance and spread from r²g(r), coordination numbers in both directions with their sensitivity to the cut, whether the shell is separated from the next, for a split shell joined across a deep trough its parts (CN, share, mean distance) and the long − short bond difference, the average structure's bond lengths for the pair against the window, and whether the pair's hard minimum-distance constraint cuts the distribution.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -68,7 +68,7 @@
     "type": "function",
     "function": {
       "name": "analyze_displacement_directions",
-      "description": "Histogram the displacement directions of one site (site_ref, from list_sites) or of every atom of one element (element; \"all\" pools every atom) on the sphere, and test them: the peak direction (Cartesian and crystal [u v w], ± its cell's radius) with its calibrated significance, the whole-map test against isotropy, the +u/−u asymmetry, and the orientation-tensor anisotropy.",
+      "description": "Histogram the displacement directions of one site (site_ref, from list_sites) or of every atom of one element (element; \"all\" pools every atom) on the sphere, and test them: the peak direction (Cartesian and crystal [u v w], ± its cell's radius) with its calibrated significance, labelled a finding, a hint or nothing (a finding is checked at a neighbouring resolution), the whole-map test against isotropy, the +u/−u asymmetry, and the orientation-tensor anisotropy.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -158,7 +158,7 @@
     "type": "function",
     "function": {
       "name": "analyze_clusters",
-      "description": "Shape of the finite clusters one element forms — the M4 tetrahedra of a lacunar spinel, dimers, trimers — with bonds in [r_min, r_max] Å in the average structure (take the window from find_gr_peaks: first_shell.window_A of that element pair). Every cluster in the configuration is compared with a shuffle null in which each atom keeps its own site's displacements but takes them from a random other cluster: is there a distortion beyond independent atoms, which edge pattern (tetrahedra: E/T2 modes, trigonal vs one edge), along which lattice axis (<100>/<110>/<111>), and is the average cluster itself distorted. Use it for cluster or polyhedron distortion, Jahn–Teller, dimerization or trimerization questions; single-site displacement directions cannot show these.",
+      "description": "Shape of the finite clusters one element forms — the M4 tetrahedra of a lacunar spinel, dimers, trimers — with bonds in [r_min, r_max] Å in the average structure (take the window from find_gr_peaks: first_shell.window_A of that element pair). Every cluster in the configuration is compared with a shuffle null in which each atom keeps its own site's displacements but takes them from a random other cluster: is there a distortion beyond independent atoms, which edge pattern (tetrahedra: E/T2 modes, trigonal vs one edge), along which lattice axis (<100>/<110>/<111>), and is the average cluster itself distorted. Use it for finite clusters (dimers, trimers, M4 tetrahedra, isolated polyhedra): their distortion, Jahn–Teller, dimerization or trimerization; single-site displacement directions cannot show these. Corner-sharing polyhedra or another extended network have no finite clusters for its null.",
       "parameters": {
         "type": "object",
         "properties": {

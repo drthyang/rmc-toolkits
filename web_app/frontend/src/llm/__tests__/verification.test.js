@@ -102,6 +102,67 @@ describe('the evidence gate', () => {
             { name: 'analyze_clusters', args: { element: 'Mo' }, resultStatus: 'error', error: 'boom' }])).toHaveLength(1);
     });
 
+    it('"no order" needs polyhedral_distortion on each centre of polyhedra no finite cluster holds, only where the run offers it (the local-order interview, 2026-10-24)', () => {
+        // A perovskite's shells: Ti centres TiO₆ (Ti–Ti six: no finite cluster), Sr twelve O, O two Ti.
+        const shells = {
+            'Ti-O': { window: [1.66, 2.3], cn: 6 }, 'Ti-Sr': { window: [3, 3.6], cn: 8 }, 'Ti-Ti': { window: [3.6, 4.2], cn: 6 },
+            'O-Ti': { window: [1.66, 2.3], cn: 2 }, 'O-Sr': { window: [2.5, 3.1], cn: 4 }, 'O-O': { window: [2.5, 3.1], cn: 8 },
+            'Sr-O': { window: [2.34, 3.1], cn: 12 }, 'Sr-Ti': { window: [3, 3.6], cn: 8 }, 'Sr-Sr': { window: [3.6, 4.2], cn: 6 }
+        };
+        const perovskite = { elements: ['O', 'Sr', 'Ti'], shell: (centre, partner) => shells[`${centre}-${partner}`] ?? null };
+        const answer = 'There is no local order beyond thermal motion.';
+        const others = ['analyze_modulations', { name: 'analyze_displacement_directions', args: { site_ref: 2 } }];
+        const missing = (config, calls) => unmet(config, answer, calls)[0]?.missing ?? [];
+        // Offered (every tool): asked for on Ti, and met by a call centred on Ti, not on another centre.
+        expect(missing({ catalog: perovskite }, others)).toEqual(['polyhedral_distortion for Ti (centre Ti: its polyhedra form no finite cluster)']);
+        expect(missing({ catalog: perovskite }, [...others, { name: 'polyhedral_distortion', args: { centre: 'Sr', ligand: 'O' } }])).toHaveLength(1);
+        expect(missing({ catalog: perovskite }, [...others, { name: 'polyhedral_distortion', args: { centre: 'Ti', ligand: 'O', r_min: 1.66, r_max: 2.3 } }])).toEqual([]);
+        expect(sendBack({ catalog: perovskite }, answer, others)).toMatchObject({ id: 'no-order', missing: ['polyhedral_distortion for Ti (centre Ti: its polyhedra form no finite cluster)'] });
+        // Not offered: never asked; the rest of the list as before.
+        const offered = ['analyze_modulations', 'analyze_displacement_directions', 'analyze_clusters', 'find_gr_peaks'];
+        expect(missing({ catalog: perovskite, offered }, others)).toEqual([]);
+        expect(missing({ catalog: perovskite, offered }, [])).toEqual(['analyze_modulations', 'analyze_displacement_directions on each kind of site (site_ref)']);
+        // A cluster element's polyhedra are analyze_clusters' (MO_CLUSTERS: Mo₃), whatever is offered.
+        expect(missing({ catalog: MO_CLUSTERS }, [])).toEqual([
+            'analyze_modulations', 'analyze_displacement_directions on each kind of site (site_ref)', 'analyze_clusters for Mo (its first Mo–Mo shell is a finite cluster\'s)'
+        ]);
+        // The diffuse verdict is analyze_modulations' own: nothing more runs for it.
+        expect(missing({ catalog: MO_CLUSTERS }, [...others, { name: 'analyze_clusters', args: { element: 'Mo' } }])).toEqual([]);
+    });
+
+    it('distorted polyhedra: polyhedral_distortion where the run offers it, else analyze_clusters, either backing them (the coordination-shells interview, 2026-10-24)', () => {
+        const answer = 'The TaSe6 octahedra are distorted.';
+        // Every tool offered, polyhedral_distortion included: asked for it first, and either analysis meets the claim.
+        expect(sendBack({}, answer)).toMatchObject({ id: 'polyhedra', missing: ['polyhedral_distortion'] });
+        expect(sendBack({}, answer, ['polyhedral_distortion'])).toBeNull();
+        expect(sendBack({}, answer, ['analyze_clusters'])).toBeNull();
+        // A run that does not offer it: analyze_clusters is asked for, and meets it.
+        const without = { offered: ['find_gr_peaks', 'compute_bond_angles', 'analyze_clusters', 'analyze_modulations'] };
+        expect(sendBack(without, answer)).toMatchObject({ id: 'polyhedra', missing: ['analyze_clusters'] });
+        expect(sendBack(without, answer, ['analyze_clusters'])).toBeNull();
+        expect(sendBack({ offered: ['polyhedral_distortion'] }, answer)).toMatchObject({ id: 'polyhedra', missing: ['polyhedral_distortion'] });
+        // A polyhedral distortion in words; a cluster's distortion is the clusters' claim, analyze_clusters alone.
+        expect(ids({}, 'There is a strong octahedral distortion.')).toEqual(['polyhedra']);
+        expect(ids({}, 'The Mo3 triangles are distorted.')).toEqual(['clusters']);
+        expect(sendBack({}, 'The Mo3 clusters are distorted.', ['polyhedral_distortion'])).toMatchObject({ id: 'clusters', missing: ['analyze_clusters'] });
+    });
+
+    it('a split or flat-topped site called disorder goes back for the superstructure test, as random two-site disorder does (the displacement-anisotropy interview, 2026-10-24)', () => {
+        expect(ids({}, 'The flat-topped Ta site is disordered.')).toEqual(['split-site']);
+        expect(ids({}, 'Site 3 is disordered, a split site.')).toEqual(['split-site']);
+        expect(sendBack({}, 'The flat-topped Ta site is disordered.')).toMatchObject({ id: 'split-site', missing: ['analyze_modulations'] });
+        expect(sendBack({}, 'The flat-topped Ta site is disordered.', ['analyze_modulations'])).toBeNull();
+        // Disorder alone, of a site the answer calls neither, is the disorder check's (it knows the sites), not the gate's.
+        expect(ids({}, 'Site 3 is disordered.')).toEqual([]);
+        expect(ids({}, 'The flat-topped Ta site is not disordered.')).toEqual([]);
+    });
+
+    it('anyOf asks for the first analysis the turn offers: a coordination number without find_gr_peaks offered', () => {
+        const offered = ['compute_bond_angles'];
+        expect(sendBack({ offered }, 'Each Ta has CN 6.')).toMatchObject({ id: 'coordination', missing: ['compute_bond_angles'] });
+        expect(sendBack({ offered }, 'Each Ta has CN 6.', ['compute_bond_angles'])).toBeNull();
+    });
+
     it('never asks for a tool the turn does not offer', () => {
         const offered = ['detect_symmetry', 'analyze_modulations'];
         expect(unmet({ offered }, 'The symmetry is lowered by a coherent shift.')[0].missing).toEqual(['detect_symmetry']);

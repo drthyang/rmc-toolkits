@@ -397,6 +397,11 @@ describe('where a finding stands, and validation batch 1', () => {
     // decision taken on the user's delegation says so in its evidence and
     // proposed fix.
     const DECISIONS = join(FRONTEND, 'validation/findings/decisions');
+    // The interview answer checks' records (2026-10-24), one per skill.
+    const INTERVIEW_RECORDS = [
+        '2026-10-24-coordination-shells-interview', '2026-10-24-displacement-anisotropy-interview', '2026-10-24-local-order-interview',
+        '2026-10-24-local-symmetry-interview'
+    ];
     const decisions = () => {
         const results = parseFindingFiles(readdirSync(DECISIONS).map((name) => ({ name, text: readFileSync(join(DECISIONS, name), 'utf8') })));
         results.forEach((result) => expect(result.errors, result.file).toEqual([]));
@@ -423,7 +428,9 @@ describe('where a finding stands, and validation batch 1', () => {
             '2026-10-19-engine-verdicts', '2026-10-19-f5-shell-join', '2026-10-19-jt-split', '2026-10-19-judgment-dev-cases',
             '2026-10-19-list-sites-split', '2026-10-19-marginal-reset-dev', '2026-10-19-mode-polarisation', '2026-10-19-modulation-bar-and-family',
             '2026-10-19-modulation-null', '2026-10-19-provenance-told', '2026-10-19-shell-catalogue', '2026-10-19-shell-cut-rule',
-            '2026-10-24-fit-assessment-interview'
+            ...INTERVIEW_RECORDS.filter((id) => id < '2026-10-24-fit-assessment-interview'),
+            '2026-10-24-fit-assessment-interview',
+            ...INTERVIEW_RECORDS.filter((id) => id > '2026-10-24-fit-assessment-interview')
         ]);
         expect(existsSync(join(FRONTEND, 'validation/findings/decisions.jsonl'))).toBe(false);
         const record = readFileSync(join(DECISIONS, `${recomposed}.json`), 'utf8');
@@ -610,6 +617,29 @@ describe('where a finding stands, and validation batch 1', () => {
             const [path, title] = test.split(' › ');
             expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
         });
+    });
+
+    // The interview answer checks (2026-10-24): one record per skill, each filed
+    // with its change, so it names no commit (a commit cannot name its own
+    // hash) and stands as approved until the PR merges.
+    it('decisions: the interview answer checks, one record per skill, approved by the user directly and implemented with their known-answer tests', () => {
+        for (const id of INTERVIEW_RECORDS) {
+            const record = decisions()[id];
+            expect(record, id).toMatchObject({
+                kind: 'orchestration', needs_user_approval: true, status: 'implemented', approval: { by: 'user', date: '2026-10-24', batch: 3 }
+            });
+            expect(record.commit, id).toMatch(/^[0-9a-f]{7,40}$/);
+            expect(splitOf(record.case), id).toBe('dev');
+            for (const field of ['evidence', 'proposed_fix']) {
+                expect(record[field], `${id} ${field}`).toMatch(/Approved by the user, 2026-10-24\./);
+                expect(record[field], `${id} ${field}`).not.toMatch(/on the user's delegation/i);
+            }
+            expect(record.tests.length, id).toBeGreaterThan(0);
+            record.tests.forEach((test) => {
+                const [path, title] = test.split(' › ');
+                expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+            });
+        }
     });
 
     it('decisions: one cut rule, the CN margin (candidate 6\'s recommendation), approved by the user directly and implemented with its known-answer tests', () => {

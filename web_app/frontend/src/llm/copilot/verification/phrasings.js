@@ -27,6 +27,45 @@ export const LOST_INVERSION = [
     /\b(inversion|centrosymmetr\w*|cent(?:re|er) of symmetry)\b[^.;]{0,30}\b(is|was|are|were|gets|got)\s+(lost|broken|removed|destroyed)/gi
 ];
 
+// A group–subgroup relation, for the subgroup check (facts.js; the
+// local-symmetry interview, 2026-10-24, answer 4a), read in symbolSpelling's
+// lower-case text: "H is a (maximal) (t-/k-) subgroup of G", "G is a
+// supergroup of H", "G has H as a subgroup", and a lowering from G to H
+// ("lowers G to H", "from G to H", "G → H") in a clause that says lower,
+// reduce, descend or break. The claimed index and type beside it.
+export const SUBGROUP_OF = /(^|\W)(subgroups?\s+of)\b/g;
+export const SUPERGROUP_OF = /(^|\W)(supergroups?\s+of)\b/g;
+export const HAS_AS_SUBGROUP = /(^|[^\w-])(has)\b[^.;]{0,40}?\bas\s+(?:an?\s+|its\s+)?(?:\w+[-\s]+){0,2}subgroups?\b/g;
+export const LOWERING_TO = /(^|[^\w-])(lower(?:s|ed|ing)?|reduc(?:e|es|ed|ing|tion)|descen(?:t|ds|ding)|break(?:s|ing)?\s+down)\b/g;
+// What stands between the two symbols of a lowering step: only the
+// connector, with a lowering verb at most ("F-43m to P-42₁m", "F-43m →
+// P-42₁m", "F-43m lowers to P-42₁m"; a bracket between them, a tolerance,
+// is read as a space).
+export const ARROW = /^\s*(?:(?:is\s+)?(?:lower(?:s|ed)?|reduc(?:es|ed)|descends?|goes|drops|breaks\s+down)\s+)?(?:down\s+)?(?:→|->|⟶|⇒|to|into)\s*$/;
+export const INDEX_CLAIM = /\bindex(?:\s+of)?\s*(?:=|:|is)?\s*(\d+)\b|\b[tk](\d+)\b/;
+export const T_TYPE = /\bt-?\s?subgroups?\b|\btranslationengleiche\b|\btranslation-equivalent\b|\bt\d+\b/;
+export const K_TYPE = /\bk-?\s?subgroups?\b|\bklassengleiche\b|\bclass-equivalent\b|\bk\d+\b|\bisomorphic\s+subgroups?\b/;
+export const MAXIMAL = /\bmaximal\b/;
+
+// A cell doubling, for the box check (facts.js; the local-symmetry
+// interview, 2026-10-24, answer 4b): CELL_DOUBLING, or a doubled cell or axis
+// in other words ("a doubled cell", "doubles c", "the c axis is doubled", "2a
+// × 2a × c"); the axes it names (along a, b, c; a ½ wavevector component; a
+// factor 2 in a cell); and an answer that says the box cannot hold it.
+// An axis named by its letter: "the c axis", "c-axis", b or c alone, and a
+// alone only where no word follows it (not the article in "along a direction").
+const AXIS_WORD = '(?:[abc][- ]?axis|[bc](?![a-z])|a(?=\\s*(?:[,.;:)]|and\\b|$)))';
+export const DOUBLED_CELL = new RegExp('(^|[^\\w-])(doubled\\s+(?:unit\\s+)?cell|cell\\s+(?:is\\s+)?doubled|doubl(?:e|es|ed|ing)\\s+(?:the\\s+)?'
+    + `(?:unit\\s+cell|cell|${AXIS_WORD}|lattice parameter)|doubl(?:es|ing)\\s+along|[abc][- ]?axis\\s+(?:is\\s+)?doubled`
+    + '|2\\s*[abc]\\s*[×x*]\\s*\\d?\\s*[abc]\\s*[×x*]\\s*\\d?\\s*[abc])', 'gi');
+export const ALONG_AXES = new RegExp(`\\balong\\s+(?:the\\s+)?(${AXIS_WORD})(?:\\s*(?:,|and)\\s*(?:the\\s+)?(${AXIS_WORD}))?`
+    + `(?:\\s*(?:,|and)\\s*(?:the\\s+)?(${AXIS_WORD}))?`, 'i');
+export const DOUBLED_AXIS = new RegExp(`\\bdoubl(?:es|ed|ing)\\s+(?:of\\s+)?(?:the\\s+)?(${AXIS_WORD})|\\b([abc])[- ]?axis\\s+(?:is\\s+)?doubled`
+    + '|\\b2\\s*([abc])(?![a-z])', 'gi');
+export const ALL_AXES = /\balong\s+(?:all\s+)?(?:three|every|each)\s+(?:axes|axis)\b|\b2a\s*[×x*]\s*2b\s*[×x*]\s*2c\b/i;
+export const HALF_TUPLE = /\(\s*(½|1\/2|0?\.5|0)\s*[, ]\s*(½|1\/2|0?\.5|0)\s*[, ]\s*(½|1\/2|0?\.5|0)\s*\)/g;
+export const CANNOT_HOLD = /\b(?:can(?:not|'t)|could(?:n't|\s+not)|does(?:n't|\s+not)|do(?:n't|\s+not)|too\s+small\s+to)\b[^.;]{0,40}\b(?:hold|fit|represent|accommodate|contain|show|support)\b|\bneither\s+confirm\s+nor\s+rule\s+out\b|\bcan\s+neither\b/i;
+
 // --- read by both catalogues ------------------------------------------------------
 
 export const PREFERRED = /(^|[^\w-])(preferred|preferential)\s+(?:displacement\s+)?(direction|orientation|axis)\b/gi;
@@ -65,10 +104,22 @@ export const DISTRIBUTION_NOUN = /\b(?:bond[- ])?angles?\b|\bangular\b|\bdistrib
 // The answer says the numbers come from one configuration.
 export const SINGLE_CONFIGURATION = /\b(?:one|a single|single|only one|just one|this one|the one)\s+(?:RMC\s+|RMCProfile\s+)?(?:configuration|snapshot|box|run|realisation|realization)s?\b|\bsingle[- ](?:configuration|snapshot)\b|\b(?:configuration|snapshot)\s+alone\b/i;
 
-const CLUSTER_NOUN = '(?:clusters?|tetrahedr(?:on|a)|trimers?|dimers?|triangles?|octahedr(?:on|a)|polyhedr(?:on|a))';
-// An adverb may stand between the verb and "distorted", but not a negation.
-export const DISTORTED = new RegExp(`(^|[^\\w-])(distorted\\s+(?:\\w+\\s+)?${CLUSTER_NOUN}|${CLUSTER_NOUN}\\s+(?:are|is|appear|look|seem)\\s+`
-    + '(?:(?!not\\b|never\\b|hardly\\b|barely\\b)\\w+\\s+)?(?:distorted|deformed)|cluster\\s+distortions?)\\b', 'gi');
+// A distorted cluster or polyhedron: "distorted clusters", "the octahedra are
+// (strongly) distorted", "a cluster distortion". An adverb may stand between
+// the verb and "distorted", but not a negation. The facts catalogue reads
+// every noun (DISTORTED, against analyze_clusters' facts); the claim
+// catalogue reads the clusters' (DISTORTED_CLUSTERS: analyze_clusters) apart
+// from the coordination polyhedra's (DISTORTED_POLYHEDRA: polyhedral_distortion
+// or analyze_clusters; the coordination-shells interview, 2026-10-24, answer
+// 7: a corner-sharing polyhedron or another extended network is read with a
+// distortion index, never the cluster null).
+const CLUSTER_ONLY_NOUN = '(?:clusters?|trimers?|dimers?|triangles?)';
+const POLYHEDRON_NOUN = '(?:tetrahedr(?:on|a)|octahedr(?:on|a)|polyhedr(?:on|a))';
+const distortedOf = (noun, extra = '') => new RegExp(`(^|[^\\w-])(distorted\\s+(?:\\w+\\s+)?${noun}|${noun}\\s+(?:are|is|appear|look|seem)\\s+`
+    + `(?:(?!not\\b|never\\b|hardly\\b|barely\\b)\\w+\\s+)?(?:distorted|deformed)${extra})\\b`, 'gi');
+export const DISTORTED = distortedOf(`(?:${CLUSTER_ONLY_NOUN}|${POLYHEDRON_NOUN})`, '|cluster\\s+distortions?');
+export const DISTORTED_CLUSTERS = distortedOf(CLUSTER_ONLY_NOUN, '|cluster\\s+distortions?');
+export const DISTORTED_POLYHEDRA = distortedOf(POLYHEDRON_NOUN, '|(?:polyhedral|octahedral|tetrahedral)\\s+distortions?');
 export const BREATHING = /(^|[^\w-])(breath(?:e|es|ing))\b/gi;
 export const RIGID = /(^|[^\w-])(rigid(?:ly)?\b|move(?:s|d)?\s+(?:together\s+)?as\s+(?:a\s+)?(?:rigid\s+)?(?:units?|bod(?:y|ies))\b)/gi;
 
@@ -86,9 +137,44 @@ export const POLYHEDRON_CN = [
     [/(^|[^\w-])(square[- ]planar)\s+(?:\w+\s+)?coordinat/gi, 4],
     [/(^|[^\w-])(cub(?:ic|ically))\s+(?:\w+\s+)?coordinat/gi, 8]
 ];
-// A clause about part of the shell (the first peak, the short bonds, a window
-// in Å) is not a claim about the whole shell's count.
-export const PARTIAL_SHELL = /\bfirst[- ]peak\b|\bshort(?:est|er)?\s+bonds?\b|\bwithin\s+[\d.]+\s*(?:[–—−-]|to)\s*[\d.]+\s*(?:Å|A\b)|\d+(?:\.\d+)?\s*[–—−-]\s*\d+(?:\.\d+)?\s*(?:Å|A\b)/i;
+// A clause about part of the shell (the first peak, the short bonds) is not a
+// claim about the whole shell's count; nor is one that states a window in Å
+// other than the whole shell's (reading.js windowsIn; facts.js).
+export const PARTIAL_SHELL = /\bfirst[- ]peak\b|\bshort(?:est|er)?\s+bonds?\b/i;
+
+// A window in Å, for the window check (facts.js; the coordination-shells
+// interview, 2026-10-24, answer 8: every CN or angle carries its window in
+// Å): a range "2.18–2.79 Å", "2.18 Å–2.79 Å", "from 2.18 to 2.79 Å", "between
+// 2.18 and 2.79 Å", a filled reference "[2.18, 2.79] Å", a cutoff "within
+// 3.2 Å" / "up to 3.2 Å" / "r < 3.2 Å", or a range after the word "window"
+// (its unit understood). Each pattern's groups are the window's edges (one
+// for a cutoff). An angle (°) or a share (%) is never a window.
+const DISTANCE = '(\\d+(?:\\.\\d+)?)';
+const ANGSTROM = '(?:Å|A\\b|angstroms?\\b)';
+export const WINDOW_RANGES = Object.freeze([
+    new RegExp(`${DISTANCE}\\s*(?:${ANGSTROM}\\s*)?(?:[–—−-]|to|and)\\s*${DISTANCE}\\s*${ANGSTROM}`, 'gi'),
+    new RegExp(`\\[\\s*${DISTANCE}\\s*,\\s*${DISTANCE}\\s*\\]\\s*${ANGSTROM}`, 'gi'),
+    new RegExp(`\\bwindows?\\b[^.;\\d°%]{0,40}?${DISTANCE}\\s*(?:[–—−-]|to)\\s*${DISTANCE}(?!\\s*[°%\\d])`, 'gi')
+]);
+export const WINDOW_CUTOFF = new RegExp(`(?:\\bwithin|\\bup to|\\bbelow|\\bunder|[<≤]|<=)\\s*${DISTANCE}\\s*${ANGSTROM}`, 'gi');
+// A coordination number as a count of neighbours: "3.99 Se per Ga", "six Se
+// around each Ta", "4 neighbours", "12 nearest Ga neighbours" (the count in
+// group 2), beside CN_CLAIMS' "6-coordinated" and "CN 6". A polyhedron named
+// in words ("octahedrally coordinated") names no number.
+// "n A per B" with both elements: B's count of A (group 2 the count, 3 the
+// partner A, 4 the centre B), which the coordination rule reads as such.
+export const PER_COUNT = new RegExp(`(^|[^\\w.-])${COUNT}\\s+([A-Z][a-z]?)\\s+(?:atoms?\\s+)?(?:per|around(?:\\s+each)?|for each)\\s+([A-Z][a-z]?)(?![a-z])`, 'g');
+export const NEIGHBOUR_COUNTS = Object.freeze([
+    new RegExp(`(^|[^\\w.-])${COUNT}\\s+(?:[A-Z][a-z]?\\s+)?(?:atoms?\\s+)?(?:per|around(?:\\s+each)?|for each)\\s+[A-Z][a-z]?(?![a-z])`, 'g'),
+    new RegExp(`(^|[^\\w.-])${COUNT}\\s+(?:(?:nearest|closest|first[- ]shell)\\s+)?(?:[A-Z][a-z]?\\s+)?neighbou?rs?\\b`, 'gi')
+]);
+// A bond angle: degrees in a clause that names an angle (bond angle, cis,
+// trans, an A–B–C triplet), and not a direction's (a cell radius, a cone, an
+// axis, a [u v w]) or a tilt; an ideal or reference value claims nothing.
+export const DEGREES = /(^|[^\w.])(\d+(?:\.\d+)?)\s?°(?![CF]\b)/g;
+export const BOND_ANGLE_WORDS = /\bangles?\b|\bcis\b|\btrans\b|(?<![A-Za-z])[A-Z][a-z]?\s*[–—−-]\s*[A-Z][a-z]?\s*[–—−-]\s*[A-Z][a-z]?(?![a-z])/;
+export const NOT_A_BOND_ANGLE = /\bdirections?\b|\bradius\b|\bcone\b|\bax(?:is|es)\b|\bPC[123]\b|<\s*-?\d\s*-?\d\s*-?\d\s*>|\[\s*-?[\d.]+\s+-?[\d.]+\s+-?[\d.]+\s*\]|\btilts?\b|\bfamil(?:y|ies)\b|\bdeg\b/i;
+export const REFERENCE_VALUE = /\bideal\b|\bperfect\b|\btheoretical\b|\breference\b/i;
 
 // --- the evidence gate's claims (claims.js) ---------------------------------------
 
@@ -96,6 +182,19 @@ export const MODULATION = /(^|[^\w-])(modulat(?:ion|ions|ed)|incommensurate|orde
 // A split site: named, random off-centring either way round, a ± displacement
 // (not a ± sampling error; not random thermal displacements, which are no order).
 export const SPLIT_SITE = /(^|[^\w-])(split[- ]sites?|two[- ]site(?:\s+disorder)?|disordered over two|random(?:ly)?\s+(?:(?!thermal\b)\w+\s+)?(?:off[- ]cent\w*|displac\w*)|(?:off[- ]cent\w*|displac\w*)[^.;]{0,40}?\bat random|(?:displac\w*|off[- ]cent\w*|shift\w*|split)\s+(?:by\s+)?±\s*\d+(?:\.\d+)?\s*(?:Å|A\b)|±\s*\d+(?:\.\d+)?\s*(?:Å|A\b)\s+along|off[- ]cent(?:re|er|ring|ering)\s+(?:dis)?order)/gi;
+// A split or flat-topped site called disorder, for the gate's split-site row
+// (the displacement-anisotropy interview, 2026-10-24: flat-topped sites too):
+// "disorder(ed)" in a clause that calls the site split or flat-topped.
+// No negation may stand between the two ("the flat-topped site is not disordered").
+const UNNEGATED = '(?:(?!\\b(?:not|no|never|neither|nor)\\b|n\'t\\b)[^.;]){0,60}?';
+export const SPLIT_OR_FLAT_DISORDER = new RegExp(`(^|[^\\w-])((?:split|flat[- ]topped)\\b${UNNEGATED}\\bdisorder(?:ed)?`
+    + `|disorder(?:ed)?\\b${UNNEGATED}\\b(?:split|flat[- ]topped))\\b`, 'gi');
+// "Disorder" as a claim, for the disorder check (facts.js): "disorder(ed)",
+// not a ranking ("the most disordered site", the skills' own question) nor
+// thermal, dynamic or vibrational disorder.
+export const DISORDER = /(^|[^\w-])((?<!\b(?:most|more|least|less|thermal|thermally|dynamic|dynamical|dynamically|vibrational)\s)disorder(?:ed)?)\b/gi;
+// Sites named by number: "site 3", "sites 3 and 7", "sites 1, 2, 5".
+export const SITE_REFS = /\bsites?\s+((?:\d+)(?:\s*(?:,|and|&)\s*\d+)*)/gi;
 export const SHELL_CLAIMS = /(^|[^\w-])(jahn[-– ]teller|split (?:first )?(?:coordination )?shell|short and long bonds)\b/gi;
 // A lowering of the average structure (lowers / lowered its symmetry), or a
 // quantified shift every copy shares ("shifted by 0.07 Å", "(coherent)"); a ±
@@ -103,6 +202,22 @@ export const SHELL_CLAIMS = /(^|[^\w-])(jahn[-– ]teller|split (?:first )?(?:co
 // locally" or a local symmetry lowering is about the clusters, not the average.
 export const LOWERING = /(^|[^\w-])((?<!local\s)symmetry[- ]lowering|lower(?:s|ed|ing) (?:the )?(?:average )?symmetry|(?:average structure|space group)\s+(?:is\s+)?lowered|coherent(?:ly)? (?:shift\w*|off[- ]cent\w*|displace\w*)|polar shift|shift(?:ed|s)? (?:by )?\d+(?:\.\d+)?\s*(?:Å|A\b)|\(coherent\))/gi;
 export const NO_ORDER = /(^|[^\w-])(no (?:local |short-range |additional )?order(?!\s+(?:that|which)\s+doubles)|no (?:ordered|correlated) (?:displacements?|distortions?)|(?:only|purely) thermal motion|thermal motion only|nothing beyond (?:the )?(?:average structure|thermal motion)|no (?:sign|evidence) of (?:local )?order)\b/gi;
+// Order between cells as the diffuse verdict decides it (the local-order
+// interview, 2026-10-24): short-range order, order between (neighbouring)
+// cells, diffuse or antiphase order — the claims the in-phase reading,
+// correlated motion, does not back.
+export const CELL_ORDER = /(^|[^\w-])(short[- ]range (?:order(?:ing)?|ordered)|(?:diffuse|antiphase|local) order(?:ing)? between (?:neighbou?ring |adjacent )?cells|order(?:ed|ing)? between (?:neighbou?ring |adjacent )?cells|diffuse (?:short-range )?order(?:ing)?)\b/gi;
+// "No correlation" said of displacements or cells: none between cells or of
+// the displacements, uncorrelated, moving independently, no correlated
+// displacements — which any correlation that passes its bar contradicts, in
+// phase or antiphase (correlated motion is correlation, though not order).
+export const NO_CORRELATION = new RegExp('(^|[^\\w-])(no (?:significant |measurable |detectable |appreciable )?correlations?(?: of| in| between)? '
+    + '(?:the )?(?:[A-Z][a-z]? )?(?:displacements?|motions?|(?:neighbou?ring |adjacent |unit )?cells|neighbou?rs)'
+    + '|uncorrelated|(?:cells|displacements) (?:are |move |vary )?independent(?:ly)?|moves? independently'
+    + '|no correlated (?:displacements?|motions?))\\b', 'gi');
+// What an "uncorrelated" claim must be about to read as one: cells,
+// neighbours, displacements, motion, sites or atoms.
+export const CORRELATION_SUBJECT = /\b(?:cells?|neighbou?r(?:ing|s)?|displacements?|motions?|sites?|atoms?)\b/i;
 // A sentence about this run names the run itself (this structure, the
 // configuration, the clusters, site 3), or one of its elements (claims.js).
 export const RUN_NOUN = /\b(?:th(?:is|e) (?:run|configuration|structure|model|box|supercell|sample|compound|crystal|material|system)|the (?:sites?|atoms|clusters|octahedra|tetrahedra|polyhedra|displacements)|sites? \d+)\b/i;

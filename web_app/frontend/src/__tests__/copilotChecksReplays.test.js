@@ -430,11 +430,17 @@ describe('THY-18 on the demo run: evidence, numbers by reference, the computed v
     });
 
     it('a wrong number typed over a reference is caught by the checks, not by the verdict alone', async () => {
+        // In the whole shell's window, as every CN carries one (2026-10-24); without it the window check speaks too.
         const { done } = await replay('How many Se surround each Ta?', [
             { calls: [{ name: 'find_gr_peaks', args: { pair: 'Ta-Se' } }] },
-            { text: 'Each Ta is four-coordinated by Se.\nOutcome: achieved — counted.' }
+            { text: 'Each Ta is four-coordinated by Se in 2.21–3.23 Å.\nOutcome: achieved — counted.' }
         ]);
         expect(done.audit.map((finding) => finding.rule)).toEqual(['coordination']);
         expect(done.outcome).toMatchObject({ status: 'not verified', claimed: 'achieved' });
+        const bare = await replay('How many Se surround each Ta?', [
+            { calls: [{ name: 'find_gr_peaks', args: { pair: 'Ta-Se' } }] },
+            { text: 'Each Ta is four-coordinated by Se.\nOutcome: achieved — counted.' }
+        ]);
+        expect(bare.done.audit.map((finding) => finding.rule)).toEqual(['coordination', 'window']);
     });
 });

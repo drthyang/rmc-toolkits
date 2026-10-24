@@ -3,7 +3,7 @@
   "arguments": {
     "pair": "Ta-Se"
   },
-  "content_chars": 856,
+  "content_chars": 892,
   "content": {
     "ref": "r1",
     "checks": [
@@ -50,7 +50,8 @@
             "Se_per_Ta": 3.25
           },
           "trough_g_fraction": 0.48
-        }
+        },
+        "average_structure_d_A": [2.52, 2.76]
       },
       "min_distance_constraint_A": 2.2
     }

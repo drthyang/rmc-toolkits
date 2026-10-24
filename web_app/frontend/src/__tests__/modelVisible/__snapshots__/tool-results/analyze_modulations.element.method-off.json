@@ -3,7 +3,7 @@
   "arguments": {
     "element": "Ta"
   },
-  "content_chars": 2414,
+  "content_chars": 2423,
   "content": {
     "ref": "r1",
     "checks": [
@@ -17,7 +17,7 @@
       },
       {
         "level": "note",
-        "text": "Ta displacements are correlated in phase between neighbouring cells (+0.11 between cells [0 1 0] apart, > 8σ against independent cells): the power beyond the long waves leans toward the zone centre — neighbouring cells moving together, not a superstructure."
+        "text": "Ta displacements are correlated in phase between neighbouring cells (+0.11 between cells [0 1 0] apart, > 8σ against independent cells): the power beyond the long waves leans toward the zone centre — neighbouring cells moving together (correlated motion), not order."
       }
     ],
     "data": {

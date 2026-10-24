@@ -2,7 +2,9 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { buildRunContext, seriesStats } from '../context/runContext';
-import { BOUNDARY_REACH_A, CONSTRAINT_LIMIT_FRACTION, PEAK_SEARCH_MAX_A, extractPeaks, shellCatalogue } from '../context/shells';
+import {
+    BOUNDARY_REACH_A, CONSTRAINT_LIMIT_FRACTION, PEAK_SEARCH_MAX_A, averageShellCheck, averageStructureBonds, extractPeaks, shellCatalogue
+} from '../context/shells';
 import { MIN_TOTAL_DROP, TREND_MIN_ROWS, TREND_NOISE_FACTOR, chiSeries, judgeConvergence } from '../watchdog/heuristics';
 import { oneOf } from './dataShape';
 import { methodCheck } from './method';
@@ -319,7 +321,8 @@ const grPeaksTool = (run, cardIds) => {
             + 'the whole shell, split shells included), mean distance and spread from r²g(r), coordination numbers in '
             + 'both directions with their sensitivity to the cut, whether the shell is separated from the next, '
             + 'for a split shell joined across a deep trough its parts (CN, share, mean distance) and the long − short '
-            + 'bond difference, and whether the pair\'s hard minimum-distance constraint cuts the distribution.',
+            + 'bond difference, the average structure\'s bond lengths for the pair against the window, and whether the pair\'s '
+            + 'hard minimum-distance constraint cuts the distribution.',
         // The method advice (method.js), inside the window's parenthesis: sent with method 'full'.
         method: [{ after: 'to the first deep minimum (', text: 'use first_shell.window_A for compute_bond_angles: ' }],
         parameters: {
@@ -365,7 +368,10 @@ const grPeaksTool = (run, cardIds) => {
                     }],
                     long_minus_short_A: 'number|null',
                     long_minus_short_se_A: 'number|null'
-                }
+                },
+                // The average structure's first shell for the pair (shortest,
+                // longest bond between site means); only with its basis.
+                'average_structure_d_A?': ['number|null', 'number|null']
             },
             'min_distance_constraint_A?': 'number',
             'g_at_constraint_fraction?': 'number|null'
@@ -439,7 +445,22 @@ const grPeaksTool = (run, cardIds) => {
                         long_minus_short_se_A: roundSig(split.longMinusShortSe, 2)
                     };
                 }
+                // The average structure's first shell for the pair, between site
+                // means (shells.js averageStructureBonds; the user's rule,
+                // 2026-10-24): the window is cross-checked against it.
+                const average = averageShellCheck(shell, averageStructureBonds(run?.structure, a, b));
+                if (average) block.average_structure_d_A = average.bonds.map((r) => roundSig(r, 3));
                 data.first_shell = block;
+                if (average?.disagrees) {
+                    // What to do about it is method (method.js): arm C's method 'off' reads the reading alone.
+                    checks.push(methodCheck('warn',
+                        `The average structure's ${a}–${b} bonds (${block.average_structure_d_A.join('–')} Å between the site means, `
+                            + `first_shell.average_structure_d_A) lie up to ${roundSig(average.outsideA, 2)} Å outside first_shell.window_A `
+                            + `(${shell.window[0]}–${shell.window[1]} Å), more than the shell's width (its first peak's FWHM, `
+                            + `${roundSig(average.widthA, 2)} Å): the configuration's first shell and the average structure's disagree`,
+                        { method: '; check the window before using it' },
+                        '.'));
+                }
                 const inShell = shell.peaksInShell.map((r) => roundSig(r, 4));
                 if (block.split && shell.firstPeak) {
                     const { parts, long_minus_short_A: longMinusShort, long_minus_short_se_A: se } = block.split;
