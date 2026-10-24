@@ -416,7 +416,8 @@ describe('where a finding stands, and validation batch 1', () => {
             '2026-10-19-aplus-app-rules', '2026-10-19-asked-before', '2026-10-19-diffuse-order', '2026-10-19-directions-auto-resolution',
             '2026-10-19-engine-verdicts', '2026-10-19-f5-shell-join', '2026-10-19-jt-split', '2026-10-19-judgment-dev-cases',
             '2026-10-19-list-sites-split', '2026-10-19-marginal-reset-dev', '2026-10-19-mode-polarisation', '2026-10-19-modulation-bar-and-family',
-            '2026-10-19-modulation-null', '2026-10-19-provenance-told', '2026-10-19-shell-catalogue', '2026-10-19-shell-cut-rule'
+            '2026-10-19-modulation-null', '2026-10-19-provenance-told', '2026-10-19-shell-catalogue', '2026-10-19-shell-cut-rule',
+            '2026-10-24-fit-assessment-interview'
         ]);
         expect(existsSync(join(FRONTEND, 'validation/findings/decisions.jsonl'))).toBe(false);
         const record = readFileSync(join(DECISIONS, `${recomposed}.json`), 'utf8');
@@ -581,6 +582,25 @@ describe('where a finding stands, and validation batch 1', () => {
         delegated(catalogue);
         expect(catalogue.tests.length).toBeGreaterThan(0);
         catalogue.tests.forEach((test) => {
+            const [path, title] = test.split(' › ');
+            expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+        });
+    });
+
+    it('decisions: the fit-assessment interview\'s code half (convergence on every χ² term, the 5 % constraint, two checks), approved by the user directly and implemented with its known-answer tests', () => {
+        // Approved by the user in the rmc-fit-assessment interview (batch 3), not on a delegation.
+        const interview = decisions()['2026-10-24-fit-assessment-interview'];
+        expect(interview).toMatchObject({
+            case: 'dev-fit-unconverged', kind: 'orchestration', needs_user_approval: true, status: 'implemented',
+            approval: { by: 'user', date: '2026-10-24', batch: 3 }
+        });
+        for (const field of ['evidence', 'proposed_fix']) {
+            expect(interview[field], field).toMatch(/Approved by the user, 2026-10-24\./);
+            expect(interview[field], field).not.toMatch(/on the user's delegation/i);
+        }
+        expect(interview.commit).toMatch(/^[0-9a-f]{40}$/);
+        expect(interview.tests.length).toBeGreaterThan(0);
+        interview.tests.forEach((test) => {
             const [path, title] = test.split(' › ');
             expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
         });
