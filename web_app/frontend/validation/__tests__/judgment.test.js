@@ -276,9 +276,11 @@ const part = (text, from, to) => {
 };
 
 const DOC = readFileSync(join(REPO, 'docs/algorithms/copilot-validation.md'), 'utf8');
+// The change notes, folded into the CHANGELOG's Unreleased section.
+const CHANGELOG = readFileSync(join(REPO, 'docs/CHANGELOG.md'), 'utf8');
 const READ_BY_THE_AUTHOR = [
     { name: 'validation/judgment-spec.md', text: readFileSync(join(FRONTEND, 'validation/judgment-spec.md'), 'utf8'), ids: false },
-    { name: 'docs/changes/unreleased/judgment-dev-cases.md', text: readFileSync(join(REPO, 'docs/changes/unreleased/judgment-dev-cases.md'), 'utf8'), ids: false },
+    { name: 'CHANGELOG.md, the judgment dev subset', text: part(CHANGELOG, '### Copilot validation: the judgment dev subset (plan 1.6, part ii)', ['#']), ids: false },
     { name: 'copilot-validation.md, The judgment subset', text: part(DOC, '### The judgment subset', ['#']), ids: true },
     { name: 'copilot-validation.md, Protocol 2026-10-19.9', text: part(DOC, '**Protocol 2026-10-19.9', ['#', '**']), ids: true },
     // The marginal situation's re-set (protocol 2026-10-19.19): its note, its
@@ -289,7 +291,7 @@ const READ_BY_THE_AUTHOR = [
         text: part(DOC, '**Arms A, A+ and D on dev** (`arm-a --split dev` before at f0979a7', ['#', '**']),
         ids: true
     },
-    { name: 'docs/changes/unreleased/marginal-reset-dev.md', text: readFileSync(join(REPO, 'docs/changes/unreleased/marginal-reset-dev.md'), 'utf8'), ids: false },
+    { name: 'CHANGELOG.md, the marginal situation re-set', text: part(CHANGELOG, '### Validation: the marginal situation re-set for the independent-cell null (protocol 2026-10-19.19)', ['#']), ids: false },
     {
         name: 'validation/findings/decisions/2026-10-19-judgment-dev-cases.json',
         text: readFileSync(join(FRONTEND, 'validation/findings/decisions/2026-10-19-judgment-dev-cases.json'), 'utf8'),
