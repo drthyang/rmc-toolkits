@@ -37,6 +37,34 @@ export const PREFERRED = /(^|[^\w-])(preferred|preferential)\s+(?:displacement\s
 export const CELL_DOUBLING = /(^|[^\w-])(cell[- ]doubling|doubl(?:es|ed|ing) (?:of )?the (?:unit )?cell|zone[- ]boundary (?:order|modulation|mode|distortion)|commensurate modulation)\b/gi;
 export const SUPERSTRUCTURE = /(^|[^\w-])(superstructure|supercell order|ordered (?:\w+ )?displacements? at q|incommensurate (?:order|modulation))\b/gi;
 
+// Order at a wavevector, for the long-wave check (facts.js; the user's rule,
+// 2026-10-24): any word that calls displacements ordered between cells, or a
+// modulation ("in order to" is no order, "disorder" no word of it). A long
+// wave named in words: a long-wavelength or box-scale wave or mode.
+export const ORDER_CLAIM = /(^|[^\w-])((?<!\bin\s)order(?:ed|ing)?|superstructure|modulat(?:ion|ions|ed)|incommensurate|cell[- ]doubling|correlated (?:\w+ )?displacements?)\b/gi;
+export const LONG_WAVE_WORDS = /\b(?:long[- ]wave(?:length)?s?|longest[- ]wave(?:length)?s?|box[- ](?:scale|size[d]?))\b/i;
+// "Nothing" negates a claim of order for the long-wave check ("it says
+// nothing about order at its own q", the user's own wording).
+export const SAYS_NOTHING = /\bnothing\b/i;
+
+// A distribution's numbers, for the single-configuration check (facts.js;
+// the user's rule, 2026-10-24): a statistic of a distribution followed by a
+// number (mean 109.4°, sd 4.1°, mode 109.5°, peaks at 100–110°), a share of
+// it (80 % cis, 20 % of the angles lie …), or a coordination histogram
+// (3 948 of 4 000 Ga atoms having 4 neighbours) — in a sentence that names a
+// distribution (angles, a histogram, neighbours, cluster shapes or edges, a
+// direction map) or gives degrees. A test's σ is no number of the
+// distribution.
+export const DISTRIBUTION_STAT = new RegExp([
+    '\\b(?:mean|average|median|sd|s\\.d\\.|standard deviation|spread|width|mode|modal(?: share)?|share)\\b\\s*(?:of|is|=|:|at)?\\s*[~≈]?\\s*[-−]?\\d',
+    '\\b(?:peaks?|centred|centered)\\s+at\\s+[-−]?\\d',
+    '\\d+(?:\\.\\d+)?\\s?%\\s+(?:of\\s+(?:the|these|all)\\s+|cis\\b|trans\\b|lie\\b|lies\\b|fall\\b|falls\\b|are\\b|have\\b|has\\b)',
+    '\\d[\\d\\s,]*\\s+of\\s+[\\d\\s,]+\\s*(?:[A-Z][a-z]?\\s+)?atoms?\\s+(?:have|having|with)\\s+\\d'
+].join('|'), 'i');
+export const DISTRIBUTION_NOUN = /\b(?:bond[- ])?angles?\b|\bangular\b|\bdistributions?\b|\bhistograms?\b|\bneighbou?rs\b|\bcoordination counts?\b|\b(?:cluster|shape)s?\s+(?:shapes?|rms)\b|\bedge(?:[- ]lengths?|s)\b|\bdirection(?:al)?\s+(?:map|distribution|histogram)s?\b|\d\s?°/i;
+// The answer says the numbers come from one configuration.
+export const SINGLE_CONFIGURATION = /\b(?:one|a single|single|only one|just one|this one|the one)\s+(?:RMC\s+|RMCProfile\s+)?(?:configuration|snapshot|box|run|realisation|realization)s?\b|\bsingle[- ](?:configuration|snapshot)\b|\b(?:configuration|snapshot)\s+alone\b/i;
+
 const CLUSTER_NOUN = '(?:clusters?|tetrahedr(?:on|a)|trimers?|dimers?|triangles?|octahedr(?:on|a)|polyhedr(?:on|a))';
 // An adverb may stand between the verb and "distorted", but not a negation.
 export const DISTORTED = new RegExp(`(^|[^\\w-])(distorted\\s+(?:\\w+\\s+)?${CLUSTER_NOUN}|${CLUSTER_NOUN}\\s+(?:are|is|appear|look|seem)\\s+`
