@@ -49,3 +49,16 @@
   The code half (every-term convergence, the 5 % constant, the two answer checks, the replays) is
   its own PR. Until it lands, four skill-lint entries are marked "awaits the fit-assessment code
   PR". `copilotSkills.test.js` tells an interviewed skill from a draft.
+- **coordination-shells interviewed (2026-10-24).** The skill is now the user's own answers, and
+  §2 records where each landed. The rules it now states:
+  - the window cross-checked against the average structure's bond lengths;
+  - a split shell's long − short ± its sampling error always quoted;
+  - a shell not separated from the next cut at the minimum, with the 0.2 Å range beside it;
+  - the cut rule kept, with no exemption for disordered or glassy systems (the user's window
+    instead);
+  - angles read from the sin θ-corrected histogram;
+  - a distortion needs the cluster effect at z ≥ 3, the same sign in ≥ 3 independent runs, and
+    angle spreads;
+  - extended networks get angle spreads plus a polyhedral distortion index;
+  - a new firm rule: every CN or angle carries its window. It waits for a later coordination code
+    PR, as a skill-lint entry.

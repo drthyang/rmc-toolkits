@@ -357,31 +357,6 @@ export const BINDINGS = [
     },
     {
         file: SHELLS,
-        gate: 'a cut window: the CN margin\'s absolute part (judgment call)',
-        find: 'fewer partner atoms than the whole shell by at least max(',
-        number: /by at least max\((?<n>\d+(?:\.\d+)?), \d+ % of its CN\)/,
-        constants: [CN_MARGIN_ABS],
-        statistic: CN_MARGIN_STATISTIC
-    },
-    {
-        file: SHELLS,
-        gate: 'a cut window: the CN margin\'s relative part (judgment call)',
-        find: 'fewer partner atoms than the whole shell by at least max(',
-        number: /by at least max\(\d+(?:\.\d+)?, (?<n>\d+) % of its CN\)/,
-        unit: '%',
-        constants: [CN_MARGIN],
-        statistic: CN_MARGIN_STATISTIC
-    },
-    {
-        file: SHELLS,
-        gate: 'a cut window with no shell to compare (judgment call)',
-        find: 'with no shell to compare the',
-        number: /compare the (?<n>\d+) % modal-coordination share/,
-        unit: '%',
-        constants: [MODAL_SHARE]
-    },
-    {
-        file: SHELLS,
         gate: 'a cut window: the CN margin\'s absolute part (firm rule)',
         find: 'holds fewer partner atoms than the whole first shell by at least max(',
         number: /by at least max\((?<n>\d+(?:\.\d+)?), \d+ % of the shell's CN\)/,
@@ -447,6 +422,20 @@ export const BINDINGS = [
     },
     {
         file: SHELLS,
+        gate: 'a distortion\'s z (step 7)',
+        find: 'A distortion needs `analyze_clusters`\' effect size at',
+        number: /effect size at z ≥ (?<n>\d+(?:\.\d+)?)/,
+        constants: [CLUSTER_SIGMA]
+    },
+    {
+        file: SHELLS,
+        gate: 'a distortion\'s z (checklist)',
+        find: 'A distortion claim rests on the cluster effect size at',
+        number: /effect size at z ≥ (?<n>\d+(?:\.\d+)?)/,
+        constants: [CLUSTER_SIGMA]
+    },
+    {
+        file: SHELLS,
         gate: 'the cluster elements: the fewest neighbours (step 7)',
         find: 'own first shell is a finite cluster\'s (',
         number: /a finite cluster's \((?<n>\d+(?:\.\d+)?)–\d+(?:\.\d+)? neighbours/,
@@ -485,32 +474,6 @@ export const BINDINGS = [
             assert.equal(cuF().joined, true, '4 + 2 F per Cu was not joined');
             assert.equal(cuF({ second: 1 }).joined, false, '4 + 1 F per Cu (no ideal count) was joined');
             assert.deepEqual(IDEAL_COORDINATION.filter((count) => isIdealCoordination(count)), [...IDEAL_COORDINATION]);
-        }
-    },
-    {
-        file: SHELLS,
-        gate: 'the split-shell join\'s reach (judgment call)',
-        find: 'The split-shell rule\'s reach (a second peak within',
-        number: /a second peak within (?<n>\d+(?:\.\d+)?) Å of the first/,
-        constants: [SPLIT_REACH]
-    },
-    {
-        file: SHELLS,
-        gate: 'the split-shell join\'s ideal counts (judgment call)',
-        find: 'and its ideal counts (',
-        number: /its ideal counts \((?<n>\d+(?:, \d+)*), within/,
-        constants: [IDEAL_COUNTS]
-    },
-    {
-        file: SHELLS,
-        gate: 'two counts agree (judgment call)',
-        find: 'within half an atom)',
-        before: 8,
-        number: /, within (?<n>half) an atom\)/,
-        constants: [CN_MATCH],
-        verify: () => {
-            assert.equal(cnMatches(6.5, 6), true, 'half an atom off did not match');
-            assert.equal(cnMatches(6.51, 6), false, 'more than half an atom off matched');
         }
     },
     {
@@ -680,6 +643,8 @@ export const NOT_GATES = [
         why: 'measured on the zone-boundary dev case, written as analyze_modulations writes a σ above 8 ("> 8σ"): a value, not a threshold'
     },
     { file: SHELLS, find: 'a broad shoulder below 180°', why: 'geometry (the trans angle), not a threshold' },
+    { file: SHELLS, find: 'the same sign in at least 3 independent runs, and', why: 'the user\'s bar for a distortion (interview 2026-10-24): every tool reads one run, no module decides it' },
+    { file: SHELLS, find: 'the same sign in at least 3 independent runs and', why: 'the user\'s bar for a distortion (interview 2026-10-24), in the checklist: no module decides it' },
     { file: ORDER_SIGNATURES, find: '9.1× isotropic', why: 'the two-site dev case\'s measured peak enhancement, not a threshold' },
     { file: ORDER_SIGNATURES, find: '498× the median, > 8σ', why: 'measured on the ordered-antiphase dev case (a σ above 8 as analyze_modulations writes it): not a threshold' },
     { file: ORDER_SIGNATURES, find: 'every kurtosis within ±0.15', why: 'the range of the thermal-only dev case\'s measured kurtoses, not a gate' },
@@ -1241,9 +1206,17 @@ export const RULES = [
 // Candidate 8: arm A+ reads the app's rules; the skills must state them as the app applies them.
 // The user's interview of rmc-fit-assessment (2026-10-24): the code half is its own PR off main.
 const FIT_CODE_PR = 'awaits the fit-assessment code PR';
+// The user's interview of coordination-shells (2026-10-24): the firm rule's code is a later PR.
+const SHELLS_CODE_PR = 'awaits the coordination code PR';
 const APP_RULES_WHY = 'arm A+ reads the app\'s rule since candidate 8 (approved by the manager on the user\'s delegation, 2026-10-19: '
     + 'validation/findings/decisions/2026-10-19-aplus-app-rules.json), so the skill, the app and A+ must say one rule';
 export const ALLOW_LIST = [
+    {
+        check: 'firm-rule',
+        file: SHELLS,
+        fragment: 'every CN or angle in an answer carries its window in Å',
+        why: `AWAITS CODE: the user's firm rule (interview 2026-10-24, answer 8); no answer check flags a CN or angle without its window today: ${SHELLS_CODE_PR} (its answer check), then mapped in FIRM_RULES`
+    },
     {
         check: 'rule',
         file: FIT,

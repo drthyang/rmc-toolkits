@@ -11,11 +11,8 @@ description: >-
 
 # Coordination shells and bond windows
 
-**Status: Draft: awaiting the user's interview.** Written from the 2026-10-10 spot check (the
-Se–Ta–Se question that went wrong), the review that followed, the Bond Geometry algorithm notes
-and the tools' checks; the split-shell rule of step 2 was added in validation batch 1 (the
-2026-10-14 tool review's L1, approved by the user that day). A step marked "(to confirm with the
-user)" is not yet the user's own practice: say in the answer which choice you made.
+**Status: Interviewed 2026-10-24.** The steps are the user's own answers of that day
+(docs/SKILL_INTERVIEWS.md §2).
 
 A "bond" here is a distance window and nothing else: the engine reports geometry, not chemistry.
 Every angle, coordination number and cluster shape depends on the window, so the window is the
@@ -36,52 +33,57 @@ analysis.
    summed CN is an ideal polyhedral count (4, 6, 8, 12), and reports the first peak alone as
    `first_shell.first_peak_only` with its own CN. A Jahn–Teller CuF₆ (4 × 1.93 + 2 × 2.25 Å) holds
    4 F in the first peak and 6 in `first_shell.window_A`: one octahedron with short and long
-   bonds, never a four-coordinate Cu. `first_shell.window_A` is always the whole polyhedron.
+   bonds, never a four-coordinate Cu. `first_shell.window_A` is always the whole polyhedron. A
+   split shell whose summed CN is ideal is one polyhedron with two bond lengths: quote
+   `first_shell.split`'s long − short ± its sampling error (`long_minus_short_A` ±
+   `long_minus_short_se_A`).
 3. **Check the count.** Compare the shell's CN with the ideal. Short means the window cuts the
-   shell. A shallow trough (the "not separated" warning) means the CN depends on the cut: quote
-   the range for a cut 0.2 Å earlier or later, and ask whether the crystal has A–B distances in
-   the gap.
-4. **Choose the window.** Use `first_shell.window_A` unless the user asked for something else.
-   When the data offer two defensible windows (a split shell, a shell not separated from the
-   next) and the question does not say which, ask with `ask_user`, offering each window with its
-   CN and your default (the whole shell). The Workbench asks by itself before an analysis runs in
-   a window that cuts the shell (the first peak alone of a joined split shell included).
+   shell. A shell not separated from the next (the "not separated" warning) has a CN that
+   depends on the cut: cut at the minimum by default (`first_shell.window_A`), and quote beside
+   it the CN range for a cut 0.2 Å earlier and later (`cn_if_cut_0p2A_earlier_later`).
+4. **Choose the window.** Use `first_shell.window_A` unless the user asked for something else,
+   and cross-check it against the average structure's bond lengths: flag when the two disagree
+   by more than the shell's width (no Workbench tool reports an A–B bond length of the average
+   structure yet). The Workbench asks by itself before an analysis runs in a window that cuts
+   the shell (the first peak alone of a joined split shell included).
 5. **Compute** `compute_bond_angles` (or `analyze_clusters`) in that window. The app refuses a
    window that cuts the shell: the angles of a cut shell are not the polyhedron's. Pass
-   `window_confirmed: true` only when the user chose or typed that window.
+   `window_confirmed: true` only when the user chose or typed that window. A disordered or
+   glassy system has no exemption: a spread coordination goes through the user's own window
+   (`window_confirmed`), and the report says the user chose it.
 6. **Read the angles.** The angle modes and the 10° histogram are raw counts, which geometry
    depletes near 0° and 180° (as sin θ): an octahedron's trans angle shows up as a broad shoulder
-   below 180°, not as "no 180° angles". Read `histogram_10deg_sin_corrected` (1 = random
-   directions) for the shape. Compare cis ≈ 90° and trans ≈ 180° for an octahedron; 109.5° for
-   a tetrahedron; 60° inside an M₄ tetrahedron.
-7. **Distortion.** A g(r) peak's position or width cannot tell a distortion from thermal spread.
-   For a cluster or polyhedron distortion (Jahn–Teller, dimers, trimers), run `analyze_clusters`
-   (shape against a shuffle null at each cluster's own size, size against independent atoms) where
-   the element's own first shell is a finite cluster's (0.5–4.5 neighbours of its own kind; an
-   extended network has none), or compare angle spreads; quote the effect size with its z.
-
-## Judgment calls
-
-- The window when the shell is not separated from the next (cut at the minimum, or report a CN
-  range) (to confirm with the user).
-- Whether a split first shell is reported as one polyhedron or as short and long bonds (to
-  confirm with the user).
-- The split-shell rule's reach (a second peak within 0.5 Å of the first) and its ideal counts
-  (4, 6, 8, 12, within half an atom) (batch 1; to confirm with the user).
-- The CN margin the app calls a window cut by, fewer partner atoms than the whole shell by at
-  least max(0.5, 15 % of its CN) (the user's choice of rule, 2026-10-19), and with no shell to
-  compare the 60 % modal-coordination share (to confirm with the user).
+   below 180°, not as "no 180° angles". Read and report the shape from
+   `histogram_10deg_sin_corrected` (1 = random directions); give raw counts only when asked.
+   Compare cis ≈ 90° and trans ≈ 180° for an octahedron; 109.5° for a tetrahedron; 60° inside an
+   M₄ tetrahedron.
+7. **Distortion.** A distortion needs `analyze_clusters`' effect size at z ≥ 3, the same sign in
+   at least 3 independent runs, and supporting angle spreads; a g(r) peak shift alone never proves
+   one (a peak's position or width cannot tell a distortion from thermal spread). For a cluster
+   or polyhedron distortion (Jahn–Teller, dimers, trimers), run `analyze_clusters` (shape against
+   a shuffle null at each cluster's own size, size against independent atoms) where the
+   element's own first shell is a finite cluster's (0.5–4.5 neighbours of its own kind). For a
+   corner-sharing polyhedron or another extended network, use angle spreads plus a standard
+   polyhedral distortion index such as Baur's (no Workbench tool computes it yet), never the
+   cluster null.
 
 ## Acceptance checklist
 
-- [ ] The window comes from `find_gr_peaks`' first shell (or the user's choice), stated in Å.
-- [ ] The CN in that window is quoted and compared with the ideal polyhedron.
+- [ ] The window comes from `find_gr_peaks`' first shell (or the user's choice), stated in Å and
+      cross-checked against the average structure's bond lengths.
+- [ ] The CN in that window is quoted and compared with the ideal polyhedron; for a shell not
+      separated from the next, beside the CN range for a cut 0.2 Å earlier and later.
 - [ ] A split shell whose summed CN is a polyhedron is one polyhedron with two bond lengths, not a
-      lower coordination (the first peak alone only when the user chose it).
+      lower coordination (the first peak alone only when the user chose it), with its long −
+      short ± its sampling error.
 - [ ] No angle, CN or cluster number from a window that cuts the shell.
-- [ ] Angles read with the sin θ effect in mind; trans angles not called missing.
+- [ ] Angles read and reported from `histogram_10deg_sin_corrected`, raw counts only when asked;
+      trans angles not called missing.
 - [ ] Bond lengths and spreads quoted from the tool (`bond_ab.mean_A`, `sd_A`), never invented.
-- [ ] A distortion claim rests on `analyze_clusters` or angle spreads, not on a g(r) peak shift.
+- [ ] A distortion claim rests on the cluster effect size at z ≥ 3 with the same sign in at least 3
+      independent runs and supporting angle spreads (an extended network: angle spreads and a
+      distortion index), never on a g(r) peak shift.
+- [ ] Every CN and angle carries its window in Å.
 
 ## Known failure modes
 
@@ -105,12 +107,17 @@ analysis.
   (CN 6) and offers the first peak alone as `first_peak_only`, the Workbench asks before an
   analysis runs in it, and an answer that gives an element a coordination number its whole first
   shell contradicts gets a warning under it.
+- **A CN or an angle without its window.** *Firm rule in the app:* every CN or angle in an answer
+  carries its window in Å; an answer that gives one without it gets a warning under it.
 
 ## Report
 
-The window and why; the CN against the ideal; the angle modes or spreads with what they mean for
-the polyhedron; bond lengths with their measured spread; for a distortion, the effect size and
-its z; and any constraint that shapes the shell.
+The window in Å and why; the CN against the ideal (for a shell not separated from the next,
+beside the CN range for a cut 0.2 Å earlier and later); for a split shell, `first_shell.split`'s
+long − short ± its sampling error; the angle shape from `histogram_10deg_sin_corrected` with what
+it means for the polyhedron; bond lengths with their measured spread; for a distortion, the
+effect size and its z; a window the user chose, said to be the user's; and any constraint that
+shapes the shell.
 
 ## References
 

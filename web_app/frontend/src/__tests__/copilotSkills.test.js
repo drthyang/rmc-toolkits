@@ -23,7 +23,7 @@ describe('the Copilot\'s skills', () => {
     });
 
     it('are interviewed one by one (docs/SKILL_INTERVIEWS.md)', () => {
-        expect(skills.filter((skill) => INTERVIEWED.test(skill.body)).map((skill) => skill.name)).toEqual(['rmc-fit-assessment']);
+        expect(skills.filter((skill) => INTERVIEWED.test(skill.body)).map((skill) => skill.name)).toEqual(['coordination-shells', 'rmc-fit-assessment']);
     });
 
     it.each(skills.map((skill) => [skill.name, skill]))('%s: a draft or an interviewed skill, with steps, a checklist and failure modes', (_, skill) => {

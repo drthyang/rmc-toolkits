@@ -4,7 +4,8 @@ A skill is the user's method in their own words (`.claude/skills/<name>/SKILL.md
 Copilot (`read_skill`) and by Claude Code alike. The five skills here began as **drafts**: the first four written on
 2026-10-11 from the Workbench's own record (the llm README's spot check and referee-style review,
 `docs/algorithms/*`, the analyses' code and the papers the README cites), not yet from the user.
-`rmc-fit-assessment` was interviewed on 2026-10-24 (§1); the others are still drafts.
+`rmc-fit-assessment` and `coordination-shells` were interviewed on 2026-10-24 (§1, §2); the others
+are still drafts.
 This page is the guide for turning each into the user's method. Each answer lands in one of three
 places:
 
@@ -75,28 +76,43 @@ its own q; a point or mode that passes its own test at another q is judged on th
 dominates every element says the box is small or lightly sampled), which the answers do not
 cover, is gone with it.
 
-## 2. Coordination shells and bond windows (`coordination-shells`, draft)
+## 2. Coordination shells and bond windows (`coordination-shells`, interviewed 2026-10-24)
 
-1. The draft takes the window from `find_gr_peaks`' first shell: onset to the first deep minimum,
-   both peaks of a split shell. Is that how you choose windows, or do you set them from the
-   average structure, from bond-valence lengths, or by eye on the partial g(r)?
-2. The draft treats the TaSe₆ shell (peaks at 2.52 and 2.74 Å) as one octahedron. When do you
-   report the short and the long bonds separately instead?
-3. When the shell is not separated from the next (g(r) still above zero at the minimum), the draft
-   quotes the CN range for a cut 0.2 Å earlier or later. Is that what you do, or do you cut at the
-   minimum and say so?
-4. The app now refuses a window that holds fewer partner atoms than the whole first shell by at
-   least max(0.5, 15 % of its CN) (the CN margin you chose on 2026-10-19). Where there is no shell
-   to compare, it falls back on the coordination counts (fewer than 60 % sharing the most common
-   count). Is that the right margin, and are there systems (disordered sites, glasses) where a
-   spread coordination is real and the rule should not apply?
-5. The draft reads angles with the sin θ effect in mind (raw counts deplete 180°) and compares the
-   cis/trans split with an ideal octahedron (80 % at 90°, 20 % at 180°). Which form do you read
-   or publish: raw counts, the per-degree density, or sin θ-corrected?
-6. For a distortion the draft goes to `analyze_clusters` (against independent atoms) rather than a
-   g(r) peak shift. Which statistics convince you that a polyhedron or a cluster is distorted?
-7. Firm rules: besides the cut-shell refusal, anything the Copilot must never do with bond windows?
-8. A recent run you analysed this way; one time a window misled you.
+Answered by the user on 2026-10-24. Each answer, and where it landed: the skill's text or code (a
+later coordination code PR). Until that PR lands, the skill lint holds the line today's code does
+not apply as an entry marked "awaits the coordination code PR".
+
+1. *How do you choose windows?* The window defaults to `find_gr_peaks`' first shell,
+   cross-checked against the average structure's bond lengths; flag when the two disagree by more
+   than the shell's width. **Landed:** the skill (step 4, the checklist). No Workbench tool reports
+   an A–B bond length of the average structure yet, and the skill says so.
+2. *When do you report the short and long bonds separately?* A split shell whose summed CN is
+   ideal is one polyhedron with two bond lengths; the report always quotes `first_shell.split`'s
+   long − short ± its sampling error. **Landed:** the skill (step 2, the checklist, the report).
+   This keeps `find_gr_peaks`' join as the app applies it (reach 0.5 Å, ideal counts 4, 6, 8,
+   12); the reach itself was not discussed.
+3. *A shell not separated from the next: a CN range, or a cut at the minimum?* Cut at the minimum
+   by default, and quote the CN range for a cut 0.2 Å earlier and later beside it. **Landed:** the
+   skill (step 3, the checklist, the report).
+4. *Is the CN margin the right line; any exemption?* The cut rule stays as it is: max(0.5, 15 % of
+   the shell's CN), with the 60 % modal-count fallback where there is no shell. No exemption in
+   code for disordered or glassy systems: those go through the user's `window_confirmed`, and the
+   report says the user chose the window. **Landed:** the skill (step 5, the firm rule unchanged,
+   the report).
+5. *Which angle form do you read or publish?* Read and report the shape from
+   `histogram_10deg_sin_corrected`; give raw counts only when asked. **Landed:** the skill (step
+   6, the checklist, the report).
+6. *Which statistics convince you of a distortion?* `analyze_clusters`' effect size at z ≥ 3,
+   the same sign in ≥ 3 independent runs, and supporting angle spreads; a g(r) peak shift alone
+   never proves one. **Landed:** the skill (step 7, the checklist).
+7. *Firm rules besides the cut-shell refusal?* Every CN or angle in an answer carries its window
+   in Å; an answer that gives one without it is flagged. **Landed:** the skill (a firm-rule
+   sentence) and code (its answer check, a later coordination code PR; lint entry until then).
+8. *A recent run; a window that misled you.* Not answered on 2026-10-24: open.
+
+Also answered: corner-sharing or extended networks (outside the 0.5–4.5 own-kind rule) use angle
+spreads plus a standard polyhedral distortion index such as Baur's, never the cluster null. No
+Workbench tool computes the index yet, and the skill says so. **Landed:** the skill (step 7).
 
 ## 3. Local symmetry (`local-symmetry`, draft)
 
@@ -165,7 +181,7 @@ Each was approved by the user on 2026-10-14 as a proposal of the tool review
 - `coordination-shells`: a split shell whose two bond lengths are well resolved (a deep trough
   between them) is one polyhedron when a second peak within 0.5 Å brings the CN to 4, 6, 8 or 12
   (a Jahn–Teller octahedron is never four-coordinate). Is 0.5 Å the right reach, and are those the
-  right counts?
+  right counts? **Answered 2026-10-24** (§2, answer 2: the join kept; the reach not discussed).
 - `displacement-anisotropy`: a split site is called disorder only after `analyze_modulations`; a
   low-index family is named only within 15°; a preferred direction needs the peak test (the map
   test is anisotropy). Is 15° your cone?
@@ -195,12 +211,13 @@ to you. Line numbers are in the synced text.
    that your line? How do you report a flat-topped site that is not split?
 3. `coordination-shells/SKILL.md:71–73` and `:91–95`: the cut rule is now the CN margin you chose.
    Are 0.5 atoms and 15 % the right values? Should the counts fallback (60 %, or most central
-   atoms unbonded) stay where there is no shell to compare?
+   atoms unbonded) stay where there is no shell to compare? **Answered 2026-10-24** (§2, answer
+   4: as it is).
 4. `coordination-shells/SKILL.md:57–61` (step 7) and `local-order/SKILL.md:38–40` (step 4):
    `analyze_clusters` runs only for an element whose own first shell holds 0.5–4.5 neighbours of
    its own kind. The evidence gate and arm A+ read the same rule. For a corner-sharing
    polyhedron, an extended network, the skill offers only "compare angle spreads". Is that your
-   method there?
+   method there? **Answered 2026-10-24** (§2: angle spreads plus a polyhedral distortion index).
 5. `rmc-fit-assessment/SKILL.md:52–55` (step 7): the draft's reason why a long wave cannot void a
    point that passes its own test is gone. The draft said "the test already leaves long waves out
    of the background it compares with", which does not hold:
@@ -216,6 +233,7 @@ to you. Line numbers are in the synced text.
 8. `coordination-shells/SKILL.md:29–39` and its report (`:111`): `find_gr_peaks` now splits a
    joined shell by number, in `first_shell.split`: each part's CN and share, and long − short
    with its sampling error. The skill does not mention it. Should a Jahn–Teller report quote it?
+   **Answered 2026-10-24** (§2, answer 2: always).
 9. `displacement-anisotropy/SKILL.md:53–57` (step 4): the cone now reads "within 15°, 15°
    included", as the tools apply it, and since plan item 2.5 also needs the peak's cell to be no
    wider than 15° (`peak.radius_deg`; the tool names no family above it). The draft's reason said

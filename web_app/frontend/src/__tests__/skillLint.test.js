@@ -114,17 +114,32 @@ const addObjectKeys = (value, into) => {
 };
 // A snake_case key in an object literal (`window_A: …`) or set on one (`block.first_peak_only = …`).
 const SNAKE_KEYS = [/['"]?\b([a-z][a-z0-9]*(?:_[A-Za-z0-9]+)+)['"]?\s*:/g, /\.([a-z][a-z0-9]*(?:_[A-Za-z0-9]+)+)\s*=(?!=)/g];
+// The keys of a tool's dataShape (llm/copilot/dataShape.js: objects, arrays,
+// oneOf), an optional key's ? dropped: what its data may hold on any run, the
+// fields only some runs have included (find_gr_peaks' first_shell.split).
+const addShapeKeys = (shape, into) => {
+    if (Array.isArray(shape)) shape.forEach((item) => addShapeKeys(item, into));
+    else if (shape && typeof shape === 'object') {
+        Object.getOwnPropertySymbols(shape).forEach((symbol) => addShapeKeys(shape[symbol], into));
+        for (const [key, value] of Object.entries(shape)) {
+            into.add(key.replace(/\?$/, ''));
+            addShapeKeys(value, into);
+        }
+    }
+};
 
 /**
  * The names that are not tools but a skill may name: every tool parameter;
  * every key of the tool results and the run context the model saw on the
- * Demo (the model-visible snapshots, read_skill's own text left out); and the
- * snake_case keys of the modules that build them, for fields only some runs
- * have (first_shell.first_peak_only).
+ * Demo (the model-visible snapshots, read_skill's own text left out); every
+ * key of the tools' dataShapes; and the snake_case keys of the modules that
+ * build them, for fields only some runs have (first_shell.first_peak_only,
+ * first_shell.split).
  */
 const seenFields = (tools) => {
     const fields = new Set();
     tools.forEach((tool) => addSchemaKeys(tool.parameters, fields));
+    tools.forEach((tool) => addShapeKeys(tool.dataShape, fields));
     for (const file of readdirSync(join(SNAPSHOTS, 'tool-results')).filter((name) => name.endsWith('.json') && !name.startsWith('read_skill'))) {
         addObjectKeys(JSON.parse(readFileSync(join(SNAPSHOTS, 'tool-results', file), 'utf8')).content, fields);
     }
