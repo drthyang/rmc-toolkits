@@ -10,15 +10,20 @@ export const WATCHDOG_STATUSES = ['improving', 'converged', 'stalled', 'divergin
 
 // The watchdog gets a minimal context (recent-window stats, not the full run)
 // and must answer in a rigid one-line format so the reply is machine-parseable.
+// Stats of the total (`of: 'total'`, heuristics.js watchdogRunStats) are the
+// sum of every chi^2 term, with the terms still moving named; otherwise
 // `column` names the .log column the statistics come from (e.g. X_ray_(R)1):
-// the history is ONE fit term's chi^2, not the total, so the reply must not
-// read it as the whole run's convergence.
+// ONE fit term's chi^2, not the total, so the reply must not read it as the
+// whole run's convergence.
 export const buildWatchdogMessages = (stats, heuristicStatus, prevStatus, column = null) => [
     { role: 'system', content: SYSTEM_PROMPT },
     {
         role: 'user',
         content: 'You are watching a live RMC modeling run. Recent convergence statistics '
-            + `(values are ln of chi^2${column ? ` of the fit term ${column} — one .log column, not the total` : ''}, `
+            + (stats?.of === 'total'
+                ? '(values are ln of the total chi^2, the sum of every chi^2 term of the .log; still_falling and rising name '
+                    + 'what still moves beyond its noise over the last tenth; '
+                : `(values are ln of chi^2${column ? ` of the fit term ${column} — one .log column, not the total` : ''}, `)
             + `lower is better): ${JSON.stringify(stats)}. `
             + `A simple slope heuristic classifies this as "${heuristicStatus}"`
             + `${prevStatus ? `; the previous assessment was "${prevStatus}"` : ''}. `

@@ -16,7 +16,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { plotDataFromText, structureFromRmc6f } from '../browserData';
+import { combineRValueFiles, plotDataFromText, structureFromRmc6f } from '../browserData';
 import { buildCopilotTools } from '../copilotTools';
 import { runCopilotTurn } from '../llm/copilot/agentLoop';
 import { buildAskUserTool } from '../llm/copilot/askUser';
@@ -39,11 +39,10 @@ const plotFiles = [{
     plotData: plotDataFromText({ name: partialsName, plotKind: 'pdf_partials', text: read(partialsName) })
 }];
 const logs = ['GTS_250K-00.log', 'GTS_250K-01.log', 'GTS_250K-02.log']
-    .map((name) => plotDataFromText({ name, plotKind: 'r_value', text: read(name) }));
-const rValueFile = {
-    name: 'χ² history',
-    plotData: { chiColumn: logs[0].chiColumn, series: [{ y: logs.flatMap((log) => log.series[0].y) }] }
-};
+    .map((name) => ({ name, path: `Demo/${name}`, plotKind: 'r_value', plotData: plotDataFromText({ name, plotKind: 'r_value', text: read(name) }) }));
+// Every χ² term and their total too (combineRValueFiles): what the watchdog,
+// assess_convergence and the context judge.
+const rValueFile = combineRValueFiles(logs, 'Demo/GTS_250K.rmc6f');
 const symmetry = { ...describeSymmetry(structure, 0.2), toleranceA: 0.2, ladder: toleranceLadder(structure, 1.0) };
 // The run props the turn reads, and the tools the app offers beside the
 // turn's own ask_user: the tools over the run data and the engine tools.

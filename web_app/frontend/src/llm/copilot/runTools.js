@@ -3,7 +3,7 @@
 
 import { buildRunContext, seriesStats } from '../context/runContext';
 import { BOUNDARY_REACH_A, PEAK_SEARCH_MAX_A, extractPeaks, shellCatalogue } from '../context/shells';
-import { classifyConvergence } from '../watchdog/heuristics';
+import { MIN_TOTAL_DROP, TREND_MIN_ROWS, TREND_NOISE_FACTOR, chiSeries, judgeConvergence } from '../watchdog/heuristics';
 import { oneOf } from './dataShape';
 import { methodCheck } from './method';
 
@@ -31,7 +31,7 @@ const SECTION_NOTES = {
     pca_displacements: 'per-site PCA of the displacement clouds (only after the PCA Ellipsoid page loaded them)',
     pair_correlations: 'partial g(r) first peaks vs the average-structure neighbour distance',
     datasets: 'per-dataset Rwp',
-    convergence: 'ln(chi^2) history of the last .log column'
+    convergence: 'ln(chi^2) history of the last .log column; the last-tenth trend of every chi^2 term and their total'
 };
 
 // Each section's shape as buildRunContext (context/runContext.js) builds it
@@ -129,32 +129,21 @@ const SECTION_SHAPES = {
         min: 'number|null',
         max: 'number|null',
         watchdog_status: 'string',
-        recent_slope_per_step: 'number|null',
         history: ['number|null'],
-        'change_over_last_10pct?': 'number|null',
+        // Each series' fitted ln(chi^2) change over the last tenth, the
+        // scatter about the fit and its trend (watchdog/heuristics.js); the
+        // total only with the log's terms.
+        'last_10pct?': {
+            rows: 'number',
+            'total?': { change: 'number|null', noise_sd: 'number|null', trend: 'string' },
+            terms: { '*': { change: 'number|null', noise_sd: 'number|null', trend: 'string' } },
+            'zero_terms?': 'number'
+        },
         'non_finite_steps?': 'number',
         'non_finite_note?': 'string',
         'column?': 'string',
         'final_chi_squared?': 'number'
     }
-};
-
-// Least-squares slope per log row over the last `fraction` of the finite values.
-const tailSlope = (values, fraction) => {
-    const finite = values.filter(Number.isFinite);
-    const count = Math.max(Math.min(finite.length, 3), Math.ceil(finite.length * fraction));
-    const tail = finite.slice(-count);
-    const n = tail.length;
-    if (n < 2) return null;
-    const meanX = (n - 1) / 2;
-    const meanY = tail.reduce((sum, value) => sum + value, 0) / n;
-    let covariance = 0;
-    let variance = 0;
-    tail.forEach((value, index) => {
-        covariance += (index - meanX) * (value - meanY);
-        variance += (index - meanX) ** 2;
-    });
-    return variance ? covariance / variance : 0;
 };
 
 const pairKey = (label) => {
@@ -195,26 +184,50 @@ const readRunDataTool = (context, cardIds) => {
     };
 };
 
+// "a", "a and b", "a, b and c".
+const listOf = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0]);
+
+// One series' last-tenth verdict as the tool gives it (heuristics.js seriesTrend).
+const trendRow = (entry) => ({
+    change_last_10pct: roundSig(entry.change, 2),
+    noise_sd: roundSig(entry.noiseSd, 2),
+    trend: entry.trend
+});
+const TREND_ROW = { change_last_10pct: 'number|null', noise_sd: 'number|null', trend: 'string' };
+
+// Why a run is diverging, from the verdict (heuristics.js judgeConvergence).
+const divergingBecause = (judgement, nonFiniteLatest) => {
+    if (nonFiniteLatest) return 'the latest log row is non-finite (NaN/Inf): the run blew up';
+    if (judgement.total?.trend === 'rising') return `the total rises by more than ${TREND_NOISE_FACTOR} × its noise over the last tenth`;
+    const rising = judgement.rising.filter((name) => name !== 'total');
+    return `${listOf(rising)} ${rising.length > 1 ? 'rise' : 'rises'} by more than ${TREND_NOISE_FACTOR} × ${rising.length > 1 ? 'their' : 'its'} `
+        + 'noise over the last tenth while nothing falls';
+};
+
 const convergenceTool = (rValueFile, cardIds) => {
     const history = rValueFile?.plotData?.series?.[0]?.y;
     if (!Array.isArray(history) || !history.length) return null;
     const column = rValueFile?.plotData?.chiColumn || null;
     return {
         name: 'assess_convergence',
-        description: 'Classify the convergence of the ln(chi^2) history (the last .log column — one fit term, '
-            + 'not the total) with the dashboard watchdog heuristics, and report the slope per log row over '
-            + 'the last 10 %, 25 % and 50 % of the run. Status: improving | converged | stalled | diverging.',
+        description: 'Classify the convergence of every chi^2 term of the .log and of their total (ln chi^2 per log row; '
+            + `the dashboard charts only the last column), with the dashboard watchdog's rule: a series is still falling when `
+            + `the least-squares line through its last tenth (at least ${TREND_MIN_ROWS} rows, never back past the last restart) `
+            + `drops by more than ${TREND_NOISE_FACTOR} × the scatter of its points about that line; the run is converged only when `
+            + 'no term and not the total still falls (or rises), stalled when it is flat without any of them ever dropping by 10 %. '
+            + 'Status: improving | converged | stalled | diverging.',
         parameters: { type: 'object', properties: {} },
+        // total only with the log's chi^2 terms (a log whose line 1 names its
+        // columns); without them the charted column is the one term.
         dataShape: {
-            column: 'string|null',
             quantity: 'string',
             status: 'string',
             n_steps: 'number',
-            first: 'number|null',
-            last: 'number|null',
-            min: 'number|null',
-            total_drop: 'number|null',
-            slope_per_step: { last_10pct: 'number|null', last_25pct: 'number|null', last_50pct: 'number|null' },
+            window_rows: 'number',
+            'total?': { first: 'number|null', last: 'number|null', min: 'number|null', drop: 'number|null', ...TREND_ROW },
+            terms: [{ term: 'string', last: 'number|null', ...TREND_ROW }],
+            'zero_terms?': ['string'],
+            chart_column: 'string|null',
             'non_finite_steps?': 'number'
         },
         label: () => 'Convergence check',
@@ -222,32 +235,62 @@ const convergenceTool = (rValueFile, cardIds) => {
         cards: () => cardIds((card) => card.kind === 'r_value'),
         run: async () => {
             const stats = seriesStats(history);
-            const status = classifyConvergence(history);
-            const finite = history.filter(Number.isFinite);
+            const series = chiSeries(rValueFile.plotData);
+            const judgement = judgeConvergence(series);
+            const { status } = judgement;
             const data = {
-                column,
-                quantity: 'ln(chi^2), natural log; lower is better',
+                quantity: 'ln(chi^2) per .log row, natural log; lower is better',
                 status,
                 n_steps: stats.nSteps,
-                first: roundSig(stats.first),
-                last: roundSig(stats.last),
-                min: roundSig(stats.min),
-                total_drop: finite.length >= 2 ? roundSig(finite[0] - finite[finite.length - 1]) : null,
-                slope_per_step: {
-                    last_10pct: roundSig(tailSlope(history, 0.1), 2),
-                    last_25pct: roundSig(tailSlope(history, 0.25), 2),
-                    last_50pct: roundSig(tailSlope(history, 0.5), 2)
-                }
+                window_rows: judgement.windowRows
             };
+            if (judgement.total) {
+                const { first, last, min, drop } = judgement.total;
+                data.total = { first: roundSig(first), last: roundSig(last), min: roundSig(min), drop: roundSig(drop), ...trendRow(judgement.total) };
+            }
+            data.terms = judgement.terms.map((term) => ({ term: term.name, last: roundSig(term.last), ...trendRow(term) }));
+            if (judgement.zeroTerms.length) data.zero_terms = judgement.zeroTerms;
+            data.chart_column = column;
             if (stats.nonFiniteSteps) data.non_finite_steps = stats.nonFiniteSteps;
+            const noisy = `${TREND_NOISE_FACTOR} × the noise`;
             const checks = [{
                 level: 'note',
-                text: `Judged on ${column ? `the ${column} term` : 'the last .log column'} only, not the total chi^2.`
+                text: judgement.total
+                    ? `Judged on every chi^2 term of the .log (${judgement.terms.length} non-zero`
+                        + `${judgement.zeroTerms.length ? `, ${judgement.zeroTerms.length} zero throughout` : ''}) and their total, over the last `
+                        + `tenth of the run (${judgement.windowRows} rows): converged only when none falls beyond ${noisy}.`
+                    : `Judged on ${column ? `the ${column} term` : 'the last .log column'} only: the log names no chi^2 columns, so no other `
+                        + 'term and no total is known.'
             }];
-            if (status === 'unknown') checks.push({ level: 'fail', text: 'Fewer than two finite log rows — no trend to judge.' });
-            else if (status === 'converged') checks.push({ level: 'ok', text: `Flat after a total drop of ${data.total_drop} in ln(chi^2).` });
-            else if (status === 'improving') checks.push({ level: 'note', text: 'Still improving over the recent window.' });
-            else checks.push({ level: 'warn', text: `Heuristic status: ${status}.` });
+            const nonFiniteLatest = !Number.isFinite(history[history.length - 1])
+                || (Array.isArray(series.total) && !Number.isFinite(series.total[series.total.length - 1]))
+                || series.terms.some((term) => !Number.isFinite(term.values[term.values.length - 1]));
+            if (status === 'unknown') {
+                checks.push({ level: 'fail', text: 'Fewer than three finite log rows in the last tenth — no trend to judge.' });
+            } else if (status === 'converged') {
+                const best = [...judgement.terms, ...(judgement.total ? [{ ...judgement.total, name: 'the total' }] : [])]
+                    .reduce((top, entry) => ((entry.drop ?? -Infinity) > (top?.drop ?? -Infinity) ? entry : top), null);
+                checks.push({
+                    level: 'ok',
+                    text: `Flat: no term${judgement.total ? ' and not the total' : ''} falls or rises beyond ${noisy} over the last tenth, `
+                        + `after ${best.name} dropped by ${roundSig(best.drop)} in ln(chi^2).`
+                });
+            } else if (status === 'improving') {
+                const falling = judgement.falling.map((name) => (name === 'total' ? 'the total' : name));
+                checks.push({
+                    level: 'note',
+                    text: `Still improving: ${listOf(falling)} ${falling.length > 1 ? 'fall' : 'falls'} by more than ${TREND_NOISE_FACTOR} × `
+                        + `${falling.length > 1 ? 'their' : 'its'} noise over the last tenth.`
+                });
+            } else if (status === 'stalled') {
+                checks.push({
+                    level: 'warn',
+                    text: `Stalled: flat over the last tenth, but no term${judgement.total ? ' and not the total' : ''} ever dropped by `
+                        + `${MIN_TOTAL_DROP} in ln(chi^2) (10 %).`
+                });
+            } else {
+                checks.push({ level: 'warn', text: `Diverging: ${divergingBecause(judgement, nonFiniteLatest)}.` });
+            }
             if (stats.nonFiniteSteps) checks.push({ level: 'warn', text: `${stats.nonFiniteSteps} log rows are non-finite (NaN/Inf).` });
             if (stats.nSteps < 5) checks.push({ level: 'warn', text: `Only ${stats.nSteps} log rows.` });
             // For the answer check: never "converged" against this status.

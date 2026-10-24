@@ -9,7 +9,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { plotDataFromText, structureFromRmc6f } from '../browserData';
+import { combineRValueFiles, plotDataFromText, structureFromRmc6f } from '../browserData';
 import { buildCopilotTools } from '../copilotTools';
 import { buildRunTools } from '../llm/copilot/runTools';
 import { runTurn } from '../llm/copilot/turn';
@@ -33,11 +33,10 @@ const hostTools = buildCopilotTools({ request, structure, elements: Object.keys(
 
 // The demo's own χ² history, its three logs end to end, as the Dashboard reads it.
 const logs = ['GTS_250K-00.log', 'GTS_250K-01.log', 'GTS_250K-02.log']
-    .map((name) => plotDataFromText({ name, plotKind: 'r_value', text: read(name) }));
-const rValueFile = {
-    name: 'χ² history',
-    plotData: { chiColumn: logs[0].chiColumn, series: [{ y: logs.flatMap((log) => log.series[0].y) }] }
-};
+    .map((name) => ({ name, path: `Demo/${name}`, plotKind: 'r_value', plotData: plotDataFromText({ name, plotKind: 'r_value', text: read(name) }) }));
+// Every χ² term and their total too (combineRValueFiles): what the watchdog,
+// assess_convergence and the context judge.
+const rValueFile = combineRValueFiles(logs, 'Demo/GTS_250K.rmc6f');
 const tools = [...buildRunTools({ rValueFile }), ...hostTools];
 
 // A scripted model: each request takes the next reply ({ text, calls }).

@@ -42,29 +42,58 @@ describe('buildRunTools', () => {
         });
     });
 
-    it('classifies convergence and names the fit term', async () => {
+    it('classifies convergence on the charted column alone when the log names no χ² terms', async () => {
         const y = Array.from({ length: 200 }, (_, i) => (i < 140 ? 3 - i * (2 / 140) : 1));
         const { assess_convergence: tool } = toolMap({
             rValueFile: { plotData: { chiColumn: 'X_ray_(R)1', series: [{ y }] } }
         });
         expect(tool.page).toBe('dashboard');
-        const { data, checks } = await tool.run({});
-        expect(data).toMatchObject({ column: 'X_ray_(R)1', status: 'converged', n_steps: 200, first: 3, last: 1 });
-        expect(data.total_drop).toBeCloseTo(2, 6);
-        expect(data.slope_per_step.last_10pct).toBe(0);
-        expect(data.slope_per_step.last_50pct).toBeLessThan(0);
-        expect(checks[0].text).toMatch(/X_ray_\(R\)1 term only/);
-        expect(checks.some((check) => check.level === 'ok')).toBe(true);
+        const { data, checks, facts } = await tool.run({});
+        expect(data).toMatchObject({ chart_column: 'X_ray_(R)1', status: 'converged', n_steps: 200, window_rows: 20 });
+        expect(data).not.toHaveProperty('total');
+        expect(data.terms).toEqual([{ term: 'X_ray_(R)1', last: 1, change_last_10pct: 0, noise_sd: 0, trend: 'flat' }]);
+        expect(checks[0].text).toMatch(/X_ray_\(R\)1 term only: the log names no chi\^2 columns/);
+        expect(checks[1]).toEqual({ level: 'ok', text: 'Flat: no term falls or rises beyond 3 × the noise over the last tenth, after X_ray_(R)1 dropped by 2 in ln(chi^2).' });
+        expect(facts).toEqual({ convergence: 'converged' });
+    });
+
+    it('judges every χ² term and their total: one term still falling keeps the run improving', async () => {
+        // F(Q)_1 still falls (−0.018 over the last tenth, noise-free), and the
+        // total with it; the charted X_ray_(R)1 has levelled off; a curvature
+        // constraint is zero throughout.
+        const n = 100;
+        const fq = Array.from({ length: n }, (_, t) => -4 - 0.002 * t);
+        const xray = Array.from({ length: n }, (_, t) => (t < 50 ? 1 - 0.1 * t : -4));
+        const zero = Array(n).fill(Math.log(1e-12));
+        const total = xray.map((value, t) => Math.log(Math.exp(value) + Math.exp(fq[t])));
+        const plotData = {
+            chiColumn: 'X_ray_(R)1',
+            series: [{ y: xray }],
+            chiTerms: { names: ['F(Q)_1', 'Curvature', 'X_ray_(R)1'], series: [fq, zero, xray], total, segments: [n] }
+        };
+        const { data, checks, facts } = await toolMap({ rValueFile: { plotData } }).assess_convergence.run({});
+        expect(data.status).toBe('improving');
+        expect(data.terms.map((term) => [term.term, term.trend])).toEqual([['F(Q)_1', 'falling'], ['X_ray_(R)1', 'flat']]);
+        expect(data.terms[0].change_last_10pct).toBeCloseTo(-0.018, 6);
+        expect(data.total.trend).toBe('falling');
+        expect(data.zero_terms).toEqual(['Curvature']);
+        expect(checks.map((check) => check.text)).toEqual([
+            'Judged on every chi^2 term of the .log (2 non-zero, 1 zero throughout) and their total, over the last tenth of the run (10 rows): converged only when none falls beyond 3 × the noise.',
+            'Still improving: F(Q)_1 and the total fall by more than 3 × their noise over the last tenth.'
+        ]);
+        expect(facts).toEqual({ convergence: 'improving' });
     });
 
     it('warns on a diverging run with non-finite rows', async () => {
-        const y = [2, 1.9, 1.8, null, 1.7, 1.75, 1.9, 2.4];
+        // A drop, then a rise through the last tenth; one row non-finite.
+        const y = Array.from({ length: 100 }, (_, t) => (t < 85 ? 2 - 0.01 * t : 1.15 + 0.02 * (t - 85)));
+        y[40] = null;
         const { assess_convergence: tool } = toolMap({ rValueFile: { plotData: { series: [{ y }] } } });
         const { data, checks } = await tool.run({});
         expect(data.status).toBe('diverging');
         expect(data.non_finite_steps).toBe(1);
         expect(checks.filter((check) => check.level === 'warn').map((check) => check.text)).toEqual([
-            'Heuristic status: diverging.',
+            'Diverging: last .log column rises by more than 3 × its noise over the last tenth while nothing falls.',
             '1 log rows are non-finite (NaN/Inf).'
         ]);
     });

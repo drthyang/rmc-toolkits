@@ -28,7 +28,7 @@ tools: 16, in the order sent (each definition in full: dock/tools.json)
   16. read_skill
 
 ## messages[0] · system
-(the system prompt, variant "tools-view-ask-skills": system-prompt/tools-view-ask-skills.txt, 11884 characters, sha256 a492306c530bb598)
+(the system prompt, variant "tools-view-ask-skills": system-prompt/tools-view-ask-skills.txt, 12110 characters, sha256 eb81a83d67edb8b3)
 
 ## messages[1] · user
 Context for this RMC modeling run:
@@ -148,7 +148,29 @@ Context for this RMC modeling run:
   "xray": {"Ta-Se": 0.45, "Ta-Ta": 0.24, "Se-Se": 0.21, "Ga-Ta": 0.051, "Ga-Se": 0.048, "Ga-Ga": 0.0027},
   "note": "fraction of the measured signal each partial carries (Faber–Ziman; x-ray f≈Z at Q→0, neutron b_coh); a small weight means that pair is weakly constrained by the data"
  },
- "convergence": {"quantity": "ln of the chi^2 in the last .log column 'X_ray_(R)1' (natural log; lower is better) — one fit term of the run, not a total", "n_steps": 2262, "first": 0.0953, "last": -8.87, "min": -8.87, "max": 0.0953, "watchdog_status": "improving", "recent_slope_per_step": -0.00062, "history": [0.0953, -0.774, -1.94, -3.49, -4.49, -4.69, -4.75, -4.85, -5, -5.17, -5.34, -5.55, -5.74, -5.96, -6.18, -6.41, -6.62, -6.79, -6.97, -7.13, -7.3, -7.45, -7.58, -7.71, -7.83, -7.93, -8.03, -8.11, -8.13, -8.22, -8.28, -8.33, -8.38, -8.43, -8.47, -8.5, -8.55, -8.59, -8.63, -8.63, -8.67, -8.71, -8.74, -8.77, -8.8, -8.83, -8.85, -8.87], "change_over_last_10pct": -0.11, "column": "X_ray_(R)1", "final_chi_squared": 0.000141}
+ "convergence": {
+  "quantity": "ln chi^2 per .log row (natural log; lower is better). history, first, last, min, max: the last .log column 'X_ray_(R)1', one fit term (the dashboard's chart); last_10pct: every chi^2 term and their total",
+  "n_steps": 2262,
+  "first": 0.0953,
+  "last": -8.87,
+  "min": -8.87,
+  "max": 0.0953,
+  "watchdog_status": "improving",
+  "history": [0.0953, -0.774, -1.94, -3.49, -4.49, -4.69, -4.75, -4.85, -5, -5.17, -5.34, -5.55, -5.74, -5.96, -6.18, -6.41, -6.62, -6.79, -6.97, -7.13, -7.3, -7.45, -7.58, -7.71, -7.83, -7.93, -8.03, -8.11, -8.13, -8.22, -8.28, -8.33, -8.38, -8.43, -8.47, -8.5, -8.55, -8.59, -8.63, -8.63, -8.67, -8.71, -8.74, -8.77, -8.8, -8.83, -8.85, -8.87],
+  "last_10pct": {
+   "rows": 227,
+   "total": {"change": -0.074, "noise_sd": 0.024, "trend": "falling"},
+   "terms": {
+    "F(Q)_1": {"change": -0.016, "noise_sd": 0.0015, "trend": "falling"},
+    "Curvature #3": {"change": -0.073, "noise_sd": 0.025, "trend": "flat"},
+    "Curvature #5": {"change": -0.098, "noise_sd": 0.05, "trend": "flat"},
+    "X_ray_(R)1": {"change": -0.12, "noise_sd": 0.0027, "trend": "falling"}
+   },
+   "zero_terms": 4
+  },
+  "column": "X_ray_(R)1",
+  "final_chi_squared": 0.000141
+ }
 }
 ```
 

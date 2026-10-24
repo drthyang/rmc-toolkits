@@ -9,7 +9,9 @@
 // unnoticed (the skills' firm rules):
 //
 //   convergence   "converged" while the watchdog or assess_convergence says
-//                 improving or diverging (rmc-fit-assessment);
+//                 improving or diverging — their verdict on every χ² term of
+//                 the .log and their total (rmc-fit-assessment; the user's
+//                 rule, 2026-10-24);
 //   groups        chirality, centrosymmetry, polarity and a lost inversion
 //                 centre that a group's point group contradicts
 //                 (local-symmetry; the spot check called P-42₁m chiral and said
@@ -88,7 +90,7 @@ const convergenceRule = (reading, facts, context) => {
             return [{
                 rule: 'convergence',
                 text: `The answer says the run has converged, but the χ² history is still ${reported} `
-                    + '(the watchdog and assess_convergence): it has not converged.'
+                    + '(the watchdog and assess_convergence, judging every χ² term and their total): it has not converged.'
             }];
         }
     }

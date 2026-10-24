@@ -127,19 +127,19 @@
   {
    "round": 0,
    "why": "first",
-   "sent": "28715 characters, sha256 856a53cf1e7ae667",
+   "sent": "29665 characters, sha256 a839ac0b63ceab44",
    "num_ctx": null
   },
   {
    "round": 1,
    "why": "tools",
-   "sent": "30712 characters, sha256 6af3e4828c3169c9",
+   "sent": "32087 characters, sha256 f3ba8637304d8306",
    "num_ctx": null
   },
   {
    "round": 2,
    "why": "tools",
-   "sent": "36033 characters, sha256 34bf3d8c14b1a4ab",
+   "sent": "37408 characters, sha256 1996ebed88fd3bf4",
    "num_ctx": null
   }
  ],
@@ -159,27 +159,44 @@
    "checks": [
     {
      "level": "note",
-     "text": "Judged on the X_ray_(R)1 term only, not the total chi^2."
+     "text": "Judged on every chi^2 term of the .log (2 non-zero) and their total, over the last tenth of the run (40 rows): converged only when none falls beyond 3 × the noise."
     },
     {
      "level": "note",
-     "text": "Still improving over the recent window."
+     "text": "Still improving: F(Q)_1, X_ray_(R)1 and the total fall by more than 3 × their noise over the last tenth."
     }
    ],
    "data": {
-    "column": "X_ray_(R)1",
-    "quantity": "ln(chi^2), natural log; lower is better",
+    "quantity": "ln(chi^2) per .log row, natural log; lower is better",
     "status": "improving",
     "n_steps": 400,
-    "first": 0.0296,
-    "last": -3.9,
-    "min": -3.9,
-    "total_drop": 3.93,
-    "slope_per_step": {
-     "last_10pct": -0.00089,
-     "last_25pct": -0.00089,
-     "last_50pct": -0.00095
-    }
+    "window_rows": 40,
+    "total": {
+     "first": 0.456,
+     "last": -2.92,
+     "min": -2.92,
+     "drop": 3.38,
+     "change_last_10pct": -0.032,
+     "noise_sd": 0.0014,
+     "trend": "falling"
+    },
+    "terms": [
+     {
+      "term": "F(Q)_1",
+      "last": -3.39,
+      "change_last_10pct": -0.031,
+      "noise_sd": 0.002,
+      "trend": "falling"
+     },
+     {
+      "term": "X_ray_(R)1",
+      "last": -3.9,
+      "change_last_10pct": -0.035,
+      "noise_sd": 0.0025,
+      "trend": "falling"
+     }
+    ],
+    "chart_column": "X_ray_(R)1"
    },
    "error": null,
    "ms": "<ms>",
@@ -659,7 +676,7 @@
   "audit": [
    {
     "rule": "convergence",
-    "text": "The answer says the run has converged, but the χ² history is still improving (the watchdog and assess_convergence): it has not converged."
+    "text": "The answer says the run has converged, but the χ² history is still improving (the watchdog and assess_convergence, judging every χ² term and their total): it has not converged."
    }
   ],
   "references": {
@@ -703,7 +720,7 @@
   "findings": [
    {
     "rule": "convergence",
-    "text": "The answer says the run has converged, but the χ² history is still improving (the watchdog and assess_convergence): it has not converged."
+    "text": "The answer says the run has converged, but the χ² history is still improving (the watchdog and assess_convergence, judging every χ² term and their total): it has not converged."
    }
   ],
   "contradictions": [],
