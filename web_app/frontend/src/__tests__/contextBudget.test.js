@@ -95,10 +95,13 @@ const WINDOW_TOKENS = 32768;
 // the page at Auto); before it 7,354 / 5,261 and 6,990 / 5,001. The user's
 // interview of coordination-shells (2026-10-24) adds 466 / 333 more (the
 // window's cross-check, the split's long − short, the cut at the minimum, the
-// distortion bar, extended networks, a firm rule).
+// distortion bar, extended networks, a firm rule). The user's interview of
+// displacement-anisotropy (2026-10-24) adds 1,215 / 868 and makes it the
+// largest (the ranking, pooling, the three tiers, two resolutions, ± R°, the
+// cluster bar, a firm rule).
 const TWO_LARGEST_SKILLS_TODAY = Object.freeze([
-    { name: 'coordination-shells', chars: 8324, tokens: 5954 },
-    { name: 'displacement-anisotropy', chars: 7681, tokens: 5495 }
+    { name: 'displacement-anisotropy', chars: 8896, tokens: 6363 },
+    { name: 'coordination-shells', chars: 8324, tokens: 5954 }
 ]);
 
 // Candidate #6 (2026-10-19) added 90 tokens: the Demo's pair_correlations
@@ -114,23 +117,24 @@ const TWO_LARGEST_SKILLS_TODAY = Object.freeze([
 // read_skill's enum +6 (local-order), the two largest skills read whole
 // +2,510 (7,814 → 10,324). The skill fact sync adds 853 more: the two largest
 // skills +853 (10,324 → 11,177); the prompt index and the tools are unchanged.
-// The coordination-shells interview adds 333 (11,177 → 11,510).
+// The coordination-shells interview adds 333 (11,177 → 11,510), the
+// displacement-anisotropy interview 868 (11,510 → 12,378).
 const DOCK_WORST_TURN_TODAY = Object.freeze({
     systemPrompt: 4951,
     toolJson: 6868,
     contextBlock: 2286,
     question: 70,
-    skills: 11510,
+    skills: 12378,
     analyses: 8724,
     replyReserve: 8192,
     firstRequest: 14174,
-    prompt: 34407,
-    needed: 42599,
-    headroom: -9831,
-    lmStudioHeadroom: -5735
+    prompt: 35275,
+    needed: 43467,
+    headroom: -10699,
+    lmStudioHeadroom: -6603
 });
 // By how much the dock's worst turn overflows the window today.
-const DOCK_OVERFLOW_TOKENS_TODAY = 9831;
+const DOCK_OVERFLOW_TOKENS_TODAY = 10699;
 
 // Arm B's first request on each dev case is 9.7k–11.2k tokens; the largest,
 // since plan item 4.6, is the fit-data case: its fit tools (assess_convergence,
@@ -143,23 +147,24 @@ const ARM_B_LARGEST_DEV_CASE = 'dev-fit-unconverged';
 // The batch-1 skill drafts (#71) add 2,705 (the prompt index +189,
 // read_skill's enum +5, the two largest skills +2,510). The skill fact sync
 // adds 854 (the two largest skills, 10,324 → 11,177), the coordination-shells
-// interview 332 more (11,177 → 11,510).
+// interview 332 more (11,177 → 11,510), the displacement-anisotropy interview
+// 868 more (11,510 → 12,378).
 const ARM_B_WORST_TURN_TODAY = Object.freeze({
     systemPrompt: 4611,
     toolJson: 4651,
     contextBlock: 1574,
     question: 610,
-    skills: 11510,
+    skills: 12378,
     analyses: 8723,
     replyReserve: 8192,
     firstRequest: 11445,
-    prompt: 31677,
-    needed: 39869,
-    headroom: -7101,
-    lmStudioHeadroom: -3005
+    prompt: 32545,
+    needed: 40737,
+    headroom: -7969,
+    lmStudioHeadroom: -3873
 });
 // By how much arm B's worst turn (largest dev case) overflows the window today.
-const ARM_B_OVERFLOW_TOKENS_TODAY = 7101;
+const ARM_B_OVERFLOW_TOKENS_TODAY = 7969;
 
 // --- the turn ------------------------------------------------------------------------
 
@@ -368,8 +373,9 @@ describe('the worst realistic turn in a 32,768-token window (plan 5.5)', () => {
     // The run policy's minimum for an LM Studio model (48k) holds both worst
     // turns with the full reply reserve, under both of the guard's rules
     // (planContext's, and LM Studio's prompt + LMSTUDIO_REPLY_MIN_TOKENS):
-    // the dock's with 6,553 tokens to spare, arm B's (dev-fit-unconverged since 4.6) with 9,283
-    // (6,886 and 9,615 before the coordination-shells interview; 7,739 and 10,469 before the skill fact sync; 10,444 and 13,173 before the batch-1 skill drafts).
+    // the dock's with 5,685 tokens to spare, arm B's (dev-fit-unconverged since 4.6) with 8,415
+    // (6,553 and 9,283 before the displacement-anisotropy interview; 6,886 and 9,615 before the coordination-shells interview;
+    // 7,739 and 10,469 before the skill fact sync; 10,444 and 13,173 before the batch-1 skill drafts).
     it('fits both worst turns in the live runs\' LM Studio minimum (48k, validation/runPolicy.js)', () => {
         const window = MIN_CONTEXT_TOKENS.lmstudio;
         expect(window).toBe(49152);
@@ -379,6 +385,6 @@ describe('the worst realistic turn in a 32,768-token window (plan 5.5)', () => {
             expect(plan.needed).toBe(turn.numbers.needed);
             expect(turn.numbers.prompt + LMSTUDIO_REPLY_MIN_TOKENS).toBeLessThanOrEqual(window);
         }
-        expect([window - dockTurn.numbers.needed, window - armBTurn.numbers.needed]).toEqual([6553, 9283]);
+        expect([window - dockTurn.numbers.needed, window - armBTurn.numbers.needed]).toEqual([5685, 8415]);
     });
 });

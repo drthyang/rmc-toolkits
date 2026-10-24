@@ -74,3 +74,20 @@
   - two new firm rules, which wait for a later local-symmetry code PR as skill-lint entries.
 
   The lint's last JUDGMENT entry is gone: the margin is bound to `NOISE_FLOOR_MARGIN`.
+- **displacement-anisotropy interviewed (2026-10-24).** The skill is now the user's own answers,
+  and §4 records where each landed. The rules it now states:
+  - "the most disordered site": split sites first, then U_iso and anisotropy;
+  - a negative-kurtosis site that misses the split rule is "flat-topped, not split";
+  - an element pooled only for an element-wide summary, with the frames caveat;
+  - three tiers for a direction: a finding at ≥ 3σ and ≥ 1.2× isotropic, a hint at ≥ 3σ under
+    1.2× or at 2.5–3σ, nothing below 2.5σ;
+  - a finding holds at the Auto resolution and at a neighbouring ν;
+  - every reported direction carries ± its cell's radius, and the 15° cone stays;
+  - a cluster distortion needs z ≥ 3 with the same sign in at least 3 independent runs;
+  - a new firm rule: a split or flat-topped site is called disorder only after
+    `analyze_modulations` ran for its element.
+
+  The tiers, the two resolutions and the firm rule wait for a later displacement-anisotropy code
+  PR, as five skill-lint entries. The skill is now the largest the Copilot reads (8,896 of
+  read_skill's 9,000 characters). The 32k budget pins move by 868 tokens, and at 48k 5,685 (dock)
+  and 8,415 (arm B) tokens are left to spare.

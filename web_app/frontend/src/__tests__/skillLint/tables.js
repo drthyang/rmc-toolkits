@@ -14,9 +14,11 @@
 //               lower group's tolerance), and a probe that the code applies it;
 //   ALLOW_LIST  today's violations, each with why and what clears it: a FACT
 //               (the skill states a number or a rule the tool decides
-//               otherwise; the skill fact-sync PR clears it) or a JUDGMENT (a
+//               otherwise; the skill fact-sync PR clears it), a JUDGMENT (a
 //               method, an order or a judgment call: it stays for the user's
-//               interviews, docs/SKILL_INTERVIEWS.md).
+//               interviews, docs/SKILL_INTERVIEWS.md) or AWAITS CODE (an
+//               interviewed skill states the user's rule, which the named
+//               code PR still has to build).
 //
 // When a skill's text changes (the user's review of a draft), its entries here
 // change in the same PR: a binding or a firm rule whose sentence moved is
@@ -194,7 +196,7 @@ export const BINDINGS = [
     {
         file: ANISOTROPY,
         gate: 'a preferred direction',
-        find: '"Preferred direction" only with a',
+        find: '"Preferred direction" only for a finding (step 4:',
         number: /significance ≥ (?<n>\d+(?:\.\d+)?)σ/,
         constants: [SIGMA],
         statistic: { pattern: /\bpeak\b/, says: 'the peak test only (analyze_displacement_directions facts.direction.significant; the map test is anisotropy)' },
@@ -280,12 +282,35 @@ export const BINDINGS = [
         number: /found none at ≥ (?<n>\d+(?:\.\d+)?)σ/,
         constants: [SIGMA]
     },
+    // The user's three tiers (interview 2026-10-24, answer 3): the σ of each
+    // is the peak test's; the 1.2× and 2.5σ lines await their code (ALLOW_LIST).
     {
         file: ANISOTROPY,
-        gate: 'the reported direction',
-        find: 'the strongest direction with its enhancement and σ',
-        number: /"none at ≥ (?<n>\d+(?:\.\d+)?)σ"/,
+        gate: 'a finding (step 4)',
+        find: '**a finding** (a preferred direction):',
+        number: /\(a preferred direction\): ≥ (?<n>\d+(?:\.\d+)?)σ and/,
         constants: [SIGMA]
+    },
+    {
+        file: ANISOTROPY,
+        gate: 'a hint (step 4)',
+        find: '**a hint**:',
+        number: /\*\*a hint\*\*: ≥ (?<n>\d+(?:\.\d+)?)σ under/,
+        constants: [SIGMA]
+    },
+    {
+        file: ANISOTROPY,
+        gate: 'a cluster distortion\'s z (step 7)',
+        find: 'gyration-axis families against the shuffle null, with effect size and z, at',
+        number: /, at z ≥ (?<n>\d+(?:\.\d+)?) with the same sign/,
+        constants: [CLUSTER_SIGMA]
+    },
+    {
+        file: ANISOTROPY,
+        gate: 'a cluster distortion\'s z (checklist)',
+        find: 'Cluster-level claims rest on `analyze_clusters` (effect size and',
+        number: /effect size and z ≥ (?<n>\d+(?:\.\d+)?),/,
+        constants: [CLUSTER_SIGMA]
     },
     {
         file: SIGNIFICANCE,
@@ -651,7 +676,12 @@ export const BINDINGS = [
 export const NOT_GATES = [
     { file: ANISOTROPY, find: '> 0 heavy-tailed or peaked', why: 'the sign convention of Mardia\'s kurtosis (0 for a Gaussian); the app decides nothing at it' },
     { file: ANISOTROPY, find: '< 0 flat-topped', why: 'the sign convention of Mardia\'s kurtosis; a split site is the app\'s PC1 rule, bound below' },
-    { file: ANISOTROPY, find: 'under 1.2× isotropic', why: 'a judgment call (to confirm with the user); no module applies an enhancement threshold to a direction' },
+    {
+        file: ANISOTROPY,
+        find: 'the same sign in at least 3 independent runs (the',
+        why: 'the user\'s bar for a cluster distortion (interview 2026-10-24, answer 5; the coordination-shells skill\'s bar): every tool reads one run, no module decides it'
+    },
+    { file: ANISOTROPY, find: 'the same sign in at least 3 independent runs).', why: 'the user\'s bar for a cluster distortion (interview 2026-10-24, answer 5), in the checklist: no module decides it' },
     {
         file: ANISOTROPY,
         find: 'finds the order at (0, 0, ½) at > 8σ',
@@ -1074,6 +1104,9 @@ const SPLIT_RULE = `PC1 resolved, its excess kurtosis ≤ ${String(SPLIT_SITE_KU
 const CLUSTER_RULE = `analyze_clusters for each element whose own first shell holds 0.5–${CLUSTER_CN_MAX} neighbours (clusterElementsOf, CLUSTER_CN_MAX)`;
 const CONVERGENCE_RULE = 'assess_convergence and the watchdog read one fit term, the last .log column (runTools.js convergenceTool, chiColumn)';
 const TOLERANCE_RULE = `a group counts where it holds to ${NOISE_FLOOR_MARGIN} × the noise floor (lowerGroupTolerance, NOISE_FLOOR_MARGIN)`;
+// analyze_displacement_directions today: one test, one tier, one resolution.
+const DIRECTION_TIERS_RULE = `a preferred direction at a peak σ ≥ ${SIGNIFICANCE_SIGMA} (unrounded) whatever its enhancement, else "no significant peak direction": no hint tier (summarizeOrientation)`;
+const DIRECTION_RESOLUTION_RULE = `any one directions analysis at ≥ ${SIGNIFICANCE_SIGMA}σ backs a preferred direction, at whichever frequency it ran (facts.direction, the answer check "direction")`;
 
 const verifySplitRule = () => {
     assert.equal(SWEEP_RULES.splitSite, isSplitSite, 'arm A+ does not read the app\'s split rule');
@@ -1129,6 +1162,42 @@ export const RULES = [
         skill: 'a negative Mardia kurtosis',
         app: SPLIT_RULE,
         verify: verifySplitRule
+    },
+    // The user's tiers and two resolutions (interview 2026-10-24, answers 3 and
+    // 4): the displacement-anisotropy code PR builds them (ALLOW_LIST).
+    {
+        file: ANISOTROPY,
+        rule: 'a direction\'s tiers',
+        find: 'Three tiers for a direction',
+        after: 260,
+        states: /whatever (?:its|the) enhancement|no hint tier/,
+        skill: 'a finding at ≥ 3σ (unrounded) and ≥ 1.2× isotropic; a hint at ≥ 3σ under 1.2×, or 2.5–3σ; nothing below 2.5σ (the user, 2026-10-24)',
+        app: DIRECTION_TIERS_RULE,
+        verify: () => {
+            // A 3σ peak at 1.1× isotropic is a preferred direction today, and a 2.7σ peak no direction at all.
+            const small = summarizeOrientation({ ...orientationPayload({ peak: SIGNIFICANCE_SIGMA, map: 0.5 }), peakEnhancement: 1.1 }, null);
+            assert.equal(small.facts.direction.significant, true, 'a 3σ direction under 1.2× isotropic is no longer preferred: update this rule');
+            assert.ok(small.checks.some((check) => /^Preferred direction/.test(check.text)));
+            const near = summarizeOrientation(orientationPayload({ peak: 2.7, map: 0.5 }), null);
+            assert.ok(near.checks.some((check) => /^No significant peak direction/.test(check.text)));
+            assert.doesNotMatch(JSON.stringify(near), /\bhint\b/i, 'the tool labels a hint: update this rule');
+        }
+    },
+    {
+        file: ANISOTROPY,
+        rule: 'a finding at two resolutions',
+        find: 'Two resolutions for a finding.',
+        after: 360,
+        states: /\bone resolution\b|\bwhichever frequency\b/,
+        skill: 'a finding holds at the Auto ν and at a neighbouring ν (ν ± 1); one at the Auto ν alone is a hint (the user, 2026-10-24)',
+        app: DIRECTION_RESOLUTION_RULE,
+        verify: () => {
+            // One analysis at one frequency backs a preferred direction today, and its fact names no frequency.
+            const { facts } = summarizeOrientation(orientationPayload({ peak: SIGNIFICANCE_SIGMA + 1, map: 0.5 }), null);
+            assert.deepEqual(judgeAnswer('Site 1 has a preferred displacement direction along [1 1 1].', { facts: [facts] }).audit, [],
+                'one resolution no longer backs a preferred direction: update this rule');
+            assert.ok(!('frequency' in facts.direction), 'the direction fact names its resolution: update this rule');
+        }
     },
     {
         file: SIGNIFICANCE,
@@ -1225,7 +1294,46 @@ const FIT_CODE_PR = 'awaits the fit-assessment code PR';
 const SHELLS_CODE_PR = 'awaits the coordination code PR';
 // The user's interview of local-symmetry (2026-10-24): the firm rules' code is a later PR.
 const SYMMETRY_CODE_PR = 'awaits the local-symmetry code PR';
+// The user's interview of displacement-anisotropy (2026-10-24): the tiers, the two resolutions
+// and the firm rule's code are a later PR.
+const ANISOTROPY_CODE_PR = 'awaits the displacement-anisotropy code PR';
 export const ALLOW_LIST = [
+    {
+        check: 'gate',
+        file: ANISOTROPY,
+        fragment: '1.2× isotropic',
+        why: `AWAITS CODE: the user's enhancement line for a finding (interview 2026-10-24, answer 3); no module applies an enhancement threshold to a direction today (summarizeOrientation calls one preferred at ≥ 3σ whatever its enhancement): ${ANISOTROPY_CODE_PR} (the 1.2× constant)`
+    },
+    {
+        check: 'gate',
+        file: ANISOTROPY,
+        fragment: 'below 2.5σ',
+        why: `AWAITS CODE: the user's floor for a hint (interview 2026-10-24, answer 3); summarizeOrientation has no hint tier today: ${ANISOTROPY_CODE_PR} (the tier labels and their 2.5σ constant)`
+    },
+    {
+        check: 'rule',
+        file: ANISOTROPY,
+        fragment: 'Three tiers for a direction',
+        line: 52,
+        skill: 'a finding at ≥ 3σ (unrounded) and ≥ 1.2× isotropic; a hint at ≥ 3σ under 1.2×, or 2.5–3σ; nothing below 2.5σ (the user, 2026-10-24)',
+        app: DIRECTION_TIERS_RULE,
+        why: `AWAITS CODE: the user's three tiers (interview 2026-10-24, answer 3); analyze_displacement_directions labels a preferred direction or none, with no hint: ${ANISOTROPY_CODE_PR} (the tier labels)`
+    },
+    {
+        check: 'rule',
+        file: ANISOTROPY,
+        fragment: 'Two resolutions for a finding.',
+        line: 58,
+        skill: 'a finding holds at the Auto ν and at a neighbouring ν (ν ± 1); one at the Auto ν alone is a hint (the user, 2026-10-24)',
+        app: DIRECTION_RESOLUTION_RULE,
+        why: `AWAITS CODE: the user's neighbouring-ν rule (interview 2026-10-24, answer 4); one analysis at one frequency backs a preferred direction today: ${ANISOTROPY_CODE_PR} (a finding at two resolutions)`
+    },
+    {
+        check: 'firm-rule',
+        file: ANISOTROPY,
+        fragment: 'an answer that calls a split or flat-topped site "disorder"',
+        why: `AWAITS CODE: the user's firm rule (interview 2026-10-24, answer 8); today the evidence gate's split-site claim sends back a split site called random disorder until analyze_modulations ran in the question, for any element, and reads no flat-topped site: ${ANISOTROPY_CODE_PR} (its answer check), then mapped in FIRM_RULES`
+    },
     {
         check: 'firm-rule',
         file: SYMMETRY,

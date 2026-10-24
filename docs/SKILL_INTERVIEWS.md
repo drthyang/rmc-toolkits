@@ -4,8 +4,8 @@ A skill is the user's method in their own words (`.claude/skills/<name>/SKILL.md
 Copilot (`read_skill`) and by Claude Code alike. The five skills here began as **drafts**: the first four written on
 2026-10-11 from the Workbench's own record (the llm README's spot check and referee-style review,
 `docs/algorithms/*`, the analyses' code and the papers the README cites), not yet from the user.
-`rmc-fit-assessment`, `coordination-shells` and `local-symmetry` were interviewed on 2026-10-24
-(§1–§3); the others are still drafts.
+`rmc-fit-assessment`, `coordination-shells`, `local-symmetry` and `displacement-anisotropy` were
+interviewed on 2026-10-24 (§1–§4); `local-order` is still a draft.
 This page is the guide for turning each into the user's method. Each answer lands in one of three
 places:
 
@@ -105,14 +105,16 @@ not apply as an entry marked "awaits the coordination code PR".
 6. *Which statistics convince you of a distortion?* `analyze_clusters`' effect size at z ≥ 3,
    the same sign in ≥ 3 independent runs, and supporting angle spreads; a g(r) peak shift alone
    never proves one. **Landed:** the skill (step 7, the checklist).
-7. *Firm rules besides the cut-shell refusal?* Every CN or angle in an answer carries its window
-   in Å; an answer that gives one without it is flagged. **Landed:** the skill (a firm-rule
-   sentence) and code (its answer check, a later coordination code PR; lint entry until then).
+7. *Firm rules besides the cut-shell refusal?* (the user's answer 8) Every CN or angle in an
+   answer carries its window in Å; an answer that gives one without it is flagged. **Landed:** the
+   skill (a firm-rule sentence) and code (its answer check, a later coordination code PR; lint
+   entry until then).
 8. *A recent run; a window that misled you.* Not answered on 2026-10-24: open.
 
-Also answered: corner-sharing or extended networks (outside the 0.5–4.5 own-kind rule) use angle
-spreads plus a standard polyhedral distortion index such as Baur's, never the cluster null. No
-Workbench tool computes the index yet, and the skill says so. **Landed:** the skill (step 7).
+Also answered (the user's answer 7): corner-sharing or extended networks (outside the 0.5–4.5
+own-kind rule) use angle spreads plus a standard polyhedral distortion index such as Baur's, never
+the cluster null. No Workbench tool computes the index yet, and the skill says so. **Landed:** the
+skill (step 7).
 
 ## 3. Local symmetry (`local-symmetry`, interviewed 2026-10-24)
 
@@ -153,25 +155,54 @@ Also answered: naming. "Consistent with ⟨group⟩ at ⟨tolerance⟩ Å", neve
 ⟨group⟩"; with no space-group number, give the point group and the crystal class. **Landed:** the
 skill (step 5, the checklist, the report, and the reference's wording of the Demo's group).
 
-## 4. Displacement anisotropy (`displacement-anisotropy`, draft)
+## 4. Displacement anisotropy (`displacement-anisotropy`, interviewed 2026-10-24)
 
-1. The draft ranks sites by Mardia kurtosis, then U_iso, and reads anisotropy as rms1/rms3. Which
-   numbers do you look at first for "the most disordered site", and which do you report?
-2. The draft analyses directions one site at a time and treats a pooled element map as unable to
-   rule out a distortion. Do you ever pool, and how do you report it?
-3. The draft calls a direction "preferred" only at ≥ 3σ (calibrated, corrected over all cells) and
-   asks for the enhancement as well. Is 3σ your line? Which enhancement is too small to matter?
-4. The sphere's resolution: the tool lets the engine choose, and since plan item 2.5 so does the
-   page by default (it opens at Auto, the engine's resolution). Must a result hold at two
-   resolutions before you trust it?
-5. For a cluster-level question (a trigonal versus a tetragonal distortion), the draft goes to
-   `analyze_clusters`' axis families against the shuffle null. Is that the test you would use?
-6. Per-axis kurtosis is shown only on axes the PCA resolves. Do you use it, and how do you read a
-   negative kurtosis (a split site)?
-7. Firm rules: anything about displacements the Copilot must never claim? (Today it flags a
-   preferred direction that no analysis of the question found.)
-8. A recent site you analysed this way; one time a direction or an anisotropy turned out to be
-   noise.
+Answered by the user on 2026-10-24. Each answer, and where it landed: the skill's text or code (a
+later displacement-anisotropy code PR). Until that PR lands, the skill lint holds the lines today's
+code does not apply as entries marked "awaits the displacement-anisotropy code PR".
+
+1. *Which numbers first for "the most disordered site", and which do you report?* Split sites
+   first (the app's rule, by `delta_A`), then U_iso and anisotropy (rms1/rms3); report each with
+   U_iso, anisotropy, kurtosis and, when split, `delta_A`. **Landed:** the skill (step 1, the
+   checklist, the report). `list_sites` and the run context list the other sites by |kurtosis|:
+   the skill ranks them by their U_iso and anisotropy (`largest_U_iso_refs`,
+   `most_anisotropic_refs`), and keeps |kurtosis| for "the most anharmonic site", the draft's
+   reading, which the answer did not address.
+2. *Do you ever pool, and how do you report it?* Only for an element-wide summary, always with the
+   frames caveat; an isotropic pooled map is never evidence against a distortion. **Landed:** the
+   skill (step 2, the checklist).
+3. *Is 3σ your line; which enhancement is too small?* Three tiers. A finding: ≥ 3σ (unrounded)
+   and ≥ 1.2× isotropic. A hint: ≥ 3σ under 1.2×, or 2.5–3σ. Below 2.5σ: nothing to report.
+   **Landed:** the skill (step 4, the checklist, the report) and code (the tier labels with their
+   1.2× and 2.5σ constants, a later displacement-anisotropy code PR: today
+   `analyze_displacement_directions` calls a direction preferred at ≥ 3σ whatever its
+   enhancement, and labels no hint; lint entries until then). The 1.2× judgment call is a rule now.
+4. *Must a result hold at two resolutions?* A direction is a finding only if it holds at the
+   engine's Auto resolution and at the neighbouring ν; hints don't need it. **Landed:** the skill
+   (step 5) and code (a later code PR: today one analysis at one resolution backs a preferred
+   direction; a lint entry until then). The answer names no side, so the skill reads ν − 1 or
+   ν + 1. The skill also reads a direction that holds only at the Auto ν as a hint, a case the
+   answer leaves open.
+5. *Is `analyze_clusters`' axis-family test the one you would use?* Yes: its axis families
+   against the shuffle null, at z ≥ 3 with the same sign in at least 3 independent runs (the bar
+   of §2, answer 6). **Landed:** the skill (step 7, the checklist); the lint binds z ≥ 3 to
+   `CLUSTER_Z` and lists the runs as no gate (every tool reads one run).
+6. *Per-axis kurtosis; a negative kurtosis?* A site is split only by the app's rule; a
+   negative-kurtosis site that misses it is "flat-topped, not split". Quote a per-axis kurtosis
+   only on resolved axes. **Landed:** the skill (step 1, the checklist) and its reference
+   (`significance-reading.md`).
+7. *Firm rules?* (the user's answer 8) An answer that calls a split or flat-topped site
+   "disorder" when `analyze_modulations` has not run for its element is flagged. **Landed:** the
+   skill (a firm-rule sentence) and code (its answer check, a later code PR; a lint entry until
+   then). Today the evidence gate sends back a split site called random disorder until
+   `analyze_modulations` ran in the question, for any element, and reads no flat-topped site.
+8. *A recent site; a direction or an anisotropy that turned out to be noise.* Not answered on
+   2026-10-24: open.
+
+Also answered (the user's answer 7): keep the 15° cone, 15° included, and name a family only when
+the peak cell's radius is also ≤ 15°; every reported direction carries "± R°", its cell's radius.
+**Landed:** the skill (step 6, the checklist, the report); the tool already applies both
+(`LOW_INDEX_CONE_DEG`, `directionResolved`) and gives the radius (`peak.radius_deg`).
 
 ## 5. Local order (`local-order`, draft, added in validation batch 1)
 
@@ -204,7 +235,8 @@ Each was approved by the user on 2026-10-14 as a proposal of the tool review
   right counts? **Answered 2026-10-24** (§2, answer 2: the join kept; the reach not discussed).
 - `displacement-anisotropy`: a split site is called disorder only after `analyze_modulations`; a
   low-index family is named only within 15°; a preferred direction needs the peak test (the map
-  test is anisotropy). Is 15° your cone?
+  test is anisotropy). Is 15° your cone? **Answered 2026-10-24** (§4: the cone kept, 15° included;
+  the modulation test a firm rule; the peak test the first of the three tiers).
 - `local-symmetry`: report the lowest rung above the noise floor, with the card's 0.2 Å group
   beside it, and size a lowering with `measure_symmetry_lowering`. Is that the group you quote?
   **Answered 2026-10-24** (§3, answer 2: at or above 1.25 × the floor).
@@ -230,7 +262,8 @@ to you. Line numbers are in the synced text.
    `local-order/SKILL.md:26–29`: a split site is now stated as the app's rule. The rule is a
    resolved PC1 whose excess kurtosis is ≤ −0.5 and at least 3 sampling errors below zero;
    `list_sites` gives such a site a `delta_A`. Any negative Mardia kurtosis no longer counts. Is
-   that your line? How do you report a flat-topped site that is not split?
+   that your line? How do you report a flat-topped site that is not split? **Answered
+   2026-10-24** (§4, answer 6: the rule kept; such a site is "flat-topped, not split").
 3. `coordination-shells/SKILL.md:71–73` and `:91–95`: the cut rule is now the CN margin you chose.
    Are 0.5 atoms and 15 % the right values? Should the counts fallback (60 %, or most central
    atoms unbonded) stay where there is no shell to compare? **Answered 2026-10-24** (§2, answer
@@ -249,9 +282,10 @@ to you. Line numbers are in the synced text.
 6. `displacement-anisotropy/SKILL.md:47–48` (step 3): the tool decides a preferred direction on
    the unrounded peak σ, and the skill now says that a σ just below 3 is never rounded to 3σ.
    Should a near miss (2.9σ, say) be reported as a hint, as the 1.2× judgment call does for a small
-   enhancement?
+   enhancement? **Answered 2026-10-24** (§4, answer 3: 2.5–3σ is a hint).
 7. `displacement-anisotropy/SKILL.md:72–73`: is a 3–5σ direction under 1.2× isotropic a finding
-   or a hint? No module decides this; the lint lists the number as no gate.
+   or a hint? No module decides this; the lint lists the number as no gate. **Answered
+   2026-10-24** (§4, answer 3: a hint; the 1.2× line now awaits the code PR in the lint).
 8. `coordination-shells/SKILL.md:29–39` and its report (`:111`): `find_gr_peaks` now splits a
    joined shell by number, in `first_shell.split`: each part's CN and share, and long − short
    with its sampling error. The skill does not mention it. Should a Jahn–Teller report quote it?
@@ -260,9 +294,10 @@ to you. Line numbers are in the synced text.
    included", as the tools apply it, and since plan item 2.5 also needs the peak's cell to be no
    wider than 15° (`peak.radius_deg`; the tool names no family above it). The draft's reason said
    15° was half of 35.3°; it is under half (35.3° / 2 = 17.6°). The question stays the one from
-   batch 1: is 15° your cone?
+   batch 1: is 15° your cone? **Answered 2026-10-24** (§4, answer 7: 15°, 15° included).
 10. `displacement-anisotropy/SKILL.md:112–113` (the report): the tool now gives the peak direction
    ± its cell's radius (plan item 2.5). Should a report quote the radius beside the direction?
+   **Answered 2026-10-24** (§4, answer 7: every reported direction carries it).
 11. `local-order/SKILL.md:34–37` (step 3): `analyze_modulations` now also reports short-range order
    between cells spread over many q (its diffuse verdict, plan item 4.4). Neither arm A+ nor the
    answer checks read it ("the user's call", validation/armA.js). Does it count as order between

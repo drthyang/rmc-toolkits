@@ -18,8 +18,9 @@ exactly 12 pentagons, every count divided by its cell's solid angle.
 **Mardia kurtosis** (b₂ − 15)/5 is rotation- and affine-invariant: 0 for a Gaussian cloud, negative
 for a flat-topped one, positive for heavy tails. A site is split (two positions) only by the app's
 rule on its PC1: resolved, its excess kurtosis ≤ −0.5 and at least 3 sampling errors below zero
-(`list_sites` gives it a `delta_A`); a negative Mardia kurtosis alone is not a split. Per-axis
-kurtosis means something only on axes the PCA resolves (an eigenvalue gap above 3 standard errors).
+(`list_sites` gives it a `delta_A`); a negative Mardia kurtosis alone is not a split, and a site
+that misses the rule is "flat-topped, not split". Per-axis kurtosis means something only on axes
+the PCA resolves (an eigenvalue gap above 3 standard errors).
 
 **Cluster statistics** (`analyze_clusters`) count as a finding only when both the z and the effect
 size clear their thresholds (z ≥ 3 and a relative change ≥ 5 %; T2 trigonality ≥ 0.02; axis
