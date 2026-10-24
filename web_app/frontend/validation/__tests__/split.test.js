@@ -432,7 +432,8 @@ describe('where a finding stands, and validation batch 1', () => {
             '2026-10-24-fit-assessment-interview',
             '2026-10-24-ft-error-propagation',
             ...INTERVIEW_RECORDS.filter((id) => id > '2026-10-24-fit-assessment-interview'),
-            '2026-10-24-polyhedral-distortion'
+            '2026-10-24-polyhedral-distortion',
+            '2026-10-24-sonnet-request-policy'
         ]);
         expect(existsSync(join(FRONTEND, 'validation/findings/decisions.jsonl'))).toBe(false);
         const record = readFileSync(join(DECISIONS, `${recomposed}.json`), 'utf8');
@@ -679,6 +680,27 @@ describe('where a finding stands, and validation batch 1', () => {
                 expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
             });
         }
+    });
+
+    it('decisions: Claude Sonnet 5.5\'s request policy (no temperature, a reply cap, the $20 cap), approved by the user directly and implemented with its tests', () => {
+        const policy = decisions()['2026-10-24-sonnet-request-policy'];
+        expect(policy).toMatchObject({
+            case: 'dev-offcentre', kind: 'orchestration', needs_user_approval: true, status: 'implemented',
+            approval: { by: 'user', date: '2026-10-24', batch: 3 }
+        });
+        for (const field of ['evidence', 'proposed_fix']) {
+            expect(policy[field], field).toMatch(/Approved by the user, 2026-10-24\./);
+            expect(policy[field], field).not.toMatch(/on the user's delegation/i);
+        }
+        // The decisions, quoted.
+        expect(policy.evidence).toContain('\'Raise to $20\'');
+        expect(policy.evidence).toContain('\'Fix both first\'');
+        expect(policy.commit).toMatch(/^[0-9a-f]{40}$/);
+        expect(policy.tests.length).toBeGreaterThan(0);
+        policy.tests.forEach((test) => {
+            const [path, title] = test.split(' › ');
+            expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+        });
     });
 
     it('decisions: one cut rule, the CN margin (candidate 6\'s recommendation), approved by the user directly and implemented with its known-answer tests', () => {
