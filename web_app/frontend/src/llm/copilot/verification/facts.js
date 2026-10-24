@@ -9,7 +9,9 @@
 // unnoticed (the skills' firm rules):
 //
 //   convergence   "converged" while the watchdog or assess_convergence says
-//                 improving or diverging (rmc-fit-assessment);
+//                 improving or diverging — their verdict on every χ² term of
+//                 the .log and their total (rmc-fit-assessment; the user's
+//                 rule, 2026-10-24);
 //   groups        chirality, centrosymmetry, polarity and a lost inversion
 //                 centre that a group's point group contradicts
 //                 (local-symmetry; the spot check called P-42₁m chiral and said
@@ -21,11 +23,18 @@
 //   modulation    a superstructure (cell doubling, zone-boundary order) when
 //                 every analyze_modulations of the question found no ordered
 //                 point (a general wavevector's order allows "superstructure",
-//                 never "cell doubling");
+//                 never "cell doubling"); and order claimed at a box-scale
+//                 wavevector, a long wave (every |q_i| ≤ the engine's
+//                 long_wave_q), whatever its power (the user's rule,
+//                 2026-10-24: a long wave says nothing about order at its q);
 //   cluster       cluster claims (distorted, breathing, rigid) every
 //                 analyze_clusters of the element contradicts (review L5);
 //   coordination  a coordination number every whole-shell count of the
 //                 element contradicts (review L5);
+//   distribution  a distribution's numbers (bond angles, coordination counts,
+//                 displacement directions, cluster shapes) quoted without
+//                 saying they come from one configuration (the user's rule,
+//                 2026-10-24: the app always analyses one);
 //   lowering      measure_symmetry_lowering's shifts: no check reads them yet
 //                 (contradicts: null, so the missing consumer shows).
 //
@@ -42,10 +51,11 @@
 import { oneOf } from '../dataShape';
 import { cnMatches } from '../../context/shells';
 import { pointGroupFacts } from '../../context/pointGroups';
-import { clausesOf, elementPattern, groupsIn, namesElement, namesSymbol, normalizeSymbol, positiveMatches } from './reading';
+import { clausesOf, elementPattern, groupsIn, namesElement, namesSymbol, normalizeSymbol, positiveMatches, qVectorsIn } from './reading';
 import {
-    BREATHING, CELL_DOUBLING, CENTROSYMMETRIC, CHIRAL, CN_CLAIMS, CONVERGED, DISTORTED, LOST_INVERSION, PARTIAL_SHELL, POLAR,
-    POLYHEDRON_CN, PREFERRED, RIGID, STILL_MOVING, SUPERSTRUCTURE, WORD_NUMBER
+    BREATHING, CELL_DOUBLING, CENTROSYMMETRIC, CHIRAL, CN_CLAIMS, CONVERGED, DISTORTED, DISTRIBUTION_NOUN, DISTRIBUTION_STAT, LONG_WAVE_WORDS,
+    LOST_INVERSION, ORDER_CLAIM, PARTIAL_SHELL, POLAR, POLYHEDRON_CN, PREFERRED, RIGID, SAYS_NOTHING, SINGLE_CONFIGURATION, STILL_MOVING,
+    SUPERSTRUCTURE, WORD_NUMBER
 } from './phrasings';
 
 // --- the run context's own facts ------------------------------------------------------
@@ -88,7 +98,7 @@ const convergenceRule = (reading, facts, context) => {
             return [{
                 rule: 'convergence',
                 text: `The answer says the run has converged, but the χ² history is still ${reported} `
-                    + '(the watchdog and assess_convergence): it has not converged.'
+                    + '(the watchdog and assess_convergence, judging every χ² term and their total): it has not converged.'
             }];
         }
     }
@@ -209,6 +219,69 @@ const superstructureRule = (reading, facts) => {
         }
     }
     return [];
+};
+
+// --- long waves (the user's rule, 2026-10-24) -------------------------------------------
+
+// "A long wave is a correlation the finite box can't represent, so it says
+// nothing about order at its own q; a point or mode that passes its own test
+// at another q is judged on that test alone" (the user, 2026-10-24). A clause
+// that claims order (ORDER_CLAIM, asserted) at a box-scale wavevector — a q
+// it writes whose every |q_i| is at most the engine's bound (facts'
+// long_wave_q, the modulation engine's isLongWave), or a long or box-scale
+// wave in words — is flagged, whatever the mode's power; a clause that
+// denies order anywhere ("a long wave, not order", "says nothing about
+// order") claims none. Only once an analyze_modulations ran, as the
+// superstructure rule.
+const isLongWaveQ = (q, bound) => q.some((value) => value !== 0) && q.every((value) => Math.abs(value) <= bound + 1e-9);
+const qText = (q) => `(${q.map((value) => (Math.abs(value - 0.5) < 1e-9 ? '½' : String(Number(value.toFixed(3))))).join(', ')})`;
+
+const longWaveRule = (reading, facts) => {
+    const analyses = facts.map((fact) => fact.modulation).filter((fact) => fact && Number.isFinite(fact.long_wave_q));
+    if (!analyses.length) return [];
+    const bound = Math.max(...analyses.map((fact) => fact.long_wave_q));
+    for (const sentence of reading.sentences) {
+        for (const clause of clausesOf(sentence)) {
+            const claims = positiveMatches(clause, ORDER_CLAIM).filter((match) => !SAYS_NOTHING.test(clause.slice(0, match.index)));
+            if (!claims.length) continue;
+            // A clause that also denies order is about the long wave, not a claim of it.
+            if ([...clause.matchAll(ORDER_CLAIM)].length > claims.length) continue;
+            const wave = qVectorsIn(clause).find((q) => isLongWaveQ(q, bound));
+            if (!wave && !LONG_WAVE_WORDS.test(clause)) continue;
+            const at = wave ? `order at q = ${qText(wave)}, a box-scale wavevector (every |q_i| ≤ ${bound}: a long wave)` : 'order at a long (box-scale) wave';
+            return [{
+                rule: 'long-wave',
+                text: `The answer claims ${at}, but a long wave is a correlation the finite box can't represent, so it says nothing `
+                    + 'about order at its own q; a point or mode that passes its own test at another q is judged on that test alone.'
+            }];
+        }
+    }
+    return [];
+};
+
+const modulationRules = (reading, facts, context) => [...superstructureRule(reading, facts, context), ...longWaveRule(reading, facts)];
+
+// --- distributions from one configuration (the user's rule, 2026-10-24) -----------------
+
+// Every analysis in the app reads one configuration (the run's .rmc6f): a
+// distribution it gives — bond angles and the coordination counts, the
+// displacement directions, the clusters' shapes (facts.distribution) — is one
+// configuration's, with no spread between runs to judge it by. An answer that
+// quotes such a distribution's numbers (a sentence with a statistic of it,
+// DISTRIBUTION_STAT, that names a distribution or gives degrees,
+// DISTRIBUTION_NOUN) and nowhere says they come from one configuration
+// (SINGLE_CONFIGURATION) is flagged. Only once such an analysis ran.
+const singleConfigurationRule = (reading, facts) => {
+    const distributions = facts.map((fact) => fact.distribution).filter(Boolean);
+    if (!distributions.length || SINGLE_CONFIGURATION.test(reading.text)) return [];
+    const quotes = reading.sentences.some((sentence) => DISTRIBUTION_STAT.test(sentence) && DISTRIBUTION_NOUN.test(sentence));
+    if (!quotes) return [];
+    const subjects = [...new Set(distributions.map((fact) => fact.subject))];
+    return [{
+        rule: 'single-configuration',
+        text: `The answer quotes the numbers of ${subjects.join(', ')} without saying they come from one configuration: every `
+            + 'analysis here reads the run\'s one configuration, so its distribution carries no spread between runs; say so.'
+    }];
 };
 
 // --- cluster (the review's L5, approved 2026-10-14) -------------------------------------
@@ -335,13 +408,18 @@ export const FACTS = Object.freeze([
     Object.freeze({
         key: 'modulation',
         from: Object.freeze(['analyze_modulations']),
+        // long_wave_q: the engine's long-wave bound (rules.longWaveQ);
+        // long_waves: the long waves among each element's strongest modes.
         shape: {
             elements: ['string'],
             ordered: [{ element: 'string', q: ['number', 'number', 'number'] }],
-            general: [{ element: 'string', q: ['number', 'number', 'number'] }]
+            general: [{ element: 'string', q: ['number', 'number', 'number'] }],
+            long_wave_q: 'number',
+            long_waves: [{ element: 'string', q: ['number', 'number', 'number'] }]
         },
-        reads: Object.freeze([CELL_DOUBLING, SUPERSTRUCTURE]),
-        contradicts: superstructureRule
+        reads: Object.freeze([CELL_DOUBLING, SUPERSTRUCTURE, ORDER_CLAIM, LONG_WAVE_WORDS, SAYS_NOTHING]),
+        // The superstructure rule, then the long-wave rule (the user's, 2026-10-24).
+        contradicts: modulationRules
     }),
     Object.freeze({
         key: 'cluster',
@@ -361,6 +439,16 @@ export const FACTS = Object.freeze([
         shape: oneOf([COORDINATION_COUNT], COORDINATION_COUNT),
         reads: Object.freeze([...CN_CLAIMS, ...POLYHEDRON_CN.map(([pattern]) => pattern), PARTIAL_SHELL]),
         contradicts: coordinationRule
+    }),
+    Object.freeze({
+        key: 'distribution',
+        from: Object.freeze(['compute_bond_angles', 'analyze_displacement_directions', 'analyze_clusters']),
+        // A distribution read from the run's one configuration (the user's
+        // rule, 2026-10-24): its kind, what it is of, and the configurations
+        // it comes from (always 1: every analysis reads the one .rmc6f).
+        shape: { kind: 'string', subject: 'string', configurations: 'number' },
+        reads: Object.freeze([DISTRIBUTION_STAT, DISTRIBUTION_NOUN, SINGLE_CONFIGURATION]),
+        contradicts: singleConfigurationRule
     }),
     Object.freeze({
         key: 'lowering',

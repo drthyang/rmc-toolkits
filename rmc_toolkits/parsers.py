@@ -157,6 +157,15 @@ class ChiLog:
     ``None`` — as the browser's ``combineRValueFiles``. ``skipped_rows``
     counts data lines dropped for a token count that differs from the
     header's, plus unterminated final lines.
+
+    The chi^2 terms (every column after ``Time moves_acc moves_gen``, one per
+    fitted dataset or constraint: :data:`CHI_TERMS_START`): ``total`` is each
+    row's sum of its terms (``NaN`` where a term is non-finite), ``segments``
+    the rows each contributing log gave, and ``term_names`` / ``terms`` (one
+    row of ``terms`` per name) the per-term histories, only when every
+    contributing log names the same terms in the same order. ``total`` is
+    ``None`` when a log's line 1 names fewer than four columns (no terms).
+    Mirrors ``chiTermsPlotData`` / ``combineChiTerms`` in browserData.js.
     """
 
     chi_q: np.ndarray
@@ -164,10 +173,25 @@ class ChiLog:
     column: str | None
     skipped_rows: int
     columns: tuple = ()
+    term_names: tuple | None = None
+    terms: np.ndarray | None = None
+    total: np.ndarray | None = None
+    segments: tuple = ()
 
     @property
     def chi_column(self) -> str | None:
         return self.columns[0] if len(self.columns) == 1 else None
+
+
+# The chi^2 terms of a log row: the columns after the clock time and the two
+# move counters (``Time moves_acc moves_gen``). Mirrors CHI_TERMS_START in
+# browserData.js.
+CHI_TERMS_START = 3
+
+
+def _chi_value(token: str) -> float:
+    value = parse_fortran_number(token)
+    return float("nan") if value is None else value
 
 
 def read_chi_log(paths: list[str | Path]) -> ChiLog:
@@ -188,6 +212,8 @@ def read_chi_log(paths: list[str | Path]) -> ChiLog:
     chi_r: list[float] = []
     columns: list[str | None] = []
     skipped = 0
+    # Per contributing log: its term names (None: no terms), term rows and rows.
+    log_terms: list[tuple[tuple[str, ...] | None, list[list[float]], int]] = []
     for path in paths:
         text = Path(path).read_text(encoding="utf-8", errors="replace")
         lines = _LINE_BREAK_RE.split(text)
@@ -199,7 +225,9 @@ def read_chi_log(paths: list[str | Path]) -> ChiLog:
         header = lines[0].split() if lines else []
         expected = len(header) if len(header) >= 2 else None
         column = header[-1] if expected is not None else None
+        names = tuple(header[CHI_TERMS_START:]) if len(header) > CHI_TERMS_START else None
         rows_before = len(chi_r)
+        term_rows: list[list[float]] = []
         for line in lines[2:]:
             parts = line.split()
             if not parts:
@@ -209,18 +237,35 @@ def read_chi_log(paths: list[str | Path]) -> ChiLog:
             if len(parts) != expected or len(parts) < 2:
                 skipped += 1
                 continue
-            values = [parse_fortran_number(token) for token in parts[-2:]]
-            chi_q.append(float("nan") if values[0] is None else values[0])
-            chi_r.append(float("nan") if values[1] is None else values[1])
-        if len(chi_r) > rows_before and column not in columns:
-            columns.append(column)
+            chi_q.append(_chi_value(parts[-2]))
+            chi_r.append(_chi_value(parts[-1]))
+            if names is not None:
+                term_rows.append([_chi_value(token) for token in parts[CHI_TERMS_START:]])
+        if len(chi_r) > rows_before:
+            if column not in columns:
+                columns.append(column)
+            log_terms.append((names, term_rows, len(chi_r) - rows_before))
     named = [name for name in columns if name]
+    term_names: tuple | None = None
+    terms: np.ndarray | None = None
+    total: np.ndarray | None = None
+    if log_terms and all(names is not None for names, _, _ in log_terms):
+        # Python's sum over each row, left to right: the browser's reduce.
+        total = np.asarray([sum(row) for _, rows, _ in log_terms for row in rows], dtype=float)
+        first = log_terms[0][0]
+        if all(names == first for names, _, _ in log_terms):
+            term_names = first
+            terms = np.asarray([row for _, rows, _ in log_terms for row in rows], dtype=float).reshape(-1, len(first)).T
     return ChiLog(
         chi_q=np.asarray(chi_q, dtype=float),
         chi_r=np.asarray(chi_r, dtype=float),
         column=" / ".join(named) or None,
         skipped_rows=skipped,
         columns=tuple(columns),
+        term_names=term_names,
+        terms=terms,
+        total=total,
+        segments=tuple(count for _, _, count in log_terms),
     )
 
 

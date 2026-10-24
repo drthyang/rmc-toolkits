@@ -17,6 +17,7 @@ import {
     CN_CHANGE_ABS,
     CN_CHANGE_REL,
     CN_MATCH_TOLERANCE,
+    CONSTRAINT_LIMIT_FRACTION,
     CUT_SHIFT_A,
     IDEAL_COORDINATION,
     MODAL_COORDINATION_SHARE,
@@ -225,7 +226,37 @@ describe('one search range: peaks below 8 Å, the closing minimum to max(8, r₁
     });
 });
 
-describe('separation and the closest-approach pile-up: one fraction, SEPARATION_G_FRACTION', () => {
+describe('the constraint-limited rule: g above 5 % of the peak at the cut (the user\'s rule, 2026-10-24)', () => {
+    // A Ga–Se peak at 2.42 Å (σ 0.1 Å) cut at its closest-approach
+    // constraint: g is 0 below it, and just above it the share of the first
+    // peak that the cut's position sets.
+    const settings = (limit) => ({ atoms: ['Ga', 'Se'], minimumDistancesA: [3.0, limit, 3.0] });
+    const cutAt = (limit) => {
+        const x = grid(1000, 0.01);
+        const series = { label: 'Ga-Se', x, y: x.map((r) => (r <= limit ? 0 : gaussian(r, 2.42, 0.1, 8))) };
+        return catalogueOf(series, { runSettings: settings(limit) }).shell('Ga', 'Se').constraint;
+    };
+
+    it('its own constant, 5 %; the shell separation keeps 2 %', () => {
+        expect(CONSTRAINT_LIMIT_FRACTION).toBe(0.05);
+        expect(SEPARATION_G_FRACTION).toBe(0.02);
+    });
+
+    it('3 % of the peak at the cut is not constraint-limited (it was under the old 2 %)', () => {
+        const constraint = cutAt(2.13);
+        expect(Math.round(constraint.gFraction * 100)).toBe(3);
+        expect(constraint.gFraction).toBeGreaterThan(SEPARATION_G_FRACTION);
+        expect(constraint).toMatchObject({ limitA: 2.13, limited: false });
+    });
+
+    it('9 % of the peak at the cut is constraint-limited, like the Demo\'s Ga–Se (8.7 % at 2.2 Å)', () => {
+        const constraint = cutAt(2.18);
+        expect(Math.round(constraint.gFraction * 100)).toBe(9);
+        expect(constraint).toMatchObject({ limitA: 2.18, limited: true });
+    });
+});
+
+describe('the shell separation (SEPARATION_G_FRACTION, 2 %) and the closest-approach pile-up', () => {
     it('a shell is separated when g at its boundary is at most 2 % of its peak', () => {
         expect(SEPARATION_G_FRACTION).toBe(0.02);
         const x = grid(700, 0.01);
@@ -242,6 +273,9 @@ describe('separation and the closest-approach pile-up: one fraction, SEPARATION_
         expect(clean.separated).toBe(true);
     });
 
+    // The title keeps the 2 % of the shell-catalogue decision that cites it
+    // (2026-10-19); since 2026-10-24 the constraint has its own fraction, 5 %
+    // (CONSTRAINT_LIMIT_FRACTION, the describe above). Both cases hold under it.
     it('a constraint limits a pair when raw g just above it is above 2 % of the peak — the FWHM edge clause is gone', () => {
         const settings = (limit) => ({ atoms: ['Ga', 'Se'], minimumDistancesA: [3.0, limit, 3.0] });
         // Cut at the constraint: g is 0 below 2.2 Å, ~9 % of the peak just above it.
@@ -259,6 +293,7 @@ describe('separation and the closest-approach pile-up: one fraction, SEPARATION_
         expect(peak.r - peak.fwhm / 2).toBeLessThanOrEqual(2.43 + 0.05);
         const clear = catalogueOf(sharp, { runSettings: settings(2.43) }).shell('Ga', 'Se').constraint;
         expect(clear.gFraction).toBeLessThan(SEPARATION_G_FRACTION);
+        expect(clear.gFraction).toBeLessThan(CONSTRAINT_LIMIT_FRACTION);
         expect(clear.limited).toBe(false);
         // No constraint for the pair: none.
         expect(catalogueOf(cutSeries).shell('Ga', 'Se').constraint).toBeNull();

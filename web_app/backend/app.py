@@ -68,6 +68,7 @@ from rmc_toolkits.plots import (
     bragg_is_tof,
     chi_history_labels,
     chi_history_ln,
+    chi_terms_payload,
     close_plot,
     detect_plot_kind,
     make_plot,
@@ -716,6 +717,9 @@ def plot_data():
                     "xLabel": "Time steps",
                     "yLabel": CHI_HISTORY_Y_LABEL,
                     "chiColumn": log.chi_column,
+                    # Every chi^2 term and their total, for the Copilot and the
+                    # watchdog (the chart draws `series` only); null without terms.
+                    "chiTerms": chi_terms_payload(log),
                     "series": [
                         {
                             "label": series_label,

@@ -11,12 +11,8 @@ description: >-
 
 # Displacement anisotropy and directions
 
-**Status: Draft: awaiting the user's interview.** Written from the 2026-10-10 spot check, the
-review that followed, the PCA Ellipsoid and Displacement Directions algorithm notes, and the
-tools' checks; the split-site step, the 15° family rule and the peak-test rule were added in
-validation batch 1 (the 2026-10-14 tool review, approved by the user that day). A step marked "(to
-confirm with the user)" is not yet the user's own practice: say in the answer which choice you
-made.
+**Status: Interviewed 2026-10-24.** The steps are the user's own answers of that day
+(docs/SKILL_INTERVIEWS.md §4).
 
 Each atom's displacement is its offset from its own reference site's mean position, so a site's
 cloud is centred by construction: a coherent off-centring shared by every copy moves the mean
@@ -26,57 +22,79 @@ and is invisible here.
 
 1. **Rank the sites:** `list_sites` (optionally for one element). Per site: U_iso (Å²), the
    principal RMS amplitudes, anisotropy = rms1/rms3, and Mardia's multivariate excess kurtosis
-   (0 for a Gaussian; > 0 heavy-tailed or peaked; < 0 flat or split, e.g. two wells). Sites come
-   sorted by |kurtosis|; the `largest_*_refs` name the extremes.
+   (0 for a Gaussian; > 0 heavy-tailed or peaked; < 0 flat-topped). A site is split (two wells)
+   only by the app's rule, not by a negative Mardia kurtosis alone: a resolved PC1 whose excess
+   kurtosis is ≤ −0.5 and at least 3 sampling errors below zero (`list_sites` then gives its static
+   displacement `delta_A`). A negative-kurtosis site that misses the rule is "flat-topped, not
+   split". For "the most disordered site", split sites come first (largest `delta_A`), then the
+   rest by U_iso and anisotropy; `largest_U_iso_refs` and `most_anisotropic_refs` name the
+   extremes (the most anharmonic site is the largest |kurtosis|, `largest_abs_kurtosis_refs`).
+   Report each with U_iso, anisotropy, kurtosis and, when split, `delta_A`; quote a per-axis
+   kurtosis (`kurtosis_axes`) only on an axis the PCA resolves.
    **A split site is not yet disorder.** Ordered antiphase displacements (a superstructure) give a
    site exactly the same cloud as random two-site disorder: only the correlation between cells
-   differs. Before calling a split or flat site (negative kurtosis) random off-centring, run
-   `analyze_modulations`: an ordered zone-boundary point (or order at a general wavevector) of that
-   element makes it order with that q, not disorder.
-2. **One site at a time:** `analyze_displacement_directions` with `site_ref`. Pooling an element
-   over sites mixes their local frames (each vertex of an M₄ tetrahedron sits on its own 3m
-   axis), so a preference every site shares in its own frame cancels in the pooled map: an
-   isotropic pooled map is not evidence against a per-site or cluster distortion.
+   differs. Before calling a split site (`delta_A`) or a flat-topped one "disorder" (random
+   off-centring), run `analyze_modulations` for its element: an ordered zone-boundary point (or
+   order at a general wavevector) of that element makes it order with that q, not disorder.
+2. **One site at a time:** `analyze_displacement_directions` with `site_ref`. Pool an element's
+   sites (`element`) only for an element-wide summary, and always with the frames caveat: pooling
+   mixes the sites' local frames (each vertex of an M₄ tetrahedron sits on its own 3m axis), so a
+   preference every site shares in its own frame cancels in the pooled map. An isotropic pooled
+   map is never evidence against a per-site or cluster distortion.
 3. **Read the significances, all calibrated one-sided σ** (≥ 3 is significant):
    `peak.significance_sigma` (the peak cell, corrected over all cells), the whole map's departure
    from isotropy, `orientation_tensor.anisotropy_significance_sigma` (Bingham), and the
    +u/−u asymmetry z (a skewness the ellipsoid cannot show). A local z-score is never a
-   significance. **A preferred direction needs the peak test.** The map and the tensor tests show
-   anisotropy, which every anisotropic thermal ellipsoid has (an O flattened across its bond,
-   thermal motion only: map 7.2σ, peak 2.3σ): say "anisotropic", not "a preferred direction".
-4. **Directions:** `peak.direction_uvw` and the tensor's principal axis are direct-lattice
+   significance. **A preferred direction needs the peak test:** `peak.significance_sigma` ≥ 3σ,
+   unrounded (2.96σ is never rounded to 3σ). The map and the tensor tests show anisotropy, which
+   every anisotropic thermal ellipsoid has (an O flattened across its bond, thermal motion only:
+   map 7.2σ, peak 2.3σ): say "anisotropic", not "a preferred direction".
+4. **Three tiers for a direction**, on the peak's unrounded σ and its enhancement
+   (`peak.enhancement`, × isotropic):
+   - **a finding** (a preferred direction): ≥ 3σ and ≥ 1.2× isotropic, at two resolutions
+     (step 5);
+   - **a hint**: ≥ 3σ under 1.2× isotropic, or 2.5–3σ;
+   - **nothing to report** below 2.5σ.
+5. **Two resolutions for a finding.** The tool's default `frequency` is the engine's Auto
+   resolution, chosen from the point count. A direction is a finding only if it holds at the Auto
+   ν and at a neighbouring ν: call the tool again with `frequency` ν − 1 or ν + 1, ν being the
+   `frequency` the first call reports. A direction that holds only at the Auto ν is a hint; a
+   hint needs only the Auto resolution.
+6. **Directions:** `peak.direction_uvw` and the tensor's principal axis are direct-lattice
    `[u v w]` directions (not plane normals); the map is not antipodally folded, so +u and −u
-   differ. Name the nearest low-index family (<100>, <110>, <111>) only when the angle to it is
-   under 15° — half the smallest angle between two such families (<110> to <111> is 35.3°);
-   otherwise give the `[u v w]` as measured.
-5. **Size, not only significance.** With thousands of atoms a tiny effect reaches 3σ: quote the
-   enhancement (× isotropic) or the anisotropy with its σ. For a cluster-level question
-   (trigonal versus tetragonal distortion of an M₄ cluster), use `analyze_clusters`: its <100>,
-   <110>, <111> gyration-axis families against the shuffle null, with effect size and z. The
-   shape is read at each cluster's own size, and a collective size fluctuation (breathing) is
-   reported on its own: it is not a shape distortion. Where the member sites are split, the null
-   already holds the distortion's amplitude, and only the pattern (axis families, trigonality)
-   can show it.
-
-## Judgment calls
-
-- The sphere resolution (the tool chooses from the point count; the page defaults to ν = 10)
-  and whether a result must hold at two resolutions (to confirm with the user).
-- Whether a 3–5σ direction with a small enhancement (under 1.2× isotropic) is reported as a
-  finding or as a hint (to confirm with the user).
-- When to report per-axis kurtosis (only on axes the PCA resolves) (to confirm with the user).
-- The 15° cone for naming a low-index family (batch 1; to confirm with the user).
+   differ. The peak names its direction only to within its cell's radius (`peak.radius_deg`):
+   every reported direction carries "± R°", its cell's radius. Name the nearest low-index family
+   (<100>, <110>, <111>) only when the angle to it is within 15° (the tools' cone, 15° included:
+   under half the 35.3° between <110> and <111>, the closest families) and the cell is no wider
+   (`peak.radius_deg` ≤ 15°; the tool names no family above it); otherwise give the `[u v w]` as
+   measured.
+7. **Size, not only significance.** With thousands of atoms a tiny effect reaches 3σ: quote the
+   enhancement (× isotropic) or the anisotropy with its σ. A cluster-level distortion (trigonal
+   versus tetragonal distortion of an M₄ cluster) is read from `analyze_clusters`: its <100>,
+   <110>, <111> gyration-axis families against the shuffle null, with effect size and z, at
+   z ≥ 3 with the same sign in at least 3 independent runs (the coordination-shells skill's
+   bar). The shape is read at each cluster's own size, and a collective size fluctuation
+   (breathing) is reported on its own: it is not a shape distortion. Where the member sites are
+   split, the null already holds the distortion's amplitude, and only the pattern (axis families,
+   trigonality) can show it.
 
 ## Acceptance checklist
 
-- [ ] Sites are named by `ref` and element, with U_iso, anisotropy and kurtosis from the tool.
-- [ ] Directions are analysed per site, or pooling is stated with its caveat.
-- [ ] "Preferred direction" only with a peak significance ≥ 3σ, quoted with the enhancement; a
-      significant map or tensor test alone is called anisotropy.
-- [ ] `[u v w]` given as a direction, the low-index family named only within 15°.
-- [ ] A split site is called disorder only after `analyze_modulations` found no order of its
-      element.
-- [ ] Cluster-level claims rest on `analyze_clusters` (effect size and z).
+- [ ] Sites are named by `ref` and element, with U_iso, anisotropy and kurtosis from the tool, and
+      `delta_A` when split; "the most disordered" puts split sites first, then U_iso and
+      anisotropy.
+- [ ] A site is split only by the app's rule; a negative-kurtosis site that misses it is
+      "flat-topped, not split"; a per-axis kurtosis is quoted only on a resolved axis.
+- [ ] Directions are analysed per site; an element is pooled only for an element-wide summary,
+      with the frames caveat, and an isotropic pooled map is never evidence against a distortion.
+- [ ] "Preferred direction" only for a finding (step 4: a peak significance ≥ 3σ, unrounded, and
+      ≥ 1.2× isotropic, at two resolutions), quoted with its enhancement, σ and ± R°; a hint is
+      called a hint; a significant map or tensor test alone is called anisotropy.
+- [ ] `[u v w]` given as a direction with its ± R°, the low-index family named only within 15°.
+- [ ] A split or flat-topped site is called disorder only after `analyze_modulations` found no
+      order of its element.
+- [ ] Cluster-level claims rest on `analyze_clusters` (effect size and z ≥ 3, the same sign in
+      at least 3 independent runs).
 - [ ] No invented uncertainty: every number from a tool.
 
 ## Known failure modes
@@ -90,19 +108,23 @@ and is invisible here.
   anisotropy.
 - **Ordered antiphase displacements read as random off-centring** (validation arm A, the
   zone-boundary dev case): the PCA cloud is split exactly as for two-site disorder;
-  `analyze_modulations` finds the order at (0, 0, ½) at > 8σ.
+  `analyze_modulations` finds the order at (0, 0, ½) at > 8σ. *Firm rule in the app:* an answer
+  that calls a split or flat-topped site "disorder" when `analyze_modulations` has not run for its
+  element gets a warning under it.
 - **A direction called preferred without significance.** *Firm rule in the app:* an answer that
   claims a preferred displacement direction when every directions analysis of the question found
   none at ≥ 3σ gets a warning under it.
 - **Effect size ignored:** thousands of clusters make a 1 % effect "significant"; the cluster
   tool requires both its z and its effect size to clear their thresholds.
-- **Numbers differ from the page:** the tool lets the engine choose the resolution while the
-  page keeps its own (ν = 10, smoothed); say which you quote.
+- **Numbers differ from the page** only when the user picks another resolution there: the page
+  opens at Auto, the engine's resolution and the tool's, and reads its numbers from the raw
+  histogram (smoothing only redraws the map); say which you quote.
 
 ## Report
 
-The sites in question with U_iso, anisotropy and kurtosis; per site, the strongest direction with
-its enhancement and σ (or "none at ≥ 3σ"); the asymmetry where significant; for clusters, the
+The sites in question with U_iso, anisotropy and kurtosis, and `delta_A` when split; per site,
+the strongest direction as a finding or a hint (step 4), with its enhancement, σ and ± R°, or
+"nothing to report" (below 2.5σ); the asymmetry where significant; for clusters, the
 analyze_clusters result with effect size and z; and what the average ellipsoid cannot show.
 
 ## References

@@ -105,7 +105,10 @@ describe('chi² logs of one run', () => {
         const context = buildRunContext({ rValueFile: combined });
         expect(context.convergence.column).toBe('X_ray_(R)1');
         expect(context.convergence.quantity).toContain("'X_ray_(R)1'");
-        expect(context.convergence.quantity).toContain('not a total');
+        expect(context.convergence.quantity).toContain('one fit term');
+        // The verdict judges every χ² term of the logs and their total.
+        expect(context.convergence.quantity).toContain('last_10pct: every chi^2 term and their total');
+        expect(Object.keys(context.convergence.last_10pct.terms)).toContain('X_ray_(R)1');
         expect(context.convergence.n_steps).toBe(GTS_ROWS);
     });
 });

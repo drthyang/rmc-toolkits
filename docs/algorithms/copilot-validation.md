@@ -573,7 +573,8 @@ beside the dock's own assembly, and the two had drifted apart. Both now run the 
    context as the model was shown it (trimmed to its budget, the turn's `start.shown`), no longer
    the whole context: a value the trim removed was never shown. No case's context is over the
    budget at the default view (the largest is ~4,500 of 6,000 characters, ~5,600 for the Demo with
-   the PCA table), so no default record moves.
+   the PCA table), so no default record moves. (Since protocol 2026-10-24.1 the budget is 6,500
+   characters and the convergence block carries `last_10pct`: the fit case ~4,200, the Demo ~6,100.)
 4. **Every request as sent.** The record keeps `requests` (below).
 
 Changes 1 and 2 change what a run sends, so the protocol moves. Live runs under an earlier
@@ -1061,6 +1062,29 @@ parameter is kept. The values are sealed with the other test cases (see `TEST_SE
   Approved by the manager on the user's delegation, 2026-10-19; the user may reverse it before the
   freeze. `TEST_SET_SHA256` changes: results on the earlier test set are not comparable with this
   one.
+
+**Protocol 2026-10-24.1 (the fit-assessment interview's code half).** The user's answers in the
+rmc-fit-assessment interview, 2026-10-24, change what the model is sent on a case with fit files
+(`dev-fit-unconverged`; the Demo) and what the checks on the answer read, never a case, the question,
+the scoring or the verdict schema:
+- **Convergence on every χ² term and the total.** `assess_convergence`'s description and result,
+  the context's `convergence` section (`last_10pct` per term and for the total, in place of
+  `change_over_last_10pct` and `recent_slope_per_step`) and the system prompt's `watchdog_status`
+  sentence read one verdict: converged only when no χ² term of the .log and not their total still
+  falls beyond 3 × its noise over the last tenth (ai-assistant.md, Step 14). On the fit case the
+  status stays `improving` (both terms and the total fall); its truth is unchanged. The context
+  budget is 6,500 characters (6,000 before).
+- **The constraint-limited rule:** `find_gr_peaks` calls a peak constraint-limited above 5 % of the
+  peak at the cut; no dev case has a constraint, so no dev record reads it.
+- **Two checks on the answer,** `long-wave` (order claimed at a box-scale wavevector) and
+  `single-configuration` (a distribution's numbers quoted without saying they come from one
+  configuration): any finding lowers a run's computed Outcome to "not verified", so arms B and C
+  records under an earlier protocol are not comparable on the Outcome. `audit_eval` still maps a
+  spurious modulation claim to the `superstructure` rule only, so a `long-wave` finding on one shows
+  among `unmatched_findings`.
+- **Arms A, A+ and D on dev, before (8edf8c0) and after:** all 45 records identical; the baseline is
+  not re-recorded. Approved by the user, 2026-10-24
+  (`validation/findings/decisions/2026-10-24-fit-assessment-interview.json`).
 
 ### The report beside the case score (plan item 1.6, part i)
 

@@ -439,6 +439,24 @@ different term is plotted**, which is why the series is labelled by its header n
 Pinned by `tests/test_parsers.py::ReadChiLogTests` and `__tests__/chiLog.test.js` (the demo log cut at
 every byte of its final line; token-count, NaN/`****` and no-header cases).
 
+**Every χ² term and their total (2026-10-24), for the AI Copilot and the watchdog — not the chart.**
+From the same accepted rows, both runtimes also read every χ² **term**: the columns after the clock time
+and the two move counters (`CHI_TERMS_START = 3`; line 2's `WEIGHT PARAMETERS` gives one weight to each),
+in the demo run `F(Q)_1`, six `Curvature` constraints and `X_ray_(R)1`. A log whose line 1 names fewer
+than four columns has no terms. The **total** is each row's sum of its terms as printed (`NaN` where a
+term is non-finite); the app applies no weight of its own (line 2's weights are the run's starting ones:
+with `WEIGHT_OPTIMIZATION` RMCProfile changes them during the run, and the log does not record the new
+ones). Across the logs of one run the total and the rows per log (`segments`) always concatenate; the
+per-term histories only when every log names the same terms in the same order (else `names` and `series`
+are null, as `chiColumn` is). The payload is `plotData.chiTerms` = `{names, series, total, segments}` in
+the chart's ln transform (`browserData.js` → `readChi()`, `chiTermsPlotData()`, `combineChiTerms()`;
+`parsers.py` → `read_chi_log()` (`ChiLog.term_names`, `terms`, `total`, `segments`), `plots.py` →
+`chi_terms_payload()`, sent by `/api/plot/data`; `plotDataCache.js` turns its nulls back into NaN). The
+chart still draws the last column only. Pinned by `ReadChiLogTests::test_every_chi_term_and_their_total`,
+`::test_restarts_concatenate_the_terms_only_when_every_log_names_the_same`,
+`tests/test_parsers_demo_run.py::test_log_data_carries_every_chi_term_and_their_total`, `chiLog.test.js`
+and `flaskCopilotRun.test.jsx` (the server's and the browser's terms agree).
+
 **Multiple logs of ONE run are concatenated — the same rule in both modes.** Python
 `related_r_value_logs()` re-scans the log's parent directory for every file matching
 `^(.+)-(\d{2,})\.log$` (`R_VALUE_LOG_RE`) with the **same stem**, and `sort_r_value_logs()` orders
@@ -625,25 +643,30 @@ i.e. one RMCProfile print/save period — for the demo run, `SAVE_PERIOD :: 10.0
 Monte-Carlo step.
 
 **Downstream use (dashboard badge) — opt-in, and usually invisible.** `WatchdogBadge` classifies the
-same ln-series via `src/llm/watchdog/heuristics.js`, but `useWatchdog()` returns
+run's ln χ² series via `src/llm/watchdog/heuristics.js`, but `useWatchdog()` returns
 `{status: 'off', …}` unless **both** `settings.watchdogEnabled` is true (an AI-assistant setting)
 **and** the combined series has ≥ 2 points, and `WatchdogBadge` renders `null` on `status === 'off'`.
 By default nothing is drawn.
 
-When it does run, over the ln-series $y_0…y_{n-1}$:
+When it does run, it judges **every χ² term of the run's logs and their total** (`plotData.chiTerms`,
+Step 4d; the user's rule of 2026-10-24, the one the AI Copilot reads): a run is `converged` only when
+no term and not the total is still falling beyond its noise over the last tenth of the run. For each
+series, the last max(⌈0.1·N⌉, min(N, 10)) rows, never back past the last restart, are fitted by least
+squares against the row index; the series falls (rises) when the fitted change across the window
+exceeds 3 × the scatter of its points about the fit. The run is `diverging` on a non-finite latest value
+or a rising total, `improving` when any series falls, `diverging` when a term rises and none falls,
+`stalled` when everything is flat and nothing ever dropped by 0.1 in ln χ², else `converged`; terms that
+are 0 in every row are left out (constraints not in use). A log that names no columns is judged on its
+last column alone. The definition, the choice of 3 and its false-alarm rates are in
+[ai-assistant.md](ai-assistant.md), Step 14 (`classifyRun`, `judgeConvergence`, `seriesTrend` in
+`src/llm/watchdog/heuristics.js`). The badge reads the status alone when it judged every term (its
+tooltip says so), and `X_ray_(R)1: Improving` when it judged the named column only.
 
-* window length $L = \max\bigl(\min(n,5),\, \lceil 0.2n \rceil\bigr)$ points (the tail of the series);
-* `recentSlope()` is the ordinary least-squares slope of that tail against its **local index**
-  $i = 0…L-1$,
-  $$m \;=\; \frac{\sum_i (i-\bar i)(y_i-\bar y)}{\sum_i (i-\bar i)^2},$$
-  returning `0` when the denominator is 0. **Units: ln(metric) per log row**, not per unit time.
-* $\texttt{windowDelta} = m\,(L - 1)$;
-* `classifyConvergence()` returns `'unknown'` for `values.length < 2` (badge label "Watching"),
-  else `diverging` if `windowDelta > 0.02`, `improving` if `< −0.02`, else `stalled` when the total
-  drop $y_0 - y_{n-1} < 0.1$, else `converged`.
+Until 2026-10-24 the badge judged the charted column alone, by a fixed threshold: over the last
+max(min(n, 5), ⌈0.2n⌉) points, the least-squares slope times the window length, `diverging` above 0.02,
+`improving` below −0.02, else `stalled` when the total drop $y_0 - y_{n-1} < 0.1$, else `converged`.
 
-Because the values are in ln units, 0.02 ≈ a 2 % change in the metric and 0.1 ≈ a 10 % improvement,
-independent of magnitude. These are pure heuristics; the LLM only narrates them, and the narration
+These are pure heuristics; the LLM only narrates them, and the narration
 gate (`useWatchdog.js`) is stricter than the heuristic itself. A call is made only when a provider
 `baseUrl` **and** `model` are configured, no call is already in flight, and either
 
@@ -1041,12 +1064,12 @@ caches (KDE slice, PCA, triplets, scaling) are keyed on a full file signature (`
 | marker radius / palette | `2.8`; 8 colours cycled mod 8 | `InteractivePlot.jsx` | display only |
 | tooltip precision | 4 significant digits; `toExponential(2)` outside `[0.01, 1e6)`; integer above 1000 | `InteractivePlot.jsx` → `formatNumber` | display only |
 | watchdog enable | `settings.watchdogEnabled` (default off) + ≥ 2 points | `useWatchdog.js` | badge renders nothing otherwise |
-| watchdog window | `max(min(N,5), ⌈0.2N⌉)` points | `heuristics.js` | recent-slope fit length, per log row |
-| watchdog thresholds | `0.02` (ln units), total drop `0.1` | `heuristics.js` | ≈ 2 % and 10 % in the metric |
+| watchdog window | `max(⌈0.1N⌉, min(N, 10))` rows, from the last restart | `heuristics.js` → `seriesTrend` | the last tenth of the run, each χ² term and their total (`max(min(N,5), ⌈0.2N⌉)` of one column until 2026-10-24) |
+| watchdog thresholds | fitted change > `3` × the residual sd; total drop `0.1` | `heuristics.js` → `TREND_NOISE_FACTOR`, `MIN_TOTAL_DROP` | falling beyond its noise; ≈ 10 % in the metric (a fixed `0.02` in ln units until 2026-10-24) |
 | watchdog LLM gate (data) | `≥ 200` new steps, or `\|Δ last\| ≥ ln(1.02)` | `heuristics.js` → `significantChange` | necessary, not sufficient — ANDed with the interval below |
 | `watchdogIntervalMin` | `5` | `useWatchdog.js` | minutes; minimum spacing between LLM calls when the status has *not* flipped |
 | watchdog LLM gate (overall) | `statusChanged \|\| (intervalElapsed && significantChange)`, and `baseUrl` + `model` set | `useWatchdog.js` | throttles narration only |
-| watchdog stat rounding | 3 sig. digits (values), 2 (window delta) | `heuristics.js` → `watchdogStats` | prompt payload only |
+| watchdog stat rounding | 3 sig. digits (values), 2 (last-tenth change) | `heuristics.js` → `watchdogStats` / `watchdogRunStats` | prompt payload only |
 
 ---
 
@@ -1075,8 +1098,8 @@ caches (KDE slice, PCA, triplets, scaling) are keyed on a full file signature (`
 * **"Time steps" are log rows**, one per RMCProfile print/save period — not Monte-Carlo steps, and
   not uniform wall-clock time (the actual timestamps in column 1 are discarded).
 * **The convergence badge is off by default.** It renders only when the user enables the watchdog in
-  the AI-assistant settings *and* the series has ≥ 2 points; below 2 points the classification is
-  `'unknown'`.
+  the AI-assistant settings *and* the series has ≥ 2 points; with fewer than three finite rows in the
+  last tenth the classification is `'unknown'`.
 * **No residual/difference curve exists** anywhere on this page, and no data is offset, normalized,
   scaled, smoothed, rebinned, or subsampled before drawing. Every parsed point is handed to the
   renderer. The only reference line in the codebase is on the unused matplotlib STOG path.

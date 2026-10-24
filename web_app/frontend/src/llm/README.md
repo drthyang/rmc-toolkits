@@ -77,8 +77,8 @@ The loop has four stages: **plan → act → observe → assess**. The assessmen
 A model that cannot call tools still works: the Copilot falls back to plain answers from the run
 summary. The old Assistant behaved the same way.
 
-The **convergence watchdog** badge on the Dashboard's χ² chart is part of the same module and is
-unchanged.
+The **convergence watchdog** badge on the Dashboard's χ² chart is part of the same module. Since
+2026-10-24 it judges every χ² term of the .log and their total, as `assess_convergence` does.
 
 ## Privacy
 
@@ -113,11 +113,12 @@ inputs on its page, stays the *user's* action.
    - run settings from the `.dat` file, saying when one measurement is fitted in both spaces;
    - per-dataset Rwp, a Fourier-transform file marked as the same measurement;
    - the Faber–Ziman weight of every partial in each fitted radiation (`scatteringWeights.js`);
-   - the ln(χ²) history, downsampled to ≤ 48 points with statistics computed on the full series, the
-     watchdog's verdict and the change over the last tenth of the run.
+   - the ln(χ²) history of the charted last column, downsampled to ≤ 48 points with statistics
+     computed on the full series, the watchdog's verdict on every χ² term and their total, and each
+     one's fitted change over the last tenth of the run with its noise and trend (`last_10pct`).
 
    `contextToJson()` serializes it compactly (arrays and small objects on one line), enforces a
-   ~6,000-character budget and records each trim with an `*_omitted` count. The context travels with
+   ~6,500-character budget and records each trim with an `*_omitted` count. The context travels with
    every question, so simple questions need no tool.
 2. **`prompts/system.js` + `prompts/copilot.js`**
    - `SYSTEM_PROMPT` (`systemPrompt(method)`) holds the domain rules, each part of each ground-rule
@@ -205,7 +206,9 @@ inputs on its page, stays the *user's* action.
      (Anthropic rejects empty text blocks).
 7. **`copilot/runTools.js`** holds the tools over data the module already receives:
    - `read_run_data(section)`: one context section as built, before the budget trim;
-   - `assess_convergence`: the watchdog heuristics plus tail slopes;
+   - `assess_convergence`: the watchdog's verdict on every χ² term of the .log and their total, each
+     with its fitted change over the last tenth, its noise and its trend (converged only when none
+     still falls beyond 3 × its noise: the user's rule, 2026-10-24);
    - `find_gr_peaks(pair)`: partial-g(r) peaks below `r_max` (a display) and the first
      coordination shell as the run reads it (`context/shells.js`, the one shell reading the
      context, the Workbench's questions, the evidence gate, the answer checks and
@@ -233,8 +236,9 @@ inputs on its page, stays the *user's* action.
    stopped), `note` and `choice`; `questionReply(step)` reads a question's state from them
    (waiting, stopped, not asked, skipped, answered), the one wording of the card and the screen
    reader's line.
-9. **`watchdog/`**: slope heuristics over the ln(χ²) history are the **source of truth** for the
-   badge. The LLM only writes the tooltip note, and only when the status flips or enough new data
+9. **`watchdog/`**: the convergence rule over every ln(χ²) term of the .log and their total
+   (`seriesTrend`, `judgeConvergence`) is the **source of truth** for the badge, `assess_convergence`
+   and the context's `watchdog_status`. The LLM only writes the tooltip note, and only when the status flips or enough new data
    arrived.
 10. **`useAssistant.js`, `useCopilot.js` and `components/`**
     - `useAssistant()` holds the settings, the connection probe (with auto-connect) and the run
@@ -609,9 +613,11 @@ the model's own `ask_user` still works beside it.
 The reviews found answers that contradicted what the tools had just computed. The tools now
 return `facts` beside their data (not sent to the model): `assess_convergence` its status,
 `detect_symmetry` its group with the point group's facts, `analyze_displacement_directions`
-whether a direction is significant (its peak ≥ 3σ), `analyze_modulations` the ordered points,
-`analyze_clusters` what its clusters showed, `find_gr_peaks` and `compute_bond_angles` the
-coordination they counted, `measure_symmetry_lowering` its shifts (no check reads them yet); the
+whether a direction is significant (its peak ≥ 3σ), `analyze_modulations` the ordered points and
+the long-wave bound with its long waves, `analyze_clusters` what its clusters showed, `find_gr_peaks`
+and `compute_bond_angles` the coordination they counted, `compute_bond_angles`,
+`analyze_displacement_directions` and `analyze_clusters` the distribution they read from the one
+configuration, `measure_symmetry_lowering` its shifts (no check reads them yet); the
 run context adds the watchdog's status and the tolerance ladder's groups. When the model answers,
 the verification's checks (one row per facts key, the facts catalogue FACTS,
 `copilot/verification/facts.js`) read the answer, sentence by sentence and clause by clause, for a
@@ -619,15 +625,17 @@ clear positive claim they contradict:
 
 | Check | Fires on |
 |---|---|
-| convergence | "converged", "reached convergence", "a plateau" while the history is still improving or diverging |
+| convergence | "converged", "reached convergence", "a plateau" while the watchdog's verdict on every χ² term and their total is improving or diverging |
 | chirality | a group called chiral whose point group is not a Sohncke group (it has mirrors, glides or rotoinversions) |
 | centrosymmetry | a group called centrosymmetric whose point group has no inversion centre |
 | inversion lost | an inversion centre "lost" or "broken" when no group it could be lost from has one: neither the groups the answer names nor the parent (the context's average group, or the ladder's top) |
 | polar | a group called polar whose point group is not polar |
 | direction | a "preferred direction" when no directions analysis of the question found a peak at ≥ 3σ (the whole-map test alone is anisotropy, which thermal ellipsoids show too: review L3) |
 | superstructure | a cell doubling or zone-boundary order when no `analyze_modulations` of the question found an ordered zone-boundary point; a superstructure or incommensurate order when none found order at a zone-boundary point or a general wavevector |
+| long-wave | order claimed at a box-scale wavevector — a q with every \|q_i\| ≤ the modulation engine's 0.25, or a long or box-scale wave in words — once an `analyze_modulations` ran: a long wave is a correlation the finite box can't represent, so it says nothing about order at its own q (the user's rule, 2026-10-24); a clause that denies order is left |
 | cluster | clusters of an element called distorted, breathing or rigid when every `analyze_clusters` of that element (or of every element, for "the clusters") found otherwise: distorted needs a shape distortion, a pattern (axis family, trigonality), split sites or a distorted average cluster; a polyhedron word naming neither the element nor "cluster" is left alone (review L5) |
 | coordination | a coordination number for an element ("four-coordinated", "CN 4", "square-planar coordination") that every whole-shell count of it contradicts by more than half an atom (`find_gr_peaks`' first shell, `compute_bond_angles` in a whole shell), unless a window the user chose gave it; a clause about part of the shell (the first peak, the short bonds, a window in Å) is not a claim about the whole (review L5) |
+| single-configuration | a distribution's numbers (bond angles, coordination counts, displacement directions, cluster shapes: a mean, sd, mode, share or histogram bin) quoted without saying they come from one configuration, once such an analysis ran: every analysis reads the run's one configuration (the user's rule, 2026-10-24) |
 
 A negated claim ("has not converged", "achiral", "no preferred direction"), a question, a
 hypothetical or conditional mention ("to check whether it has converged", "until χ² plateaus", "I

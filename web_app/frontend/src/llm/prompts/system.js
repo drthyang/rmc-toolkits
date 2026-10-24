@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { TURN_METHODS } from '../copilot/method';
+import { TREND_NOISE_FACTOR } from '../watchdog/heuristics';
 
 // One shared system prompt establishes the domain so per-feature templates can
 // stay short. Kept deliberately factual and hedged: small local models follow
@@ -52,9 +53,13 @@ export const GROUND_RULES = Object.freeze([
             + 'produced non-finite values.')
     ],
     [
-        definition('convergence.watchdog_status is the dashboard\'s verdict on that series (improving | converged | stalled | diverging)'),
+        definition('convergence.watchdog_status is the dashboard\'s verdict (improving | converged | stalled | diverging) on every '
+            + 'chi-squared term of the .log and their total — converged only when none still falls beyond its noise over the last '
+            + 'tenth of the run'),
         inference(': use it, and do not call a run converged while it says improving'),
-        definition('; change_over_last_10pct is the ln(chi^2) change over the last tenth of the run (-0.1 is a 10% chi^2 drop).')
+        definition('; last_10pct gives, for each term and the total, the fitted ln(chi^2) change over that tenth (-0.1 is a 10% '
+            + 'chi^2 drop), the scatter about the fit (noise_sd) and the trend (falling: a drop above '
+            + `${TREND_NOISE_FACTOR} noise_sd).`)
     ],
     [
         definition('- fitted_data lists the independent measurements: an F(Q) also fitted in real space (fitted_in) is ONE '

@@ -18,7 +18,7 @@ tools: 10, in the order sent (each definition in full: harness/tools.arm-C.json)
   10. ask_user
 
 ## messages[0] · system
-(the system prompt, variant "tools-ask.method-off": system-prompt/tools-ask.method-off.txt, 5975 characters, sha256 3fd190eee9c05194)
+(the system prompt, variant "tools-ask.method-off": system-prompt/tools-ask.method-off.txt, 6201 characters, sha256 601aa3eca3b5b8df)
 
 ## messages[1] · user
 (identical to first-request.arm-B.txt messages[1])

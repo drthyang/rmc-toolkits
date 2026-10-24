@@ -20,6 +20,12 @@ describe('watchdog prompt round trip', () => {
         expect(buildWatchdogMessages({ n_steps: 5 }, 'improving', null)[1].content).not.toContain('fit term');
     });
 
+    it('says the stats are the total of every χ² term when they are', () => {
+        const messages = buildWatchdogMessages({ n_steps: 5, of: 'total', still_falling: ['F(Q)_1'] }, 'improving', null, 'X_ray_(R)1');
+        expect(messages[1].content).toContain('ln of the total chi^2, the sum of every chi^2 term of the .log');
+        expect(messages[1].content).not.toContain('fit term X_ray_(R)1');
+    });
+
     it('parses well-formed replies', () => {
         expect(parseWatchdogReply('STATUS: improving — chi dropped to 0.87')).toEqual({
             status: 'improving',

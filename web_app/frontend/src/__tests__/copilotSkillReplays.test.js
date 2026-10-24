@@ -9,9 +9,10 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { plotDataFromText, structureFromRmc6f } from '../browserData';
+import { combineRValueFiles, plotDataFromText, structureFromRmc6f } from '../browserData';
 import { buildCopilotTools } from '../copilotTools';
 import { buildRunTools } from '../llm/copilot/runTools';
+import { buildRunContext } from '../llm/context/runContext';
 import { runTurn } from '../llm/copilot/turn';
 import { toolResult } from '../llm/copilot/tools';
 import { createVerification } from '../llm/copilot/verification';
@@ -33,11 +34,10 @@ const hostTools = buildCopilotTools({ request, structure, elements: Object.keys(
 
 // The demo's own χ² history, its three logs end to end, as the Dashboard reads it.
 const logs = ['GTS_250K-00.log', 'GTS_250K-01.log', 'GTS_250K-02.log']
-    .map((name) => plotDataFromText({ name, plotKind: 'r_value', text: read(name) }));
-const rValueFile = {
-    name: 'χ² history',
-    plotData: { chiColumn: logs[0].chiColumn, series: [{ y: logs.flatMap((log) => log.series[0].y) }] }
-};
+    .map((name) => ({ name, path: `Demo/${name}`, plotKind: 'r_value', plotData: plotDataFromText({ name, plotKind: 'r_value', text: read(name) }) }));
+// Every χ² term and their total too (combineRValueFiles): what the watchdog,
+// assess_convergence and the context judge.
+const rValueFile = combineRValueFiles(logs, 'Demo/GTS_250K.rmc6f');
 const tools = [...buildRunTools({ rValueFile }), ...hostTools];
 
 // A scripted model: each request takes the next reply ({ text, calls }).
@@ -93,14 +93,104 @@ describe('rmc-fit-assessment', () => {
     });
 });
 
+// The user's interview answers of 2026-10-24 (rmc-fit-assessment), each where
+// a check in code can catch the wrong answer: the right answer passes and the
+// old wrong one is flagged. What no check can catch is not scripted here (a
+// new firm rule needs the user's word): an Rw below the data's noise taken for
+// a better fit, a detailed claim about a partial under 5 % of the signal, a
+// feature that differs between independent runs (the app reads one run),
+// whether a subtle effect waits for the run to finish, the 10 accepted moves
+// per atom past convergence, and a small effect quoted from one configuration.
+describe('rmc-fit-assessment: the user\'s interview answers (2026-10-24)', () => {
+    const demoRun = { rValueFile, plotFiles, structure };
+    const rulesOf = (done) => done.audit.map((finding) => finding.rule);
+
+    it('answer 1: every χ² term and the total are judged — the Demo still improves on its two data terms and the total', async () => {
+        const { toolMessages } = await replay([{ calls: [{ name: 'assess_convergence', args: {} }] }, { text: 'Not converged.\nOutcome: achieved — improving.' }]);
+        const { data } = toolMessages[0];
+        expect(data.status).toBe('improving');
+        expect(data.window_rows).toBe(227);
+        // Rows 2036–2261, all after the last restart (the third log starts at row 1830).
+        expect(data.terms.map((term) => [term.term, term.trend])).toEqual([
+            ['F(Q)_1', 'falling'], ['Curvature #3', 'flat'], ['Curvature #5', 'flat'], ['X_ray_(R)1', 'falling']
+        ]);
+        expect(data.total.trend).toBe('falling');
+        expect(data.zero_terms).toEqual(['Curvature #1', 'Curvature #2', 'Curvature #4', 'Curvature #6']);
+        // The curvature constraint dominates the total, which falls by just over 3 × its noise.
+        expect(-data.total.change_last_10pct / data.total.noise_sd).toBeGreaterThan(3);
+        expect(-data.total.change_last_10pct / data.total.noise_sd).toBeLessThan(3.2);
+    });
+
+    it('answer 2, improving but slowly: a first-shell number with the "still improving" caveat passes; "converged" does not', async () => {
+        const caveat = await replay([
+            { calls: [{ name: 'assess_convergence', args: {} }, { name: 'compute_bond_angles', args: { end1: 'Se', apex: 'Ga', end2: 'Se', r12_min: 2.18, r12_max: 2.79 } }] },
+            { text: 'The run has not converged: assess_convergence says improving (F(Q)_1, X_ray_(R)1 and the total still fall beyond their '
+                + 'noise over the last tenth). With that caveat, the first shell: 3.99 Se per Ga in 2.18–2.79 Å.\nOutcome: partial — still improving.' }
+        ], { run: demoRun });
+        expect(rulesOf(caveat.done)).toEqual([]);
+        const final = await replay([
+            { calls: [{ name: 'assess_convergence', args: {} }] },
+            { text: 'The run has converged, so the first shell is final: 3.99 Se per Ga.\nOutcome: achieved — converged.' }
+        ], { run: demoRun });
+        expect(rulesOf(final.done)).toEqual(['convergence']);
+        expect(final.done.outcome.status).toBe('not verified');
+    });
+
+    it('answer 5 and rule 3(b): a distribution from the one configuration (3.5 accepted moves per atom) says so; quoted bare, it is flagged', async () => {
+        const angles = { calls: [{ name: 'compute_bond_angles', args: { end1: 'Se', apex: 'Ga', end2: 'Se', r12_min: 2.18, r12_max: 2.79 } }] };
+        const said = await replay([
+            angles,
+            { text: 'In this one configuration — lightly sampled, 3.52 accepted moves per atom, short of the 10 the method asks for — the '
+                + 'Se–Ga–Se angles have mean 109.4°, sd 4.1°: indicative only, with no spread between runs to judge them by.\n'
+                + 'Outcome: partial — one configuration.' }
+        ], { run: demoRun });
+        expect(said.toolMessages[0].data).toMatchObject({ mean_deg: 109.4, sd_deg: 4.1 });
+        expect(rulesOf(said.done)).toEqual([]);
+        // The README GIF's answer, as the corpus holds it: the distribution's numbers, no word of one configuration.
+        const bare = await replay([
+            angles,
+            { text: 'Se–Ga–Se angles: 23 842 angles around 4 000 Ga atoms, mean 109.4°, sd 4.1°. Mode 109.5° with share 0.94.\n'
+                + 'Outcome: achieved — regular.' }
+        ], { run: demoRun });
+        expect(rulesOf(bare.done)).toEqual(['single-configuration']);
+        expect(bare.done.audit[0].text).toMatch(/^The answer quotes the numbers of the Se–Ga–Se bond-angle distribution without saying they come from one configuration/);
+        expect(bare.done.outcome.status).toBe('not verified');
+        // The sampling the answer names is the context's.
+        expect(buildRunContext(demoRun).configuration_optimization.accepted_moves_per_atom).toBe(3.52);
+    });
+
+    it('answer 6 and rule 3(a): order at a box-scale q is refused as a finding — Se\'s strongest mode is a long wave', async () => {
+        const modes = { calls: [{ name: 'analyze_modulations', args: {} }] };
+        const right = await replay([
+            modes,
+            { text: 'Se\'s strongest mode, q = (0.1, 0.2, -0.1) at 33× the median, is a long wave: a correlation the finite box can\'t '
+                + 'represent, so it says nothing about order at its own q. No zone-boundary point stands out, so there is no superstructure.\n'
+                + 'Outcome: achieved — the long waves are not order.' }
+        ], { run: demoRun });
+        expect(right.toolMessages[0].data.elements.find((entry) => entry.element === 'Se').strongest[0].slice(0, 2)).toEqual(['(0.1, 0.2, -0.1)', 33]);
+        expect(rulesOf(right.done)).toEqual([]);
+        // The long wave as order, by its q or in words; "incommensurate order"
+        // is a superstructure claim too, which no ordered mode backs.
+        for (const [text, rules] of [
+            ['Se is ordered at q = (0.1, 0.2, -0.1): the strongest mode, 33× the median.', ['long-wave']],
+            ['The Se displacements show a long-wavelength modulation, a sign of incommensurate order.', ['superstructure', 'long-wave']]
+        ]) {
+            const wrong = await replay([modes, { text: `${text}\nOutcome: achieved — order.` }], { run: demoRun });
+            expect({ text, rules: rulesOf(wrong.done) }).toEqual({ text, rules });
+        }
+    });
+});
+
 describe('coordination-shells', () => {
     const angles = (r12_min, r12_max) => ({ calls: [{ name: 'compute_bond_angles', args: { end1: 'Se', apex: 'Ta', end2: 'Se', r12_min, r12_max } }] });
 
     it('reads the whole TaSe6 shell against an ideal octahedron', async () => {
-        const { steps, toolMessages } = await replay([
+        // In the run's one configuration, as the answer says (the single-configuration check, 2026-10-24).
+        const { done, steps, toolMessages } = await replay([
             angles(2.33, 2.97),
-            { text: 'An octahedral split: 80 % cis near 89°, 20 % trans near 159°.\nOutcome: achieved — whole shell.' }
+            { text: 'In this one configuration, an octahedral split: 80 % cis near 89°, 20 % trans near 159°.\nOutcome: achieved — whole shell.' }
         ]);
+        expect(done.audit).toEqual([]);
         expect(steps[0].status).toBe('ok');
         const { cis_below_135_deg: cis, trans_above_135_deg: trans } = toolMessages[0].data.polyhedron;
         expect([cis.share, trans.share]).toEqual([0.8, 0.2]);

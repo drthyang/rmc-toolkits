@@ -27,7 +27,11 @@ const entries = new Map();
 
 const nanForNull = (values) => (Array.isArray(values) ? values.map((value) => (value === null ? NaN : value)) : values);
 
-/** A Flask plot payload as plotDataFromText gives it: null in a series' x, y or sigma is NaN. */
+/**
+ * A Flask plot payload as plotDataFromText gives it: null in a series' x, y
+ * or sigma (an xPDF file's own σ column) is NaN, and in a χ² log's terms and
+ * total (chiTerms) too.
+ */
 export const plotDataFromServer = (payload) => ({
     ...payload,
     series: payload.series.map((series) => ({
@@ -35,7 +39,14 @@ export const plotDataFromServer = (payload) => ({
         x: nanForNull(series.x),
         y: nanForNull(series.y),
         ...(Array.isArray(series.sigma) ? { sigma: nanForNull(series.sigma) } : {})
-    }))
+    })),
+    ...(payload.chiTerms ? {
+        chiTerms: {
+            ...payload.chiTerms,
+            series: Array.isArray(payload.chiTerms.series) ? payload.chiTerms.series.map(nanForNull) : payload.chiTerms.series,
+            total: nanForNull(payload.chiTerms.total)
+        }
+    } : {})
 });
 
 const failure = (message, invalidPayload = false) => Object.assign(new Error(message), { invalidPayload });
