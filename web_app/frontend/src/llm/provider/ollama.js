@@ -65,7 +65,8 @@ export const toOllamaMessages = (messages) => {
 
 /**
  * Stream one chat from Ollama's native API. `numCtx` is the context the model
- * must run with; `numPredict` caps the reply so it cannot outgrow it.
+ * must run with; `numPredict` caps the reply so it cannot outgrow it. A null
+ * `temperature` is left out of the options (the model's own default).
  * `tool_choice` has no native equivalent and is not sent (Ollama ignores it
  * on /v1 too): the model port (provider/model.js) enforces 'none' by sending
  * no tools.
@@ -78,7 +79,7 @@ export async function* streamOllamaChat({
         messages: toOllamaMessages(messages),
         stream: true,
         options: {
-            temperature,
+            ...(temperature === null ? {} : { temperature }),
             ...(Number.isFinite(numCtx) ? { num_ctx: numCtx } : {}),
             ...(Number.isFinite(numPredict) ? { num_predict: numPredict } : {})
         }

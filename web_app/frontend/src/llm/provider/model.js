@@ -35,7 +35,9 @@
 // that prices each request before it is sent; and the tests' scripted models.
 // The provider quirks live in providerModel and nowhere above it: the server
 // kind, the form each server takes tool_choice in (TOOL_CHOICE_FORMS), the
-// context guard's plan, and what "tools unsupported" looks like per provider.
+// context guard's plan, what "tools unsupported" looks like per provider, and
+// the two settings a caller may add: no temperature (null) and a reply cap
+// (maxTokens).
 
 import { ContextLimitError, detectServer, planCopilotChat, streamCopilotChat } from './contextGuard';
 
@@ -109,12 +111,16 @@ export const isToolsUnsupported = (error, { server = null } = {}) => {
 
 // One request through the provider under its plan; a failure before any
 // fragment that says the model cannot take the tools becomes a
-// ToolsUnsupportedError (the provider's message kept).
+// ToolsUnsupportedError (the provider's message kept). A request with no
+// temperature key goes out with none: the provider layer is handed null,
+// which client.js and ollama.js leave out of the body (an absent value would
+// take their default instead).
 async function* send(sent, { apiKey, session, signal }) {
     const { plan = null, ...request } = sent || {};
+    const outgoing = Object.hasOwn(request, 'temperature') ? request : { ...request, temperature: null };
     let streamed = false;
     try {
-        for await (const chunk of streamCopilotChat({ ...request, apiKey, session, signal }, { plan })) {
+        for await (const chunk of streamCopilotChat({ ...outgoing, apiKey, session, signal }, { plan })) {
             streamed = true;
             yield chunk;
         }
@@ -146,44 +152,72 @@ export const asModelPort = (model) => {
 
 /**
  * The production port over the Copilot's provider (contextGuard.js), with
- * the user's settings ({ baseUrl, model, temperature, apiKey }), read when the
- * port is made. `session` is the object a conversation keeps for the context
- * asked per model.
+ * the user's settings ({ baseUrl, model, temperature, maxTokens, apiKey }),
+ * read when the port is made. `session` is the object a conversation keeps
+ * for the context asked per model.
+ *
+ * Two settings change what goes out, and only when given (the dock gives
+ * neither: its requests are as before):
+ *   temperature null   the model takes only its default sampling (Claude
+ *                      Sonnet 5.5 answers a temperature with HTTP 400), so
+ *                      no request carries a temperature key, the 'warmer'
+ *                      retry included: it is asked again, unchanged. Any other
+ *                      value (a number, or undefined for the provider's
+ *                      default) goes out as before;
+ *   maxTokens          a positive integer: every reply is capped there
+ *                      (`sent.maxTokens`; `max_tokens` in an OpenAI-compatible
+ *                      body, so a reasoning model's thinking counts within
+ *                      it; on Ollama the plan's numPredict, never above it).
+ *                      Absent: no cap is sent (OpenAI's newer models refuse
+ *                      `max_tokens`, so it is never sent by default).
  *
  * prepare (async) detects the server (contextGuard.js detectServer: only
  * localhost or Ollama's port is probed), puts the tool choice in that
  * server's form, and asks the context guard for its plan, so `sent` is
- *   { baseUrl, model, temperature, messages, tools, toolChoice, plan }
+ *   { baseUrl, model, temperature?, maxTokens?, messages, tools, toolChoice, plan }
  * exactly as it goes out: a 'warmer' retry at ANTI_REPEAT_TEMPERATURE or
- * above; on Ollama, tool_choice 'none' as no tools (the native API has no
- * tool_choice); `plan` the guard's decision (planCopilotChat: the server kind,
- * Ollama's numCtx / numPredict, LM Studio's loaded context, the estimate) and
- * the tool choice's form (TOOL_CHOICE_FORMS). A request the guard refuses
- * throws ContextLimitError here, before anything is sent. `sent` never holds
- * the API key, which joins the request only as it is sent, so no request
- * event or record carries it.
+ * above (no temperature at all when the setting is null); on Ollama,
+ * tool_choice 'none' as no tools (the native API has no tool_choice); `plan`
+ * the guard's decision (planCopilotChat: the server kind, Ollama's numCtx /
+ * numPredict, LM Studio's loaded context, the estimate) and the tool choice's
+ * form (TOOL_CHOICE_FORMS). A request the guard refuses throws
+ * ContextLimitError here, before anything is sent. `sent` never holds the API
+ * key, which joins the request only as it is sent, so no request event or
+ * record carries it.
  *
  * stream sends `sent` under its plan; a model that cannot take tools fails
  * with a ToolsUnsupportedError.
  */
 export const providerModel = (settings, { session = null } = {}) => {
-    const { baseUrl, model, temperature, apiKey } = settings || {};
+    const { baseUrl, model, temperature, maxTokens, apiKey } = settings || {};
+    if (maxTokens != null && !(Number.isInteger(maxTokens) && maxTokens > 0)) {
+        throw new RangeError(`maxTokens (the reply cap) must be a positive integer, got ${JSON.stringify(maxTokens)}`);
+    }
+    const sampled = temperature !== null;
+    const capped = maxTokens != null;
     return {
         prepare: async (intent, { signal } = {}) => {
             const server = await detectServer(baseUrl, { signal });
             const asked = {
                 baseUrl,
                 model,
-                temperature: intent?.retry === 'warmer'
-                    ? Math.max(Number(temperature) || 0, ANTI_REPEAT_TEMPERATURE)
-                    : temperature,
+                ...(sampled ? {
+                    temperature: intent?.retry === 'warmer'
+                        ? Math.max(Number(temperature) || 0, ANTI_REPEAT_TEMPERATURE)
+                        : temperature
+                } : {}),
+                ...(capped ? { maxTokens } : {}),
                 messages: intent?.messages,
                 tools: intent?.tools,
                 toolChoice: intent?.toolChoice
             };
             const form = hasTools(asked.tools) ? toolChoiceForm(server.kind, asked.toolChoice) : null;
             const request = form === 'tools_withheld' ? { ...asked, tools: undefined } : asked;
-            const plan = await planCopilotChat(request, { server, session, signal });
+            const planned = await planCopilotChat(request, { server, session, signal });
+            // Ollama's native API has no max_tokens: the cap bounds num_predict.
+            const plan = capped && planned.server === 'ollama' && Number.isFinite(planned.numPredict)
+                ? { ...planned, numPredict: Math.min(planned.numPredict, maxTokens) }
+                : planned;
             return { ...request, plan: form ? { ...plan, toolChoice: form } : plan };
         },
         stream: (sent, { signal } = {}) => send(sent, { apiKey, session, signal })

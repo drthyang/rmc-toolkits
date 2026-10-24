@@ -12,7 +12,7 @@
 // columns' run policies (runPolicy.js) side by side, and what no policy sets.
 
 import { reproducibility } from './scoring';
-import { finalRoundSummary, limitsSummary, SERVER_LABELS, windowSummary } from './runPolicy';
+import { finalRoundSummary, limitsSummary, SERVER_LABELS, temperatureSummary, windowSummary } from './runPolicy';
 import { columnOf, renderComparison } from './comparison';
 
 const mean = (values) => (values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null);
@@ -141,7 +141,7 @@ export const renderPolicyComparison = (records) => {
             columnWindow(recorded),
             join(recorded.map((policy) => policy.reply_cap?.rule ?? 'server not read')),
             join(recorded.map(finalRoundSummary)),
-            join(recorded.map((policy) => `${policy.temperature.base} (retry ≥ ${policy.temperature.warmer_retry_min})`)),
+            join(recorded.map((policy) => temperatureSummary(policy.temperature))),
             join(recorded.map((policy) => limitsSummary(policy.limits))),
             String(recorded.reduce((sum, policy) => sum + (policy.warnings?.length || 0), 0))
         ] : Array(7).fill('not recorded');

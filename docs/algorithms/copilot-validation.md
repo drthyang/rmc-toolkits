@@ -1257,7 +1257,9 @@ followed, `'full'` in arm B and `'off'` in arm C):
   (after an empty or looping reply), `gate` (an answer the evidence gate sent back), `final` (the
   analysis budget used: `tool_choice` 'none') or `no_tools` (the retry of a model that refuses
   tools); `sent` is the request as the port prepared it (`providerModel`: base URL, model id,
-  temperature, messages, tools, tool choice and, since 2026-10-19.7, `plan`, the context guard's
+  temperature (no key at all for a model that takes none, since 2026-10-24.6), the reply cap
+  `maxTokens` where the model sets one (since 2026-10-24.6), messages, tools, tool choice and,
+  since 2026-10-19.7, `plan`, the context guard's
   decision: `server`, and on Ollama `numCtx`, `numPredict`, `estimate`, `needed`,
   `loadedContext`, `maxContext`, on LM Studio `estimate`, `needed`, `loadedContext`, with the tool
   choice's form `toolChoice`: `body`, `omitted` or `tools_withheld`; never the API key). On an
@@ -1396,14 +1398,14 @@ policies side by side.
 | Field | What it states |
 | --- | --- |
 | `server` | The kind the context guard detects (`detectServer`: `lmstudio`, `ollama`, or `openai` for any other server, the cloud providers among them), Ollama's version, and the kind the model expects (`models.js` `server`) |
-| `temperature` | The model's (0.2), and the floor of a request asked again after a looping reply (0.6) |
+| `temperature` | The model's (0.2), and the floor of a request asked again after a looping reply (0.6). Claude Sonnet 5.5 takes none (since protocol 2026-10-24.6): `{ base: null, warmer_retry_min: null, sent: false }`, no temperature key in any of its requests, the retry included |
 | `limits` | The turn's budgets as the run used them (`runPolicy.js` `TURN_LIMITS`: the agent loop's `DEFAULT_LIMITS` and the verification's send-backs, `maxEvidenceGates`): 6 rounds of at most 4 calls, 10 minutes, 3,000 characters a result and 12,000 a turn, 2 questions, 2 gate send-backs, the stall and no-progress guards |
 | `context` | The minimum window for the server kind; how the window is sized; the window read before the run (and after it, on LM Studio); the model's maximum (Ollama); every `num_ctx` an Ollama request was sent (`num_ctx_used`; each request in `requests` keeps its own) |
-| `reply_cap` | Ollama: `num_predict`, the num_ctx minus the prompt estimate. LM Studio: none sent (the guard needs 4,096 tokens of room). Cloud: none sent |
+| `reply_cap` | Ollama: `num_predict`, the num_ctx minus the prompt estimate. LM Studio: none sent (the guard needs 4,096 tokens of room). Cloud: none sent, unless the model carries a cap: Claude Sonnet 5.5 sends `max_tokens` 8192 in every request (since protocol 2026-10-24.6; `{ sent: 'max_tokens', max_tokens: 8192 }`) |
 | `context_guard` | The guard's decisions: a request that would not fit is refused, never cut; 2.5 characters a token, 1.4 for tool JSON, 8 tokens a message; 8,192 tokens reserved for the reply; 4,096 of room on LM Studio; contexts in steps of 8,192, at least 16,384; the 0.4 read-share backstop |
 | `final_round` | What the last request sends for `tool_choice: 'none'` ([below](#the-final-rounds-tool_choice)) |
 | `history` | One fresh question; earlier reasoning is never re-sent |
-| `spend` | An API model's cap, and the reply each request is priced at |
+| `spend` | An API model's cap ($20 for Claude Sonnet 5.5), and the reply each request is priced at (8,192 tokens, the cap it is sent with) |
 | `warnings` | A window that changed during the run |
 
 **The decision (2026-10-19, the manager on the user's delegation).** The context guard, its
@@ -1441,6 +1443,17 @@ reloaded. The message says what was found, what is needed and how to reload:
 After the run the window is read again. If it changed (the model reloaded, or loaded again by a
 request at LM Studio's default), the record, the transcript and the report carry a warning.
 
+**Claude Sonnet 5.5's requests (protocol 2026-10-24.6; the user's decisions, 2026-10-24: "Fix
+both first").** Sonnet 5.5 takes only its default sampling: a request carrying a temperature is
+refused (HTTP 400), so no run could have started. Its `models.js` entry sets `temperature: null`
+(as the sibling project NEBULA does) and `maxTokens: MAX_REPLY_TOKENS` (8,192). The model port
+(`providerModel`) then sends no temperature key in any request, the warmer retry included (the
+retry is still asked, unchanged), and `max_tokens: 8192` in every body, so a reply, hidden thinking
+included, stops where the spend tracker's worst case already priced it. Both are settings, never
+read from the model's name: the dock passes neither and its requests are as before, and the local
+models' requests are byte for byte as before (`runPolicy.test.js`). `max_tokens` is never sent by
+default (OpenAI's newer models refuse it).
+
 **The dock at 32k.** The decision fixes the validation, not the dock. A user who loads
 qwen3.8-27b in LM Studio at 32k can have the worst two-skill turn refused. The budget test pins the
 dock's worst turn 1,836 tokens over by LM Studio's rule (5,932 by `planContext`'s), and arm B's
@@ -1477,7 +1490,9 @@ round's form, the temperature, the limits and the policy warnings. It says wheth
 temperature and the context guard are the same in every run, and lists what no policy sets. Today
 a comparison across the four models also compares:
 - **the context sizing:** Ollama gets a sized `num_ctx` and a `num_predict`; LM Studio a loaded
-  window of 48k or more and no reply cap; the API model its own window and no reply cap;
+  window of 48k or more and no reply cap; the API model its own window and `max_tokens` 8192;
+- **the temperature:** 0.2 for the local models (0.6 or more on the warmer retry); none sent to
+  the API model, which takes only its default sampling;
 - **the final round:** `tool_choice: 'none'` on the OpenAI-compatible servers, honoured where the
   server honours it, and no tools on Ollama, which is enforced;
 - **what no policy sets:** sampling beyond the temperature (top_p, top_k, min_p, the repetition
@@ -1493,14 +1508,19 @@ side, each under its run policy:
 - meta/muse-glimmer (LM Studio, 28B, tool use, up to 128k; loaded with 48k or more);
 - Claude Sonnet 5.5 (API).
 
-The API model (`claude-sonnet-5-5`) runs the test set only, arm B, 3 runs per case, under RMC's
-$12 share of the cycle's $40 cap. The spend tracker prices each request before sending it (prompt
-estimate + the largest reply) and refuses one that could cross the cap (`spend.js`
+The API model (`claude-sonnet-5-5`) runs the test set only, arm B, 3 runs per case, under a $20
+cap, RMC's share of the cycle's $40 total, which may be up to $28 (the user's decision,
+2026-10-24: "Raise to $20"; $12 before). The spend tracker prices each request before sending it (prompt
+estimate + 8,192 tokens of reply, the `max_tokens` each request is sent with since protocol
+2026-10-24.6, so that worst case is enforced) and refuses one that could cross the cap (`spend.js`
 `meteredModel`, a decorator over the model port: it reserves when the request is prepared, so a
 refused request is never sent); a JSON-lines ledger keeps the total across restarts. The client sees no usage report, so the charge is an upper bound: the
 Copilot's conservative token estimate (2.5 characters per token of text), with every prompt token
-at the dearest prompt rate. Prices (USD per million tokens, 2026-10-14): input $2, output $10,
-cache hits $0.10, cache writes $2.50, so prompts are charged at $2.50. `RMC_EVAL_SONNET_MODEL`,
+at the dearest prompt rate. Prices (USD per million tokens, 2026-10-14; the cache read fixed on
+2026-10-24): input $2, output $10, cache hits $0.20, cache writes $2.50, so prompts are charged
+at $2.50. The charge counts what streamed back, so thinking billed as output but returned with
+no text (Sonnet 5.5 thinks adaptively by default) is not in it: each request's reservation is
+bounded by `max_tokens`, the ledger's charge for it is not. `RMC_EVAL_SONNET_MODEL`,
 `RMC_EVAL_PRICE_IN` and `RMC_EVAL_PRICE_OUT` override the defaults; `ANTHROPIC_API_KEY` is required.
 
 ## Arm A results (no model; 2026-10-14, commit b4fe09f)
@@ -1663,7 +1683,7 @@ npx vite-node validation/run.js -- live --arm B --model qwen3.8-27b --split dev 
 npx vite-node validation/run.js -- live --arm C --model qwen3.8-27b --split dev --runs 3
 # held-out test: from a clean committed tree
 npx vite-node validation/run.js -- live --arm B --model qwen3.8-27b --split test --runs 3 --final
-# Claude Sonnet 5.5: test set, arm B, $12 cap
+# Claude Sonnet 5.5: test set, arm B, $20 cap
 ANTHROPIC_API_KEY=… npx vite-node validation/run.js -- live --arm B --model claude-sonnet-5.5 --split test --runs 3 --final
 # dev check only: the same with the PCA table in the context (own folder, own report column)
 npx vite-node validation/run.js -- live --arm B --model qwen3.8-27b --split dev --runs 1 --pca-table
@@ -1699,4 +1719,4 @@ sends an answer back:
 
 **Tokens and cost.** For Sonnet, about 70–90k prompt tokens and 3–6k reply tokens per run, so the
 27 test runs of arm B come to about 2.4M prompt + 0.15M reply tokens. That is about $6.30 at list
-prices ($4.80 prompt + $1.50 reply), less with cache hits. The tracker's upper bound is $7.50, inside the $12 cap.
+prices ($4.80 prompt + $1.50 reply), less with cache hits. The tracker's upper bound is $7.50, inside the $20 cap.

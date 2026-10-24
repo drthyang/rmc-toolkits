@@ -249,7 +249,19 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // says it (+56 tokens on the worst turns). The run module attaches the
 // ribbon's payload to an xPDF plot (dev-fit-unconverged's has no .dat: "No
 // σ(r)"). Arms A and A+ on dev are unchanged (they do not call compare_fit).
-export const PROTOCOL_VERSION = '2026-10-24.4';
+// 2026-10-24.6: the request policy for Claude Sonnet 5.5 (the user's
+// decisions, 2026-10-24: "Fix both first", "Raise to $20") — it takes only
+// its default sampling, so its requests carry no temperature key, the warmer
+// retry included (models.js temperature null; providerModel leaves it out,
+// the retry asked again unchanged), and every reply is capped at the
+// 8,192 tokens the spend tracker prices (max_tokens in the body, thinking
+// within it: models.js maxTokens = spend.js MAX_REPLY_TOKENS), so the
+// tracker's worst case is enforced; its cap is $20 and its cache-read price
+// $0.20 per million tokens. The run policy records both (temperature
+// { base: null, warmer_retry_min: null, sent: false }, reply_cap max_tokens
+// 8192). The local models' requests, the prompt, the tools and the scoring
+// are unchanged; arms A and A+ do not send requests.
+export const PROTOCOL_VERSION = '2026-10-24.6';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one
 // follows the full method.

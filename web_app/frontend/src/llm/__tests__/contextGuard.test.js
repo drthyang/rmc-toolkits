@@ -351,6 +351,17 @@ describe('Ollama native chat', () => {
         expect(fetchMock.mock.calls[1][1].headers).toEqual({ 'Content-Type': 'application/json' });
     });
 
+    it('leaves a null temperature out of the options; a number goes in as before', async () => {
+        const fetchMock = vi.fn(async () => ({ ok: true, status: 200, body: streamOf([ndjson([{ message: { content: '' }, done: true, done_reason: 'stop' }])]) }));
+        vi.stubGlobal('fetch', fetchMock);
+        const base = { baseUrl: 'http://localhost:11434/v1', model: 'm', messages: [{ role: 'user', content: 'q' }], numCtx: 16384, numPredict: 8000 };
+        await collect(streamOllamaChat({ ...base, temperature: null }));
+        await collect(streamOllamaChat({ ...base, temperature: 0.2 }));
+        const [omitted, sent] = fetchMock.mock.calls.map(([, options]) => JSON.parse(options.body).options);
+        expect(omitted).toEqual({ num_ctx: 16384, num_predict: 8000 });
+        expect(sent).toEqual({ temperature: 0.2, num_ctx: 16384, num_predict: 8000 });
+    });
+
     it('converts OpenAI-style messages: string content, object arguments, named tool results', () => {
         expect(serverOrigin('http://localhost:11434/v1/')).toBe('http://localhost:11434');
         expect(toOllamaMessages([

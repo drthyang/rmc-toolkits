@@ -14,6 +14,10 @@
 //                  (Ollama), and the kind the model expects (models.js `server`);
 //   temperature    the model's, and the floor of the request asked again
 //                  after a looping reply (model.js ANTI_REPEAT_TEMPERATURE);
+//                  for a model that sets none (models.js temperature null,
+//                  since protocol 2026-10-24.6: Claude Sonnet 5.5) both are
+//                  null and `sent` is false: no request carries a temperature,
+//                  the retry included;
 //   limits         the turn's budgets as the run used them (TURN_LIMITS: the
 //                  agent loop's DEFAULT_LIMITS and the verification's
 //                  send-backs, maxEvidenceGates, with the run's overrides);
@@ -24,7 +28,9 @@
 //                  and every num_ctx an Ollama request was sent (from the
 //                  guard's plan in each request as sent);
 //   reply_cap      what bounds the reply: Ollama's num_predict; nothing is sent
-//                  to LM Studio or a cloud provider;
+//                  to LM Studio or a cloud provider, unless the model carries
+//                  a cap (models.js maxTokens): then max_tokens with that many
+//                  tokens in every request (since protocol 2026-10-24.6);
 //   context_guard  the guard's decisions, which the policy does not change: a
 //                  request that would not fit is refused, never cut;
 //   final_round    what the last request sends for tool_choice 'none', per
@@ -82,7 +88,9 @@ export const CONTEXT_SIZING = Object.freeze({
     openai: 'the provider\'s own window; never probed, the request is sent unchanged'
 });
 
-// What bounds the reply, per server kind.
+// What bounds the reply, per server kind, for a model with no cap of its
+// own (replyCapOf: a model's maxTokens is sent as max_tokens, or on Ollama
+// bounds num_predict).
 export const REPLY_CAPS = Object.freeze({
     lmstudio: Object.freeze({
         sent: null, rule: `none sent; the guard needs ${LMSTUDIO_REPLY_MIN_TOKENS.toLocaleString('en-US')} tokens of room beyond the prompt`
@@ -122,6 +130,20 @@ export const CONTEXT_GUARD = Object.freeze({
     read_share_limit: READ_SHARE_LIMIT,
     probes: 'localhost, or port 11434, only'
 });
+
+/**
+ * What bounds a run's replies: REPLY_CAPS for the server kind, unless the
+ * model carries a cap (models.js maxTokens), which the model port sends in
+ * every request (provider/model.js providerModel): max_tokens in an
+ * OpenAI-compatible body (a cloud provider, LM Studio), a ceiling on
+ * Ollama's num_predict.
+ */
+export const replyCapOf = (kind, model) => {
+    const cap = model?.maxTokens;
+    if (!Number.isInteger(cap)) return { ...REPLY_CAPS[kind] };
+    if (kind === 'ollama') return { ...REPLY_CAPS.ollama, max_tokens: cap, rule: `${REPLY_CAPS.ollama.rule}, at most ${cap}` };
+    return { sent: 'max_tokens', max_tokens: cap, rule: `max_tokens ${cap} in every request (thinking counts within it)` };
+};
 
 /** The run policy refused a run before anything was sent. */
 export class RunPolicyError extends Error {
@@ -218,7 +240,10 @@ export const buildRunPolicy = ({ model, limits = {}, server = null, minimum = MI
     const kind = server?.kind ?? null;
     return {
         server: { kind, expected: model?.server ?? null, version: server?.version ?? null, base_url: model?.baseUrl ?? null },
-        temperature: { base: model?.temperature ?? null, warmer_retry_min: ANTI_REPEAT_TEMPERATURE },
+        // A model with temperature null is sent none, the warmer retry included.
+        temperature: model?.temperature === null
+            ? { base: null, warmer_retry_min: null, sent: false }
+            : { base: model?.temperature ?? null, warmer_retry_min: ANTI_REPEAT_TEMPERATURE },
         limits: { ...TURN_LIMITS, ...limits },
         context: {
             min_tokens: kind ? (minimum[kind] ?? null) : null,
@@ -229,7 +254,7 @@ export const buildRunPolicy = ({ model, limits = {}, server = null, minimum = MI
             ...(kind === 'lmstudio' ? { loaded_tokens_after: null } : {}),
             num_ctx_used: []
         },
-        reply_cap: kind ? { ...REPLY_CAPS[kind] } : null,
+        reply_cap: kind ? replyCapOf(kind, model) : null,
         context_guard: { ...CONTEXT_GUARD },
         final_round: kind ? { ...FINAL_ROUND_FORMS[kind] } : { tool_choice: 'none (as the loop asks)', tools: 'sent', how: 'server not read' },
         history: { earlier_turns: 0, reasoning_resent: false },
@@ -274,6 +299,15 @@ export const noteWindowAfter = (policy, after) => {
 
 // --- reading a policy ---------------------------------------------------------------
 
+/** The temperature as sent, in a few words: "0.2 (retry ≥ 0.6)", or "not sent". */
+export const temperatureSummary = (temperature) => (temperature?.sent === false
+    ? 'not sent (the model\'s default, the retry too)'
+    : `${temperature?.base} (retry ≥ ${temperature?.warmer_retry_min})`);
+
+const temperatureWords = (temperature) => (temperature?.sent === false
+    ? 'Temperature not sent (the model\'s default sampling; a request asked again after a loop is sent without one too)'
+    : `Temperature ${temperature.base} (a request asked again after a loop: ${temperature.warmer_retry_min} or more)`);
+
 /** The window a run ran under, in a few words. */
 export const windowSummary = (policy) => {
     if (!policy) return 'not recorded';
@@ -310,7 +344,7 @@ export const policyLines = (policy) => {
         `- Server: ${server.kind ? label(server.kind) : 'not read (no pre-run check)'}${server.version ? ` ${server.version}` : ''}`
             + `${server.expected && server.expected !== server.kind ? ` (expected ${label(server.expected)})` : ''} · context window: ${windowSummary(policy)}`,
         `- Reply cap: ${replyCap ? replyCap.rule : 'server not read'} · final round: ${finalRoundWords(finalRound)}`,
-        `- Temperature ${temperature.base} (a request asked again after a loop: ${temperature.warmer_retry_min} or more) · limits: ${limitsSummary(limits)}`,
+        `- ${temperatureWords(temperature)} · limits: ${limitsSummary(limits)}`,
         `- Context guard: ${guard.on_overflow === 'refuse' ? 'refuses a request that would not fit, never cuts it' : guard.on_overflow} `
             + `(${guard.chars_per_token} characters a token, ${guard.json_chars_per_token} for tool JSON; ${tokens(guard.reply_reserve_tokens)}-token reply reserve)`
             + `${policy.spend ? ` · spend cap $${policy.spend.cap_usd}` : ''}`

@@ -16,7 +16,7 @@ import { loadRun } from '../runFolder';
 import { renderTranscript } from '../transcript';
 import { renderReport } from '../report';
 import { answerNumbers, shownValues, traceNumbers } from '../provenance';
-import { createSpendTracker, memoryLedger, meteredModel } from '../spend';
+import { createSpendTracker, MAX_REPLY_TOKENS, memoryLedger, meteredModel, SpendCapError } from '../spend';
 import { loadSkills } from '../run';
 import { resolveModel } from '../models';
 import { pinRecord } from './recordFiles';
@@ -386,13 +386,36 @@ describe('the API model\'s defaults', () => {
     it('Sonnet: its id and prices by default, the key required, prompt tokens at the cache-write rate', () => {
         expect(() => resolveModel('claude-sonnet-5.5', {})).toThrow(/set ANTHROPIC_API_KEY/);
         const sonnet = resolveModel('claude-sonnet-5.5', { ANTHROPIC_API_KEY: 'k' });
-        expect(sonnet).toMatchObject({ model: 'claude-sonnet-5-5', capUSD: 12, splits: ['test'], arms: ['B'], runsPerCase: 3 });
-        expect(sonnet.prices).toEqual({ inputPerMTok: 2, outputPerMTok: 10, cacheReadPerMTok: 0.1, cacheWritePerMTok: 2.5 });
+        // The user's decisions of 2026-10-24: a $20 cap, the cache read at $0.20.
+        expect(sonnet).toMatchObject({ model: 'claude-sonnet-5-5', capUSD: 20, splits: ['test'], arms: ['B'], runsPerCase: 3 });
+        expect(sonnet.prices).toEqual({ inputPerMTok: 2, outputPerMTok: 10, cacheReadPerMTok: 0.2, cacheWritePerMTok: 2.5 });
         const tracker = createSpendTracker({ capUSD: sonnet.capUSD, prices: sonnet.prices, ledger: memoryLedger() });
         // The planned test set, arm B, 3 runs: ~2.4M prompt + 0.15M reply tokens.
         expect(tracker.cost(2.4e6, 0.15e6)).toBeCloseTo(7.5, 6);
         expect(tracker.cost(2.4e6, 0.15e6)).toBeLessThan(sonnet.capUSD);
         expect(resolveModel('qwen3.8-27b', {})).toMatchObject({ api: false, temperature: 0.2 });
+    });
+
+    it('Sonnet (protocol 2026-10-24.6): no temperature, every reply capped at the priced reply, a $20 cap; the local models unchanged', () => {
+        const sonnet = resolveModel('claude-sonnet-5.5', { ANTHROPIC_API_KEY: 'k' });
+        // null: none sent (the model takes only its default sampling).
+        expect(sonnet.temperature).toBeNull();
+        expect(sonnet.maxTokens).toBe(MAX_REPLY_TOKENS);
+        expect(MAX_REPLY_TOKENS).toBe(8192);
+        for (const name of ['qwen3.8-27b', 'gemma4:26b', 'meta/muse-glimmer']) {
+            const local = resolveModel(name, {});
+            expect(local.temperature, name).toBe(0.2);
+            expect('maxTokens' in local, name).toBe(false);
+        }
+        // The cap check is the model's $20: a request whose worst case (a
+        // short prompt at $2.50 and 8,192 tokens of reply at $10, about
+        // $0.082) fits below it, and not above.
+        const request = { messages: [{ role: 'user', content: 'c'.repeat(25) }] };
+        const at = (spent) => createSpendTracker({ capUSD: sonnet.capUSD, prices: sonnet.prices, ledger: memoryLedger([{ usd: spent }]) });
+        expect(at(0).cost(0, MAX_REPLY_TOKENS)).toBeCloseTo(0.08192, 9);
+        expect(() => at(19.9).reserve(request)).not.toThrow();
+        expect(() => at(19.95).reserve(request)).toThrow(SpendCapError);
+        expect(() => at(19.95).reserve(request)).toThrow(/spend cap reached: \$19\.95 spent of \$20\.00/);
     });
 });
 

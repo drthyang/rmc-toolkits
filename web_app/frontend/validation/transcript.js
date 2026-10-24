@@ -37,7 +37,8 @@ export const renderTranscript = (record) => {
     lines.push(`# ${record.id}`);
     lines.push('');
     lines.push(`- Case: \`${record.case}\` (${record.split} set) · Arm ${record.arm}: ${record.arm_label}`);
-    lines.push(`- Model: ${record.model.label} (\`${record.model.id}\`, temperature ${record.model.temperature}) · run ${record.run_index}`);
+    const temperature = record.model.temperature === null ? 'no temperature sent' : `temperature ${record.model.temperature}`;
+    lines.push(`- Model: ${record.model.label} (\`${record.model.id}\`, ${temperature}) · run ${record.run_index}`);
     lines.push(`- Protocol ${record.protocol} · commit ${record.commit || 'unknown'} · ${record.started_at} → ${record.finished_at} (${Math.round((record.wall_ms || 0) / 1000)} s)`);
     // The rules the run ran under (runPolicy.js).
     policyLines(record.policy).forEach((line) => lines.push(line));
