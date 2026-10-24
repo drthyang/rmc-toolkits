@@ -50,9 +50,11 @@ and is invisible here.
    map 7.2σ, peak 2.3σ): say "anisotropic", not "a preferred direction".
 4. **Directions:** `peak.direction_uvw` and the tensor's principal axis are direct-lattice
    `[u v w]` directions (not plane normals); the map is not antipodally folded, so +u and −u
-   differ. Name the nearest low-index family (<100>, <110>, <111>) only when the angle to it is
-   within 15° (the tools' cone, 15° included: under half the 35.3° between <110> and <111>, the
-   closest families); otherwise give the `[u v w]` as measured.
+   differ. The peak names its direction only to within its cell's radius (`peak.radius_deg`).
+   Name the nearest low-index family (<100>, <110>, <111>) only when the angle to it is within
+   15° (the tools' cone, 15° included: under half the 35.3° between <110> and <111>, the closest
+   families) and the cell is no wider (`peak.radius_deg` ≤ 15°; the tool names no family above
+   it); otherwise give the `[u v w]` as measured.
 5. **Size, not only significance.** With thousands of atoms a tiny effect reaches 3σ: quote the
    enhancement (× isotropic) or the anisotropy with its σ. For a cluster-level question
    (trigonal versus tetragonal distortion of an M₄ cluster), use `analyze_clusters`: its <100>,
@@ -64,8 +66,9 @@ and is invisible here.
 
 ## Judgment calls
 
-- The sphere resolution (the tool chooses from the point count; the page shows its default
-  resolution) and whether a result must hold at two resolutions (to confirm with the user).
+- The sphere resolution (the tool, and the page, which opens at Auto, take the engine's choice
+  from the point count) and whether a result must hold at two resolutions (to confirm with the
+  user).
 - Whether a 3–5σ direction with a small enhancement (under 1.2× isotropic) is reported as a
   finding or as a hint (to confirm with the user).
 - When to report per-axis kurtosis (only on axes the PCA resolves) (to confirm with the user).
@@ -100,8 +103,9 @@ and is invisible here.
   none at ≥ 3σ gets a warning under it.
 - **Effect size ignored:** thousands of clusters make a 1 % effect "significant"; the cluster
   tool requires both its z and its effect size to clear their thresholds.
-- **Numbers differ from the page:** the tool lets the engine choose the resolution while the
-  page shows its default or the user's pick, its map smoothed; say which you quote.
+- **Numbers differ from the page** only when the user picks another resolution there: the page
+  opens at Auto, the engine's resolution and the tool's, and reads its numbers from the raw
+  histogram (smoothing only redraws the map); say which you quote.
 
 ## Report
 

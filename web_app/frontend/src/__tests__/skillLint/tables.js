@@ -26,7 +26,7 @@
 
 import assert from 'node:assert/strict';
 import {
-    LOW_INDEX_CONE_DEG, SIGNIFICANCE_SIGMA, summarizeBondAngles, summarizeOrientation, summarizeSymmetry
+    directionResolved, LOW_INDEX_CONE_DEG, SIGNIFICANCE_SIGMA, summarizeBondAngles, summarizeOrientation, summarizeSymmetry
 } from '../../copilotTools';
 import { buildClarifier } from '../../llm/copilot/clarify';
 import { buildRunTools } from '../../llm/copilot/runTools';
@@ -212,6 +212,17 @@ export const BINDINGS = [
         number: /only when the angle to it is (?:under|within|below|less than|≤|<) ?(?<n>\d+(?:\.\d+)?) ?°/,
         constants: [LOW_INDEX_CONE, AXIS_CONE],
         statistic: INCLUSIVE_CONE
+    },
+    {
+        file: ANISOTROPY,
+        gate: 'a resolved peak direction',
+        find: 'and the cell is no wider (`peak.radius_deg`',
+        number: /`peak\.radius_deg` ≤ (?<n>\d+(?:\.\d+)?)°/,
+        constants: [constant('LOW_INDEX_CONE_DEG', LOW_INDEX_CONE_DEG, 'copilotTools.js, directionResolved (the peak cell\'s radius)')],
+        verify: () => {
+            assert.equal(directionResolved(LOW_INDEX_CONE_DEG), true, 'a 15° cell did not resolve the direction');
+            assert.equal(directionResolved(LOW_INDEX_CONE_DEG + 0.1), false, 'a cell wider than 15° resolved the direction');
+        }
     },
     {
         file: ANISOTROPY,
@@ -627,7 +638,7 @@ export const BINDINGS = [
         file: FIT,
         gate: 'the order rule\'s significance',
         find: 'that passes its own test (ratio',
-        number: /and ≥ (?<n>\d+(?:\.\d+)?)σ against independent displacements/,
+        number: /and ≥ (?<n>\d+(?:\.\d+)?)σ against independent cells/,
         constants: [ORDER_SIGMA]
     },
     {

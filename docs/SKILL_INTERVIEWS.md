@@ -179,11 +179,19 @@ to you. Line numbers are in the synced text.
    the unrounded peak σ, and the skill now says that a σ just below 3 is never rounded to 3σ.
    Should a near miss (2.9σ, say) be reported as a hint, as the 1.2× judgment call does for a small
    enhancement?
-7. `displacement-anisotropy/SKILL.md:69–70`: is a 3–5σ direction under 1.2× isotropic a finding
+7. `displacement-anisotropy/SKILL.md:72–73`: is a 3–5σ direction under 1.2× isotropic a finding
    or a hint? No module decides this; the lint lists the number as no gate.
 8. `coordination-shells/SKILL.md:29–39` and its report (`:111`): `find_gr_peaks` now splits a
    joined shell by number, in `first_shell.split`: each part's CN and share, and long − short
    with its sampling error. The skill does not mention it. Should a Jahn–Teller report quote it?
-9. `displacement-anisotropy/SKILL.md:53–55` (step 4): the cone now reads "within 15°, 15°
-   included", as the tools apply it. The draft's reason said 15° was half of 35.3°; it is under
-   half (35.3° / 2 = 17.6°). The question stays the one from batch 1: is 15° your cone?
+9. `displacement-anisotropy/SKILL.md:53–57` (step 4): the cone now reads "within 15°, 15°
+   included", as the tools apply it, and since plan item 2.5 also needs the peak's cell to be no
+   wider than 15° (`peak.radius_deg`; the tool names no family above it). The draft's reason said
+   15° was half of 35.3°; it is under half (35.3° / 2 = 17.6°). The question stays the one from
+   batch 1: is 15° your cone?
+10. `displacement-anisotropy/SKILL.md:112–113` (the report): the tool now gives the peak direction
+   ± its cell's radius (plan item 2.5). Should a report quote the radius beside the direction?
+11. `local-order/SKILL.md:34–37` (step 3): `analyze_modulations` now also reports short-range order
+   between cells spread over many q (its diffuse verdict, plan item 4.4). Neither arm A+ nor the
+   answer checks read it ("the user's call", validation/armA.js). Does it count as order between
+   cells before "no order"?
