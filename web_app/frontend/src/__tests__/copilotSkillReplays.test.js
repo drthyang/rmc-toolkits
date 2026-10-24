@@ -17,6 +17,8 @@ import { runTurn } from '../llm/copilot/turn';
 import { toolResult } from '../llm/copilot/tools';
 import { createVerification } from '../llm/copilot/verification';
 import { inProcessEngine } from '../workers/pcaKdeWorker';
+import { buildCase, DEV_CASES } from '../../validation/cases';
+import { loadRun } from '../../validation/runFolder';
 
 const read = (name) => readFileSync(new URL(`../../public/demo/${name}`, import.meta.url), 'utf8');
 const RMC6F = read('GTS_250K.rmc6f');
@@ -339,7 +341,59 @@ describe('displacement-anisotropy', () => {
             { text: 'The Ga atoms have a preferred displacement direction along [1 1 1].\nOutcome: achieved — x.' }
         ]);
         expect(done.audit.map((finding) => finding.rule)).toEqual(['direction']);
-        expect(done.audit[0].text).toMatch(/Ga: peak -0\.887σ, map 0\.561σ/);
+        expect(done.audit[0].text).toMatch(/Ga: peak -0\.887σ at [\d.]+× isotropic, map 0\.561σ — nothing to report/);
+    });
+});
+
+// The user's interview answers of 2026-10-24 (displacement-anisotropy): the
+// tiers on the Demo, and the disorder rule on a dev case (the Demo has no split
+// or flat-topped site), each through the turn as the app runs it.
+describe('displacement-anisotropy: the user\'s interview answers (2026-10-24)', () => {
+    const rulesOf = (done) => done.audit.map((finding) => finding.rule);
+    // One question on a dev case's run, as the harness opens it (never a held-out case).
+    const devTurn = async (id, replies) => {
+        const copilot = await loadRun(buildCase(DEV_CASES.find((item) => item.id === id)));
+        const { callModel, requests } = scriptedModel([...replies]);
+        const events = [];
+        for await (const event of runTurn({ question: 'Q', run: copilot.props, model: callModel, tools: [...buildRunTools(copilot.props), ...copilot.tools] })) {
+            events.push(event);
+        }
+        const toolMessages = requests.at(-1).filter((message) => message.role === 'tool').map((message) => JSON.parse(message.content));
+        return { done: events.at(-1), toolMessages };
+    };
+
+    it('answers 3 and 4: Ta site 17 is a finding at two resolutions, Ta site 25 only a hint, and a preferred direction needs a finding', async () => {
+        const both = { calls: [17, 25].map((ref) => ({ name: 'analyze_displacement_directions', args: { site_ref: ref } })) };
+        const right = await replay([both, {
+            text: 'Site 17 (Ta) has a preferred displacement direction: 3.15σ at 1.95× isotropic, toward {{r1.peak.direction_uvw}} ± 20.9° (cell radius), '
+                + 'and it holds at ν = 1 (3.83σ). Site 25 (Ta) is only a hint: 4.47σ at ν = 2, but 2.33σ at ν = 1.\nOutcome: achieved — tiers.'
+        }]);
+        expect(right.toolMessages.map((message) => [message.data.site, message.data.peak.tier, message.data.neighbour?.holds])).toEqual([[17, 'finding', true], [25, 'hint', false]]);
+        expect(rulesOf(right.done)).toEqual([]);
+        // The hint alone called preferred: flagged; called a hint: not.
+        const one = { calls: [{ name: 'analyze_displacement_directions', args: { site_ref: 25 } }] };
+        const wrong = await replay([one, { text: 'Site 25 (Ta) has a preferred displacement direction at 4.47σ.\nOutcome: achieved — x.' }]);
+        expect(rulesOf(wrong.done)).toEqual(['direction']);
+        expect(wrong.done.audit[0].text).toMatch(/site 25: peak 4\.47σ at 2\.23× isotropic, map [\d.]+σ — a hint, not held at the neighbouring resolution/);
+        const hint = await replay([one, { text: 'Site 25 (Ta) shows a hint of a preferred direction, not a finding: it does not hold at ν = 1.\nOutcome: partial — a hint.' }]);
+        expect(rulesOf(hint.done)).toEqual([]);
+    });
+
+    it('answer 8 (firm rule): a split site called disorder before analyze_modulations ran for its element is flagged; after it, the order is read', async () => {
+        // dev-zone-boundary's Ti: split (list_sites), and ordered at (0, 0, ½).
+        const wrong = await devTurn('dev-zone-boundary', [
+            { calls: [{ name: 'list_sites', args: { element: 'Ti' } }] },
+            { text: 'Site 2 (Ti) shows positional disorder along c.\nOutcome: achieved — split.' }
+        ]);
+        expect(wrong.toolMessages[0].data.sites[0]).toMatchObject({ ref: 2 });
+        expect(rulesOf(wrong.done)).toEqual(['disorder']);
+        expect(wrong.done.outcome.status).toBe('not verified');
+        const right = await devTurn('dev-zone-boundary', [
+            { calls: [{ name: 'list_sites', args: { element: 'Ti' } }, { name: 'analyze_modulations', args: { element: 'Ti' } }] },
+            { text: 'Site 2 (Ti) is split, but analyze_modulations finds Ti ordered at q = (0, 0, ½): ordered antiphase displacements doubling the cell '
+                + 'along c, not disorder.\nOutcome: achieved — order.' }
+        ]);
+        expect(rulesOf(right.done)).toEqual([]);
     });
 });
 

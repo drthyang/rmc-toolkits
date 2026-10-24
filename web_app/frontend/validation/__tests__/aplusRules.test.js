@@ -13,7 +13,9 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { buildCase, DEV_CASES, mulberry32 } from '../cases';
 import { loadRun } from '../runFolder';
 import { appSplitSites, ARM_A_RULES, runArmSweep, SWEEP_RULES } from '../armA';
-import { directionResolved, LOW_INDEX_CONE_DEG, splitDisplacement, summarizeSites } from '../../src/copilotTools';
+import {
+    directionCandidate, directionResolved, directionTier, LOW_INDEX_CONE_DEG, neighbourFrequency, splitDisplacement, summarizeSites
+} from '../../src/copilotTools';
 import { buildClarifier } from '../../src/llm/copilot/clarify';
 import { createVerification } from '../../src/llm/copilot/verification';
 import { lowerGroupTolerance, NOISE_FLOOR_MARGIN, symmetryNoiseFloor } from '../../src/llm/context/runContext';
@@ -58,6 +60,8 @@ describe('A+ reads the app\'s rules (candidate 8): one definition each', () => {
         expect(SWEEP_RULES.lowerGroupTolerance).toBe(lowerGroupTolerance);
         // Plan item 2.5: a peak cell resolves a direction within LOW_INDEX_CONE_DEG.
         expect(SWEEP_RULES.directionResolved).toBe(directionResolved);
+        // The displacement-anisotropy interview (2026-10-24): the tool's direction tiers.
+        expect(SWEEP_RULES.directionTier).toEqual({ tier: directionTier, candidate: directionCandidate, neighbour: neighbourFrequency });
         expect(NOISE_FLOOR_MARGIN).toBe(1.25);
         expect(CLUSTER_CN_MAX).toBe(4.5);
         expect(LOW_INDEX_CONE_DEG).toBe(15);

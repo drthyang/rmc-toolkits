@@ -47,7 +47,7 @@
 import { asserts } from './reading';
 import {
     BREATHING, CELL_DOUBLING, CN_CLAIMS, DISTORTED_CLUSTERS, DISTORTED_POLYHEDRA, LOWERING, MODULATION, NO_ORDER, POLYHEDRON_CN, PREFERRED, RIGID,
-    RUN_NOUN, SHELL_CLAIMS, SPLIT_SITE, SUPERSTRUCTURE
+    RUN_NOUN, SHELL_CLAIMS, SPLIT_OR_FLAT_DISORDER, SPLIT_SITE, SUPERSTRUCTURE
 } from './phrasings';
 
 // --- the combinators ----------------------------------------------------------------
@@ -87,12 +87,13 @@ export const CLAIMS = Object.freeze([
     }),
     // Split sites — random two-site disorder or off-centring: ordered
     // antiphase displacements give a site the same cloud (the
-    // displacement-anisotropy skill).
+    // displacement-anisotropy skill); a split or flat-topped site called
+    // disorder too (its interview, 2026-10-24).
     row({
         id: 'split-site',
         what: 'random (two-site) disorder of a split site',
         scope: 'run',
-        phrasings: { asserted: [SPLIT_SITE] },
+        phrasings: { asserted: [SPLIT_SITE, SPLIT_OR_FLAT_DISORDER] },
         backedBy: anyOf('analyze_modulations'),
         prompt: { phrase: 'a split site called disorder', analysis: 'analyze_modulations' }
     }),

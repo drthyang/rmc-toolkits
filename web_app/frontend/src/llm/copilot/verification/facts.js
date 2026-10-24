@@ -19,9 +19,14 @@
 //                 that does not hold — not a subgroup, the wrong index, t or k
 //                 (subgroup; the user's rule, 2026-10-24);
 //   direction     a preferred displacement direction when no directions
-//                 analysis of the question found a peak at ≥ 3σ
+//                 analysis of the question found one — a finding of the
+//                 user's tiers (2026-10-24: ≥ 3σ, ≥ 1.2× isotropic, held at the
+//                 neighbouring resolution), a hint called a hint passing
 //                 (displacement-anisotropy; a significant whole-map test alone
 //                 is anisotropy, not a direction: review L3);
+//   sites         a split or flat-topped site called disorder when no
+//                 analyze_modulations of the question tested its element
+//                 (disorder; the user's rule, 2026-10-24);
 //   modulation    a superstructure (cell doubling, zone-boundary order) when
 //                 every analyze_modulations of the question found no ordered
 //                 point (a general wavevector's order allows "superstructure",
@@ -63,10 +68,10 @@ import {
 } from './reading';
 import {
     ALL_AXES, ALONG_AXES, ARROW, BOND_ANGLE_WORDS, BREATHING, CANNOT_HOLD, CELL_DOUBLING, CENTROSYMMETRIC, CHIRAL, CN_CLAIMS, CONVERGED, DEGREES,
-    DISTORTED, DISTRIBUTION_NOUN, DISTRIBUTION_STAT, DOUBLED_AXIS, DOUBLED_CELL, HALF_TUPLE, HAS_AS_SUBGROUP, INDEX_CLAIM, K_TYPE, LONG_WAVE_WORDS,
+    DISORDER, DISTORTED, DISTRIBUTION_NOUN, DISTRIBUTION_STAT, DOUBLED_AXIS, DOUBLED_CELL, HALF_TUPLE, HAS_AS_SUBGROUP, INDEX_CLAIM, K_TYPE, LONG_WAVE_WORDS,
     LOST_INVERSION, LOWERING_TO, MAXIMAL, NEIGHBOUR_COUNTS, NOT_A_BOND_ANGLE, ORDER_CLAIM, PARTIAL_SHELL, PER_COUNT, POLAR, POLYHEDRON_CN, PREFERRED,
-    REFERENCE_VALUE, RIGID, RUN_NOUN, SAYS_NOTHING, SINGLE_CONFIGURATION, STILL_MOVING, SUBGROUP_OF, SUPERGROUP_OF, SUPERSTRUCTURE, T_TYPE,
-    WINDOW_CUTOFF, WINDOW_RANGES, WORD_NUMBER
+    REFERENCE_VALUE, RIGID, RUN_NOUN, SAYS_NOTHING, SINGLE_CONFIGURATION, SITE_REFS, SPLIT_SITE, STILL_MOVING, SUBGROUP_OF, SUPERGROUP_OF,
+    SUPERSTRUCTURE, T_TYPE, WINDOW_CUTOFF, WINDOW_RANGES, WORD_NUMBER
 } from './phrasings';
 
 // --- the run context's own facts ------------------------------------------------------
@@ -352,18 +357,82 @@ const subgroupRule = (reading, facts, context) => {
 
 // --- direction ------------------------------------------------------------------------
 
+// A preferred direction needs a finding of the user's tiers (2026-10-24: ≥ 3σ,
+// ≥ 1.2× isotropic, and it holds at the neighbouring resolution;
+// facts.direction.tier, analyze_displacement_directions' directionTier); facts
+// without a tier read their peak test (≥ 3σ). A clause that calls it a hint
+// claims no finding.
+const HINT_WORDS = /\bhints?\b|\btentative(?:ly)?\b|\bnot\s+(?:yet\s+)?a\s+finding\b/i;
+const isFinding = (analysis) => (analysis.tier ? analysis.tier === 'finding' : Boolean(analysis.significant));
+const TIER_TEXT = {
+    below_sigma: 'between 2.5σ and 3σ', small_enhancement: 'under 1.2× isotropic', not_held: 'not held at the neighbouring resolution',
+    not_auto: 'not at the engine\'s resolution', unchecked: 'not checked at a second resolution', below_hint_sigma: 'below 2.5σ'
+};
+
 const directionRule = (reading, facts) => {
     const analyses = facts.map((fact) => fact.direction).filter(Boolean);
-    if (!analyses.length || analyses.some((analysis) => analysis.significant)) return [];
+    if (!analyses.length || analyses.some(isFinding)) return [];
     for (const sentence of reading.sentences) {
-        if (clausesOf(sentence).some((clause) => positiveMatches(clause, PREFERRED).length)) {
+        if (clausesOf(sentence).some((clause) => !HINT_WORDS.test(clause) && positiveMatches(clause, PREFERRED).length)) {
             const detail = analyses.map((analysis) => `${analysis.subject}: peak ${analysis.peak_sigma}σ`
-                + `${analysis.map_sigma != null ? `, map ${analysis.map_sigma}σ` : ''}`).join('; ');
+                + `${Number.isFinite(analysis.enhancement) ? ` at ${analysis.enhancement}× isotropic` : ''}`
+                + `${analysis.map_sigma != null ? `, map ${analysis.map_sigma}σ` : ''}`
+                + `${analysis.tier ? ` — ${analysis.tier === 'hint' ? `a hint, ${TIER_TEXT[analysis.because] ?? 'not a finding'}` : 'nothing to report'}` : ''}`).join('; ');
             const anisotropic = analyses.some((analysis) => analysis.anisotropic);
+            const tiered = analyses.some((analysis) => analysis.tier);
             return [{
                 rule: 'direction',
-                text: `The answer claims a preferred displacement direction, but no directions analysis in it found a peak at ≥ 3σ (${detail}).`
+                text: (tiered
+                    ? 'The answer claims a preferred displacement direction, but no directions analysis in it found one (a finding: ≥ 3σ, '
+                        + `≥ 1.2× isotropic, and held at the neighbouring resolution; ${detail}).`
+                    : `The answer claims a preferred displacement direction, but no directions analysis in it found a peak at ≥ 3σ (${detail}).`)
                     + (anisotropic ? ' A significant map test is anisotropy, which any thermal ellipsoid shows, not a preferred direction.' : '')
+            }];
+        }
+    }
+    return [];
+};
+
+// --- a split or flat-topped site called disorder (the displacement-anisotropy interview, 2026-10-24) ---
+
+// "An answer that calls a split or flat-topped site 'disorder' when
+// analyze_modulations has not run for its element gets a warning under it"
+// (the user, 2026-10-24, answer 8): ordered antiphase displacements give a
+// site the same split cloud as random two-site disorder; only the
+// correlation between cells tells them apart. A clause that asserts disorder
+// (DISORDER — not a ranking, "the most disordered site", nor thermal disorder
+// — or the gate's split-site words, SPLIT_SITE) about sites — named by number
+// ("site 3"), else by an element the clause (or its sentence) names — of
+// which list_sites found one split (the app's rule) or flat-topped (a
+// negative Mardia kurtosis that misses it) is flagged when no
+// analyze_modulations of the question tested that site's element. Only once
+// list_sites ran (its facts name the split and flat-topped sites).
+const siteRefsIn = (text) => [...String(text).matchAll(SITE_REFS)].flatMap((match) => match[1].split(/\s*(?:,|and|&)\s*/).map(Number));
+
+const disorderRule = (reading, facts) => {
+    const sites = facts.flatMap((fact) => fact.sites || []);
+    const shaped = sites.filter((site) => site.split || site.flat);
+    if (!shaped.length) return [];
+    const tested = new Set(facts.flatMap((fact) => fact.modulation?.elements || []));
+    const elements = [...new Set(sites.flatMap((site) => site.elements || [site.element]))];
+    for (const sentence of reading.sentences) {
+        for (const clause of clausesOf(sentence)) {
+            if (!positiveMatches(clause, DISORDER).length && !positiveMatches(clause, SPLIT_SITE).length) continue;
+            const refs = siteRefsIn(clause);
+            const named = elements.filter((element) => namesElement(clause, element));
+            const about = refs.length
+                ? shaped.filter((site) => refs.includes(site.ref))
+                : shaped.filter((site) => (named.length ? named : elements.filter((element) => namesElement(sentence, element)))
+                    .some((element) => (site.elements || [site.element]).includes(element)));
+            const untested = about.filter((site) => !(site.elements || [site.element]).some((element) => tested.has(element)));
+            if (!untested.length) continue;
+            const which = untested.slice(0, 3).map((site) => `site ${site.ref} (${site.element}, ${site.split ? 'split' : 'flat-topped'})`).join(', ');
+            const missing = [...new Set(untested.map((site) => site.element))];
+            return [{
+                rule: 'disorder',
+                text: `The answer calls ${which} disorder, but analyze_modulations has not run for ${missing.join(', ')} in this question: ordered `
+                    + 'antiphase displacements (a superstructure) give a site the same split cloud as random disorder, and only the '
+                    + 'correlation between cells tells them apart.'
             }];
         }
     }
@@ -749,9 +818,25 @@ export const FACTS = Object.freeze([
     Object.freeze({
         key: 'direction',
         from: Object.freeze(['analyze_displacement_directions']),
-        shape: { subject: 'string', significant: 'boolean', anisotropic: 'boolean', peak_sigma: 'number', map_sigma: 'number|null' },
+        // The peak's tier (the user's, 2026-10-24: directionTier) and why,
+        // its enhancement and the resolution it was read at.
+        shape: {
+            subject: 'string', significant: 'boolean', anisotropic: 'boolean', peak_sigma: 'number', map_sigma: 'number|null', tier: 'string',
+            because: 'string', enhancement: 'number|null', frequency: 'number'
+        },
         reads: Object.freeze([PREFERRED]),
         contradicts: directionRule
+    }),
+    Object.freeze({
+        key: 'sites',
+        from: Object.freeze(['list_sites']),
+        // Each site's species, and whether it is split (the app's rule) or
+        // flat-topped (a negative Mardia kurtosis that misses it); with
+        // analyze_modulations' tested elements, the disorder check (the
+        // user's rule, 2026-10-24).
+        shape: [{ ref: 'number', element: 'string', elements: ['string'], split: 'boolean', flat: 'boolean' }],
+        reads: Object.freeze([DISORDER, SPLIT_SITE, SITE_REFS]),
+        contradicts: disorderRule
     }),
     Object.freeze({
         key: 'modulation',

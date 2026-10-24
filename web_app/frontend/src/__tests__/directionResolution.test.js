@@ -11,7 +11,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { orientationHistogram } from '../workers/orientation';
-import { directionResolved, LOW_INDEX_CONE_DEG, summarizeOrientation } from '../copilotTools';
+import { directionResolved, LOW_INDEX_CONE_DEG, neighbourFrequency, summarizeOrientation } from '../copilotTools';
 import { mulberry32 } from '../../validation/cases';
 
 const CUBIC = [[4, 0, 0], [0, 4, 0], [0, 0, 4]];
@@ -40,7 +40,11 @@ describe('the peak direction with its cell radius (plan item 2.5)', () => {
         expect(payload.frequency).toBe(1);
         expect(payload.peakCellRadiusDeg).toBeCloseTo(37.3774, 4);
 
-        const { data, checks } = summarizeOrientation(payload, CUBIC);
+        // A finding holds at the neighbouring resolution (the user's tiers, 2026-10-24): ν = 2 here.
+        const neighbour = orientationHistogram(splitSite(216, 41), { geometry: false, frequency: neighbourFrequency(payload.frequency) });
+        const { data, checks } = summarizeOrientation(payload, CUBIC, { neighbour });
+        expect(data.peak.tier).toBe('finding');
+        expect(data.neighbour).toMatchObject({ frequency: 2, holds: true });
         expect(data.peak.radius_deg).toBe(37.4);
         expect(data.peak.significance_sigma).toBeGreaterThanOrEqual(3);
         // The lobe is real, but the cell centre it names sits 31.7° off the
@@ -50,7 +54,7 @@ describe('the peak direction with its cell radius (plan item 2.5)', () => {
         expect(directionResolved(data.peak.radius_deg)).toBe(false);
 
         const text = preferred(checks);
-        expect(text).toContain(`toward [${data.peak.direction_uvw.join(' ')}] ± 37.4°, the cell radius at ν = 1.`);
+        expect(text).toContain(`toward [${data.peak.direction_uvw.join(' ')}] ± 37.4°, the cell radius at ν = 1; it holds: at ν = 2 the peak is `);
         expect(text).toContain('The direction is not resolved finer than 37.4° (over 15°), so it names no <100>, <110> or <111> family.');
         // ...and names none: the only families in the text are the ones it declines.
         expect(text.match(/<\d{3}>/g)).toEqual(['<100>', '<110>', '<111>']);
@@ -61,12 +65,13 @@ describe('the peak direction with its cell radius (plan item 2.5)', () => {
         expect(payload.frequency).toBe(5);
         expect(payload.peakCellRadiusDeg).toBeLessThan(LOW_INDEX_CONE_DEG);
 
-        const { data, checks } = summarizeOrientation(payload, CUBIC);
+        const neighbour = orientationHistogram(splitSite(4000, 42), { geometry: false, frequency: neighbourFrequency(payload.frequency) });
+        const { data, checks } = summarizeOrientation(payload, CUBIC, { neighbour });
         expect(directionResolved(data.peak.radius_deg)).toBe(true);
         expect(offAxis(data.peak.direction_cartesian)).toBeLessThanOrEqual(data.peak.radius_deg);
         const text = preferred(checks);
-        expect(text).toBe(`Preferred direction: [${data.peak.direction_uvw.join(' ')}] ± ${data.peak.radius_deg}°, the cell radius at ν = 5; `
-            + `the peak cell is ${data.peak.enhancement}× isotropic at ${data.peak.significance_sigma}σ (corrected over all cells).`);
+        expect(text.startsWith(`Preferred direction (a finding): [${data.peak.direction_uvw.join(' ')}] ± ${data.peak.radius_deg}°, the cell radius at ν = 5; `
+            + `the peak cell is ${data.peak.enhancement}× isotropic at ${data.peak.significance_sigma}σ (corrected over all cells); it holds: at ν = 4 the peak is `)).toBe(true);
     });
 
     it('the radius is in the data whatever the significance; no check claims a direction without it', () => {

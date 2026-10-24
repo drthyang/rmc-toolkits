@@ -180,6 +180,35 @@ describe('the preferred-direction check', () => {
         })).toEqual([]);
         expect(rules('A preferred direction along [111].', {})).toEqual([]);
     });
+
+    // The user's tiers (the displacement-anisotropy interview, 2026-10-24):
+    // a preferred direction needs a finding; a hint called a hint passes.
+    const tiered = (tier, because, sigma, enhancement) => ({ facts: [{
+        direction: { subject: 'site 25', significant: sigma >= 3, anisotropic: true, peak_sigma: sigma, map_sigma: 5.1, tier, because, enhancement, frequency: 2 }
+    }] });
+
+    it('a peak at ≥ 3σ that is only a hint (not held, under 1.2×) or below 2.5σ backs no preferred direction', () => {
+        const notHeld = audit('Site 25 has a preferred displacement direction along [0 0 1].', tiered('hint', 'not_held', 4.47, 2.234));
+        expect(notHeld.map((finding) => finding.rule)).toEqual(['direction']);
+        expect(notHeld[0].text).toBe('The answer claims a preferred displacement direction, but no directions analysis in it found one (a finding: ≥ 3σ, '
+            + '≥ 1.2× isotropic, and held at the neighbouring resolution; site 25: peak 4.47σ at 2.234× isotropic, map 5.1σ — a hint, not held at the '
+            + 'neighbouring resolution). A significant map test is anisotropy, which any thermal ellipsoid shows, not a preferred direction.');
+        expect(audit('Site 25 prefers [0 0 1]: a preferred direction.', tiered('hint', 'small_enhancement', 3.4, 1.12))[0].text)
+            .toMatch(/a hint, under 1\.2× isotropic/);
+        expect(audit('Site 25 has a preferred direction.', tiered('none', 'below_hint_sigma', 1.9, 1.4))[0].text).toMatch(/— nothing to report\)/);
+    });
+
+    it('stays quiet on a finding, and on a hint the answer calls a hint', () => {
+        expect(rules('Site 25 has a preferred displacement direction along [0 0 1].', tiered('finding', 'holds', 3.15, 1.95))).toEqual([]);
+        for (const text of [
+            'Site 25 shows a hint of a preferred direction along [0 0 1], not a finding.',
+            'Site 25 tentatively has a preferred direction along [0 0 1].'
+        ]) {
+            expect(rules(text, tiered('hint', 'not_held', 4.47, 2.234)), text).toEqual([]);
+        }
+        // Facts without a tier (an earlier result) read their peak test.
+        expect(rules('Site 1 has a preferred direction.', { facts: [{ direction: { subject: 'site 1', significant: true, peak_sigma: 4.2, map_sigma: 3.1 } }] })).toEqual([]);
+    });
 });
 
 describe('the polar check (local-symmetry skill) and the superstructure check (validation 2026-10-14)', () => {
@@ -526,9 +555,51 @@ describe('the box check: a cell doubling the box cannot hold (the local-symmetry
     });
 });
 
+describe('the disorder check: a split or flat-topped site called disorder before the superstructure test (the displacement-anisotropy interview, 2026-10-24)', () => {
+    // list_sites' facts: Ti site 3 split, O site 5 flat-topped, Sr site 1 neither.
+    const sites = { sites: [
+        { ref: 1, element: 'Sr', elements: ['Sr'], split: false, flat: false },
+        { ref: 3, element: 'Ti', elements: ['Ti'], split: true, flat: false },
+        { ref: 5, element: 'O', elements: ['O'], split: false, flat: true }
+    ] };
+    const tested = (...elements) => ({ modulation: { elements, ordered: [], general: [] } });
+
+    it('flags disorder of a split or flat-topped site whose element no analyze_modulations tested', () => {
+        for (const text of [
+            'Site 3 is disordered over two positions along c.',
+            'The Ti site shows positional disorder.',
+            'Ti is randomly displaced along [0 0 1].',
+            'Site 5 (O) is statically disordered.'
+        ]) {
+            expect({ text, rules: rules(text, { facts: [sites] }) }).toEqual({ text, rules: ['disorder'] });
+        }
+        expect(audit('Site 3 is disordered.', { facts: [sites] })[0].text).toBe('The answer calls site 3 (Ti, split) disorder, but analyze_modulations '
+            + 'has not run for Ti in this question: ordered antiphase displacements (a superstructure) give a site the same split cloud as random '
+            + 'disorder, and only the correlation between cells tells them apart.');
+        // Tested for another element only: the O site is still untested.
+        expect(rules('Site 5 is disordered.', { facts: [sites, tested('Ti')] })).toEqual(['disorder']);
+    });
+
+    it('stays quiet once its element was tested, on a ranking, a denial, thermal disorder, another site, and without list_sites', () => {
+        for (const text of ['Site 3 is disordered.', 'The Ti site shows positional disorder.']) {
+            expect(rules(text, { facts: [sites, tested('Ti')] }), text).toEqual([]);
+            expect(rules(text, { facts: [sites, tested('Sr', 'Ti', 'O')] }), text).toEqual([]);
+        }
+        for (const text of [
+            'Site 3 is the most disordered site: it is split, with delta_A 0.1 Å.',
+            'Site 3 shows no disorder: the order at (0, 0, ½) explains the split.',
+            'Ti shows thermal disorder about its site.',
+            'Site 1 (Sr) is disordered.'
+        ]) {
+            expect({ text, rules: rules(text, { facts: [sites] }) }).toEqual({ text, rules: [] });
+        }
+        expect(rules('Site 3 is disordered.', {})).toEqual([]);
+    });
+});
+
 describe('the order of the checks', () => {
     it('runs in FACTS order, and a lowering\'s shifts have no check yet', () => {
-        expect(FACTS.map((row) => row.key)).toEqual(['convergence', 'groups', 'direction', 'modulation', 'cluster', 'coordination', 'distribution', 'lowering']);
+        expect(FACTS.map((row) => row.key)).toEqual(['convergence', 'groups', 'direction', 'sites', 'modulation', 'cluster', 'coordination', 'distribution', 'lowering']);
         const facts = [
             { coordination: { centre: 'Cu', partner: 'F', window: [1.7, 2.52], cn: 6, whole_shell: true, confirmed: false } },
             { cluster: { element: 'Cu', members: 4, distorted: false, static: false, breathing: false, rigid: false, split: false } },

@@ -90,12 +90,17 @@ const CN_MARGIN_STATISTIC = {
 // --- probes: the code applies a constant, or enforces a firm rule, as stated ----------
 
 // An analyze_displacement_directions engine payload (no unit cell: no [u v w]).
-const orientationPayload = ({ peak, map }) => ({
-    referenceNumber: 1, element: 'Ta', frequency: 6, cellCount: 362, usedPoints: 4000, rejectedPoints: 0,
+const orientationPayload = ({ peak, map, frequency = 6, direction = null }) => ({
+    referenceNumber: 1, element: 'Ta', frequency, cellCount: 362, usedPoints: 4000, rejectedPoints: 0,
     vmin: 0.8, vmax: 1.3, peakEnhancement: 1.3, peakCount: 20, peakExpected: 11, peakSignificance: peak,
-    peakDirection: null, mapSignificance: map, antipodalAsymmetry: 0, antipodalAsymmetryZ: 0,
+    peakDirection: direction, peakCellRadiusDeg: 6.5, mapSignificance: map, antipodalAsymmetry: 0, antipodalAsymmetryZ: 0,
     antipodalAsymmetrySignificant: false, orientationEigenvalues: [0.4, 0.3, 0.3], orientationAnisotropy: 0.1,
     orientationAnisotropySignificance: 1, recommendedFrequency: 6
+});
+// A finding of the user's tiers (2026-10-24): ≥ 3σ, ≥ 1.2× isotropic, and it
+// holds at the neighbouring resolution (ν − 1: the same axis, ≥ 3σ there).
+const directionFinding = (peak) => summarizeOrientation(orientationPayload({ peak, map: 0.5, direction: [0, 0, 1] }), null, {
+    neighbour: orientationPayload({ peak: 3.5, map: 0.5, frequency: 5, direction: [0, 0.1, 0.99] })
 });
 
 // A compute_bond_angles engine payload with the coordination counts given
@@ -499,8 +504,12 @@ export const FIRM_RULES = [
         probe: () => {
             const { facts } = summarizeOrientation(orientationPayload({ peak: 1.2, map: 0.5 }), null);
             findsRule('Site 1 has a preferred displacement direction along [1 1 1].', { facts: [facts] }, 'direction');
-            const significant = summarizeOrientation(orientationPayload({ peak: 4, map: 0.5 }), null).facts;
-            assert.deepEqual(judgeAnswer('Site 1 has a preferred displacement direction along [1 1 1].', { facts: [significant] }).audit, []);
+            // A finding passes (the user's tiers, 2026-10-24); a 4σ peak that is only a hint does not.
+            const finding = directionFinding(4).facts;
+            assert.equal(finding.direction.tier, 'finding');
+            assert.deepEqual(judgeAnswer('Site 1 has a preferred displacement direction along [1 1 1].', { facts: [finding] }).audit, []);
+            const unchecked = summarizeOrientation(orientationPayload({ peak: 4, map: 0.5 }), null).facts;
+            findsRule('Site 1 has a preferred displacement direction along [1 1 1].', { facts: [unchecked] }, 'direction');
             lowersOutcome('Site 1 has a preferred displacement direction.', { facts: [facts] });
         }
     },

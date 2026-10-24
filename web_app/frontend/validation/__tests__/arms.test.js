@@ -176,11 +176,12 @@ describe('the model-free arms on the dev cases (the bar)', () => {
         // tolerated, unscored.
         expect(jt.sweep.verdict.features[0]).toEqual({ kind: 'off_centre', element: 'F', direction_uvw: [1, 0, -0.01], magnitude_A: 0.16 });
         const offcentre = await runBoth(DEV_CASES.find((item) => item.id === 'dev-offcentre'));
-        // ν = 2 (512 copies): the peak names [0 0 −1], a cell centre, but its
-        // cell is 20.9° wide, so A+ takes PC1, the same axis.
+        // ν = 2 (512 copies): the peak names [0 0 −1], a cell centre, a finding
+        // (it holds at ν = 1: the tool's tiers, 2026-10-24), but its cell is
+        // 20.9° wide, so A+ takes PC1, the same axis.
         expect(offcentre.sweep.verdict.features).toEqual([{ kind: 'off_centre', element: 'Nb', direction_uvw: [0, -0.01, 1], magnitude_A: 0.202 }]);
         expect(offcentre.sweep.readings.find((r) => r.page === 'Displacement Directions').reading)
-            .toBe('preferred direction [0 0 -1] ± 20.9°, the cell radius at ν = 2: not resolved finer than that, so the claim takes PC1');
+            .toBe('preferred direction [0 0 -1] ± 20.9°, the cell radius at ν = 2 (a finding: it holds at ν = 1, 9.38σ): not resolved finer than that, so the claim takes PC1');
         expect(offcentre.a.verdict.features[0].direction_uvw).toEqual([0, 0, -1]);
         expect(offcentre.a.verdict.features[0].magnitude_A).toBe(0.201);
         // The cluster elements: the gate's (CN 0.5–4.5); perovskite O (CN 8) no longer tried.

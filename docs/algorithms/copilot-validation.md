@@ -11,7 +11,7 @@ that went with it is [copilot-review.md](copilot-review.md).
 | Arm | What answers | Code |
 | --- | --- | --- |
 | **A** | The default Workbench, no agent: the Detected SG card (0.2 Å), the PCA Ellipsoid table, the Displacement Directions page at its own defaults (the engine's resolution, its readouts from the raw histogram, since protocol 2026-10-19.17; [below](#the-displacement-directions-page-at-its-defaults)) and the partial g(r), read by fixed rules (`ARM_A_RULES`). The cluster and superstructure engines have no page, so A cannot use them | `armA.js` `runArmA` |
-| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules; no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19), a modulation claim with the engine's polarisation as its direction (since protocol 2026-10-19.12). Where the app has a rule, A+ calls the app's function (`SWEEP_RULES`, since 2026-10-19: the split site, the cluster elements, the lower group's tolerance), and a Jahn–Teller claim's long − short is the shell catalogue's split of a joined shell (since protocol 2026-10-19.15), and a split site's direction is the direction map's peak only where the peak cell resolves it, else PC1 (`directionResolved`, 15°; since protocol 2026-10-19.17). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
+| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules; no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19), a modulation claim with the engine's polarisation as its direction (since protocol 2026-10-19.12). Where the app has a rule, A+ calls the app's function (`SWEEP_RULES`, since 2026-10-19: the split site, the cluster elements, the lower group's tolerance), and a Jahn–Teller claim's long − short is the shell catalogue's split of a joined shell (since protocol 2026-10-19.15), and a split site's direction is the direction map's peak only where the peak cell resolves it, else PC1 (`directionResolved`, 15°; since protocol 2026-10-19.17), and only where the tool calls the peak a finding (`directionTier`: ≥ 3σ, ≥ 1.2× isotropic, held at the neighbouring resolution; since protocol 2026-10-24.2). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
 | **B** | The Copilot as the app assembles it: tools, skills, guardrails (refusals, the Workbench's window questions, answer checks) | `harness.js` |
 | **C** | B without the method ([below](#arm-c-the-copilot-without-the-method)): no skills (no `read_skill`, no skills index), no method rules in the prompt, no method advice in a tool's description or check; the tools, refusals, the Workbench's questions, the evidence gate and the answer checks still run. The ablation | `harness.js` |
 | **D** | The planted truth, scored as a verdict; it must score 1 (a test checks this) | `verdict.js` `truthVerdict` |
@@ -77,7 +77,13 @@ centres lie 31.7° from every cube axis; at ν = 2 a cell is 19.3–20.9°, stil
 direction tolerance. Arm A takes a significant peak whatever its radius, as a user reading the
 page. A+ applies the tool's bound (`SWEEP_RULES.directionResolved`: `LOW_INDEX_CONE_DEG`, 15°)
 and takes PC1 where the peak cell is wider, since a cell cannot localise a direction more finely
-than its own size. The page's map opens unsmoothed, which no reading or score depends on.
+than its own size. Since protocol 2026-10-24.2 A+ also follows the tool's tiers
+(`SWEEP_RULES.directionTier`, the displacement-anisotropy interview): a candidate (≥ 3σ, ≥ 1.2×
+isotropic) is read again at the neighbouring resolution (ν − 1, ν + 1 at ν = 1), and the peak names
+the claim only as a finding, held there at ≥ 3σ on the same axis; a hint or nothing takes PC1. The
+reading records the tier, the neighbouring resolution and its σ. On dev it moves no verdict or
+score: every split site's peak is a finding, and every one's cell is wider than 15° (PC1 already).
+Arm A reads the page as before. The page's map opens unsmoothed, which no reading or score depends on.
 The moved dev records are re-recorded in `arm-a-dev.json` (the others as recorded) and pinned in
 `arms.test.js`; the tables under [Arm A results](#arm-a-results-no-model-2026-10-14-commit-b4fe09f)
 were recorded under the earlier default, and the test set's records move at its next scoring.

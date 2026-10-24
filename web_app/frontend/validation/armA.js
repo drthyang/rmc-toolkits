@@ -21,7 +21,9 @@
 // directly and maps their answers to claims. Where the app has a rule, A+
 // reads it from where the app decides it (architecture candidate 8,
 // SWEEP_RULES below): the split site, the cluster elements, the lower
-// group's tolerance, a mode's polarisation and a joined shell's split.
+// group's tolerance, a mode's polarisation, a joined shell's split, and a
+// direction's resolution and tier (a split site's peak names its direction
+// only as a finding of the tool's tiers; 2026-10-24).
 //
 // Each reading is recorded with the value it rests on, so a misleading
 // result can be traced to the page that misled.
@@ -31,7 +33,7 @@ import { clusterElementsOf, extractPeaks, shellCatalogue } from '../src/llm/cont
 import { lowerGroupTolerance, NOISE_FLOOR_MARGIN, symmetryNoiseFloor } from '../src/llm/context/runContext';
 import { describeSymmetry } from '../src/symmetryModel';
 import { unitCellVectors } from '../src/pcaCrystalFrame';
-import { cartesianToUvw, directionResolved, splitDisplacement } from '../src/copilotTools';
+import { cartesianToUvw, directionCandidate, directionResolved, directionTier, neighbourFrequency, splitDisplacement } from '../src/copilotTools';
 import { DIRECTION_DEFAULTS, directionReadoutRequest } from '../src/directionSettings';
 import { isSplitSite, splitSiteEvidence } from '../src/workers/clusters';
 import { normalizeVerdict } from './verdict';
@@ -117,30 +119,42 @@ const splitSites = async (run, readings) => {
 // readouts it shows there (directionReadoutRequest, the request the page's
 // readouts come from), with the resolution it read (`frequency`, ν) and the
 // peak cell's radius the page prints beside the direction (± R°, plan item
-// 2.5). Returns the peak's [u v w] when it is significant, else null (the
-// caller takes PC1). Arm A takes a significant peak whatever its cell's size,
-// as a user reading the page; A+ passes `resolved` (the tool's rule,
-// SWEEP_RULES.directionResolved) and takes PC1 where the cell is too wide.
-export const directionsOf = async (run, site, readings, { resolved = null } = {}) => {
-    const payload = await run.engine('orientation', {
-        ...directionReadoutRequest({ ...ARM_A_RULES.DIRECTION_SETTINGS, referenceNumber: site.referenceNumber }), geometry: false
-    });
+// 2.5). Returns the peak's [u v w] when it counts as a direction, else null
+// (the caller takes PC1). Arm A takes a significant peak whatever its cell's
+// size, as a user reading the page; A+ passes `resolved` (the tool's rule,
+// SWEEP_RULES.directionResolved), taking PC1 where the cell is too wide, and
+// `tiers` (the tool's, SWEEP_RULES.directionTier with its neighbouring
+// resolution; the displacement-anisotropy interview, 2026-10-24), taking the
+// peak only for a finding.
+export const directionsOf = async (run, site, readings, { resolved = null, tiers = null } = {}) => {
+    const request = { ...directionReadoutRequest({ ...ARM_A_RULES.DIRECTION_SETTINGS, referenceNumber: site.referenceNumber }), geometry: false };
+    const payload = await run.engine('orientation', request);
     const significant = payload.peakSignificance >= ARM_A_RULES.SIGMA;
+    // The tool's tier: a candidate is checked at the neighbouring resolution
+    // (the page's defaults are the engine's own resolution).
+    const neighbour = tiers && tiers.candidate(payload) ? await run.engine('orientation', { ...request, frequency: tiers.neighbour(payload.frequency) }) : null;
+    const tier = tiers ? tiers.tier(payload, neighbour) : null;
+    const taken = tier ? tier.tier === 'finding' : significant;
     const uvw = Array.isArray(payload.peakDirection) ? uvwOf(run.structure, payload.peakDirection) : null;
     const radius = Number.isFinite(payload.peakCellRadiusDeg) ? Number(payload.peakCellRadiusDeg.toFixed(1)) : null;
     const where = `[${uvw?.join(' ')}] ± ${radius}°, the cell radius at ν = ${payload.frequency}`;
-    const unresolved = significant && resolved != null && !resolved(payload.peakCellRadiusDeg);
+    const unresolved = taken && resolved != null && !resolved(payload.peakCellRadiusDeg);
+    const found = tier?.tier === 'finding' ? ` (a finding: it holds at ν = ${neighbour.frequency}, ${round(neighbour.peakSignificance)}σ)` : '';
+    let reading;
+    if (tier && tier.tier !== 'finding') {
+        reading = tier.tier === 'hint' ? `a hint of a direction (${tier.because}), not a finding, so the claim takes PC1` : 'no significant direction';
+    } else if (!taken) reading = 'no significant direction';
+    else reading = unresolved ? `preferred direction ${where}${found}: not resolved finer than that, so the claim takes PC1` : `preferred direction ${where}${found}`;
     readings.push({
         page: 'Displacement Directions', what: `site ${site.referenceNumber} ${site.element}`,
         value: {
             frequency: payload.frequency, peak_sigma: round(payload.peakSignificance), enhancement: round(payload.peakEnhancement),
-            peak_uvw: uvw, radius_deg: radius, map_sigma: round(payload.mapSignificance)
+            peak_uvw: uvw, radius_deg: radius, map_sigma: round(payload.mapSignificance),
+            ...(tier ? { tier: tier.tier, ...(neighbour ? { neighbour_frequency: neighbour.frequency, neighbour_sigma: round(neighbour.peakSignificance) } : {}) } : {})
         },
-        reading: !significant ? 'no significant direction'
-            : unresolved ? `preferred direction ${where}: not resolved finer than that, so the claim takes PC1`
-                : `preferred direction ${where}`
+        reading
     });
-    return significant && !unresolved ? uvw : null;
+    return taken && !unresolved ? uvw : null;
 };
 
 // The average structure's distinct A–B distances up to rMax (Å).
@@ -254,6 +268,11 @@ export const runArmA = async (copilotRun) => {
  *                   the peak cell's radius is within LOW_INDEX_CONE_DEG (15°),
  *                   else PC1 -- a cell cannot localise a direction more finely
  *                   than its own size; until then any significant peak.
+ *   direction tiers  directionTier (copilotTools.js, the tool's rule; the
+ *                   displacement-anisotropy interview, 2026-10-24, protocol
+ *                   2026-10-24.2): the peak counts only as a finding (≥ 3σ,
+ *                   ≥ 1.2× isotropic, held at the neighbouring resolution),
+ *                   else PC1; until then any significant peak.
  *
  * Arm A's rules (ARM_A_RULES) are the frozen protocol's and stay as they were,
  * apart from the Displacement Directions page's defaults, which are the
@@ -274,7 +293,10 @@ export const SWEEP_RULES = Object.freeze({
     staticDisplacement: splitDisplacement,
     clusterElements: clusterElementsOf,
     lowerGroupTolerance,
-    directionResolved
+    directionResolved,
+    // The tool's tiers (the displacement-anisotropy interview, 2026-10-24):
+    // a finding holds at the neighbouring resolution.
+    directionTier: Object.freeze({ tier: directionTier, candidate: directionCandidate, neighbour: neighbourFrequency })
 });
 
 /**
@@ -424,7 +446,7 @@ export const runArmSweep = async (copilotRun) => {
     // peak where its cell resolves it (the tool's bound), else PC1.
     for (const [element, { site, magnitude }] of found) {
         if (modulated.has(element)) continue;
-        const peak = await directionsOf(run, site, readings, { resolved: SWEEP_RULES.directionResolved });
+        const peak = await directionsOf(run, site, readings, { resolved: SWEEP_RULES.directionResolved, tiers: SWEEP_RULES.directionTier });
         features.push({ kind: 'off_centre', element, direction_uvw: peak ?? uvwOf(run.structure, site.axes[0]), magnitude_A: round(magnitude) });
     }
     // The run's one shell reading (shells.js): the split by number of a shell

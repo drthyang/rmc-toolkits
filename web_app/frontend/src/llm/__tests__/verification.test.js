@@ -119,6 +119,16 @@ describe('the evidence gate', () => {
         expect(sendBack({}, 'The Mo3 clusters are distorted.', ['polyhedral_distortion'])).toMatchObject({ id: 'clusters', missing: ['analyze_clusters'] });
     });
 
+    it('a split or flat-topped site called disorder goes back for the superstructure test, as random two-site disorder does (the displacement-anisotropy interview, 2026-10-24)', () => {
+        expect(ids({}, 'The flat-topped Ta site is disordered.')).toEqual(['split-site']);
+        expect(ids({}, 'Site 3 is disordered, a split site.')).toEqual(['split-site']);
+        expect(sendBack({}, 'The flat-topped Ta site is disordered.')).toMatchObject({ id: 'split-site', missing: ['analyze_modulations'] });
+        expect(sendBack({}, 'The flat-topped Ta site is disordered.', ['analyze_modulations'])).toBeNull();
+        // Disorder alone, of a site the answer calls neither, is the disorder check's (it knows the sites), not the gate's.
+        expect(ids({}, 'Site 3 is disordered.')).toEqual([]);
+        expect(ids({}, 'The flat-topped Ta site is not disordered.')).toEqual([]);
+    });
+
     it('anyOf asks for the first analysis the turn offers: a coordination number without find_gr_peaks offered', () => {
         const offered = ['compute_bond_angles'];
         expect(sendBack({ offered }, 'Each Ta has CN 6.')).toMatchObject({ id: 'coordination', missing: ['compute_bond_angles'] });

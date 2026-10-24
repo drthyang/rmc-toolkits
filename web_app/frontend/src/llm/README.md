@@ -613,7 +613,8 @@ the model's own `ask_user` still works beside it.
 The reviews found answers that contradicted what the tools had just computed. The tools now
 return `facts` beside their data (not sent to the model): `assess_convergence` its status,
 `detect_symmetry` its group with the point group's facts, `analyze_displacement_directions`
-whether a direction is significant (its peak ≥ 3σ), `analyze_modulations` the ordered points and
+its peak's tier (a finding, a hint or nothing), `list_sites` its split and flat-topped sites,
+`analyze_modulations` the ordered points and
 the long-wave bound with its long waves, `analyze_clusters` what its clusters showed, `find_gr_peaks`
 and `compute_bond_angles` the coordination they counted, `compute_bond_angles`,
 `analyze_displacement_directions` and `analyze_clusters` the distribution they read from the one
@@ -631,7 +632,8 @@ clear positive claim they contradict:
 | inversion lost | an inversion centre "lost" or "broken" when no group it could be lost from has one: neither the groups the answer names nor the parent (the context's average group, or the ladder's top) |
 | polar | a group called polar whose point group is not polar |
 | subgroup | a group–subgroup relation that does not hold ("H is a (t-/k-, maximal) subgroup of G", a lowering from G to H): against the ladder's own groups where the run knows both (nested rungs; the index \|G\|/\|H\| in the cell; t when the translations per cell stay, k when the point group stays, else neither — the Demo's P-42₁m in F-43m is index 12, neither), by the point groups alone otherwise (H's must be a subgroup of G's) (the user's rule, 2026-10-24) |
-| direction | a "preferred direction" when no directions analysis of the question found a peak at ≥ 3σ (the whole-map test alone is anisotropy, which thermal ellipsoids show too: review L3) |
+| direction | a "preferred direction" when no directions analysis of the question found one — a finding of the user's tiers: ≥ 3σ, ≥ 1.2× isotropic and held at the neighbouring resolution (2026-10-24; before, any peak at ≥ 3σ); a clause that calls it a hint passes (the whole-map test alone is anisotropy, which thermal ellipsoids show too: review L3) |
+| disorder | a split or flat-topped site (`list_sites`' facts; by number, else by element) called disorder(ed) when no `analyze_modulations` of the question tested its element: ordered antiphase displacements give the same split cloud (the user's rule, 2026-10-24); a ranking ("the most disordered site") and thermal disorder are left |
 | superstructure | a cell doubling or zone-boundary order when no `analyze_modulations` of the question found an ordered zone-boundary point; a superstructure or incommensurate order when none found order at a zone-boundary point or a general wavevector |
 | cell-doubling | a cell doubling the box cannot hold — odd along an axis it doubles, or along every axis when none is named — in a sentence about the run, unless the answer says the box cannot hold it; or, once `analyze_modulations` found ordered zone-boundary points, a doubling along axes none of them doubles (the user's rule, 2026-10-24) |
 | long-wave | order claimed at a box-scale wavevector — a q with every \|q_i\| ≤ the modulation engine's 0.25, or a long or box-scale wave in words — once an `analyze_modulations` ran: a long wave is a correlation the finite box can't represent, so it says nothing about order at its own q (the user's rule, 2026-10-24); a clause that denies order is left |
@@ -709,8 +711,9 @@ isAnalysis(step)           // the one definition of an analysis
   sentence from the catalogue is the user's call.
 - **The evidence gate** (CLAIMS). An answer that concludes something needs, in
   this turn, the analysis that gives the evidence for it: order between cells, or a split site
-  called random disorder, needs `analyze_modulations` (ordered antiphase displacements give a site
-  the same cloud); a preferred direction `analyze_displacement_directions`; distorted, breathing or
+  called random disorder (or, since 2026-10-24, a split or flat-topped site called disordered),
+  needs `analyze_modulations` (ordered antiphase displacements give a site the same cloud); a
+  preferred direction `analyze_displacement_directions`; distorted, breathing or
   rigid clusters `analyze_clusters`; distorted coordination polyhedra (octahedra, tetrahedra)
   `polyhedral_distortion` where the run offers it, else `analyze_clusters` (`anyOf`; the
   coordination-shells interview, 2026-10-24: an extended network takes a distortion index, never
@@ -1068,7 +1071,7 @@ In this repository the host tools live in `src/copilotTools.js`:
 | Tool | What it runs |
 |---|---|
 | `list_sites` | the per-site PCA table, through the worker or `/api/pca/sites`: per-axis kurtosis on resolved axes, PC1 as `[u v w]`, and a split site's static displacement with its sampling error (`delta_A`, `delta_se_A`) |
-| `analyze_displacement_directions` | the orientation engine with calibrated significances and `[u v w]` (Show in Displacement Directions selects the site and resolution) |
+| `analyze_displacement_directions` | the orientation engine with calibrated significances and `[u v w]`; the peak labelled a finding (≥ 3σ, ≥ 1.2× isotropic, held at the neighbouring resolution, which the tool reads too), a hint or nothing (Show in Displacement Directions selects the site and resolution) |
 | `compute_bond_angles` | the triplets engine (Show in Bond Geometry fills the triplet and windows, then computes); the sin θ-corrected histogram, and a whole shell of ~6 or ~4 neighbours read against an ideal octahedron or tetrahedron |
 | `analyze_clusters` | the cluster engine (`workers/clusters.js`, `/api/clusters`): the shape of an element's finite clusters (M₄ tetrahedra, dimers, trimers) against a shuffle null of independent atoms, and the average cluster's own distortion. The engine returns its own verdict (distorted, breathing, rigid, split member sites, …); the tool shapes the data and says each finding (`CLUSTER_SENTENCES`), and its `facts` are the verdict's answers |
 | `analyze_modulations` | the modulation engine (`workers/modulations.js`, `/api/modulations`): each element's displacement power at the zone-boundary points and its strongest modes against the configuration's diffuse background — order that enlarges the cell, which the folded average cannot show, and correlation between cells at a general wavevector (incommensurate or short-range). The engine returns each point's calibrated σ against independent cells, each cell's own correlations kept (corrected over every element's points, whichever the call names), each point's polarisation (the direction the atoms move in that mode, with its share of the power) and each element's verdict (cell doubling, general order, long wave, and diffuse order between cells: correlation between neighbouring cells spread over many q); the tool renders them (`MODULATION_SENTENCES`), the polarisation of ordered points only, a `diffuse` row per element, antiphase correlation as short-range order and in-phase correlation as neighbouring cells moving together, and never prints a ratio, σ or correlation below its bar rounded onto it |

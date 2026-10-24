@@ -439,7 +439,8 @@ describe('Copilot summarizers', () => {
             parseWarning: '2 lines skipped'
         }, null);
         expect(checks.map((check) => check.level)).toEqual(['warn', 'warn', 'note', 'note', 'note']);
-        expect(checks[2].text).toBe('No significant peak direction (1.2σ < 3σ).');
+        // Below 2.5σ: nothing to report (the user's tiers, 2026-10-24).
+        expect(checks[2].text).toBe('No preferred direction: the peak is 1.2σ, below 2.5σ: nothing to report.');
     });
 
     it('bond-angle checks with no shell to compare (the counts fallback): a window that misses most central atoms is refused', () => {
@@ -681,9 +682,9 @@ describe('Copilot summarizers', () => {
         verification.record({ name: 'analyze_displacement_directions', ...toolResult({ args: { site_ref: 3 }, facts }) }, () => ({ data: null }));
         const [finding] = verification.judge('Site 3 has a preferred displacement direction along [1 0 0].').done.audit;
         expect(finding.rule).toBe('direction');
-        expect(finding.text).toMatch(/found a peak at ≥ 3σ \(site 3: peak 2\.\d+σ, map 7\.\d+σ\)\. A significant map test is anisotropy/);
-        // A significant peak still counts, with or without the map.
-        expect(summarizeOrientation({ ...payload, peakSignificance: 4.1 }, null).facts.direction.significant).toBe(true);
+        expect(finding.text).toMatch(/found one \(a finding: ≥ 3σ, ≥ 1\.2× isotropic, and held at the neighbouring resolution; site 3: peak 2\.\d+σ at [\d.]+× isotropic, map 7\.\d+σ — nothing to report\)\. A significant map test is anisotropy/);
+        // A significant peak still counts, with or without the map: its tier is then the neighbouring resolution's call.
+        expect(summarizeOrientation({ ...payload, peakSignificance: 4.1 }, null).facts.direction).toMatchObject({ significant: true, tier: 'hint', because: 'unchecked' });
     });
 
     it('cluster summary: "LESS distorted" does not deny a distortion the axis families show (Jahn–Teller octahedra)', () => {

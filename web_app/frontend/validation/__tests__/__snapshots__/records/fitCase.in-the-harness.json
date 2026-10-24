@@ -128,19 +128,19 @@
   {
    "round": 0,
    "why": "first",
-   "sent": "30407 characters, sha256 44f74edb89321a26",
+   "sent": "30498 characters, sha256 4e1339160e84dc7c",
    "num_ctx": null
   },
   {
    "round": 1,
    "why": "tools",
-   "sent": "32829 characters, sha256 b1241cf0120e2252",
+   "sent": "32920 characters, sha256 72758c07fe6dd23c",
    "num_ctx": null
   },
   {
    "round": 2,
    "why": "tools",
-   "sent": "38150 characters, sha256 6e89fd3564148186",
+   "sent": "38589 characters, sha256 441ae3b586281e35",
    "num_ctx": null
   }
  ],
@@ -512,7 +512,7 @@
    "checks": [
     {
      "level": "note",
-     "text": "No significant peak direction (-1.02σ < 3σ)."
+     "text": "No preferred direction: the peak is -1.02σ, below 2.5σ: nothing to report."
     },
     {
      "level": "note",
@@ -520,7 +520,7 @@
     }
    ],
    "data": {
-    "note": "enhancement = density / isotropic (1 = isotropic); significances are calibrated one-sided sigma; the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal; peak.radius_deg is the peak cell's radius: the peak names its direction only to within it",
+    "note": "enhancement = density / isotropic (1 = isotropic); significances are calibrated one-sided sigma; the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal; peak.radius_deg is the peak cell's radius: the peak names its direction only to within it; peak.tier: finding (≥ 3σ, ≥ 1.2×, held at the neighbouring resolution), hint, or none (below 2.5σ); the first check says why",
     "site": 1,
     "element": "Mg",
     "frequency": 1,
@@ -551,7 +551,8 @@
       90,
       121.7
      ],
-     "radius_deg": 37.4
+     "radius_deg": 37.4,
+     "tier": "none"
     },
     "map_significance_sigma": -0.593,
     "antipodal_asymmetry": 0.102,
@@ -594,11 +595,11 @@
    "checks": [
     {
      "level": "note",
-     "text": "No significant peak direction (-0.181σ < 3σ)."
+     "text": "No preferred direction: the peak is -0.181σ, below 2.5σ: nothing to report."
     }
    ],
    "data": {
-    "note": "enhancement = density / isotropic (1 = isotropic); significances are calibrated one-sided sigma; the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal; peak.radius_deg is the peak cell's radius: the peak names its direction only to within it",
+    "note": "enhancement = density / isotropic (1 = isotropic); significances are calibrated one-sided sigma; the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal; peak.radius_deg is the peak cell's radius: the peak names its direction only to within it; peak.tier: finding (≥ 3σ, ≥ 1.2×, held at the neighbouring resolution), hint, or none (below 2.5σ); the first check says why",
     "site": 5,
     "element": "O",
     "frequency": 1,
@@ -629,7 +630,8 @@
       58.3,
       31.7
      ],
-     "radius_deg": 37.4
+     "radius_deg": 37.4,
+     "tier": "none"
     },
     "map_significance_sigma": -1.22,
     "antipodal_asymmetry": 0.0926,

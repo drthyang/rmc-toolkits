@@ -80,11 +80,12 @@ describe('the catalogues\' order and shape', () => {
     });
 
     it('FACTS: one row per facts key, in check order, the producing tools named; a lowering has no check yet', () => {
-        expect(FACTS.map((fact) => fact.key)).toEqual(['convergence', 'groups', 'direction', 'modulation', 'cluster', 'coordination', 'distribution', 'lowering']);
+        expect(FACTS.map((fact) => fact.key)).toEqual(['convergence', 'groups', 'direction', 'sites', 'modulation', 'cluster', 'coordination', 'distribution', 'lowering']);
         expect(Object.fromEntries(FACTS.map((fact) => [fact.key, fact.from]))).toEqual({
             convergence: ['assess_convergence'],
             groups: ['detect_symmetry'],
             direction: ['analyze_displacement_directions'],
+            sites: ['list_sites'],
             modulation: ['analyze_modulations'],
             cluster: ['analyze_clusters'],
             coordination: ['find_gr_peaks', 'compute_bond_angles'],

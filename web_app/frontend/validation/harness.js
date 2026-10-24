@@ -214,7 +214,15 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // point groups alone) and a cell doubling the box cannot hold (cell-doubling:
 // odd along an axis it doubles, or along axes no ordered zone-boundary point
 // doubles); detect_symmetry's facts give its operations and tolerance; the
-// CIF calls itself an average-structure model of an RMC configuration.
+// CIF calls itself an average-structure model of an RMC configuration;
+// displacement-anisotropy: analyze_displacement_directions labels its peak a
+// finding (≥ 3σ, ≥ 1.2× isotropic, held at the neighbouring resolution, which
+// it reads for a candidate), a hint (≥ 3σ under 1.2×, 2.5–3σ, not held) or
+// nothing (below 2.5σ), and the direction check and arm A+ take a finding
+// only (A+'s readings record the tier; no dev verdict moves); a split or
+// flat-topped site called disorder when analyze_modulations has not tested
+// its element (disorder, on list_sites' facts), and the gate's split-site
+// row reads a flat-topped site called disordered.
 export const PROTOCOL_VERSION = '2026-10-24.2';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one

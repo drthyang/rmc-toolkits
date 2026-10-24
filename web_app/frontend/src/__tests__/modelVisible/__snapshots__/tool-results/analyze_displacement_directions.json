@@ -3,13 +3,13 @@
   "arguments": {
     "site_ref": 1
   },
-  "content_chars": 1135,
+  "content_chars": 1367,
   "content": {
     "ref": "r1",
     "checks": [
       {
         "level": "note",
-        "text": "No significant peak direction (2.51σ < 3σ)."
+        "text": "A hint of a direction, not a finding: the peak is 2.51σ, between 2.5σ and 3σ; toward [0.62 -0.38 -1] ± 20.9°, the cell radius at ν = 2."
       },
       {
         "level": "note",
@@ -17,7 +17,7 @@
       }
     ],
     "data": {
-      "note": "enhancement = density / isotropic (1 = isotropic); significances are calibrated one-sided sigma; the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal; peak.radius_deg is the peak cell's radius: the peak names its direction only to within it",
+      "note": "enhancement = density / isotropic (1 = isotropic); significances are calibrated one-sided sigma; the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal; peak.radius_deg is the peak cell's radius: the peak names its direction only to within it; peak.tier: finding (≥ 3σ, ≥ 1.2×, held at the neighbouring resolution), hint, or none (below 2.5σ); the first check says why",
       "site": 1,
       "element": "Ta",
       "frequency": 2,
@@ -33,7 +33,8 @@
         "direction_cartesian": [0.5, -0.309, -0.809],
         "direction_uvw": [0.62, -0.38, -1],
         "angles_to_abc_deg": [60, 108, 144],
-        "radius_deg": 20.9
+        "radius_deg": 20.9,
+        "tier": "hint"
       },
       "map_significance_sigma": 2.59,
       "antipodal_asymmetry": 0.186,

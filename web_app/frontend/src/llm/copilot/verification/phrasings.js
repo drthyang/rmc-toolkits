@@ -182,6 +182,19 @@ export const MODULATION = /(^|[^\w-])(modulat(?:ion|ions|ed)|incommensurate|orde
 // A split site: named, random off-centring either way round, a ± displacement
 // (not a ± sampling error; not random thermal displacements, which are no order).
 export const SPLIT_SITE = /(^|[^\w-])(split[- ]sites?|two[- ]site(?:\s+disorder)?|disordered over two|random(?:ly)?\s+(?:(?!thermal\b)\w+\s+)?(?:off[- ]cent\w*|displac\w*)|(?:off[- ]cent\w*|displac\w*)[^.;]{0,40}?\bat random|(?:displac\w*|off[- ]cent\w*|shift\w*|split)\s+(?:by\s+)?±\s*\d+(?:\.\d+)?\s*(?:Å|A\b)|±\s*\d+(?:\.\d+)?\s*(?:Å|A\b)\s+along|off[- ]cent(?:re|er|ring|ering)\s+(?:dis)?order)/gi;
+// A split or flat-topped site called disorder, for the gate's split-site row
+// (the displacement-anisotropy interview, 2026-10-24: flat-topped sites too):
+// "disorder(ed)" in a clause that calls the site split or flat-topped.
+// No negation may stand between the two ("the flat-topped site is not disordered").
+const UNNEGATED = '(?:(?!\\b(?:not|no|never|neither|nor)\\b|n\'t\\b)[^.;]){0,60}?';
+export const SPLIT_OR_FLAT_DISORDER = new RegExp(`(^|[^\\w-])((?:split|flat[- ]topped)\\b${UNNEGATED}\\bdisorder(?:ed)?`
+    + `|disorder(?:ed)?\\b${UNNEGATED}\\b(?:split|flat[- ]topped))\\b`, 'gi');
+// "Disorder" as a claim, for the disorder check (facts.js): "disorder(ed)",
+// not a ranking ("the most disordered site", the skills' own question) nor
+// thermal, dynamic or vibrational disorder.
+export const DISORDER = /(^|[^\w-])((?<!\b(?:most|more|least|less|thermal|thermally|dynamic|dynamical|dynamically|vibrational)\s)disorder(?:ed)?)\b/gi;
+// Sites named by number: "site 3", "sites 3 and 7", "sites 1, 2, 5".
+export const SITE_REFS = /\bsites?\s+((?:\d+)(?:\s*(?:,|and|&)\s*\d+)*)/gi;
 export const SHELL_CLAIMS = /(^|[^\w-])(jahn[-– ]teller|split (?:first )?(?:coordination )?shell|short and long bonds)\b/gi;
 // A lowering of the average structure (lowers / lowered its symmetry), or a
 // quantified shift every copy shares ("shifted by 0.07 Å", "(coherent)"); a ±
