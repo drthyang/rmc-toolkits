@@ -57,6 +57,11 @@
 //               interpreted on its low-r side (the user's rule, 2026-10-24;
 //               2 %, the separation's fraction, before).
 //   CN match    two counts agree within half an atom (cnMatches).
+//   average     find_gr_peaks cross-checks the shell's window against the
+//               average structure's first shell for the pair, between site
+//               means (averageStructureBonds, averageShellCheck): flagged when
+//               a bond lies outside the window by more than the first peak's
+//               FWHM (the user's rule, 2026-10-24).
 //   clusters    an element whose own first shell holds 0.5–4.5 neighbours
 //               may form finite clusters (clusterElementsOf: the evidence
 //               gate's "no order" and arm A+'s cluster sweep).
@@ -586,6 +591,98 @@ const buildShell = (centre, partner, label, geometry, { partnerDensity, centreDe
             : null,
         constraint: Number.isFinite(limit) ? { limitA: limit, gFraction, limited: gFraction > CONSTRAINT_LIMIT_FRACTION } : null
     });
+};
+
+// --- the average structure's first shell (find_gr_peaks' cross-check) ---------------
+
+// The coordination-shells interview (2026-10-24, answer 1): the window defaults
+// to find_gr_peaks' first shell, "cross-checked against the average
+// structure's bond lengths; flag when the two disagree by more than the shell's
+// width".
+//
+//   bonds     the average structure's first shell for the pair: every distance
+//             between the pair's site means (the basis `frac`, over the 26
+//             neighbouring cells, through the full cell metric) from the
+//             shortest to AVERAGE_SHELL_REACH_A beyond it — the join's reach
+//             (SPLIT_SHELL_REACH_A: a distorted polyhedron's bond lengths lie
+//             within it). Not each site's nearest partner: a site with no bond
+//             to the other element would count its nearest one as a bond (the
+//             Demo's second Se site, 4.26 Å from the nearest Ga).
+//   disagree  the furthest of those bonds lies outside first_shell.window_A by
+//             more than the shell's width, its first peak's FWHM (find_gr_peaks'
+//             peaks_A[0].fwhm, from the half-height walk). The window runs from
+//             the 1 % onset to the closing minimum, so a bond outside it lies
+//             where the configuration has (almost) no pairs; one FWHM is the
+//             shell's own spread, more than any offset of a site mean from the
+//             local bonds (libration, anharmonic tails), and the window's own
+//             width (0.5–1.4 Å on the Demo and the dev cases) would pass the
+//             fifth bond of a 4 + 1 polyhedron whose shell closes before it.
+//             The FWHM's overestimate on overlapping peaks errs towards silence.
+export const AVERAGE_SHELL_REACH_A = SPLIT_SHELL_REACH_A;
+// Coincident site means (a duplicated basis entry) are no bond.
+const COINCIDENT_A = 1e-3;
+
+/**
+ * The average structure's bond lengths for the pair a–b (Å, sorted, distinct
+ * to 1e-4 Å): its first shell (above). [] without a basis or a cell, or with
+ * no site of either element.
+ */
+export const averageStructureBonds = (structure, a, b) => {
+    const basis = structure?.basis;
+    const L = structure?.latticeVectors;
+    const supercell = structure?.supercell;
+    if (!Array.isArray(basis) || !basis.length || !Array.isArray(L) || L.length !== 3 || !Array.isArray(supercell)) return [];
+    const cell = L.map((row, i) => row.map((value) => value / Math.max(supercell[i] || 1, 1)));
+    const from = basis.filter((site) => site.el === a && Array.isArray(site.frac));
+    const to = basis.filter((site) => site.el === b && Array.isArray(site.frac));
+    // Every pair's distances over the neighbouring cells, each to `visit`.
+    const each = (visit) => {
+        for (const s of from) {
+            for (const t of to) {
+                for (let i = -1; i <= 1; i += 1) {
+                    for (let j = -1; j <= 1; j += 1) {
+                        for (let k = -1; k <= 1; k += 1) {
+                            const f0 = t.frac[0] + i - s.frac[0];
+                            const f1 = t.frac[1] + j - s.frac[1];
+                            const f2 = t.frac[2] + k - s.frac[2];
+                            const x = f0 * cell[0][0] + f1 * cell[1][0] + f2 * cell[2][0];
+                            const y = f0 * cell[0][1] + f1 * cell[1][1] + f2 * cell[2][1];
+                            const z = f0 * cell[0][2] + f1 * cell[1][2] + f2 * cell[2][2];
+                            const r = Math.sqrt(x * x + y * y + z * z);
+                            if (r > COINCIDENT_A) visit(r);
+                        }
+                    }
+                }
+            }
+        }
+    };
+    let shortest = Infinity;
+    each((r) => { if (r < shortest) shortest = r; });
+    if (!Number.isFinite(shortest)) return [];
+    const kept = new Set();
+    each((r) => { if (r <= shortest + AVERAGE_SHELL_REACH_A + 1e-9) kept.add(Math.round(r * 1e4) / 1e4); });
+    return [...kept].sort((x, y) => x - y);
+};
+
+/**
+ * find_gr_peaks' cross-check of a shell (a catalogue Shell) against the
+ * average structure's bonds (averageStructureBonds): `{ bonds: [shortest,
+ * longest], outsideA, widthA, disagrees }`, outsideA how far the furthest bond
+ * lies outside the shell's window (0 when every one lies in it), widthA the
+ * shell's width (its first peak's FWHM), `disagrees` when outsideA > widthA.
+ * Null without a closed shell or without bonds.
+ */
+export const averageShellCheck = (shell, bonds) => {
+    if (!shell?.window || !Array.isArray(bonds) || !bonds.length) return null;
+    const [lo, hi] = shell.window;
+    const outsideA = Math.max(0, ...bonds.map((r) => Math.max(lo - r, r - hi)));
+    const widthA = shell.peaks?.[0]?.fwhm;
+    return {
+        bonds: [bonds[0], bonds.at(-1)],
+        outsideA,
+        widthA: Number.isFinite(widthA) ? widthA : null,
+        disagrees: Number.isFinite(widthA) && outsideA > widthA
+    };
 };
 
 // --- the catalogue -----------------------------------------------------------------

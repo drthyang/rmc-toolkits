@@ -24,9 +24,10 @@
 //                phrasings join them (createVerification's `phrasings`: the
 //                validation's verdict words, validation/verdict.js);
 //   backedBy     the analyses that back it, through one combinator — anyOf
-//                (met when any ran; asks for the first), firstOffered (the
-//                first the turn offers, else the last, is the one needed) or
-//                allOf (each requirement, every `each` value its own). A
+//                (met when any ran; asks for the first the turn offers),
+//                firstOffered (the first the turn offers, else the last, is
+//                the one needed) or allOf (each requirement, every `each`
+//                value its own). A
 //                requirement is a tool name or { tool, with, each, say }:
 //                `with` names the argument the call must carry (`each`: equal
 //                to each value), `say` how a missing one is named. A row is
@@ -45,8 +46,8 @@
 
 import { asserts } from './reading';
 import {
-    BREATHING, CELL_DOUBLING, CN_CLAIMS, DISTORTED, LOWERING, MODULATION, NO_ORDER, POLYHEDRON_CN, PREFERRED, RIGID, RUN_NOUN,
-    SHELL_CLAIMS, SPLIT_SITE, SUPERSTRUCTURE
+    BREATHING, CELL_DOUBLING, CN_CLAIMS, DISTORTED_CLUSTERS, DISTORTED_POLYHEDRA, LOWERING, MODULATION, NO_ORDER, POLYHEDRON_CN, PREFERRED, RIGID,
+    RUN_NOUN, SHELL_CLAIMS, SPLIT_SITE, SUPERSTRUCTURE
 } from './phrasings';
 
 // --- the combinators ----------------------------------------------------------------
@@ -107,9 +108,22 @@ export const CLAIMS = Object.freeze([
         id: 'clusters',
         what: 'the clusters\' distortion, breathing or rigidity',
         scope: 'run',
-        phrasings: { asserted: [DISTORTED, BREATHING, RIGID] },
+        phrasings: { asserted: [DISTORTED_CLUSTERS, BREATHING, RIGID] },
         backedBy: anyOf('analyze_clusters'),
         prompt: { phrase: 'clusters', analysis: 'analyze_clusters' }
+    }),
+    // Distorted coordination polyhedra (octahedra, tetrahedra): a distortion
+    // index (polyhedral_distortion, where the run offers it) or the cluster
+    // null — a corner-sharing polyhedron or another extended network has no
+    // finite clusters to test (the coordination-shells interview, 2026-10-24,
+    // answer 7). Without polyhedral_distortion the gate asks for analyze_clusters.
+    row({
+        id: 'polyhedra',
+        what: 'a distortion of the coordination polyhedra',
+        scope: 'run',
+        phrasings: { asserted: [DISTORTED_POLYHEDRA] },
+        backedBy: anyOf('polyhedral_distortion', 'analyze_clusters'),
+        prompt: { phrase: 'distorted polyhedra', analysis: 'polyhedral_distortion' }
     }),
     // A coordination number, a split shell or a Jahn–Teller distortion.
     row({
@@ -217,7 +231,8 @@ export const claimsOf = ({ offered = null, extra = null, elements = [], values =
         const ranAny = (item) => ran.some((call) => meets(call, item));
         let missing;
         if (backedBy.need === 'any') {
-            missing = backedBy.requirements.some(ranAny) ? [] : [backedBy.requirements[0]];
+            // Asks for the first the turn offers (a row is read only when one is).
+            missing = backedBy.requirements.some(ranAny) ? [] : [backedBy.requirements.find((item) => has(item.tool)) ?? backedBy.requirements[0]];
         } else if (backedBy.need === 'first') {
             const needed = backedBy.requirements.find((item) => has(item.tool)) ?? backedBy.requirements.at(-1);
             missing = ranAny(needed) ? [] : [needed];

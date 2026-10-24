@@ -35,16 +35,20 @@ describe('the binding test: EVIDENCE_RULES and the claim catalogue', () => {
     // a requirement changed moves this table, and so does a prompt edit.
     it('what the sentence does not say is the gap table', () => {
         expect(promptGaps(CLAIMS)).toEqual({
+            // "distorted polyhedra, polyhedral_distortion": the gate takes analyze_clusters too, and asks for it
+            // where the run does not offer polyhedral_distortion (the coordination-shells interview, 2026-10-24).
+            polyhedra: ['analyze_clusters'],
             // "a coordination number or split shell, find_gr_peaks": the gate takes compute_bond_angles too.
             coordination: ['compute_bond_angles'],
             // "a lowering …, measure_symmetry_lowering": where it is not offered, the gate asks for detect_symmetry.
             lowering: ['detect_symmetry'],
             // '"no order", every one of them': the gate asks for a per-site directions map and analyze_clusters
-            // on each element whose own first shell is a finite cluster's, and for neither find_gr_peaks nor
-            // measure_symmetry_lowering.
+            // on each element whose own first shell is a finite cluster's, and for neither polyhedral_distortion,
+            // find_gr_peaks nor measure_symmetry_lowering.
             'no-order': [
                 'analyze_displacement_directions with site_ref',
                 'analyze_clusters with element for each clusterElement',
+                'not polyhedral_distortion',
                 'not find_gr_peaks',
                 'not measure_symmetry_lowering'
             ]
@@ -54,7 +58,7 @@ describe('the binding test: EVIDENCE_RULES and the claim catalogue', () => {
 
 describe('the catalogues\' order and shape', () => {
     it('CLAIMS: one row per claim, in send-back order, each with what it reads and what backs it', () => {
-        expect(CLAIMS.map((claim) => claim.id)).toEqual(['order-between-cells', 'split-site', 'direction', 'clusters', 'coordination', 'lowering', 'no-order']);
+        expect(CLAIMS.map((claim) => claim.id)).toEqual(['order-between-cells', 'split-site', 'direction', 'clusters', 'polyhedra', 'coordination', 'lowering', 'no-order']);
         for (const claim of CLAIMS) {
             expect(Object.keys(claim).sort(), claim.id).toEqual(['backedBy', 'id', 'phrasings', 'prompt', 'scope', 'what']);
             expect(['run', 'always'], claim.id).toContain(claim.scope);

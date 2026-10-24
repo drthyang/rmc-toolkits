@@ -26,6 +26,9 @@ import {
     SHELL_TROUGH_FRACTION,
     SPLIT_SHELL_REACH_A,
     UNBONDED_APEX_FRACTION,
+    AVERAGE_SHELL_REACH_A,
+    averageShellCheck,
+    averageStructureBonds,
     cnChanges,
     cnMarginCut,
     cnMatches,
@@ -654,6 +657,52 @@ describe('the CN match and the two cut readings', () => {
         // Nothing to decide with (the Workbench, before a call): not cut.
         expect(windowCut(apart)).toEqual({ cut: false, by: null, rule: null, whole: false });
         expect(windowCut(null)).toEqual({ cut: false, by: null, rule: null, whole: false });
+    });
+});
+
+describe('the average structure\'s first shell: find_gr_peaks\' cross-check (the user\'s rule, 2026-10-24)', () => {
+    // A 10 Å cubic cell (supercell 2×2×2: the conventional cell is the
+    // lattice over it): a centre M at the cell's centre with four X at 1.93 Å
+    // in a square and a fifth at 2.40 Å above it, a 4 + 1 pyramid, and a
+    // second X site with no M within the reach.
+    const a = 10;
+    const site = (el, x, y, z) => ({ el, frac: [x / a, y / a, z / a] });
+    const structure = {
+        latticeVectors: [[2 * a, 0, 0], [0, 2 * a, 0], [0, 0, 2 * a]],
+        supercell: [2, 2, 2],
+        basis: [
+            site('M', 5, 5, 5),
+            site('X', 6.93, 5, 5), site('X', 3.07, 5, 5), site('X', 5, 6.93, 5), site('X', 5, 3.07, 5), site('X', 5, 5, 7.4),
+            site('X', 0.5, 0.5, 0.5)
+        ]
+    };
+
+    it('reads every bond between site means from the shortest to the join\'s reach beyond it, either way round', () => {
+        expect(AVERAGE_SHELL_REACH_A).toBe(SPLIT_SHELL_REACH_A);
+        expect(averageStructureBonds(structure, 'M', 'X')).toEqual([1.93, 2.4]);
+        expect(averageStructureBonds(structure, 'X', 'M')).toEqual([1.93, 2.4]);
+        // Not each site's nearest partner: the lone X's nearest M (7.79 Å) is no bond.
+        expect(Math.max(...averageStructureBonds(structure, 'X', 'M'))).toBeLessThan(1.93 + AVERAGE_SHELL_REACH_A + 1e-9);
+        // Periodic, through the cell metric: two M a cell apart along a are 10 Å apart.
+        expect(averageStructureBonds(structure, 'M', 'M')).toEqual([10]);
+        expect(averageStructureBonds({ ...structure, basis: [] }, 'M', 'X')).toEqual([]);
+        expect(averageStructureBonds(structure, 'M', 'Y')).toEqual([]);
+        expect(averageStructureBonds(null, 'M', 'X')).toEqual([]);
+    });
+
+    it('disagrees only when a bond lies outside the window by more than the first peak\'s FWHM', () => {
+        const shell = { window: [1.7, 2.17], peaks: [{ r: 1.93, fwhm: 0.12 }] };
+        expect(averageShellCheck(shell, [1.93])).toEqual({ bonds: [1.93, 1.93], outsideA: 0, widthA: 0.12, disagrees: false });
+        // The pyramid's fifth bond, 0.23 Å past the closing minimum.
+        expect(averageShellCheck(shell, [1.93, 2.4])).toMatchObject({ bonds: [1.93, 2.4], disagrees: true });
+        expect(averageShellCheck(shell, [1.93, 2.4]).outsideA).toBeCloseTo(0.23, 12);
+        // Just within one width beyond the window, and just past it.
+        expect(averageShellCheck(shell, [2.28]).disagrees).toBe(false);
+        expect(averageShellCheck(shell, [2.3]).disagrees).toBe(true);
+        // Below the window's onset too.
+        expect(averageShellCheck(shell, [1.5]).disagrees).toBe(true);
+        expect(averageShellCheck({ window: null, peaks: [] }, [1.93])).toBeNull();
+        expect(averageShellCheck(shell, [])).toBeNull();
     });
 });
 

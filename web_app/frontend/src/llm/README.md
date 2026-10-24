@@ -634,7 +634,8 @@ clear positive claim they contradict:
 | superstructure | a cell doubling or zone-boundary order when no `analyze_modulations` of the question found an ordered zone-boundary point; a superstructure or incommensurate order when none found order at a zone-boundary point or a general wavevector |
 | long-wave | order claimed at a box-scale wavevector — a q with every \|q_i\| ≤ the modulation engine's 0.25, or a long or box-scale wave in words — once an `analyze_modulations` ran: a long wave is a correlation the finite box can't represent, so it says nothing about order at its own q (the user's rule, 2026-10-24); a clause that denies order is left |
 | cluster | clusters of an element called distorted, breathing or rigid when every `analyze_clusters` of that element (or of every element, for "the clusters") found otherwise: distorted needs a shape distortion, a pattern (axis family, trigonality), split sites or a distorted average cluster; a polyhedron word naming neither the element nor "cluster" is left alone (review L5) |
-| coordination | a coordination number for an element ("four-coordinated", "CN 4", "square-planar coordination") that every whole-shell count of it contradicts by more than half an atom (`find_gr_peaks`' first shell, `compute_bond_angles` in a whole shell), unless a window the user chose gave it; a clause about part of the shell (the first peak, the short bonds, a window in Å) is not a claim about the whole (review L5) |
+| coordination | a coordination number for an element ("four-coordinated", "CN 4", "square-planar coordination", "4 F per Cu" — B's count of A) that every whole-shell count of it contradicts by more than half an atom (`find_gr_peaks`' first shell, `compute_bond_angles` in a whole shell), unless a window the user chose gave it; a clause about part of the shell (the first peak, the short bonds, a window in Å other than the whole shell's) is not a claim about the whole (review L5; a clause stating the whole shell's window is checked since 2026-10-24) |
+| window | a coordination number or a bond angle quoted without its window in Å — none in its sentence, nor in another sentence that names no element or every element the quoting one names — once `find_gr_peaks` or `compute_bond_angles` counted a shell: every CN or angle carries its window (the user's rule, 2026-10-24) |
 | single-configuration | a distribution's numbers (bond angles, coordination counts, displacement directions, cluster shapes: a mean, sd, mode, share or histogram bin) quoted without saying they come from one configuration, once such an analysis ran: every analysis reads the run's one configuration (the user's rule, 2026-10-24) |
 
 A negated claim ("has not converged", "achiral", "no preferred direction"), a question, a
@@ -699,16 +700,20 @@ isAnalysis(step)           // the one definition of an analysis
   the missing consumer shows), over one reading of the text (`reading.js`, `phrasings.js`).
   `EVIDENCE_RULES` stays written by hand in `prompts/copilot.js`; `verificationCatalogue.test.js`
   binds it to CLAIMS: `evidenceSentence` renders it from the rows byte for byte, each row's prompt
-  names its first analysis, and `promptGaps` pins what the sentence does not say (coordination
-  also takes `compute_bond_angles`; a lowering falls back to `detect_symmetry`; "no order" needs a
-  per-site map and each finite cluster, and neither `find_gr_peaks` nor
-  `measure_symmetry_lowering`). Generating the sentence from the catalogue is the user's call.
+  names its first analysis, and `promptGaps` pins what the sentence does not say (distorted
+  polyhedra also take `analyze_clusters`; coordination also takes `compute_bond_angles`; a lowering
+  falls back to `detect_symmetry`; "no order" needs a per-site map and each finite cluster, and
+  neither `polyhedral_distortion`, `find_gr_peaks` nor `measure_symmetry_lowering`). Generating the
+  sentence from the catalogue is the user's call.
 - **The evidence gate** (CLAIMS). An answer that concludes something needs, in
   this turn, the analysis that gives the evidence for it: order between cells, or a split site
   called random disorder, needs `analyze_modulations` (ordered antiphase displacements give a site
   the same cloud); a preferred direction `analyze_displacement_directions`; distorted, breathing or
-  rigid clusters `analyze_clusters`; a coordination number, a split shell or a Jahn–Teller
-  distortion `find_gr_peaks` or `compute_bond_angles` (`anyOf`); a lowering of the average structure
+  rigid clusters `analyze_clusters`; distorted coordination polyhedra (octahedra, tetrahedra)
+  `polyhedral_distortion` where the run offers it, else `analyze_clusters` (`anyOf`; the
+  coordination-shells interview, 2026-10-24: an extended network takes a distortion index, never
+  the cluster null); a coordination number, a split shell or a Jahn–Teller distortion
+  `find_gr_peaks` or `compute_bond_angles` (`anyOf`, asking for the first the turn offers); a lowering of the average structure
   `measure_symmetry_lowering`, `detect_symmetry` where it is not offered (`firstOffered`); and "no
   order beyond thermal motion" every one of them (`allOf`) — `analyze_modulations`, a per-site
   directions map, and `analyze_clusters` for every element whose own first shell holds at most 4.5

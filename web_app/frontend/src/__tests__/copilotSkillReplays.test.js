@@ -61,13 +61,13 @@ const scriptedModel = (replies) => {
 // it, on the run props `run` (by default the χ² history only): the turn builds
 // the context, the evidence gate (on, THY-18) and the answer checks, whose
 // context facts (the watchdog's verdict) come from the run.
-const replay = async (replies, { run = { rValueFile } } = {}) => {
+const replay = async (replies, { run = { rValueFile }, offered = tools } = {}) => {
     const { callModel, requests } = scriptedModel([...replies]);
     const events = [];
-    for await (const event of runTurn({ question: 'Q', run, model: callModel, tools })) events.push(event);
+    for await (const event of runTurn({ question: 'Q', run, model: callModel, tools: offered })) events.push(event);
     const steps = events.filter((event) => event.type === 'tool_end');
     const toolMessages = requests.at(-1).filter((message) => message.role === 'tool').map((message) => JSON.parse(message.content));
-    return { done: events.at(-1), steps, toolMessages };
+    return { done: events.at(-1), steps, toolMessages, requests };
 };
 
 describe('rmc-fit-assessment', () => {
@@ -141,19 +141,20 @@ describe('rmc-fit-assessment: the user\'s interview answers (2026-10-24)', () =>
         const said = await replay([
             angles,
             { text: 'In this one configuration — lightly sampled, 3.52 accepted moves per atom, short of the 10 the method asks for — the '
-                + 'Se–Ga–Se angles have mean 109.4°, sd 4.1°: indicative only, with no spread between runs to judge them by.\n'
+                + 'Se–Ga–Se angles in 2.18–2.79 Å have mean 109.4°, sd 4.1°: indicative only, with no spread between runs to judge them by.\n'
                 + 'Outcome: partial — one configuration.' }
         ], { run: demoRun });
         expect(said.toolMessages[0].data).toMatchObject({ mean_deg: 109.4, sd_deg: 4.1 });
         expect(rulesOf(said.done)).toEqual([]);
-        // The README GIF's answer, as the corpus holds it: the distribution's numbers, no word of one configuration.
+        // The README GIF's answer, as the corpus holds it: the distribution's numbers, no word of one
+        // configuration (and no window: the coordination-shells interview's check, 2026-10-24).
         const bare = await replay([
             angles,
             { text: 'Se–Ga–Se angles: 23 842 angles around 4 000 Ga atoms, mean 109.4°, sd 4.1°. Mode 109.5° with share 0.94.\n'
                 + 'Outcome: achieved — regular.' }
         ], { run: demoRun });
-        expect(rulesOf(bare.done)).toEqual(['single-configuration']);
-        expect(bare.done.audit[0].text).toMatch(/^The answer quotes the numbers of the Se–Ga–Se bond-angle distribution without saying they come from one configuration/);
+        expect(rulesOf(bare.done)).toEqual(['window', 'single-configuration']);
+        expect(bare.done.audit[1].text).toMatch(/^The answer quotes the numbers of the Se–Ga–Se bond-angle distribution without saying they come from one configuration/);
         expect(bare.done.outcome.status).toBe('not verified');
         // The sampling the answer names is the context's.
         expect(buildRunContext(demoRun).configuration_optimization.accepted_moves_per_atom).toBe(3.52);
@@ -185,10 +186,12 @@ describe('coordination-shells', () => {
     const angles = (r12_min, r12_max) => ({ calls: [{ name: 'compute_bond_angles', args: { end1: 'Se', apex: 'Ta', end2: 'Se', r12_min, r12_max } }] });
 
     it('reads the whole TaSe6 shell against an ideal octahedron', async () => {
-        // In the run's one configuration, as the answer says (the single-configuration check, 2026-10-24).
+        // In the run's one configuration, as the answer says (the single-configuration check, 2026-10-24),
+        // with its window (the window check, 2026-10-24).
         const { done, steps, toolMessages } = await replay([
             angles(2.33, 2.97),
-            { text: 'In this one configuration, an octahedral split: 80 % cis near 89°, 20 % trans near 159°.\nOutcome: achieved — whole shell.' }
+            { text: 'In this one configuration, in 2.33–2.97 Å, an octahedral split: 80 % cis near 89°, 20 % trans near 159°.\n'
+                + 'Outcome: achieved — whole shell.' }
         ]);
         expect(done.audit).toEqual([]);
         expect(steps[0].status).toBe('ok');
@@ -207,6 +210,59 @@ describe('coordination-shells', () => {
         expect(toolMessages[0].checks[0].text).toMatch(/^Refused: The window cuts the first Ta–Se shell: it holds 3\.75 Se per Ta \(shell_ab\.cn_in_window\) of the shell's 6 \(shell_ab\.cn/);
         expect(toolMessages[0].data).not.toHaveProperty('modes');
         expect(toolMessages[0].data).not.toHaveProperty('mean_deg');
+    });
+});
+
+// The user's interview answers of 2026-10-24 (coordination-shells), each where
+// a check in code catches the wrong answer, with the run tools over the
+// partials (find_gr_peaks) offered too.
+describe('coordination-shells: the user\'s interview answers (2026-10-24)', () => {
+    const demoRun = { rValueFile, plotFiles, structure };
+    const shellTools = [...buildRunTools(demoRun), ...hostTools];
+    const rulesOf = (done) => done.audit.map((finding) => finding.rule);
+    const shell = (pair = 'Ta-Se') => ({ calls: [{ name: 'find_gr_peaks', args: { pair } }] });
+
+    it('answer 8: every CN and angle carries its window in Å — with it the answer passes, without it a warning stands under it', async () => {
+        const run = { run: demoRun, offered: shellTools };
+        const right = await replay([shell(), {
+            text: 'In the whole Ta–Se first shell, {{r1.first_shell.window_A}} Å, each Ta has {{r1.first_shell.cn.Se_per_Ta}} Se.\n'
+                + 'Outcome: achieved — the whole shell.'
+        }], run);
+        expect(right.done.text).toMatch(/^In the whole Ta–Se first shell, \[2\.21, 3\.23\] Å, each Ta has 6 Se\./);
+        expect(rulesOf(right.done)).toEqual([]);
+        for (const text of ['Each Ta is 6-coordinated by Se.', 'The Se–Ta–Se angles split 80/20: cis near 89°, trans near 159°.']) {
+            const wrong = await replay([shell(), { text: `${text}\nOutcome: achieved — counted.` }], run);
+            expect({ text, rules: rulesOf(wrong.done) }).toEqual({ text, rules: ['window'] });
+            expect(wrong.done.audit[0].text).toMatch(/without its window in Å: every coordination number and bond angle carries the window it was counted in \(this question's: Ta–Se 2\.21–3\.23 Å; Se–Ta 2\.21–3\.23 Å\)\.$/);
+            expect(wrong.done.outcome.status).toBe('not verified');
+        }
+    });
+
+    it('answer 1: find_gr_peaks cross-checks the window against the average structure\'s bond lengths — every Demo shell holds them', async () => {
+        const pairs = ['Ga-Se', 'Ta-Se', 'Ta-Ta', 'Se-Se'];
+        const { toolMessages } = await replay([
+            { calls: pairs.map((pair) => ({ name: 'find_gr_peaks', args: { pair } })) },
+            { text: 'Read.\nOutcome: achieved — read.' }
+        ], { run: demoRun, offered: shellTools });
+        // The average structure's first shell for each pair (shortest and longest bond between the site means), inside its window.
+        expect(toolMessages.map((message) => [message.data.pair, message.data.first_shell.window_A, message.data.first_shell.average_structure_d_A])).toEqual([
+            ['Ga-Se', [2.18, 2.79], [2.42, 2.44]],
+            ['Ta-Se', [2.21, 3.23], [2.52, 2.76]],
+            ['Ta-Ta', [2.65, 3.33], [3.02, 3.07]],
+            ['Se-Se', [3.02, 4.42], [3.35, 3.69]]
+        ]);
+        expect(toolMessages.flatMap((message) => message.checks).filter((check) => /average structure/.test(check.text))).toEqual([]);
+    });
+
+    it('answer 7: distorted polyhedra need a distortion index where the run offers one, else the cluster analysis (the Demo offers no polyhedral_distortion today)', async () => {
+        const { done, requests } = await replay([
+            { text: 'The TaSe6 octahedra are distorted.\nOutcome: achieved — obvious.' },
+            { calls: [{ name: 'analyze_clusters', args: { element: 'Ta', r_min: 2.65, r_max: 3.33 } }] },
+            { text: 'In this one configuration, analyze_clusters reads the Ta4 clusters, not the TaSe6 octahedra.\nOutcome: partial — no distortion index.' }
+        ], { run: demoRun, offered: shellTools });
+        expect(done.gates).toEqual([{ round: 0, id: 'polyhedra', missing: ['analyze_clusters'] }]);
+        expect(requests[1].at(-1).content).toMatch(/concludes a distortion of the coordination polyhedra, but this question has not run analyze_clusters\./);
+        expect(shellTools.find((tool) => tool.name === 'polyhedral_distortion')).toBeUndefined();
     });
 });
 

@@ -755,6 +755,21 @@ const bondShellWindows = (args) => [
 // analyze_clusters' own result budget (characters of the tool message).
 export const CLUSTER_RESULT_BUDGET = 4500;
 
+/**
+ * analyze_clusters' method advice (llm copilot/method.js; arm C reads none):
+ * where its window comes from, and which questions it answers — finite
+ * clusters, never a corner-sharing polyhedron or another extended network,
+ * which has no finite clusters for its null (the coordination-shells
+ * interview, 2026-10-24, answer 7: a distortion index there). `polyhedra`:
+ * the run offers polyhedral_distortion, which the advice then names.
+ */
+export const clusterMethod = ({ polyhedra = false } = {}) => [
+    { after: 'in the average structure', text: ' (take the window from find_gr_peaks: first_shell.window_A of that element pair)' },
+    'Use it for finite clusters (dimers, trimers, M4 tetrahedra, isolated polyhedra): their distortion, Jahn–Teller, '
+        + 'dimerization or trimerization; single-site displacement directions cannot show these. Corner-sharing polyhedra '
+        + `or another extended network have no finite clusters for its null${polyhedra ? ': use polyhedral_distortion' : ''}.`
+];
+
 // One statistic against its null: change = obs/null − 1, when both are finite.
 const NULL_ROW = { obs: 'number|null', null: 'number|null', z: 'number|null', 'change?': 'number' };
 // No clusters (an extended network, or no two sites in the window): element,
@@ -1824,12 +1839,10 @@ export const buildCopilotTools = ({ request, structure, elements = [], plotFiles
                 + 'a random other cluster: is there a distortion beyond independent atoms, which edge pattern '
                 + '(tetrahedra: E/T2 modes, trigonal vs one edge), along which lattice axis (<100>/<110>/<111>), and is '
                 + 'the average cluster itself distorted.',
-            // Where the window comes from (inside the first sentence), and which questions need the tool.
-            method: [
-                { after: 'in the average structure', text: ' (take the window from find_gr_peaks: first_shell.window_A of that element pair)' },
-                'Use it for cluster or polyhedron distortion, Jahn–Teller, '
-                    + 'dimerization or trimerization questions; single-site displacement directions cannot show these.'
-            ],
+            // Where the window comes from (inside the first sentence), and which
+            // questions need the tool: set below, once the list shows whether
+            // the run offers polyhedral_distortion (clusterMethod).
+            method: clusterMethod({ polyhedra: false }),
             parameters: {
                 type: 'object',
                 properties: {
@@ -1953,5 +1966,10 @@ export const buildCopilotTools = ({ request, structure, elements = [], plotFiles
             )
         });
     }
+    // analyze_clusters' method names polyhedral_distortion for an extended
+    // network only where the run offers it (that tool is its own PR: with or
+    // without it, the advice names no tool the model lacks).
+    const clusters = tools.find((tool) => tool.name === 'analyze_clusters');
+    if (clusters) clusters.method = clusterMethod({ polyhedra: tools.some((tool) => tool.name === 'polyhedral_distortion') });
     return tools;
 };

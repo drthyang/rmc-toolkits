@@ -198,7 +198,19 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // wavevector (long-wave) and a distribution's numbers quoted without saying
 // they come from one configuration (single-configuration). Arms A and A+ on
 // dev are unchanged.
-export const PROTOCOL_VERSION = '2026-10-24.1';
+// 2026-10-24.2: the user's interview answers for four skills (approved by the
+// user, 2026-10-24), as checks on the answer and on the tools' results —
+// coordination-shells: every CN or bond angle in an answer carries its window
+// in Å (window), the coordination check reads "n A per B" as B's count and a
+// clause stating the whole shell's window as a claim about the shell, and
+// find_gr_peaks cross-checks first_shell.window_A against the average
+// structure's bond lengths for the pair (first_shell.average_structure_d_A;
+// a warning past the first peak's FWHM; its description); the evidence gate
+// backs distorted polyhedra with polyhedral_distortion where the run offers
+// it, else analyze_clusters (EVIDENCE_RULES; an anyOf row asks for the first
+// analysis the turn offers), and analyze_clusters' method keeps it to finite
+// clusters.
+export const PROTOCOL_VERSION = '2026-10-24.2';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one
 // follows the full method.

@@ -18,6 +18,8 @@
 // converged" is a claim. A false alarm under a correct answer would teach the
 // user to ignore the checks. Pure, no React.
 
+import { WINDOW_CUTOFF, WINDOW_RANGES } from './phrasings';
+
 const NEGATION = /\b(not|no|never|neither|nor|none|without|lacks?|lacking|absence|absent|cannot|non|yet|stopped|ceased)\b|n't\b/i;
 // What makes a mention hypothetical, conditional or a question about it.
 const NOT_ASSERTED = new RegExp('\\b(whether|if|unless|until|once|when(?:ever)?|before|would|could|might|'
@@ -134,6 +136,31 @@ const componentValue = (token) => {
 export const qVectorsIn = (text) => [...String(text || '').matchAll(Q_VECTOR)]
     .map((match) => match.slice(1, 4).map(componentValue))
     .filter((q) => q.every(Number.isFinite));
+
+// --- windows in Å -----------------------------------------------------------------
+
+// A window's upper edge is a bond length: at least this (Å). A displacement
+// range ("0.1–0.2 Å") or a join's reach ("within 0.5 Å of the first") is
+// no window.
+const WINDOW_MIN_TOP_A = 1;
+
+/**
+ * The windows in Å a text states ([lo, hi], lo < hi; a cutoff is [0, hi]), in
+ * the order they appear: the ranges and cutoffs of phrasings.js WINDOW_RANGES
+ * and WINDOW_CUTOFF, each with its top at least WINDOW_MIN_TOP_A.
+ */
+export const windowsIn = (text) => {
+    const source = String(text || '');
+    const found = [];
+    WINDOW_RANGES.forEach((pattern) => {
+        for (const match of source.matchAll(pattern)) found.push({ at: match.index, window: [Number(match[1]), Number(match[2])] });
+    });
+    for (const match of source.matchAll(WINDOW_CUTOFF)) found.push({ at: match.index, window: [0, Number(match[1])] });
+    return found
+        .filter(({ window: [lo, hi] }) => Number.isFinite(lo) && Number.isFinite(hi) && lo >= 0 && hi > lo && hi >= WINDOW_MIN_TOP_A)
+        .sort((a, b) => a.at - b.at)
+        .map(({ window }) => window);
+};
 
 // --- element symbols --------------------------------------------------------------
 

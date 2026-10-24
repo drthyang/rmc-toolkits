@@ -252,26 +252,36 @@ describe('cluster and coordination claims (review L5)', () => {
         { centre: 'F', partner: 'Cu', window: [1.7, 2.52], cn: 1, whole_shell: true, confirmed: false }
     ] }] };
 
-    it('flags a coordination number the whole first shell contradicts', () => {
-        expect(rules('Cu is four-coordinated (square planar).', shell)).toEqual(['coordination']);
-        expect(rules('Each Cu has CN 4.', shell)).toEqual(['coordination']);
+    it('flags a coordination number the whole first shell contradicts, in the whole shell\'s window too', () => {
+        // Stated in the whole shell's window (to its rounding, or as a cutoff), the claim is about the whole shell.
+        expect(rules('Cu is four-coordinated (square planar) in 1.7–2.52 Å.', shell)).toEqual(['coordination']);
+        expect(rules('In the whole first shell, 1.7–2.5 Å, each Cu has CN 4.', shell)).toEqual(['coordination']);
+        expect(rules('Within 2.52 Å, Cu is four-coordinated.', shell)).toEqual(['coordination']);
         expect(rules('Cu sits in a square-planar coordination.', shell)).toEqual(['coordination']);
+        // Without its window, the window check speaks too.
+        expect(rules('Each Cu has CN 4.', shell)).toEqual(['coordination', 'window']);
+        // "n A per B" is B's count of A (2026-10-24): the right count either way, the wrong one flagged.
+        expect(rules('In 1.7–2.52 Å there are 4 F per Cu.', shell)).toEqual(['coordination']);
+        expect(rules('In 1.7–2.52 Å there are 6 F per Cu and 1 Cu per F.', shell)).toEqual([]);
+        expect(rules('The coordination in 1.7–2.52 Å is 6 F per Cu.', shell)).toEqual([]);
         expect(audit('Cu is 4-coordinated.', shell)[0].text).toMatch(/^The answer gives Cu a coordination of 4, but its whole first shell holds 6 F per Cu in 1\.7–2\.52 Å/);
     });
 
     it('stays quiet on the right count, a partial shell, a hypothetical, and a window the user chose', () => {
         for (const text of [
-            'Cu is six-coordinated by F.',
+            'Cu is six-coordinated by F in 1.7–2.52 Å.',
             'Cu has an octahedral coordination with 4 short and 2 long bonds.',
-            'Within the first peak, Cu is four-coordinated.',
+            'Within the first peak (1.7–2.1 Å), Cu is four-coordinated.',
             'In 1.7–2.1 Å Cu is four-coordinated.',
             'Cu would be four-coordinated if only the short bonds counted.',
             'The coordination number of Cu is not 4.'
         ]) {
             expect(rules(text, shell)).toEqual([]);
         }
+        // The user's window stands: the coordination rule is quiet, and the window check asks for the window.
         const chosen = { facts: [...shell.facts, { coordination: { centre: 'Cu', partner: 'F', window: [1.7, 2.1], cn: 4, whole_shell: false, confirmed: true } }] };
-        expect(rules('Cu is four-coordinated.', chosen)).toEqual([]);
+        expect(rules('Cu is four-coordinated.', chosen)).toEqual(['window']);
+        expect(rules('In the window you chose, 1.7–2.1 Å, Cu is four-coordinated.', chosen)).toEqual([]);
         expect(rules('Cu is four-coordinated.', {})).toEqual([]);
     });
 
@@ -368,7 +378,59 @@ describe('the single-configuration check: a distribution quoted without saying i
             expect({ text, rules: rules(text, { facts: angles }) }).toEqual({ text, rules: [] });
         }
         expect(rules('Se–Ga–Se angles: mean 109.4°, sd 4.1°.', {})).toEqual([]);
-        expect(rules('Se–Ga–Se angles: mean 109.4°, sd 4.1°.', { facts: [{ coordination: { centre: 'Ga', partner: 'Se', window: [2.18, 2.79], cn: 4, whole_shell: true, confirmed: false } }] })).toEqual([]);
+        expect(rules('Se–Ga–Se angles in 2.18–2.79 Å: mean 109.4°, sd 4.1°.', { facts: [{ coordination: { centre: 'Ga', partner: 'Se', window: [2.18, 2.79], cn: 4, whole_shell: true, confirmed: false } }] })).toEqual([]);
+    });
+});
+
+describe('the window check: every CN and bond angle with its window in Å (the coordination-shells interview, 2026-10-24)', () => {
+    // find_gr_peaks' Ta–Se and Ga–Se shells on the Demo, each way, as the tool's facts give them.
+    const shells = [{ coordination: [
+        { centre: 'Ta', partner: 'Se', window: [2.21, 3.23], cn: 6, whole_shell: true, confirmed: false },
+        { centre: 'Se', partner: 'Ta', window: [2.21, 3.23], cn: 3, whole_shell: true, confirmed: false }
+    ] }, { coordination: [
+        { centre: 'Ga', partner: 'Se', window: [2.18, 2.79], cn: 3.99, whole_shell: true, confirmed: false },
+        { centre: 'Se', partner: 'Ga', window: [2.18, 2.79], cn: 0.5, whole_shell: true, confirmed: false }
+    ] }];
+
+    it('flags a coordination number or a bond angle quoted without its window', () => {
+        for (const text of [
+            'Ta is 6-coordinated by Se.',
+            'Each Ta has CN 6.',
+            'There are 3.99 Se per Ga.',
+            'The Se–Ta–Se angles split 80/20: cis near 89°, trans near 159°.',
+            'The mean Se–Ga–Se angle is 109.4° ± 4.1°.',
+            'Se–Ga–Se angles: mean 109.4°, sd 4.1°.',
+            // A window stated for the Ga–Se pair carries Ga's numbers, not Ta's.
+            'Ga has 4 Se neighbours in 2.18–2.79 Å. Ta has 6 Se neighbours.',
+            'The cis angles average 89°.'
+        ]) {
+            expect({ text, rules: rules(text, { facts: shells }) }).toEqual({ text, rules: ['window'] });
+        }
+        expect(audit('Ta is 6-coordinated by Se.', { facts: shells })[0].text).toBe('The answer gives a coordination number ("6-coordinated") '
+            + 'without its window in Å: every coordination number and bond angle carries the window it was counted in (this question\'s: '
+            + 'Ta–Se 2.21–3.23 Å; Se–Ta 2.21–3.23 Å; Ga–Se 2.18–2.79 Å; Se–Ga 2.18–2.79 Å).');
+        expect(audit('The cis angles average 89°.', { facts: shells })[0].text).toMatch(/^The answer gives a bond angle \(89°\) without its window in Å/);
+    });
+
+    it('stays quiet on a window in the sentence, one stated for the pair or the answer, an ideal value, a direction, and no analysis', () => {
+        for (const text of [
+            'Ta is 6-coordinated by Se in 2.21–3.23 Å.',
+            'Each Ta is 6-coordinated by Se in [2.21, 3.23] Å.',
+            'Between 2.21 and 3.23 Å each Ta has 6 Se.',
+            'Within 3.23 Å each Ta has 6 Se neighbours.',
+            'In the whole first shell (2.21–3.23 Å) each Ta has 6 Se. The Se–Ta–Se angles split 80/20: cis near 89°, trans near 159°.',
+            'Window: the whole Ga–Se first shell, 2.18–2.79 Å.\nSe–Ga–Se angles: mean 109.4°, sd 4.1°.\nThe coordination is 3.99 Se per Ga.',
+            'Window 2.18–2.79. The angles average 109.4°.',
+            'An ideal octahedron has 12 cis angles at 90° and 3 trans at 180°.',
+            'There are no near-180° angles.',
+            'Ta is octahedrally coordinated by Se.',
+            'The peak direction is [1 1 1] ± 19.4°, the cell radius at ν = 2.',
+            'Ta would be 4-coordinated if only the first peak counted.'
+        ]) {
+            expect({ text, rules: rules(text, { facts: shells }) }).toEqual({ text, rules: [] });
+        }
+        expect(rules('Ta is 6-coordinated by Se.', {})).toEqual([]);
+        expect(rules('The mean Se–Ga–Se angle is 109.4°.', { facts: [{ direction: { subject: 'site 1', significant: false, peak_sigma: 1, map_sigma: null } }] })).toEqual([]);
     });
 });
 
@@ -386,6 +448,6 @@ describe('the order of the checks', () => {
         ];
         const text = 'Cu is four-coordinated. The Cu4 clusters breathe. Cu forms a superstructure. Cu has a preferred direction. '
             + 'Pm-3m is polar. The run has converged. The symmetry is lowered to P4mm.';
-        expect(rules(text, { facts })).toEqual(['convergence', 'polar', 'direction', 'superstructure', 'cluster', 'coordination']);
+        expect(rules(text, { facts })).toEqual(['convergence', 'polar', 'direction', 'superstructure', 'cluster', 'coordination', 'window']);
     });
 });

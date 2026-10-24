@@ -119,19 +119,19 @@
   {
    "round": 0,
    "why": "first",
-   "sent": "20303 characters, sha256 cb87bf685b0830fe",
+   "sent": "20373 characters, sha256 fbd43c3eb88ddefb",
    "num_ctx": null
   },
   {
    "round": 1,
    "why": "tools",
-   "sent": "21921 characters, sha256 7aac7fc034fed46c",
+   "sent": "22029 characters, sha256 9f2447b85186cb7b",
    "num_ctx": null
   },
   {
    "round": 1,
    "why": "gate",
-   "sent": "22472 characters, sha256 f1bfb2a5ed372ee4",
+   "sent": "22580 characters, sha256 e4781dc77627ea76",
    "num_ctx": null
   }
  ],
@@ -232,7 +232,11 @@
       ],
       "long_minus_short_A": 0.321,
       "long_minus_short_se_A": 0.0043
-     }
+     },
+     "average_structure_d_A": [
+      2.01,
+      2.05
+     ]
     }
    },
    "error": null,
@@ -266,12 +270,12 @@
   "raw_text": "Cu is four-coordinated (square planar), with the next F shell at 2.25 Å.\n\nVERDICT {\"features\": [], \"space_group\": \"Pm-3m\", \"chiral\": false, \"centrosymmetric\": true, \"polar\": false}",
   "outcome": {
    "status": "not verified",
-   "note": "a check below contradicts the answer; the analysis a conclusion needs did not run (analyze_modulations, analyze_displacement_directions on each kind of site (site_ref), analyze_clusters for F (its first F–F shell is a finite cluster's)).",
+   "note": "2 checks below contradict the answer; the analysis a conclusion needs did not run (analyze_modulations, analyze_displacement_directions on each kind of site (site_ref), analyze_clusters for F (its first F–F shell is a finite cluster's)).",
    "body": "Cu is four-coordinated (square planar), with the next F shell at 2.25 Å.\n\nVERDICT {\"features\": [], \"space_group\": \"Pm-3m\", \"chiral\": false, \"centrosymmetric\": true, \"polar\": false}",
    "claimed": null,
    "computed": true,
    "reasons": [
-    "a check below contradicts the answer; the analysis a conclusion needs did not run (analyze_modulations, analyze_displacement_directions on each kind of site (site_ref), analyze_clusters for F (its first F–F shell is a finite cluster's))"
+    "2 checks below contradict the answer; the analysis a conclusion needs did not run (analyze_modulations, analyze_displacement_directions on each kind of site (site_ref), analyze_clusters for F (its first F–F shell is a finite cluster's))"
    ]
   },
   "stopped_by": "answer",
@@ -280,6 +284,10 @@
    {
     "rule": "coordination",
     "text": "The answer gives Cu a coordination of 4, but its whole first shell holds 6 F per Cu in 1.7–2.52 Å (a window that cuts the shell counts fewer: say so if that window was meant)."
+   },
+   {
+    "rule": "window",
+    "text": "The answer gives a coordination number (\"four-coordinated\") without its window in Å: every coordination number and bond angle carries the window it was counted in (this question's: Cu–F 1.7–2.52 Å; F–Cu 1.7–2.52 Å)."
    },
    {
     "rule": "evidence",
@@ -342,6 +350,10 @@
     "text": "The answer gives Cu a coordination of 4, but its whole first shell holds 6 F per Cu in 1.7–2.52 Å (a window that cuts the shell counts fewer: say so if that window was meant)."
    },
    {
+    "rule": "window",
+    "text": "The answer gives a coordination number (\"four-coordinated\") without its window in Å: every coordination number and bond angle carries the window it was counted in (this question's: Cu–F 1.7–2.52 Å; F–Cu 1.7–2.52 Å)."
+   },
+   {
     "rule": "evidence",
     "id": "no-order",
     "missing": [
@@ -358,6 +370,7 @@
   "not_covered": [],
   "unmatched_findings": [
    "coordination",
+   "window",
    "evidence"
   ]
  },

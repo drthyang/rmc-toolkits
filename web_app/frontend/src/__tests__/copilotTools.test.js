@@ -32,6 +32,7 @@ import {
     MODULATION_SENTENCES,
     buildCopilotTools,
     cartesianToUvw,
+    clusterMethod,
     summarizeBondAngles,
     tenDegreeBins,
     summarizeClusters,
@@ -969,6 +970,18 @@ describe('the engine tools\' method advice: what arm C reads without it', () => 
         expect(toolDescription(tools.detect_symmetry, 'full')).toMatch(/Wyckoff orbits\. Compare tolerances to see which symmetry the local distortion breaks\. Does not change the card\.$/);
         // The refusal stays stated in arm C: on window_confirmed.
         expect(tools.compute_bond_angles.parameters.properties.window_confirmed.description).toMatch(/A window that cuts the coordination shell is refused unless it is set\./);
+    });
+
+    it('analyze_clusters: finite clusters only; an extended network goes to polyhedral_distortion only where the run offers it (the coordination-shells interview, 2026-10-24)', () => {
+        // The tools as built on this branch: no polyhedral_distortion, so the advice names no tool the model lacks.
+        expect(Object.keys(tools)).not.toContain('polyhedral_distortion');
+        expect(tools.analyze_clusters.method).toEqual(clusterMethod({ polyhedra: false }));
+        const full = toolDescription(tools.analyze_clusters, 'full');
+        expect(full).toMatch(/ Use it for finite clusters \(dimers, trimers, M4 tetrahedra, isolated polyhedra\): their distortion, Jahn–Teller, dimerization or trimerization; single-site displacement directions cannot show these\. Corner-sharing polyhedra or another extended network have no finite clusters for its null\.$/);
+        expect(full).not.toMatch(/polyhedral_distortion/);
+        // Offered (its own PR), the advice names it; arm C reads neither.
+        expect(clusterMethod({ polyhedra: true }).at(-1)).toMatch(/have no finite clusters for its null: use polyhedral_distortion\.$/);
+        expect(toolDescription({ ...tools.analyze_clusters, method: clusterMethod({ polyhedra: true }) }, 'off')).toBe(tools.analyze_clusters.description);
     });
 
     it('compute_bond_angles: the cut-window refusal still refuses; only which window to use goes', async () => {

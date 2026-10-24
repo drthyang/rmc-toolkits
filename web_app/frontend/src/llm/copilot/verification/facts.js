@@ -30,7 +30,9 @@
 //   cluster       cluster claims (distorted, breathing, rigid) every
 //                 analyze_clusters of the element contradicts (review L5);
 //   coordination  a coordination number every whole-shell count of the
-//                 element contradicts (review L5);
+//                 element contradicts (review L5); and a coordination number
+//                 or a bond angle quoted without its window in Å (window; the
+//                 user's rule, 2026-10-24: every CN or angle carries it);
 //   distribution  a distribution's numbers (bond angles, coordination counts,
 //                 displacement directions, cluster shapes) quoted without
 //                 saying they come from one configuration (the user's rule,
@@ -51,11 +53,12 @@
 import { oneOf } from '../dataShape';
 import { cnMatches } from '../../context/shells';
 import { pointGroupFacts } from '../../context/pointGroups';
-import { clausesOf, elementPattern, groupsIn, namesElement, namesSymbol, normalizeSymbol, positiveMatches, qVectorsIn } from './reading';
+import { clausesOf, elementPattern, groupsIn, namesElement, namesSymbol, normalizeSymbol, positiveMatches, qVectorsIn, windowsIn } from './reading';
 import {
-    BREATHING, CELL_DOUBLING, CENTROSYMMETRIC, CHIRAL, CN_CLAIMS, CONVERGED, DISTORTED, DISTRIBUTION_NOUN, DISTRIBUTION_STAT, LONG_WAVE_WORDS,
-    LOST_INVERSION, ORDER_CLAIM, PARTIAL_SHELL, POLAR, POLYHEDRON_CN, PREFERRED, RIGID, SAYS_NOTHING, SINGLE_CONFIGURATION, STILL_MOVING,
-    SUPERSTRUCTURE, WORD_NUMBER
+    BOND_ANGLE_WORDS, BREATHING, CELL_DOUBLING, CENTROSYMMETRIC, CHIRAL, CN_CLAIMS, CONVERGED, DEGREES, DISTORTED, DISTRIBUTION_NOUN,
+    DISTRIBUTION_STAT, LONG_WAVE_WORDS, LOST_INVERSION, NEIGHBOUR_COUNTS, NOT_A_BOND_ANGLE, ORDER_CLAIM, PARTIAL_SHELL, PER_COUNT, POLAR,
+    POLYHEDRON_CN, PREFERRED, REFERENCE_VALUE, RIGID, SAYS_NOTHING, SINGLE_CONFIGURATION, STILL_MOVING, SUPERSTRUCTURE, WINDOW_CUTOFF, WINDOW_RANGES,
+    WORD_NUMBER
 } from './phrasings';
 
 // --- the run context's own facts ------------------------------------------------------
@@ -325,13 +328,30 @@ const clusterRule = (reading, facts) => {
 
 const countOf = (word) => (WORD_NUMBER[word.toLowerCase()] ?? Number(word));
 
+// The coordination counts of the question's analyses (find_gr_peaks: each
+// way; compute_bond_angles: its window), one list.
+const coordinationCounts = (facts) => facts
+    .flatMap((fact) => (Array.isArray(fact.coordination) ? fact.coordination : (fact.coordination ? [fact.coordination] : [])))
+    .filter((count) => Number.isFinite(count.cn));
+
+// A window the answer states is the shell's when its top agrees within this
+// (Å; the tools round to 0.01 Å, an answer may round to 0.1 Å) and it starts
+// no later than the shell's onset (a cutoff "within 2.52 Å" counts what the
+// shell holds: g is nought below the onset).
+const WINDOW_MATCH_A = 0.05;
+const sameWindow = (stated, shell) => Array.isArray(stated) && Array.isArray(shell)
+    && Math.abs(stated[1] - shell[1]) <= WINDOW_MATCH_A && stated[0] <= shell[0] + WINDOW_MATCH_A;
+
 // A coordination number claimed for an element, against every whole-shell
 // count of it (find_gr_peaks' first shell, compute_bond_angles in a whole
-// shell) — not against a window the user chose, whose count stands. A claim
-// matches a count within half an atom (shells.js cnMatches).
+// shell) — not against a window the user chose, whose count stands: a clause
+// about part of the shell (the first peak, the short bonds) or one stating a
+// window in Å other than the whole shell's is left (one stating the whole
+// shell's window is a claim about it, which the window check asks every CN
+// to carry). A claim matches a count within half an atom (shells.js
+// cnMatches).
 const coordinationRule = (reading, facts) => {
-    const counts = facts.flatMap((fact) => (Array.isArray(fact.coordination) ? fact.coordination : (fact.coordination ? [fact.coordination] : [])))
-        .filter((count) => Number.isFinite(count.cn));
+    const counts = coordinationCounts(facts);
     if (!counts.length) return [];
     const centres = [...new Set(counts.map((count) => count.centre))];
     // The centre a claim is about: the named element nearest to it.
@@ -348,18 +368,29 @@ const coordinationRule = (reading, facts) => {
     for (const sentence of reading.sentences) {
         for (const clause of clausesOf(sentence)) {
             if (PARTIAL_SHELL.test(clause)) continue;
+            const stated = windowsIn(clause);
+            // "n A per B" names its centre (B) and partner (A); a CN phrase over the
+            // same number ("the coordination is 3.99 Se per Ga") is read through it.
+            const perCounts = positiveMatches(clause, PER_COUNT).map((match) => ({
+                n: countOf(match[2]), at: match.index, centre: match[4], partner: match[3], from: match.index + match[1].length, to: match.index + match[0].length
+            }));
+            const overlapsPer = (match) => perCounts.some((per) => per.from >= match.index && per.from < match.index + match[0].length);
             const claimed = [
-                ...CN_CLAIMS.flatMap((pattern) => positiveMatches(clause, pattern).map((match) => ({ n: countOf(match[2]), at: match.index }))),
-                ...POLYHEDRON_CN.flatMap(([pattern, cn]) => positiveMatches(clause, pattern).map((match) => ({ n: cn, at: match.index })))
+                ...CN_CLAIMS.flatMap((pattern) => positiveMatches(clause, pattern).filter((match) => !overlapsPer(match))
+                    .map((match) => ({ n: countOf(match[2]), at: match.index }))),
+                ...POLYHEDRON_CN.flatMap(([pattern, cn]) => positiveMatches(clause, pattern).map((match) => ({ n: cn, at: match.index }))),
+                ...perCounts
             ].filter((claim) => Number.isFinite(claim.n));
-            for (const { n, at } of claimed) {
-                const centre = nearestCentre(clause, at);
+            for (const { n, at, centre: named = null, partner: given = null } of claimed) {
+                const centre = named ?? nearestCentre(clause, at);
                 if (!centre) continue;
                 const mine = counts.filter((count) => count.centre === centre);
-                const partners = [...new Set(mine.map((count) => count.partner))].filter((partner) => partner !== centre && namesElement(clause, partner));
+                const partners = given ? [given] : [...new Set(mine.map((count) => count.partner))].filter((partner) => partner !== centre && namesElement(clause, partner));
                 const relevant = partners.length === 1 ? mine.filter((count) => count.partner === partners[0]) : mine;
                 const whole = relevant.filter((count) => count.whole_shell);
                 if (!whole.length) continue;
+                // A window of the answer's own that is not the whole shell's: its count stands.
+                if (stated.length && !stated.some((window) => whole.some((count) => sameWindow(window, count.window)))) continue;
                 if (relevant.some((count) => (count.whole_shell || count.confirmed) && cnMatches(count.cn, n))) continue;
                 const shells = whole.map((count) => `${count.cn} ${count.partner} per ${centre}${count.window ? ` in ${count.window[0]}–${count.window[1]} Å` : ''}`);
                 return [{
@@ -372,6 +403,65 @@ const coordinationRule = (reading, facts) => {
     }
     return [];
 };
+
+// --- every CN and angle with its window (the coordination-shells interview, 2026-10-24) -
+
+// "Every CN or angle in an answer carries its window in Å; an answer that gives
+// one without it gets a warning under it" (the user, 2026-10-24, answer 8). A
+// coordination number (CN_CLAIMS' "6-coordinated" and "CN 6", NEIGHBOUR_COUNTS'
+// "3.99 Se per Ga" and "4 neighbours"; a polyhedron named in words names no
+// number) or a bond angle (degrees in a sentence about angles, in a clause
+// that is not about a direction's cell radius or cone, nor an ideal value:
+// "Se–Ga–Se angles: mean 109.4°") carries its window when its
+// sentence states a window in Å (reading.js windowsIn), or when another
+// sentence of the answer does that names no element or every element the
+// quoting sentence names — the window stated once for the pair, as an answer
+// that opens with it reads. A quoting sentence that names no element is
+// carried by any window in the answer. Only once an analysis that counts a
+// shell or measures angles ran (find_gr_peaks with a first shell,
+// compute_bond_angles: their coordination facts), whose windows the finding
+// names.
+const quotedCounts = (sentence) => {
+    const aboutAngles = BOND_ANGLE_WORDS.test(sentence);
+    return clausesOf(sentence).flatMap((clause) => [
+        ...[...CN_CLAIMS, ...NEIGHBOUR_COUNTS].flatMap((pattern) => positiveMatches(clause, pattern)
+            .map((match) => `a coordination number ("${match[0].slice(match[1].length).trim()}")`)),
+        ...(aboutAngles && !NOT_A_BOND_ANGLE.test(clause) && !REFERENCE_VALUE.test(clause)
+            ? positiveMatches(clause, DEGREES).map((match) => `a bond angle (${match[2]}°)`)
+            : [])
+    ]);
+};
+
+const pairWindowText = (count) => (Array.isArray(count.window) ? `${count.centre}–${count.partner} ${count.window[0]}–${count.window[1]} Å` : null);
+
+const windowRule = (reading, facts) => {
+    const counts = coordinationCounts(facts);
+    if (!counts.length) return [];
+    const elements = [...new Set(counts.flatMap((count) => [count.centre, count.partner]))];
+    const sentences = reading.sentences.map((sentence) => ({
+        sentence, windows: windowsIn(sentence), named: elements.filter((element) => namesElement(sentence, element))
+    }));
+    const stating = sentences.filter((item) => item.windows.length);
+    for (const { sentence, windows, named } of sentences) {
+        if (windows.length) continue;
+        const quoted = quotedCounts(sentence);
+        if (!quoted.length) continue;
+        const carried = named.length
+            ? stating.some((item) => !item.named.length || named.every((element) => item.named.includes(element)))
+            : stating.length > 0;
+        if (carried) continue;
+        const windowsUsed = [...new Set(counts.map(pairWindowText).filter(Boolean))];
+        return [{
+            rule: 'window',
+            text: `The answer gives ${quoted[0]} without its window in Å: every coordination number and bond angle carries the window `
+                + `it was counted in${windowsUsed.length ? ` (this question's: ${windowsUsed.join('; ')})` : ''}.`
+        }];
+    }
+    return [];
+};
+
+// The coordination rule, then the window check (the user's, 2026-10-24).
+const coordinationRules = (reading, facts) => [...coordinationRule(reading, facts), ...windowRule(reading, facts)];
 
 // --- the catalogue --------------------------------------------------------------------
 
@@ -437,8 +527,12 @@ export const FACTS = Object.freeze([
         // find_gr_peaks: the whole first shell, each way; compute_bond_angles:
         // the count in its window, whole shell or the user's.
         shape: oneOf([COORDINATION_COUNT], COORDINATION_COUNT),
-        reads: Object.freeze([...CN_CLAIMS, ...POLYHEDRON_CN.map(([pattern]) => pattern), PARTIAL_SHELL]),
-        contradicts: coordinationRule
+        reads: Object.freeze([
+            ...CN_CLAIMS, ...POLYHEDRON_CN.map(([pattern]) => pattern), PARTIAL_SHELL, PER_COUNT, ...WINDOW_RANGES, WINDOW_CUTOFF,
+            ...NEIGHBOUR_COUNTS, DEGREES, BOND_ANGLE_WORDS, NOT_A_BOND_ANGLE, REFERENCE_VALUE
+        ]),
+        // The coordination rule, then the window check (the user's, 2026-10-24).
+        contradicts: coordinationRules
     }),
     Object.freeze({
         key: 'distribution',

@@ -102,6 +102,29 @@ describe('the evidence gate', () => {
             { name: 'analyze_clusters', args: { element: 'Mo' }, resultStatus: 'error', error: 'boom' }])).toHaveLength(1);
     });
 
+    it('distorted polyhedra: polyhedral_distortion where the run offers it, else analyze_clusters, either backing them (the coordination-shells interview, 2026-10-24)', () => {
+        const answer = 'The TaSe6 octahedra are distorted.';
+        // Every tool offered, polyhedral_distortion included: asked for it first, and either analysis meets the claim.
+        expect(sendBack({}, answer)).toMatchObject({ id: 'polyhedra', missing: ['polyhedral_distortion'] });
+        expect(sendBack({}, answer, ['polyhedral_distortion'])).toBeNull();
+        expect(sendBack({}, answer, ['analyze_clusters'])).toBeNull();
+        // A run that does not offer it: analyze_clusters is asked for, and meets it.
+        const without = { offered: ['find_gr_peaks', 'compute_bond_angles', 'analyze_clusters', 'analyze_modulations'] };
+        expect(sendBack(without, answer)).toMatchObject({ id: 'polyhedra', missing: ['analyze_clusters'] });
+        expect(sendBack(without, answer, ['analyze_clusters'])).toBeNull();
+        expect(sendBack({ offered: ['polyhedral_distortion'] }, answer)).toMatchObject({ id: 'polyhedra', missing: ['polyhedral_distortion'] });
+        // A polyhedral distortion in words; a cluster's distortion is the clusters' claim, analyze_clusters alone.
+        expect(ids({}, 'There is a strong octahedral distortion.')).toEqual(['polyhedra']);
+        expect(ids({}, 'The Mo3 triangles are distorted.')).toEqual(['clusters']);
+        expect(sendBack({}, 'The Mo3 clusters are distorted.', ['polyhedral_distortion'])).toMatchObject({ id: 'clusters', missing: ['analyze_clusters'] });
+    });
+
+    it('anyOf asks for the first analysis the turn offers: a coordination number without find_gr_peaks offered', () => {
+        const offered = ['compute_bond_angles'];
+        expect(sendBack({ offered }, 'Each Ta has CN 6.')).toMatchObject({ id: 'coordination', missing: ['compute_bond_angles'] });
+        expect(sendBack({ offered }, 'Each Ta has CN 6.', ['compute_bond_angles'])).toBeNull();
+    });
+
     it('never asks for a tool the turn does not offer', () => {
         const offered = ['detect_symmetry', 'analyze_modulations'];
         expect(unmet({ offered }, 'The symmetry is lowered by a coherent shift.')[0].missing).toEqual(['detect_symmetry']);

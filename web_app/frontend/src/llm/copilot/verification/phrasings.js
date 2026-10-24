@@ -65,10 +65,22 @@ export const DISTRIBUTION_NOUN = /\b(?:bond[- ])?angles?\b|\bangular\b|\bdistrib
 // The answer says the numbers come from one configuration.
 export const SINGLE_CONFIGURATION = /\b(?:one|a single|single|only one|just one|this one|the one)\s+(?:RMC\s+|RMCProfile\s+)?(?:configuration|snapshot|box|run|realisation|realization)s?\b|\bsingle[- ](?:configuration|snapshot)\b|\b(?:configuration|snapshot)\s+alone\b/i;
 
-const CLUSTER_NOUN = '(?:clusters?|tetrahedr(?:on|a)|trimers?|dimers?|triangles?|octahedr(?:on|a)|polyhedr(?:on|a))';
-// An adverb may stand between the verb and "distorted", but not a negation.
-export const DISTORTED = new RegExp(`(^|[^\\w-])(distorted\\s+(?:\\w+\\s+)?${CLUSTER_NOUN}|${CLUSTER_NOUN}\\s+(?:are|is|appear|look|seem)\\s+`
-    + '(?:(?!not\\b|never\\b|hardly\\b|barely\\b)\\w+\\s+)?(?:distorted|deformed)|cluster\\s+distortions?)\\b', 'gi');
+// A distorted cluster or polyhedron: "distorted clusters", "the octahedra are
+// (strongly) distorted", "a cluster distortion". An adverb may stand between
+// the verb and "distorted", but not a negation. The facts catalogue reads
+// every noun (DISTORTED, against analyze_clusters' facts); the claim
+// catalogue reads the clusters' (DISTORTED_CLUSTERS: analyze_clusters) apart
+// from the coordination polyhedra's (DISTORTED_POLYHEDRA: polyhedral_distortion
+// or analyze_clusters; the coordination-shells interview, 2026-10-24, answer
+// 7: a corner-sharing polyhedron or another extended network is read with a
+// distortion index, never the cluster null).
+const CLUSTER_ONLY_NOUN = '(?:clusters?|trimers?|dimers?|triangles?)';
+const POLYHEDRON_NOUN = '(?:tetrahedr(?:on|a)|octahedr(?:on|a)|polyhedr(?:on|a))';
+const distortedOf = (noun, extra = '') => new RegExp(`(^|[^\\w-])(distorted\\s+(?:\\w+\\s+)?${noun}|${noun}\\s+(?:are|is|appear|look|seem)\\s+`
+    + `(?:(?!not\\b|never\\b|hardly\\b|barely\\b)\\w+\\s+)?(?:distorted|deformed)${extra})\\b`, 'gi');
+export const DISTORTED = distortedOf(`(?:${CLUSTER_ONLY_NOUN}|${POLYHEDRON_NOUN})`, '|cluster\\s+distortions?');
+export const DISTORTED_CLUSTERS = distortedOf(CLUSTER_ONLY_NOUN, '|cluster\\s+distortions?');
+export const DISTORTED_POLYHEDRA = distortedOf(POLYHEDRON_NOUN, '|(?:polyhedral|octahedral|tetrahedral)\\s+distortions?');
 export const BREATHING = /(^|[^\w-])(breath(?:e|es|ing))\b/gi;
 export const RIGID = /(^|[^\w-])(rigid(?:ly)?\b|move(?:s|d)?\s+(?:together\s+)?as\s+(?:a\s+)?(?:rigid\s+)?(?:units?|bod(?:y|ies))\b)/gi;
 
@@ -86,9 +98,44 @@ export const POLYHEDRON_CN = [
     [/(^|[^\w-])(square[- ]planar)\s+(?:\w+\s+)?coordinat/gi, 4],
     [/(^|[^\w-])(cub(?:ic|ically))\s+(?:\w+\s+)?coordinat/gi, 8]
 ];
-// A clause about part of the shell (the first peak, the short bonds, a window
-// in Å) is not a claim about the whole shell's count.
-export const PARTIAL_SHELL = /\bfirst[- ]peak\b|\bshort(?:est|er)?\s+bonds?\b|\bwithin\s+[\d.]+\s*(?:[–—−-]|to)\s*[\d.]+\s*(?:Å|A\b)|\d+(?:\.\d+)?\s*[–—−-]\s*\d+(?:\.\d+)?\s*(?:Å|A\b)/i;
+// A clause about part of the shell (the first peak, the short bonds) is not a
+// claim about the whole shell's count; nor is one that states a window in Å
+// other than the whole shell's (reading.js windowsIn; facts.js).
+export const PARTIAL_SHELL = /\bfirst[- ]peak\b|\bshort(?:est|er)?\s+bonds?\b/i;
+
+// A window in Å, for the window check (facts.js; the coordination-shells
+// interview, 2026-10-24, answer 8: every CN or angle carries its window in
+// Å): a range "2.18–2.79 Å", "2.18 Å–2.79 Å", "from 2.18 to 2.79 Å", "between
+// 2.18 and 2.79 Å", a filled reference "[2.18, 2.79] Å", a cutoff "within
+// 3.2 Å" / "up to 3.2 Å" / "r < 3.2 Å", or a range after the word "window"
+// (its unit understood). Each pattern's groups are the window's edges (one
+// for a cutoff). An angle (°) or a share (%) is never a window.
+const DISTANCE = '(\\d+(?:\\.\\d+)?)';
+const ANGSTROM = '(?:Å|A\\b|angstroms?\\b)';
+export const WINDOW_RANGES = Object.freeze([
+    new RegExp(`${DISTANCE}\\s*(?:${ANGSTROM}\\s*)?(?:[–—−-]|to|and)\\s*${DISTANCE}\\s*${ANGSTROM}`, 'gi'),
+    new RegExp(`\\[\\s*${DISTANCE}\\s*,\\s*${DISTANCE}\\s*\\]\\s*${ANGSTROM}`, 'gi'),
+    new RegExp(`\\bwindows?\\b[^.;\\d°%]{0,40}?${DISTANCE}\\s*(?:[–—−-]|to)\\s*${DISTANCE}(?!\\s*[°%\\d])`, 'gi')
+]);
+export const WINDOW_CUTOFF = new RegExp(`(?:\\bwithin|\\bup to|\\bbelow|\\bunder|[<≤]|<=)\\s*${DISTANCE}\\s*${ANGSTROM}`, 'gi');
+// A coordination number as a count of neighbours: "3.99 Se per Ga", "six Se
+// around each Ta", "4 neighbours", "12 nearest Ga neighbours" (the count in
+// group 2), beside CN_CLAIMS' "6-coordinated" and "CN 6". A polyhedron named
+// in words ("octahedrally coordinated") names no number.
+// "n A per B" with both elements: B's count of A (group 2 the count, 3 the
+// partner A, 4 the centre B), which the coordination rule reads as such.
+export const PER_COUNT = new RegExp(`(^|[^\\w.-])${COUNT}\\s+([A-Z][a-z]?)\\s+(?:atoms?\\s+)?(?:per|around(?:\\s+each)?|for each)\\s+([A-Z][a-z]?)(?![a-z])`, 'g');
+export const NEIGHBOUR_COUNTS = Object.freeze([
+    new RegExp(`(^|[^\\w.-])${COUNT}\\s+(?:[A-Z][a-z]?\\s+)?(?:atoms?\\s+)?(?:per|around(?:\\s+each)?|for each)\\s+[A-Z][a-z]?(?![a-z])`, 'g'),
+    new RegExp(`(^|[^\\w.-])${COUNT}\\s+(?:(?:nearest|closest|first[- ]shell)\\s+)?(?:[A-Z][a-z]?\\s+)?neighbou?rs?\\b`, 'gi')
+]);
+// A bond angle: degrees in a clause that names an angle (bond angle, cis,
+// trans, an A–B–C triplet), and not a direction's (a cell radius, a cone, an
+// axis, a [u v w]) or a tilt; an ideal or reference value claims nothing.
+export const DEGREES = /(^|[^\w.])(\d+(?:\.\d+)?)\s?°(?![CF]\b)/g;
+export const BOND_ANGLE_WORDS = /\bangles?\b|\bcis\b|\btrans\b|(?<![A-Za-z])[A-Z][a-z]?\s*[–—−-]\s*[A-Z][a-z]?\s*[–—−-]\s*[A-Z][a-z]?(?![a-z])/;
+export const NOT_A_BOND_ANGLE = /\bdirections?\b|\bradius\b|\bcone\b|\bax(?:is|es)\b|\bPC[123]\b|<\s*-?\d\s*-?\d\s*-?\d\s*>|\[\s*-?[\d.]+\s+-?[\d.]+\s+-?[\d.]+\s*\]|\btilts?\b|\bfamil(?:y|ies)\b|\bdeg\b/i;
+export const REFERENCE_VALUE = /\bideal\b|\bperfect\b|\btheoretical\b|\breference\b/i;
 
 // --- the evidence gate's claims (claims.js) ---------------------------------------
 

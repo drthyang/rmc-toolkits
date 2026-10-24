@@ -21,7 +21,7 @@
     "type": "function",
     "function": {
       "name": "find_gr_peaks",
-      "description": "Analyse one partial g(r) (from the run's partial-PDF file): its peaks below r_max (position, approximate FWHM) and its first coordination shell, which does not depend on r_max — the window from onset to the first deep minimum (it holds the whole shell, split shells included), mean distance and spread from r²g(r), coordination numbers in both directions with their sensitivity to the cut, whether the shell is separated from the next, for a split shell joined across a deep trough its parts (CN, share, mean distance) and the long − short bond difference, and whether the pair's hard minimum-distance constraint cuts the distribution.",
+      "description": "Analyse one partial g(r) (from the run's partial-PDF file): its peaks below r_max (position, approximate FWHM) and its first coordination shell, which does not depend on r_max — the window from onset to the first deep minimum (it holds the whole shell, split shells included), mean distance and spread from r²g(r), coordination numbers in both directions with their sensitivity to the cut, whether the shell is separated from the next, for a split shell joined across a deep trough its parts (CN, share, mean distance) and the long − short bond difference, the average structure's bond lengths for the pair against the window, and whether the pair's hard minimum-distance constraint cuts the distribution.",
       "parameters": {
         "type": "object",
         "properties": {
