@@ -439,6 +439,24 @@ different term is plotted**, which is why the series is labelled by its header n
 Pinned by `tests/test_parsers.py::ReadChiLogTests` and `__tests__/chiLog.test.js` (the demo log cut at
 every byte of its final line; token-count, NaN/`****` and no-header cases).
 
+**Every χ² term and their total (2026-10-24), for the AI Copilot and the watchdog — not the chart.**
+From the same accepted rows, both runtimes also read every χ² **term**: the columns after the clock time
+and the two move counters (`CHI_TERMS_START = 3`; line 2's `WEIGHT PARAMETERS` gives one weight to each),
+in the demo run `F(Q)_1`, six `Curvature` constraints and `X_ray_(R)1`. A log whose line 1 names fewer
+than four columns has no terms. The **total** is each row's sum of its terms as printed (`NaN` where a
+term is non-finite); the app applies no weight of its own (line 2's weights are the run's starting ones:
+with `WEIGHT_OPTIMIZATION` RMCProfile changes them during the run, and the log does not record the new
+ones). Across the logs of one run the total and the rows per log (`segments`) always concatenate; the
+per-term histories only when every log names the same terms in the same order (else `names` and `series`
+are null, as `chiColumn` is). The payload is `plotData.chiTerms` = `{names, series, total, segments}` in
+the chart's ln transform (`browserData.js` → `readChi()`, `chiTermsPlotData()`, `combineChiTerms()`;
+`parsers.py` → `read_chi_log()` (`ChiLog.term_names`, `terms`, `total`, `segments`), `plots.py` →
+`chi_terms_payload()`, sent by `/api/plot/data`; `plotDataCache.js` turns its nulls back into NaN). The
+chart still draws the last column only. Pinned by `ReadChiLogTests::test_every_chi_term_and_their_total`,
+`::test_restarts_concatenate_the_terms_only_when_every_log_names_the_same`,
+`tests/test_parsers_demo_run.py::test_log_data_carries_every_chi_term_and_their_total`, `chiLog.test.js`
+and `flaskCopilotRun.test.jsx` (the server's and the browser's terms agree).
+
 **Multiple logs of ONE run are concatenated — the same rule in both modes.** Python
 `related_r_value_logs()` re-scans the log's parent directory for every file matching
 `^(.+)-(\d{2,})\.log$` (`R_VALUE_LOG_RE`) with the **same stem**, and `sort_r_value_logs()` orders
