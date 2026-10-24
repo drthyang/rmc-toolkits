@@ -515,8 +515,23 @@ export const BINDINGS = [
     {
         file: SYMMETRY,
         gate: 'the lower group\'s margin above the noise floor (step 4)',
-        find: 'rung clearly above it (from',
-        number: /\(from (?<n>\d+(?:\.\d+)?) × `noise_floor_A`, the app's margin\)/,
+        find: 'A rung below `noise_floor_A` is within the noise of the site means. A',
+        number: /rung at or above (?<n>\d+(?:\.\d+)?) × `noise_floor_A` \(the app's margin\)/,
+        constants: [FLOOR_MARGIN]
+    },
+    {
+        file: SYMMETRY,
+        gate: 'the limit of the sampling (step 4)',
+        find: 'A rung between the floor and',
+        number: /between the floor and (?<n>\d+(?:\.\d+)?) × it/,
+        constants: [FLOOR_MARGIN],
+        verify: () => verifyToleranceRule()
+    },
+    {
+        file: SYMMETRY,
+        gate: 'a lower-symmetry CIF (step 7)',
+        find: '(the Detected SG card\'s export) only for a rung at or above',
+        number: /only for a rung at or above (?<n>\d+(?:\.\d+)?) ×/,
         constants: [FLOOR_MARGIN]
     },
     {
@@ -577,8 +592,8 @@ export const BINDINGS = [
     {
         file: SYMMETRY,
         gate: 'the lower group\'s margin above the noise floor',
-        find: 'clearly above the noise floor (from',
-        number: /\(from (?<n>\d+(?:\.\d+)?) × `noise_floor_A` up\)/,
+        find: '"The" group is the lowest rung at or above',
+        number: /lowest rung at or above (?<n>\d+(?:\.\d+)?) × `noise_floor_A`/,
         constants: [FLOOR_MARGIN],
         verify: () => verifyToleranceRule()
     },
@@ -1147,10 +1162,10 @@ export const RULES = [
     {
         file: SYMMETRY,
         rule: 'the lower group\'s tolerance',
-        find: 'Whether a rung just above the noise floor is reported as a distortion',
+        find: 'A rung between the floor and',
         after: 60,
-        states: /1\.25|clearly above/,
-        skill: 'left to the user: a rung just above the noise floor reported as a distortion or as "at the limit of the sampling"',
+        states: /1\.25/,
+        skill: 'a rung between the floor and 1.25 × it: "at the limit of the sampling", never a lowering (the user, 2026-10-24)',
         app: TOLERANCE_RULE,
         verify: verifyToleranceRule
     },
@@ -1200,17 +1215,29 @@ export const RULES = [
 // decided on 2026-10-19 that the skills' facts are fixed now, the interviews
 // after v1, so none is left (the skill fact-sync PR cleared them). JUDGMENT: a
 // method, an order or a judgment call the skill leaves to the user — it stays,
-// listed for the interviews (docs/SKILL_INTERVIEWS.md). AWAITS CODE: an
-// interviewed skill states the user's rule, which a code PR still has to build
-// (each names its PR); the entry leaves when that code lands.
-// Candidate 8: arm A+ reads the app's rules; the skills must state them as the app applies them.
+// listed for the interviews (docs/SKILL_INTERVIEWS.md); none is left since the
+// user's interviews of 2026-10-24. AWAITS CODE: an interviewed skill states the
+// user's rule, which a code PR still has to build (each names its PR); the
+// entry leaves when that code lands.
 // The user's interview of rmc-fit-assessment (2026-10-24): the code half is its own PR off main.
 const FIT_CODE_PR = 'awaits the fit-assessment code PR';
 // The user's interview of coordination-shells (2026-10-24): the firm rule's code is a later PR.
 const SHELLS_CODE_PR = 'awaits the coordination code PR';
-const APP_RULES_WHY = 'arm A+ reads the app\'s rule since candidate 8 (approved by the manager on the user\'s delegation, 2026-10-19: '
-    + 'validation/findings/decisions/2026-10-19-aplus-app-rules.json), so the skill, the app and A+ must say one rule';
+// The user's interview of local-symmetry (2026-10-24): the firm rules' code is a later PR.
+const SYMMETRY_CODE_PR = 'awaits the local-symmetry code PR';
 export const ALLOW_LIST = [
+    {
+        check: 'firm-rule',
+        file: SYMMETRY,
+        fragment: 'an answer that claims a group–subgroup relation that',
+        why: `AWAITS CODE: the user's firm rule (interview 2026-10-24, answer 4a); no answer check reads a group–subgroup claim today: ${SYMMETRY_CODE_PR} (its answer check), then mapped in FIRM_RULES`
+    },
+    {
+        check: 'firm-rule',
+        file: SYMMETRY,
+        fragment: 'an answer that claims a cell doubling the box\'s average',
+        why: `AWAITS CODE: the user's firm rule (interview 2026-10-24, answer 4b); the superstructure check reads analyze_modulations, not what the box's average structure can hold: ${SYMMETRY_CODE_PR} (its answer check), then mapped in FIRM_RULES`
+    },
     {
         check: 'firm-rule',
         file: SHELLS,
@@ -1246,14 +1273,5 @@ export const ALLOW_LIST = [
         file: FIT,
         fragment: 'an answer that quotes a distribution from a single',
         why: `AWAITS CODE: the user's firm rule (interview 2026-10-24, answer 8b); no answer check flags it today: ${FIT_CODE_PR} (its answer check), then mapped in FIRM_RULES`
-    },
-    {
-        check: 'rule',
-        file: SYMMETRY,
-        fragment: 'Whether a rung just above the noise floor is reported as a',
-        line: 70,
-        skill: 'left to the user: a rung just above the noise floor reported as a distortion or as "at the limit of the sampling"',
-        app: TOLERANCE_RULE,
-        why: `JUDGMENT: a judgment call (how to report a rung just above the floor), which the app's margin decides for groups (a rung holding only to 1–1.25 × the floor is not read as one): ${APP_RULES_WHY}. Whether 1.25 × is the user's margin, and how a rung near it is worded, is an interview item (docs/SKILL_INTERVIEWS.md, the fact sync's list)`
     }
 ];

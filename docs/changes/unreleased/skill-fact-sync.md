@@ -62,3 +62,15 @@
   - extended networks get angle spreads plus a polyhedral distortion index;
   - a new firm rule: every CN or angle carries its window. It waits for a later coordination code
     PR, as a skill-lint entry.
+- **local-symmetry interviewed (2026-10-24).** The skill is now the user's own answers, and §3
+  records where each landed. The rules it now states:
+  - the 1.25 × margin, with a rung below it "at the limit of the sampling", never a lowering;
+  - "the" group is the lowest rung at or above the margin;
+  - a lowering is described by its lost operations plus the group–subgroup index and its t or k
+    type;
+  - against a published cell-doubled phase, only what the box can represent is compared;
+  - CIF export rules;
+  - groups named as "consistent with ⟨group⟩ at ⟨tolerance⟩ Å";
+  - two new firm rules, which wait for a later local-symmetry code PR as skill-lint entries.
+
+  The lint's last JUDGMENT entry is gone: the margin is bound to `NOISE_FLOOR_MARGIN`.

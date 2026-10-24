@@ -4,8 +4,8 @@ A skill is the user's method in their own words (`.claude/skills/<name>/SKILL.md
 Copilot (`read_skill`) and by Claude Code alike. The five skills here began as **drafts**: the first four written on
 2026-10-11 from the Workbench's own record (the llm README's spot check and referee-style review,
 `docs/algorithms/*`, the analyses' code and the papers the README cites), not yet from the user.
-`rmc-fit-assessment` and `coordination-shells` were interviewed on 2026-10-24 (§1, §2); the others
-are still drafts.
+`rmc-fit-assessment`, `coordination-shells` and `local-symmetry` were interviewed on 2026-10-24
+(§1–§3); the others are still drafts.
 This page is the guide for turning each into the user's method. Each answer lands in one of three
 places:
 
@@ -114,24 +114,44 @@ Also answered: corner-sharing or extended networks (outside the 0.5–4.5 own-ki
 spreads plus a standard polyhedral distortion index such as Baur's, never the cluster null. No
 Workbench tool computes the index yet, and the skill says so. **Landed:** the skill (step 7).
 
-## 3. Local symmetry (`local-symmetry`, draft)
+## 3. Local symmetry (`local-symmetry`, interviewed 2026-10-24)
 
-1. The draft reads the Detected SG card's tolerance ladder and calls every rung below the sampling
-   noise floor (rms displacement / √copies) noise. Is that your criterion, or do you require a
-   margin above the floor?
-2. Which tolerance do you quote as "the" space group of an RMC configuration: the card's 0.2 Å
-   default, the lowest rung above the noise floor, or both?
-3. The draft names what breaks between two groups as lost operations (three-fold axes, a lattice
-   centring). Is that the description you want, or the group–subgroup relation (index, irreps)?
-4. The app now states each point group's facts (inversion centre, Sohncke, polar) and flags an
-   answer that contradicts them. Are there other symmetry statements you want checked the same
-   way (polarity, a group–subgroup claim, the cell doubling)?
-5. How do you weigh the average structure against the published low-temperature phases
-   (GaTa₄Se₈ P-42₁m below 50 K; GaNb₄Se₈ P2₁3 below 50 K, P2₁2₁2₁ below 29 K) when the RMC box
-   cannot hold the doubled cell?
-6. When would you export a lower-symmetry CIF from a rung, and what do you check in it first?
-7. A recent run you read the ladder on; one time the ladder suggested a distortion that was not
-   there (or missed one that was).
+Answered by the user on 2026-10-24. Each answer, and where it landed: the skill's text or code (a
+later local-symmetry code PR). Until that PR lands, the skill lint holds the lines today's code
+does not apply as entries marked "awaits the local-symmetry code PR".
+
+1. *A margin above the noise floor?* The margin is 1.25 × the noise floor. A rung between the
+   floor and 1.25 × it is reported as "at the limit of the sampling: neither a distortion nor
+   ruled out", never as a lowering. **Landed:** the skill (step 4, the checklist, the report); the
+   lint binds the margin to the app's `NOISE_FLOOR_MARGIN` (1.25) wherever the skill states it,
+   and its last JUDGMENT entry (local-symmetry:70) is gone.
+2. *Which group do you quote?* The lowest rung at or above 1.25 × the floor, with the card's 0.2 Å
+   group beside it when they differ, sized by `measure_symmetry_lowering`. **Landed:** the skill
+   (step 5, the checklist).
+3. *Lost operations, or the group–subgroup relation?* The operations lost, plus the group–subgroup
+   index and its type, t (translationengleiche) or k (klassengleiche); irreps only on request.
+   **Landed:** the skill (step 3, the checklist, the report). No Workbench tool states the index or
+   the type yet, and the skill says so.
+4. *Other symmetry statements to check?* (a) A claimed group–subgroup relation that doesn't hold is
+   flagged; (b) a claim about a cell doubling that the box's average structure can't support is
+   flagged. **Landed:** the skill (two firm-rule sentences) and code (their answer checks, a later
+   local-symmetry code PR; lint entries until then).
+5. *Against published low-temperature phases the box can't hold?* Compare only the part the box can
+   represent, the t-subgroup or point group, and state that the box can neither confirm nor rule
+   out the cell-doubled phase. **Landed:** the skill (step 4, the checklist).
+6. *When do you export a lower-symmetry CIF, and what do you check first?* Only for a rung at or
+   above 1.25 × the floor. First check that the model reproduces the site means within the rung's
+   tolerance, and that the Wyckoff sites and occupancies make sense. Label it "average-structure
+   model of an RMC configuration", never a refined structure. **Landed:** the skill (step 7). The
+   app's CIF header words it differently: "Symmetry-averaged RMC average structure, written by
+   rmc-toolkits." and `_audit_creation_method` 'rmc-toolkits symmetry-averaged RMC structure'
+   (`src/cifWriter.js`). It never says "refined"; aligning it with the user's label is a code
+   question.
+7. *A recent run; a ladder that misled you.* Not answered on 2026-10-24: open.
+
+Also answered: naming. "Consistent with ⟨group⟩ at ⟨tolerance⟩ Å", never "the structure is
+⟨group⟩"; with no space-group number, give the point group and the crystal class. **Landed:** the
+skill (step 5, the checklist, the report, and the reference's wording of the Demo's group).
 
 ## 4. Displacement anisotropy (`displacement-anisotropy`, draft)
 
@@ -187,6 +207,7 @@ Each was approved by the user on 2026-10-14 as a proposal of the tool review
   test is anisotropy). Is 15° your cone?
 - `local-symmetry`: report the lowest rung above the noise floor, with the card's 0.2 Å group
   beside it, and size a lowering with `measure_symmetry_lowering`. Is that the group you quote?
+  **Answered 2026-10-24** (§3, answer 2: at or above 1.25 × the floor).
 - `rmc-fit-assessment`: a box-scale wave (every |q_i| ≤ 0.25) voids a claim of order at its own q,
   never a zone-boundary point or general mode that passes its own test. Is that your rule?
   **Answered 2026-10-24** (§1, the long waves).
@@ -203,7 +224,8 @@ to you. Line numbers are in the synced text.
    The app reads a group only from 1.25 × the floor (`lowerGroupTolerance`, and the Workbench's
    tolerance question), and step 4 now says so. Is 1.25 × your margin? How do you report a rung
    between the floor and 1.25 × it? This is the one entry left in the lint's allow-list, a
-   JUDGMENT.
+   JUDGMENT. **Answered 2026-10-24** (§3, answer 1: "at the limit of the sampling"; the entry is
+   gone).
 2. `displacement-anisotropy/SKILL.md:29–32`, `significance-reading.md:19–21` and
    `local-order/SKILL.md:26–29`: a split site is now stated as the app's rule. The rule is a
    resolved PC1 whose excess kurtosis is ≤ −0.5 and at least 3 sampling errors below zero;
