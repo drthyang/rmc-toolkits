@@ -1039,6 +1039,29 @@ its configuration and does not change. Approved by the manager on the user's del
 2026-10-19; the user may reverse it before the freeze
 (`validation/findings/decisions/2026-10-19-marginal-reset-dev.json`).
 
+**Protocol 2026-10-19.20 (the held-out marginal pair re-set).** The marginal situation was re-set
+after F1's corrected null raised the test's power, 2026-10-19. A fresh author, who had seen no dev
+value, re-chose the two held-out marginal matches' amplitude afresh from the updated
+[`judgment-spec.md`](../../web_app/frontend/validation/judgment-spec.md), with new seeds; every other
+parameter is kept. The values are sealed with the other test cases (see `TEST_SET_SHA256`).
+- **What the author was given:** the spec, the generator code (`validation/cases.js`), the sealed
+  module it edits and its loader, and the modulation engines to measure its cases. Nothing else:
+  no dev judgment parameter or record, no arm pin, no decision record, no doc, no git history.
+- **How:** the amplitude from the spec's formula alone, checked with the engine on many fresh
+  configurations (about half clear the bar), and each seed by a rule written down before any σ was
+  read: the first of a fixed sequence realised in [3, 4] for the match above the bar, in [2.5, 3)
+  for the one below.
+- **Blindness, checked from the author's tool log by the lead:** every file it opened is in the list
+  above, and no dev value reached it. One disclosure: the sealed module's comment on protocol
+  2026-10-19.11 named the two test values that had coincided with dev values; the author read it.
+  Those concern two other judgment cases, not this pair, and the comment no longer names them.
+- **The holdout scan** no longer counts the digits that end an identifier as a number: the new
+  seed matched inside `TEST_SET_SHA256` beside the word "seed" on this page.
+- **Arms A and A+ on test** are re-recorded with `--final` from a clean tree in the sealed folder.
+  Approved by the manager on the user's delegation, 2026-10-19; the user may reverse it before the
+  freeze. `TEST_SET_SHA256` changes: results on the earlier test set are not comparable with this
+  one.
+
 ### The report beside the case score (plan item 1.6, part i)
 
 The engines alone (A+) score 0.99, because most components of a case are facts they get right every

@@ -66,13 +66,15 @@ export const TEST_CASES = [
             offCentre: { axis: [0, 1, 0], delta: 0.11 }, seed: 211
         }
     },
+    // The marginal pair: re-set at protocol 2026-10-19.20 from the updated spec
+    // (its amplitude and seeds only; provenance at the end of this file).
     {
         id: 'test-marginal-above', kind: 'zone_boundary', judgment: true, situation: 'marginal',
-        params: { elements: ['Ba', 'Hf', 'O'], a: 4.17, supercell: [10, 10, 10], q: [0.5, 0, 0.5], axis: [1, 1, 0], delta: 0.0128, weak: true, decoy: null, seed: 227 }
+        params: { elements: ['Ba', 'Hf', 'O'], a: 4.17, supercell: [10, 10, 10], q: [0.5, 0, 0.5], axis: [1, 1, 0], delta: 0.00853, weak: true, decoy: null, seed: 252 }
     },
     {
         id: 'test-marginal-below', kind: 'zone_boundary', judgment: true, situation: 'marginal',
-        params: { elements: ['Ba', 'Hf', 'O'], a: 4.17, supercell: [10, 10, 10], q: [0.5, 0, 0.5], axis: [1, 1, 0], delta: 0.0128, weak: true, decoy: null, seed: 223 }
+        params: { elements: ['Ba', 'Hf', 'O'], a: 4.17, supercell: [10, 10, 10], q: [0.5, 0, 0.5], axis: [1, 1, 0], delta: 0.00853, weak: true, decoy: null, seed: 256 }
     },
     {
         id: 'test-two-readings', kind: 'offcentre', judgment: true, situation: 'two_readings',
@@ -184,10 +186,33 @@ export const TEST_CASES = [
 //   by the Workbench's CN margin); the long edges empty from 3.11 Å, the nearest Re–Re between
 //   clusters 3.98 Å.
 // - **The coincidence check.** The lead compared these values with the dev cases' without showing
-//   them, and two coincided: test-two-features' A-site element (now Rb, for Cs: the same spectator
-//   role, a 12-coordinate ion of similar size) and test-user-choice's elongation (now 0.36 Å, 25 %
-//   below the first choice, 0.48 Å, with the thermal sd from 0.045 to 0.035 Å, so the
-//   elongation-to-thermal ratio and the deep trough stay). Both rules were re-run unchanged and
+//   them, and two coincided: test-two-features' A-site element (now Rb: a spectator, a
+//   12-coordinate ion) and test-user-choice's elongation (now 0.36 Å, with the thermal sd at
+//   0.035 Å, so the elongation-to-thermal ratio and the deep trough stay). The values that
+//   coincided are not kept here: they would tell a later author a dev value. Both rules were re-run unchanged and
 //   took their first seeds again (211, 241); the numbers above are the new configurations'.
 //
 // `TEST_SET_SHA256` changes: results on the earlier test set are not comparable with this one.
+
+// --- Protocol 2026-10-19.20: the marginal pair re-set ----------------------------------
+//
+// F1's corrected null (protocol 2026-10-19.16) raised the modulation test's power, and
+// judgment-spec.md §2's knob was rewritten for it (protocol 2026-10-19.19): by its formula
+// the pair's 0.0128 Å now expects 5.6σ (Z = 45.5). A fresh blind author re-set
+// test-marginal-above and test-marginal-below from the updated spec alone, every parameter
+// kept but the amplitude and the seeds. No dev judgment parameter, dev record, arm pin,
+// finding, doc, transcript or git history was opened, and no arm or model ran on them.
+// - **The amplitude:** the spec's expected significance, σ at the median power, is 3σ for
+//   n = 1000 cells, σ_B = 0.06 Å and F = 7 × 3 = 21 at δ = 0.0085295 Å (Z = 20.21), written
+//   0.00853 Å: expected 3.0003σ (scipy's ncx2.median with the Python engine's
+//   zone_boundary_sigma agrees with the JS root); at the mean power it would read 3.14σ.
+// - **The engine check:** 1000 configurations on seeds 500001–501000 (outside the case
+//   sequence): Hf's σ at q has median 3.06 (sampling error ≈ 0.05), 51.8 % ≥ 3σ (binomial
+//   ±3.1 %), 27.6 % in [3, 4], 14.5 % in [2.5, 3), sd 1.36, nullDof 2.990; every σ ≥ 3
+//   also cleared the ratio bar. A further 10 000 on seeds 600001–610000: median 2.985 ±
+//   0.018, 49.6 % ≥ 3σ.
+// - **The seeds, by a rule fixed before any σ was read:** 251, 252, … (at most 100); -above
+//   takes the first with σ in [3, 4], -below the first in [2.5, 3) (the default call, every
+//   element, the unrounded σ). Seeds 251–256 gave 1.75, 3.17, 1.37, 2.46, 2.46, 2.89σ:
+//   -above is 252 (3.17σ, ratio 8.85, rank 1), -below is 256 (2.89σ, ratio 8.42, rank 1).
+//   The Python engine reads both σ to 1e-14.
