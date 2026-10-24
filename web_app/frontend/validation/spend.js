@@ -2,12 +2,19 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 // The API spend tracker. Every request to a paid model is priced before it
-// is sent (its prompt estimate plus the largest reply the loop allows) and
-// refused when that could cross the cap; after it, the estimate of what was
+// is sent (its prompt estimate plus MAX_REPLY_TOKENS of reply, the cap the
+// request is sent with: models.js maxTokens) and refused when that could
+// cross the cap (models.js capUSD: $20 for Claude Sonnet 5.5, the user's
+// decision of 2026-10-24); after it, the estimate of what was
 // used is charged to a ledger that persists across processes, so a restarted
 // batch cannot overspend. The client does not report token usage, so the
 // charge is the Copilot's own conservative estimate (contextGuard: 2.5
 // characters per token of text, 1.4 of JSON), an over-estimate for Claude.
+// What it cannot see: thinking the provider bills as output but returns no
+// text of (Claude Sonnet 5.5 thinks adaptively by default, its thinking text
+// omitted) is not in what streamed back, so a charge can fall short of the
+// bill by up to the reply cap. Each request's reservation is bounded by the
+// cap; the ledger's charge for it is not.
 
 import { CHARS_PER_TOKEN, estimatePromptTokens } from '../src/llm/provider/contextGuard';
 import { asModelPort } from '../src/llm/provider/model';
@@ -20,7 +27,11 @@ export class SpendCapError extends Error {
 }
 
 // The reply budget a single request may use (tokens); the price check
-// reserves it before sending.
+// reserves it before sending. An API model sends it as its reply cap
+// (models.js maxTokens → max_tokens in the body, since protocol 2026-10-24.6,
+// the user's decision of 2026-10-24), so the reserved worst case is a bound
+// the provider enforces, thinking included, not an assumption: a reply stops
+// at this many tokens. Before that decision nothing capped a cloud reply.
 export const MAX_REPLY_TOKENS = 8192;
 
 export const createSpendTracker = ({ capUSD, prices, ledger }) => {

@@ -27,8 +27,10 @@ import { renderReport } from '../report';
 import { liveRun } from '../run';
 import { MODELS, resolveModel } from '../models';
 import {
-    buildRunPolicy, CONTEXT_GUARD, FINAL_ROUND_FORMS, MIN_CONTEXT_TOKENS, noteWindowAfter, preflight, RunPolicyError, TURN_LIMITS
+    buildRunPolicy, CONTEXT_GUARD, FINAL_ROUND_FORMS, MIN_CONTEXT_TOKENS, noteWindowAfter, preflight, REPLY_CAPS, replyCapOf, RunPolicyError,
+    temperatureSummary, TURN_LIMITS
 } from '../runPolicy';
+import { createSpendTracker, MAX_REPLY_TOKENS, memoryLedger } from '../spend';
 import { renderTranscript } from '../transcript';
 
 const encoder = new TextEncoder();
@@ -152,7 +154,7 @@ describe('the policy\'s constants', () => {
         expect(policy.history).toEqual({ earlier_turns: 0, reasoning_resent: false });
         expect(policy.spend).toBeNull();
         const sonnet = buildRunPolicy({ model: resolveModel('claude-sonnet-5.5', { ANTHROPIC_API_KEY: 'k' }) });
-        expect(sonnet.spend).toEqual({ cap_usd: 12, priced_reply_tokens: 8192 });
+        expect(sonnet.spend).toEqual({ cap_usd: 20, priced_reply_tokens: 8192 });
         expect(JSON.stringify(sonnet)).not.toContain('"k"');
     });
 });
@@ -329,6 +331,167 @@ describe('a live run under the policy (run.js liveRun, fake servers)', () => {
         void policy;
         expect(renderReport([old])).toMatch(/\| qwen3\.8-27b · C \| not recorded \| not recorded \|/);
         expect(renderTranscript(old)).toContain('- Run policy: not recorded');
+    });
+});
+
+// Protocol 2026-10-24.6 (the user's decisions, 2026-10-24: "Fix both
+// first"): Claude Sonnet 5.5 takes only its default sampling, so its requests
+// carry no temperature key, the warmer retry included, and every reply is
+// capped at the reply the spend tracker prices (max_tokens 8192). The
+// requests below go through the production port to fake servers, exactly as
+// validation/run.js sends them (providerModel over the resolved model); the
+// local models' bodies are pinned as they were.
+describe('Claude Sonnet 5.5\'s request as sent: no temperature, max_tokens 8192 (protocol 2026-10-24.6)', () => {
+    const echo = {
+        name: 'echo',
+        description: 'Echo the value.',
+        parameters: { type: 'object', properties: { value: { type: 'number' } }, required: ['value'] },
+        run: async ({ value }) => ({ data: { value }, checks: [] })
+    };
+    const MESSAGES = [{ role: 'system', content: 'Rules.' }, { role: 'user', content: 'Echo 1.' }];
+    // A passage a looping model writes again and again: the loop stops it and
+    // asks once more, warmer (the turn policy's 'reminder', retry 'warmer').
+    const LOOP = 'Wait, let me reconsider the window once more: the first shell spans 2.4 to 2.9 Å, '
+        + 'so the coordination number should be six, but the cut at 2.65 Å splits it, so let me check again. ';
+    const sonnet = () => resolveModel('claude-sonnet-5.5', { ANTHROPIC_API_KEY: 'k' });
+    const collect = async (iterator) => {
+        const parts = [];
+        for await (const part of iterator) parts.push(part);
+        return parts;
+    };
+    // A turn through the port whose first reply loops: its requests as sent
+    // (the turn's request events) and the bodies the server received.
+    const loopingTurn = async (model, kind) => {
+        const { chats } = fakeServer({ kind, id: model.model, loaded: 49152, replies: [{ text: LOOP.repeat(20) }, { text: 'Done.' }] });
+        const events = await collect(runCopilotTurn({ model: providerModel(model, { session: {} }), messages: MESSAGES, tools: [echo] }));
+        const requests = events.filter((event) => event.type === 'request');
+        expect(requests.map((event) => event.why)).toEqual(['first', 'reminder']);
+        expect(chats).toHaveLength(2);
+        expect(chats[1].body.messages.at(-1).content).toMatch(/kept repeating the same passage/);
+        expect(events.at(-1)).toMatchObject({ type: 'done', text: 'Done.' });
+        return { sent: requests.map((event) => event.sent), bodies: chats.map((chat) => chat.body), chats };
+    };
+
+    it('Sonnet: no temperature key in the request as sent or in its body, the warmer retry included; max_tokens 8192 in both', async () => {
+        const { sent, bodies, chats } = await loopingTurn(sonnet(), 'cloud');
+        for (const request of sent) {
+            expect('temperature' in request).toBe(false);
+            expect(request).toMatchObject({ baseUrl: 'https://api.anthropic.com/v1', model: 'claude-sonnet-5-5', maxTokens: 8192, plan: { server: 'openai', toolChoice: 'body' } });
+            expect(JSON.stringify(request)).not.toContain('"k"');
+        }
+        for (const body of bodies) {
+            expect('temperature' in body).toBe(false);
+            expect(body.max_tokens).toBe(MAX_REPLY_TOKENS);
+            expect(Object.keys(body)).toEqual(['model', 'messages', 'stream', 'max_tokens', 'tools', 'tool_choice']);
+        }
+        expect(bodies[0]).toMatchObject({ model: 'claude-sonnet-5-5', stream: true, max_tokens: 8192, tool_choice: 'auto' });
+        expect(chats.map((chat) => chat.url)).toEqual(['https://api.anthropic.com/v1/chat/completions', 'https://api.anthropic.com/v1/chat/completions']);
+    });
+
+    it('Sonnet, the port alone: a \'warmer\' intent is prepared and sent with no temperature (never ANTI_REPEAT_TEMPERATURE)', async () => {
+        const { chats } = fakeServer({ kind: 'cloud', id: 'claude-sonnet-5-5' });
+        const port = providerModel(sonnet(), { session: {} });
+        const tools = [{ type: 'function', function: { name: 'echo', description: 'Echo.', parameters: { type: 'object', properties: {} } } }];
+        for (const retry of [null, 'warmer']) {
+            const sent = await port.prepare({ messages: MESSAGES, tools, toolChoice: 'auto', retry });
+            expect(sent).toEqual({
+                baseUrl: 'https://api.anthropic.com/v1', model: 'claude-sonnet-5-5', maxTokens: 8192, messages: MESSAGES, tools, toolChoice: 'auto',
+                plan: { server: 'openai', toolChoice: 'body' }
+            });
+            await collect(port.stream(sent));
+        }
+        // The bytes the provider received: no "temperature" anywhere in them.
+        expect(chats.map((chat) => chat.body)).toEqual([0, 1].map(() => ({
+            model: 'claude-sonnet-5-5', messages: MESSAGES, stream: true, max_tokens: 8192, tools, tool_choice: 'auto'
+        })));
+        expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/chat/completions'))
+            .every(([, options]) => !options.body.includes('"temperature"') && options.body.includes('"max_tokens":8192'))).toBe(true);
+    });
+
+    it('LM Studio and Ollama: the requests as before — the temperature (0.6 on the warmer retry), no max_tokens', async () => {
+        const studio = await loopingTurn(qwen(), 'lmstudio');
+        expect(studio.sent.map((request) => request.temperature)).toEqual([0.2, ANTI_REPEAT_TEMPERATURE]);
+        expect(studio.sent.every((request) => !('maxTokens' in request))).toBe(true);
+        expect(studio.bodies.map((body) => Object.keys(body))).toEqual([0, 1].map(() => ['model', 'messages', 'temperature', 'stream', 'tools', 'tool_choice']));
+        expect(studio.bodies.map((body) => body.temperature)).toEqual([0.2, 0.6]);
+        guard.forgetServers();
+        const ollama = await loopingTurn(gemma(), 'ollama');
+        expect(ollama.sent.map((request) => request.temperature)).toEqual([0.2, ANTI_REPEAT_TEMPERATURE]);
+        expect(ollama.sent.every((request) => !('maxTokens' in request))).toBe(true);
+        expect(ollama.bodies.map((body) => Object.keys(body))).toEqual([0, 1].map(() => ['model', 'messages', 'stream', 'options', 'tools']));
+        expect(ollama.bodies.map((body) => Object.keys(body.options))).toEqual([0, 1].map(() => ['temperature', 'num_ctx', 'num_predict']));
+        expect(ollama.bodies.map((body) => body.options.temperature)).toEqual([0.2, 0.6]);
+        // num_predict is the guard's, uncapped: the context minus the prompt estimate.
+        expect(ollama.sent.map((request) => request.plan.numPredict)).toEqual(ollama.bodies.map((body) => body.options.num_predict));
+        expect(ollama.sent.map((request) => request.plan.numPredict)).toEqual(ollama.sent.map((request) => request.plan.numCtx - request.plan.estimate));
+    });
+
+    it('the policy states what is sent: temperature not sent, max_tokens 8192; the local rows as they were', () => {
+        const cloud = { kind: 'openai', version: null, loaded_tokens: null, max_tokens: null };
+        const policy = buildRunPolicy({ model: sonnet(), server: cloud });
+        expect(policy.temperature).toEqual({ base: null, warmer_retry_min: null, sent: false });
+        expect(policy.reply_cap).toEqual({ sent: 'max_tokens', max_tokens: 8192, rule: 'max_tokens 8192 in every request (thinking counts within it)' });
+        expect(policy.spend).toEqual({ cap_usd: 20, priced_reply_tokens: MAX_REPLY_TOKENS });
+        expect(temperatureSummary(policy.temperature)).toBe('not sent (the model\'s default, the retry too)');
+        // A model with a temperature: as before, with no `sent` field.
+        const local = buildRunPolicy({ model: qwen(), server: { ...cloud, kind: 'lmstudio' } });
+        expect(local.temperature).toEqual({ base: 0.2, warmer_retry_min: ANTI_REPEAT_TEMPERATURE });
+        expect(temperatureSummary(local.temperature)).toBe('0.2 (retry ≥ 0.6)');
+        expect(local.reply_cap).toEqual(REPLY_CAPS.lmstudio);
+        expect(buildRunPolicy({ model: gemma(), server: { ...cloud, kind: 'ollama' } }).reply_cap).toEqual(REPLY_CAPS.ollama);
+        // A cloud model without a cap of its own: nothing sent, as before.
+        expect(buildRunPolicy({ model: { ...sonnet(), maxTokens: undefined }, server: cloud }).reply_cap).toEqual(REPLY_CAPS.openai);
+        expect(REPLY_CAPS).toEqual({
+            lmstudio: { sent: null, rule: 'none sent; the guard needs 4,096 tokens of room beyond the prompt' },
+            ollama: { sent: 'num_predict', rule: 'num_ctx minus the prompt estimate, per request' },
+            openai: { sent: null, rule: 'none sent; the provider\'s own limit' }
+        });
+        // A capped model on the other kinds: max_tokens in LM Studio's body, a ceiling on Ollama's num_predict.
+        expect(replyCapOf('lmstudio', { maxTokens: 4096 })).toEqual({ sent: 'max_tokens', max_tokens: 4096, rule: 'max_tokens 4096 in every request (thinking counts within it)' });
+        expect(replyCapOf('ollama', { maxTokens: 4096 })).toEqual({ sent: 'num_predict', max_tokens: 4096, rule: 'num_ctx minus the prompt estimate, per request, at most 4096' });
+    });
+
+    it('a live Sonnet run (run.js liveRun, metered): the record, its transcript and the report say so', async () => {
+        const { calls, chats } = fakeServer({ kind: 'cloud', id: 'claude-sonnet-5-5', replies: [{ call: ['list_sites', {}] }, { text: ANSWER }] });
+        const model = sonnet();
+        const ledger = memoryLedger();
+        const tracker = createSpendTracker({ capUSD: model.capUSD, prices: model.prices, ledger });
+        const record = await liveRun({
+            built: built('dev-offcentre'), arm: 'B', model, runIndex: 0, base: providerModel(model, { session: {} }), tracker, note: 'sonnet-check'
+        });
+        expect(record.error).toBeNull();
+        // A cloud provider is never probed: only its chat endpoint is called.
+        expect(calls.map((call) => call.url)).toEqual(chats.map((chat) => chat.url));
+        expect(chats.length).toBeGreaterThanOrEqual(2);
+        expect(chats.every((chat) => !('temperature' in chat.body) && chat.body.max_tokens === 8192)).toBe(true);
+        expect(record.requests.every((request) => !('temperature' in request.sent) && request.sent.maxTokens === 8192)).toBe(true);
+        expect(record.model.temperature).toBeNull();
+        expect(record.policy).toMatchObject({
+            server: { kind: 'openai', expected: 'openai', base_url: 'https://api.anthropic.com/v1' },
+            temperature: { base: null, warmer_retry_min: null, sent: false },
+            reply_cap: { sent: 'max_tokens', max_tokens: 8192 },
+            spend: { cap_usd: 20, priced_reply_tokens: 8192 },
+            final_round: FINAL_ROUND_FORMS.openai
+        });
+        // Every request was charged to the ledger, under the $20 cap.
+        expect(ledger.load()).toHaveLength(chats.length);
+        expect(tracker.spent()).toBeLessThan(1);
+
+        const transcript = renderTranscript(record);
+        expect(transcript).toContain('- Model: Claude Sonnet 5.5 (API) (`claude-sonnet-5-5`, no temperature sent) · run 1');
+        expect(transcript).toContain('- Reply cap: max_tokens 8192 in every request (thinking counts within it) · final round: tool_choice "none", tools still sent');
+        expect(transcript).toContain('- Temperature not sent (the model\'s default sampling; a request asked again after a loop is sent without one too) · limits: 6 rounds × 4 calls');
+        expect(transcript).toContain('· spend cap $20');
+
+        // Beside a local column the report says the temperature differs.
+        guard.forgetServers();
+        fakeServer({ kind: 'lmstudio', loaded: 49152, replies: [{ text: ANSWER }] });
+        const lmStudio = qwen();
+        const local = await liveRun({ built: built('dev-offcentre'), arm: 'B', model: lmStudio, runIndex: 0, base: providerModel(lmStudio, { session: {} }) });
+        const report = renderReport([record, local]);
+        expect(report).toMatch(/\| claude-sonnet-5\.5 · B \| an OpenAI-compatible server \(cloud or other\) \| the provider's own \(not probed\) \| max_tokens 8192 in every request \(thinking counts within it\) \| tool_choice "none" \(tools sent\) \| not sent \(the model's default, the retry too\) \|/);
+        expect(report).toMatch(/\| qwen3\.8-27b · B \| LM Studio \| .* \| 0\.2 \(retry ≥ 0\.6\) \|/);
+        expect(report).toContain('**Not the same in every run: the temperature.**');
     });
 });
 

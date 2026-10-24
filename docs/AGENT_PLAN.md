@@ -23,7 +23,7 @@ drafts of batch 1 wait in PR #71 for the user's review.
   skill, and a threshold change that alters the science all need the user's approval. Items waiting
   for it are marked **(approval)**.
 - **No API spend.** Local models and scripted CI only, until the user says otherwise. The
-  Sonnet arm's $12 share stays unspent.
+  Sonnet arm's share ($20 since the user's decision of 2026-10-24, $12 before) stays unspent.
 - **Each PR** passes CI (Python on 3.9 floors, 3.11, 3.13; frontend lint, vitest, build), updates
   its docs, and leaves the app working. A refactor PR keeps the model-visible text unchanged: a
   snapshot of the prompt, the tool list and the descriptions (phase 1.7) shows any change in the
@@ -96,17 +96,18 @@ PR, and a decision record in `validation/findings/decisions/` and here.
 
 **Frozen (2026-10-24)** at commit 226f6f2 (protocol 2026-10-24.4), after the changelog fold
 (#123): arms A, A+ and D re-recorded with `--final` from a clean tree on dev and test, no score
-moved (`validation/baseline/freeze.json`); no tag (tags are the user's).
+moved (`validation/baseline/freeze.json`); no tag (tags are the user's). Re-frozen at commit bf72b11
+(protocol 2026-10-24.6), after the refused-analysis rule (2026-10-24.5, #126) and Claude Sonnet 5.5's
+request policy (2026-10-24.6): the same scores on dev and test, the test set unchanged.
 
-**Then:** the live runs (arms B and C), on the user's go/no-go.
+**Then:** the live runs (arms B and C), on the user's go (2026-10-24): the local models on dev, one at
+a time; Claude Sonnet 5.5 on test once the user confirms the Console's $20 limit, with a stop after its
+first case to compare the ledger with the Console's usage.
 
 **Waiting for the user:**
-- the live-run go/no-go, after the freeze;
 - the user's post-v1 list:
   - the neighbouring-ν choice for a direction finding;
   - the "most anharmonic" ranking;
-  - A5: whether a tool's own refusal (a bond-angle window that cuts the shell) counts as the
-    analysis behind a coordination claim;
   - the eval gaps no check can catch.
 
 **Decisions** (the manager, on the user's delegation, 2026-10-19):

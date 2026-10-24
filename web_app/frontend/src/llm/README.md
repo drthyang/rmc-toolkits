@@ -359,7 +359,12 @@ port, none in the turn or the loop.
   probed), puts the tool choice in that server's form, and asks the context guard for its plan
   (`planCopilotChat`). It returns the request exactly as it goes out:
   `{ baseUrl, model, temperature, messages, tools, toolChoice, plan }`. A `'warmer'` retry runs at
-  `ANTI_REPEAT_TEMPERATURE` = 0.6 or above. The plan is plain JSON:
+  `ANTI_REPEAT_TEMPERATURE` = 0.6 or above. Two settings change what goes out, only when given
+  (the dock gives neither): `temperature: null` sends no temperature key at all, the warmer retry
+  included (a model that takes only its default sampling, as Claude Sonnet 5.5 in the validation),
+  and `maxTokens`, a positive integer, caps every reply (`sent.maxTokens`; `max_tokens` in an
+  OpenAI-compatible body, thinking within it; on Ollama a ceiling on the plan's `numPredict`).
+  `max_tokens` is never sent by default. The plan is plain JSON:
   - Ollama: `{ server: 'ollama', version, estimate, needed, numCtx, numPredict, loadedContext,
     maxContext }`;
   - LM Studio: `{ server: 'lmstudio', estimate, needed, loadedContext }` (`loadedContext` null:
@@ -890,7 +895,7 @@ pieces the agent loop uses so a turn always ends with an answer or a reason:
 | --- | --- | --- |
 | No token for minutes (server busy, stopped) | Cancels the request; the error says the server may be busy | `stallMs` 180 s |
 | A reply that never ends | Cancels it; the error suggests a narrower question or a faster model | `requestMaxMs` 600 s |
-| Reasoning (or text) repeating a passage | Stops it when caught (`repeatsItself`: its last 200 characters 4 times in the last 8,000), asks again once warmer (`retry: 'warmer'`: the model port sends it at temperature ≥ 0.6, `ANTI_REPEAT_TEMPERATURE`; in the dock and the harness alike) | one reminder |
+| Reasoning (or text) repeating a passage | Stops it when caught (`repeatsItself`: its last 200 characters 4 times in the last 8,000), asks again once warmer (`retry: 'warmer'`: the model port sends it at temperature ≥ 0.6, `ANTI_REPEAT_TEMPERATURE`, or with no temperature for a model set to take none; in the dock and the harness alike) | one reminder |
 | Reasoning only, no answer, no call | One reminder, then `done` with `stoppedBy: 'empty'` and a `reason` the footer shows | one reminder |
 | A call written as JSON text | Run as a call (`textToolCalls`: the whole reply must be the call, naming a known tool); the text is retracted | |
 | Calls that repeat earlier ones or fail | Two such rounds in a row end the analyses: the next request asks for the answer (`stoppedBy: 'no_progress'`) | `maxNoProgressRounds` 2 |
@@ -1298,7 +1303,10 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   fetch): `prepare` per server (the plan, the tool choice's form, a cloud never probed, the key
   never in `sent`), Ollama's final request without tools and its estimate without their schemas,
   the refusal in `prepare` with nothing sent; `stream` under the plan (Ollama's `num_ctx` and
-  `num_predict`; LM Studio and the cloud with the body as before); `ToolsUnsupportedError` from
+  `num_predict`; LM Studio and the cloud with the body as before); a reply cap (`maxTokens`: in
+  `sent`, Ollama's `num_predict` capped, a cap that is not a positive integer refused) and a model
+  that takes no temperature (no key in `sent` or the body, the warmer retry included);
+  `ToolsUnsupportedError` from
   Ollama's and OpenAI's shapes and the fallback text, and never from a schema 400, a 5xx, a request
   without tools, a failure mid-reply or an abort; the loop over the port (an Ollama turn whose
   final reply is the answer; a model without tools asked again without them). In `turn.test.js`,

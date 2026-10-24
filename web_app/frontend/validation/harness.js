@@ -259,7 +259,19 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // window_confirmed; arm C: no tool, window or remedy); the finding and the
 // Outcome's reason name the refusal. The system prompt and the tools are
 // unchanged. Arms A, A+ and D on dev are unchanged (no model, no gate).
-export const PROTOCOL_VERSION = '2026-10-24.5';
+// 2026-10-24.6: the request policy for Claude Sonnet 5.5 (the user's
+// decisions, 2026-10-24: "Fix both first", "Raise to $20") — it takes only
+// its default sampling, so its requests carry no temperature key, the warmer
+// retry included (models.js temperature null; providerModel leaves it out,
+// the retry asked again unchanged), and every reply is capped at the
+// 8,192 tokens the spend tracker prices (max_tokens in the body, thinking
+// within it: models.js maxTokens = spend.js MAX_REPLY_TOKENS), so the
+// tracker's worst case is enforced; its cap is $20 (the cache-read price
+// stays $0.10, the pricing page's for claude-sonnet-5-5). The run policy records both (temperature
+// { base: null, warmer_retry_min: null, sent: false }, reply_cap max_tokens
+// 8192). The local models' requests, the prompt, the tools and the scoring
+// are unchanged; arms A and A+ do not send requests.
+export const PROTOCOL_VERSION = '2026-10-24.6';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one
 // follows the full method.

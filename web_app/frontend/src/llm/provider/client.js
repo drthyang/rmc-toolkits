@@ -114,10 +114,14 @@ export const checkConnection = async (baseUrl, { signal, apiKey } = {}) => {
 
 // `tools` / `toolChoice` join the body only when given, so plain chat and
 // watchdog requests are byte-identical to servers that predate tool calling.
+// The body is built from what it is given: a null temperature is left out
+// (the model's own default sampling; the model port decides when), and
+// `max_tokens` joins only when `maxTokens` is a number (never by default).
 // An HTTP failure carries its status and its parsed body (httpError), which
 // lets the model port tell "this model cannot call tools" from a dead server.
-const postChat = async ({ baseUrl, model, messages, temperature, stream, signal, apiKey, tools, toolChoice }) => {
-    const body = { model, messages, temperature, stream };
+const postChat = async ({ baseUrl, model, messages, temperature, maxTokens, stream, signal, apiKey, tools, toolChoice }) => {
+    const body = { model, messages, ...(temperature === null ? {} : { temperature }), stream };
+    if (Number.isFinite(maxTokens)) body.max_tokens = maxTokens;
     if (Array.isArray(tools) && tools.length) {
         body.tools = tools;
         if (toolChoice) body.tool_choice = toolChoice;
@@ -145,8 +149,11 @@ const postChat = async ({ baseUrl, model, messages, temperature, stream, signal,
 // may be missing; copilot/toolCalls.js assembles them; `extraContent` carries
 // a call's provider-specific `extra_content`, which Gemini requires back), and the choice's
 // `finish_reason`, when a chunk carries one, as `{ finishReason }`.
-export async function* streamChat({ baseUrl, model, messages, temperature = 0.2, signal, apiKey, tools, toolChoice }) {
-    const response = await postChat({ baseUrl, model, messages, temperature, stream: true, signal, apiKey, tools, toolChoice });
+//
+// `temperature` null sends none (an absent one is 0.2); `maxTokens` caps the
+// reply as `max_tokens`, only when given.
+export async function* streamChat({ baseUrl, model, messages, temperature = 0.2, maxTokens, signal, apiKey, tools, toolChoice }) {
+    const response = await postChat({ baseUrl, model, messages, temperature, maxTokens, stream: true, signal, apiKey, tools, toolChoice });
     if (!response.body) throw new Error('The server returned no response body to stream');
     const reader = response.body.getReader();
     const decoder = new TextDecoder();

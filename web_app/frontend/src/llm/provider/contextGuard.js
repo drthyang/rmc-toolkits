@@ -25,7 +25,8 @@
 //     A model not loaded yet is loaded by the request itself (JIT) with
 //     LM Studio's own default context: its window is checked once it is
 //     loaded, before any of the reply is shown.
-//   - Anything else (cloud, other servers) is sent unchanged (client.js).
+//   - Anything else (cloud, other servers) is sent unchanged (client.js),
+//     with the reply cap the caller gives, if any (max_tokens).
 
 import { streamChat } from './client';
 import { serverOrigin, streamOllamaChat } from './ollama';
@@ -293,10 +294,12 @@ export const planCopilotChat = async ({ baseUrl, model, messages, tools }, { ser
  * ContextLimitError instead of sending a request the model would cut; after
  * sending, when Ollama read only part of the prompt, or a model LM Studio
  * loaded for the request (JIT) has a window too small (the reply stopped
- * unseen).
+ * unseen). `temperature` null sends none; `maxTokens` (the model port's reply
+ * cap) goes to an OpenAI-compatible server as max_tokens; on Ollama the cap is
+ * already in the plan's numPredict (provider/model.js).
  */
 export async function* streamCopilotChat({
-    baseUrl, model, temperature, apiKey, messages, tools, toolChoice, signal, session = null
+    baseUrl, model, temperature, maxTokens, apiKey, messages, tools, toolChoice, signal, session = null
 }, { plan = null } = {}) {
     const planned = plan ?? await planCopilotChat({ baseUrl, model, messages, tools }, { session, signal });
     if (planned.server === 'ollama') {
@@ -330,7 +333,7 @@ export async function* streamCopilotChat({
         signal?.addEventListener('abort', onAbort, { once: true });
         try {
             let checked = false;
-            for await (const chunk of streamChat({ baseUrl, model, temperature, apiKey, messages, tools, toolChoice, signal: request.signal })) {
+            for await (const chunk of streamChat({ baseUrl, model, temperature, maxTokens, apiKey, messages, tools, toolChoice, signal: request.signal })) {
                 if (!checked) {
                     checked = true;
                     const now = await lmStudioLoadedContext(baseUrl, model, { signal });
@@ -346,5 +349,5 @@ export async function* streamCopilotChat({
         }
         return;
     }
-    yield* streamChat({ baseUrl, model, temperature, apiKey, messages, tools, toolChoice, signal });
+    yield* streamChat({ baseUrl, model, temperature, maxTokens, apiKey, messages, tools, toolChoice, signal });
 }
