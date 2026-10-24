@@ -65,6 +65,16 @@ from .parsers import (
     write_frac_from_rmc6f,
     write_stog_xy,
 )
+from .ft_uncertainty import (
+    CONVOLUTION_CHECK_LIMIT,
+    RMC_FT_TOLERANCE,
+    box_convolution,
+    assess_ft_uncertainty,
+    ft_uncertainty_for_run,
+    rmc_ft,
+    rmc_ft_covariance,
+    rmc_ft_sigma,
+)
 from .plots import PlotResult, close_plot, detect_plot_kind, make_plot, plot_to_png
 from .structure_basis import MAX_BASIS_SITES, basis_site_count, read_structure_basis, structure_basis
 from .triplets import (
@@ -237,4 +247,12 @@ __all__ = [
     "rwp_columns",
     "fit_rwp",
     "write_frac_from_rmc6f",
+    "CONVOLUTION_CHECK_LIMIT",
+    "RMC_FT_TOLERANCE",
+    "box_convolution",
+    "assess_ft_uncertainty",
+    "ft_uncertainty_for_run",
+    "rmc_ft",
+    "rmc_ft_covariance",
+    "rmc_ft_sigma",
 ]
