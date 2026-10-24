@@ -33,7 +33,7 @@ import {
 import { buildClarifier } from '../../llm/copilot/clarify';
 import { buildRunTools } from '../../llm/copilot/runTools';
 import { toolResult } from '../../llm/copilot/tools';
-import { createVerification } from '../../llm/copilot/verification';
+import { createVerification, FACTS } from '../../llm/copilot/verification';
 import { buildRunContext, lowerGroupTolerance, NOISE_FLOOR_MARGIN } from '../../llm/context/runContext';
 import {
     CLUSTER_CN_MAX, CN_CHANGE_ABS, CN_CHANGE_REL, CN_MATCH_TOLERANCE, clusterElementsOf, cnMarginCut, cnMatches, IDEAL_COORDINATION,
@@ -699,6 +699,11 @@ export const NOT_GATES = [
         why: 'the user\'s sampling bar (interview 2026-10-24): no module decides it; the fit-assessment code PR flags a distribution quoted from a single configuration without saying so'
     },
     { file: FIT, find: 'a partial under 5 % of the signal', why: 'the user\'s line for a weakly weighted partial (interview 2026-10-24): the context gives the weights, no module decides at 5 %' },
+    {
+        file: LOCAL_ORDER,
+        find: 'A partial under 5 % of the signal is',
+        why: 'the user\'s line for a weakly weighted partial (interview 2026-10-24, answer 3; rmc-fit-assessment\'s too): the context gives the weights, no module decides at 5 %'
+    },
     { file: 'rmc-fit-assessment/run-numbers.md', find: 'with a doubled cell below 29 K', why: 'a published transition temperature' }
 ];
 
@@ -1107,6 +1112,10 @@ const TOLERANCE_RULE = `a group counts where it holds to ${NOISE_FLOOR_MARGIN} �
 // analyze_displacement_directions today: one test, one tier, one resolution.
 const DIRECTION_TIERS_RULE = `a preferred direction at a peak σ ≥ ${SIGNIFICANCE_SIGMA} (unrounded) whatever its enhancement, else "no significant peak direction": no hint tier (summarizeOrientation)`;
 const DIRECTION_RESOLUTION_RULE = `any one directions analysis at ≥ ${SIGNIFICANCE_SIGMA}σ backs a preferred direction, at whichever frequency it ran (facts.direction, the answer check "direction")`;
+// Order between cells as the answer checks and arm A+ read it today (the
+// diffuse verdict, plan item 4.4, was left as the user's call).
+const BETWEEN_CELLS_RULE = 'the answer checks and arm A+ read a zone-boundary point and a general mode only, not the diffuse verdict '
+    + '(facts.modulation; validation/armA.js MODULATION_FINDINGS_READ)';
 
 const verifySplitRule = () => {
     assert.equal(SWEEP_RULES.splitSite, isSplitSite, 'arm A+ does not read the app\'s split rule');
@@ -1238,6 +1247,22 @@ export const RULES = [
         app: TOLERANCE_RULE,
         verify: verifyToleranceRule
     },
+    // The user's interview of local-order (2026-10-24, answer 6): the diffuse
+    // verdict counts as order between cells; its code is a later PR (ALLOW_LIST).
+    {
+        file: LOCAL_ORDER,
+        rule: 'order between cells',
+        find: 'no diffuse short-range order: the diffuse verdict',
+        after: 80,
+        states: /not the diffuse|only (?:a|the) zone-boundary point and (?:a|the) general/,
+        skill: 'the diffuse verdict past its calibrated bar counts as order between cells, read by arm A+ and the answer checks (the user, 2026-10-24)',
+        app: BETWEEN_CELLS_RULE,
+        verify: () => {
+            // The modulation fact the answer checks read holds no diffuse verdict today.
+            const modulation = FACTS.find((fact) => fact.key === 'modulation');
+            assert.deepEqual(Object.keys(modulation.shape), ['elements', 'ordered', 'general'], 'the modulation fact reads the diffuse verdict: update this rule');
+        }
+    },
     // local-order (batch 1) states the same three rules for "no order".
     {
         file: LOCAL_ORDER,
@@ -1297,7 +1322,32 @@ const SYMMETRY_CODE_PR = 'awaits the local-symmetry code PR';
 // The user's interview of displacement-anisotropy (2026-10-24): the tiers, the two resolutions
 // and the firm rule's code are a later PR.
 const ANISOTROPY_CODE_PR = 'awaits the displacement-anisotropy code PR';
+// The user's interview of local-order (2026-10-24): the extended evidence gate and the diffuse
+// verdict's reading are a later answer-check PR; the extended networks' tool is its own PR.
+const ORDER_CODE_PR = 'awaits the local-order answer-check code PR';
+const POLYHEDRAL_PR = 'awaits the polyhedral_distortion PR';
 export const ALLOW_LIST = [
+    {
+        check: 'tool',
+        file: LOCAL_ORDER,
+        fragment: 'polyhedral_distortion',
+        why: `AWAITS CODE: the user's test for an extended network's polyhedra (interview 2026-10-24, answer 1b); the tool is being built and is not on main: ${POLYHEDRAL_PR}`
+    },
+    {
+        check: 'firm-rule',
+        file: LOCAL_ORDER,
+        fragment: 'an answer that concludes "no order" is refused until every',
+        why: `AWAITS CODE: the user's firm rule (interview 2026-10-24, answer 5); today the evidence gate asks only for analyze_modulations, one per-site directions map and analyze_clusters for each cluster element: ${ORDER_CODE_PR} (the extended gate), then mapped in FIRM_RULES`
+    },
+    {
+        check: 'rule',
+        file: LOCAL_ORDER,
+        fragment: 'no diffuse short-range order: the diffuse verdict',
+        line: 34,
+        skill: 'the diffuse verdict past its calibrated bar counts as order between cells, read by arm A+ and the answer checks (the user, 2026-10-24)',
+        app: BETWEEN_CELLS_RULE,
+        why: `AWAITS CODE: the user's rule for the diffuse verdict (interview 2026-10-24, answer 6); arm A+ and the answer checks read no diffuse verdict today: ${ORDER_CODE_PR} (the diffuse verdict read as order between cells)`
+    },
     {
         check: 'gate',
         file: ANISOTROPY,

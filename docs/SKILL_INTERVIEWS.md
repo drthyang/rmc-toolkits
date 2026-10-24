@@ -4,8 +4,7 @@ A skill is the user's method in their own words (`.claude/skills/<name>/SKILL.md
 Copilot (`read_skill`) and by Claude Code alike. The five skills here began as **drafts**: the first four written on
 2026-10-11 from the Workbench's own record (the llm README's spot check and referee-style review,
 `docs/algorithms/*`, the analyses' code and the papers the README cites), not yet from the user.
-`rmc-fit-assessment`, `coordination-shells`, `local-symmetry` and `displacement-anisotropy` were
-interviewed on 2026-10-24 (§1–§4); `local-order` is still a draft.
+All five were interviewed on 2026-10-24 (§1–§5).
 This page is the guide for turning each into the user's method. Each answer lands in one of three
 places:
 
@@ -204,25 +203,45 @@ the peak cell's radius is also ≤ 15°; every reported direction carries "± R�
 **Landed:** the skill (step 6, the checklist, the report); the tool already applies both
 (`LOW_INDEX_CONE_DEG`, `directionResolved`) and gives the radius (`peak.radius_deg`).
 
-## 5. Local order (`local-order`, draft, added in validation batch 1)
+## 5. Local order (`local-order`, interviewed 2026-10-24)
 
 Written on 2026-10-17 from the 2026-10-14 tool review's proposal (approved by the user that day)
-and the validation's dev cases: how to conclude "no order".
+and the validation's dev cases: how to conclude "no order". Answered by the user on 2026-10-24.
+Each answer, and where it landed: the skill's text or code (a later local-order answer-check code
+PR; the extended networks' tool is its own PR). Until they land, the skill lint holds the lines
+today's code does not apply as entries marked "awaits the local-order answer-check code PR" or
+"awaits the polyhedral_distortion PR".
 
-1. The draft says "no order" only when every analysis that could show one came back empty:
-   directions per site, split sites against `analyze_modulations`, clusters, order between cells,
-   a lowering of the average structure, split coordination shells. Is that your list? What would
-   you add or drop?
-2. Must every symmetry-inequivalent site have its directions tested, or only those whose
-   kurtosis or anisotropy stands out?
-3. A partial the data barely weight (a few % of the signal): must its polyhedra be tested before
-   "no order", or is "not constrained by the data" the answer?
-4. How do you word "no order" when a test is undefined (too few points per sphere cell, a
-   zone-boundary point an odd supercell axis cannot hold)?
-5. Firm rules: should the Copilot refuse a "no order" answer until each analysis ran? (Part B of
-   the validation cycle, the evidence gate, does this for the analyses the draft lists.)
-6. A recent run you called ordered or disordered; one time an order was there that you first
-   missed.
+1. *Is the draft's list yours; what would you add or drop?* Keep it, and add (a)
+   `analyze_modulations`' diffuse short-range-order verdict (#112) and (b), for an extended
+   network, `polyhedral_distortion`. **Landed:** the skill (steps 3 and 4, the checklist, the
+   firm rule) and its reference (`order-signatures.md`: a row for diffuse order).
+   `polyhedral_distortion` is being built in its own PR: until it is on main the skill names it
+   "where the Workbench offers it", and the lint holds it as a tool that awaits that PR.
+2. *Every symmetry-inequivalent site, or only the outliers?* Every symmetry-inequivalent site.
+   **Landed:** the skill (step 2, the checklist).
+3. *A partial the data barely weight?* A partial under 5 % of the signal is reported as "not
+   constrained by the data", and the "no order" conclusion explicitly excludes it. **Landed:** the
+   skill (steps 5 and 7, the checklist, the report); the lint lists the 5 % as no gate (the context
+   gives the weights, no module decides at 5 %), as in rmc-fit-assessment.
+4. *How do you word "no order" when a test is undefined?* "No order found in the tests that could
+   run; ⟨test⟩ not tested because ⟨reason⟩", never a bare "no order". **Landed:** the skill (step
+   7, the checklist, the report).
+5. *Should the Copilot refuse a "no order" answer until each analysis ran?* Yes: a "no order"
+   answer is refused until every applicable analysis on the list has run, the two additions
+   included. This extends the evidence gate. **Landed:** the skill (a firm-rule sentence beside the
+   one that states today's gate) and code (the extended gate, a later answer-check code PR; a lint
+   entry until then). Today the gate asks for `analyze_modulations`, one per-site directions map
+   and `analyze_clusters` for each cluster element.
+6. *A recent run; an order you first missed.* Not answered on 2026-10-24: open.
+
+Also answered (the user's answer 6, closing the fact sync's item 11): the diffuse verdict, when it
+passes its calibrated bar, counts as order between cells, and arm A+ and the answer checks read
+it. **Landed:** the skill (step 3) and code (a later answer-check code PR; today neither reads it,
+`validation/armA.js` leaving it as "the user's call"; a lint entry until then). The tool says an
+in-phase correlation as neighbouring cells moving together, as RMC's long waves and acoustic-like
+thermal motion give, "not a superstructure": whether an in-phase verdict counts as order is open
+for that PR.
 
 ## Batch 1 changes to the four drafts (2026-10-17)
 
@@ -301,4 +320,5 @@ to you. Line numbers are in the synced text.
 11. `local-order/SKILL.md:34–37` (step 3): `analyze_modulations` now also reports short-range order
    between cells spread over many q (its diffuse verdict, plan item 4.4). Neither arm A+ nor the
    answer checks read it ("the user's call", validation/armA.js). Does it count as order between
-   cells before "no order"?
+   cells before "no order"? **Answered 2026-10-24** (§5, answer 6: it counts, and arm A+ and the
+   answer checks read it, in a later answer-check code PR).

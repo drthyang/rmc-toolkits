@@ -91,3 +91,17 @@
   PR, as five skill-lint entries. The skill is now the largest the Copilot reads (8,896 of
   read_skill's 9,000 characters). The 32k budget pins move by 868 tokens, and at 48k 5,685 (dock)
   and 8,415 (arm B) tokens are left to spare.
+- **local-order interviewed (2026-10-24): all five skills are now the user's own.** §5 records
+  where each answer landed. The rules it now states:
+  - the list adds `analyze_modulations`' diffuse verdict and, for an extended network,
+    `polyhedral_distortion`;
+  - the diffuse verdict, past its calibrated bar, counts as order between cells;
+  - directions for every symmetry-inequivalent site, not only the outliers;
+  - a partial under 5 % of the signal is "not constrained by the data", and "no order" leaves it
+    out;
+  - never a bare "no order": a test that could not run is named with its reason;
+  - a new firm rule: "no order" is refused until every applicable analysis has run.
+
+  Three skill-lint entries wait for their code: the extended evidence gate and the diffuse
+  verdict's reading (a later local-order answer-check code PR), and `polyhedral_distortion` (its
+  own PR). No snapshot or budget pin moves.
