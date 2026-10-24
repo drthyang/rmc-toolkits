@@ -421,6 +421,7 @@ describe('local-order: the user\'s interview answers (2026-10-24)', () => {
         }
     });
 
+    // Runs the real modulation, direction and cluster engines on the 52,000-atom Demo three times (~1.4 s alone; over 5 s on a loaded CI runner).
     it('answer 5: "no order" needs polyhedral_distortion on the Demo\'s GaSe₄ only where the run offers it; its diffuse verdict is analyze_modulations\' own', async () => {
         const list = { calls: [
             { name: 'analyze_modulations', args: {} },
@@ -444,7 +445,7 @@ describe('local-order: the user\'s interview answers (2026-10-24)', () => {
             { run: demoRun, offered: [...orderTools, polyhedra] });
         expect(asked.done.gates).toEqual([{ round: 1, id: 'no-order', missing: ['polyhedral_distortion for Ga (centre Ga: its polyhedra form no finite cluster)'] }]);
         expect(rulesOf(asked.done)).toEqual([]);
-    });
+    }, 20_000);
 });
 
 describe('the real model\'s correct answers (gemma4:26b, 2026-10-11)', () => {
