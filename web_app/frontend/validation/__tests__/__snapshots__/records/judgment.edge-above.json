@@ -84,7 +84,6 @@
   "list_sites",
   "analyze_displacement_directions",
   "compute_bond_angles",
-  "polyhedral_distortion",
   "analyze_clusters",
   "analyze_modulations",
   "detect_symmetry",
@@ -120,13 +119,13 @@
   {
    "round": 0,
    "why": "first",
-   "sent": "21552 characters, sha256 13b1da018ec2d56f",
+   "sent": "20691 characters, sha256 7cf2acca7795ea30",
    "num_ctx": null
   },
   {
    "round": 1,
    "why": "tools",
-   "sent": "25045 characters, sha256 626f4df0d6a3b530",
+   "sent": "24184 characters, sha256 e79029de44db167b",
    "num_ctx": null
   }
  ],

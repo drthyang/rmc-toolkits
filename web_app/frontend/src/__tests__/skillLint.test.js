@@ -234,10 +234,11 @@ describe('the skill lint (AGENT_PLAN 5.1)', () => {
         }
     });
 
-    // One is held since the user's interviews (2026-10-24): rmc-fit-assessment's
-    // 5 % against SEPARATION_G_FRACTION, until the fit-assessment code PR. The
-    // lint's own tests below pin the two sides a gate finding carries
-    // (`written`, `decidedBy`).
+    // None is held with its line today: rmc-fit-assessment's 5 % (the user's
+    // interview, 2026-10-24) was held against SEPARATION_G_FRACTION until the
+    // fit-assessment code PR bound it to CONSTRAINT_LIMIT_FRACTION. The lint's
+    // own tests below pin the two sides a gate finding carries (`written`,
+    // `decidedBy`).
     it('names each gate mismatch it holds with a line: the line, the skill\'s number as written and the app\'s constant', () => {
         const entries = ALLOW_LIST.filter((item) => item.check === 'gate' && item.line != null);
         for (const entry of entries) {

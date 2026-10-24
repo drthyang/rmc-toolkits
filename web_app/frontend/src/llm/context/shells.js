@@ -50,13 +50,28 @@
 //               √ its bonds in the box, the bonds taken as independent); the
 //               counts said in the direction the join decided (`direction`).
 //   separation  a shell is separated from the next when the smoothed g at its
-//               boundary is at most SEPARATION_G_FRACTION (2 %) of its peak;
-//               a closest-approach constraint limits the pair when the raw g
-//               just above it is above the same fraction.
+//               boundary is at most SEPARATION_G_FRACTION (2 %) of its peak.
+//   constraint  a closest-approach constraint limits the pair when the raw g
+//               just above it is above CONSTRAINT_LIMIT_FRACTION (5 %) of the
+//               first peak: the peak is constraint-limited, and nothing is
+//               interpreted on its low-r side (the user's rule, 2026-10-24;
+//               2 %, the separation's fraction, before).
 //   CN match    two counts agree within half an atom (cnMatches).
+//   average     find_gr_peaks cross-checks the shell's window against the
+//               average structure's first shell for the pair, between site
+//               means (averageStructureBonds, averageShellCheck): flagged when
+//               a bond lies outside the window by more than the first peak's
+//               FWHM (the user's rule, 2026-10-24).
 //   clusters    an element whose own first shell holds 0.5–4.5 neighbours
 //               may form finite clusters (clusterElementsOf: the evidence
 //               gate's "no order" and arm A+'s cluster sweep).
+//   networks    an element that is no cluster element and whose nearest
+//               first shell of another element holds an octahedron or a
+//               tetrahedron (CN 6 or 4) centres polyhedra no finite cluster
+//               holds — corner-, edge- or face-sharing in an extended network,
+//               or isolated (networkCentresOf: the evidence gate's "no order"
+//               asks polyhedral_distortion on it where the run offers it; the
+//               local-order interview, 2026-10-24).
 //   cut         one rule (windowCut; approved by the user, 2026-10-19): a
 //               window that meets a shell cuts it when it holds fewer partner
 //               atoms than the whole shell by at least max(0.5, 15 % of the
@@ -109,10 +124,16 @@ export const CN_MATCH_TOLERANCE = 0.5;
 // analyze_clusters on it, and arm A+ tries its clusters (clusterElementsOf,
 // one rule since architecture candidate 8).
 export const CLUSTER_CN_MAX = 4.5;
-// g at a shell's boundary (smoothed), or just above a closest-approach
-// constraint (raw), above this fraction of the first peak: the shell runs
-// into the next, or the constraint shapes the peak. One constant for both.
+// g at a shell's boundary (smoothed) above this fraction of the first peak:
+// the shell runs into the next.
 export const SEPARATION_G_FRACTION = 0.02;
+// g just above a closest-approach constraint (raw, its first 2.5 grid steps)
+// above this fraction of the first peak: the pairs pile up against the
+// constraint, which, not the data, shapes the peak's low-r side — the peak is
+// constraint-limited, and nothing on its low-r side is interpreted (the
+// user's rule, 2026-10-24: "g(r) above 5 % of the peak at the cut"; until
+// then the separation's 2 %). The Demo's Ga–Se at its 2.2 Å constraint: 8.7 %.
+export const CONSTRAINT_LIMIT_FRACTION = 0.05;
 // The cut sensitivity: the shell's top moved this far (Å) either way.
 export const CUT_SHIFT_A = 0.2;
 // The CN margin: a window changes the answer when its CN differs from the
@@ -159,6 +180,36 @@ export const clusterElementsOf = (catalogue) => (catalogue?.elements || []).filt
     const cn = catalogue.shell(element, element)?.cn;
     return Number.isFinite(cn) && cn >= CN_MATCH_TOLERANCE && cn <= CLUSTER_CN_MAX;
 });
+
+// The polyhedra polyhedral_distortion reads in full (Robinson's ⟨λ⟩ and σ²θ
+// beside Baur's DI): tetrahedra and octahedra.
+export const POLYHEDRON_COUNTS = Object.freeze([4, 6]);
+
+/**
+ * The elements of a shell catalogue whose coordination polyhedra no finite
+ * cluster holds (the local-order interview, 2026-10-24: "no order" needs
+ * polyhedral_distortion for an extended network, one with no finite clusters
+ * by the catalogue's own-kind rule): every element that is no cluster element
+ * (clusterElementsOf) and whose nearest closed first shell of another element
+ * — the one whose window starts first, the element's own coordination —
+ * holds POLYHEDRON_COUNTS atoms within CN_MATCH_TOLERANCE (cnMatches). The
+ * perovskite's B (BO₆; B–B six at a), the Demo's Ga (GaSe₄; Ga–Ga twelve);
+ * not the A site (AO₁₂), nor O (its nearest shell, two B), nor a cluster
+ * element (the Demo's Ta, whose TaSe₆ octahedra hold its Ta₄ clusters:
+ * analyze_clusters tests them). In the catalogue's order; [] without one.
+ */
+export const networkCentresOf = (catalogue) => {
+    const clusters = new Set(clusterElementsOf(catalogue));
+    return (catalogue?.elements || []).filter((element) => {
+        if (clusters.has(element)) return false;
+        const nearest = catalogue.elements
+            .filter((partner) => partner !== element)
+            .map((partner) => catalogue.shell(element, partner))
+            .filter((shell) => shell?.window && Number.isFinite(shell.cn))
+            .reduce((best, shell) => (best == null || shell.window[0] < best.window[0] ? shell : best), null);
+        return Boolean(nearest) && POLYHEDRON_COUNTS.some((count) => cnMatches(nearest.cn, count));
+    });
+};
 
 /** The Workbench's CN margin: |cn − reference| ≥ max(CN_CHANGE_ABS, CN_CHANGE_REL · reference). */
 export const cnChanges = (cn, reference) => Number.isFinite(cn) && Number.isFinite(reference)
@@ -575,8 +626,100 @@ const buildShell = (centre, partner, label, geometry, { partnerDensity, centreDe
                 later: reading([window[0], roundWindowEdge(window[1] + CUT_SHIFT_A)])
             }
             : null,
-        constraint: Number.isFinite(limit) ? { limitA: limit, gFraction, limited: gFraction > SEPARATION_G_FRACTION } : null
+        constraint: Number.isFinite(limit) ? { limitA: limit, gFraction, limited: gFraction > CONSTRAINT_LIMIT_FRACTION } : null
     });
+};
+
+// --- the average structure's first shell (find_gr_peaks' cross-check) ---------------
+
+// The coordination-shells interview (2026-10-24, answer 1): the window defaults
+// to find_gr_peaks' first shell, "cross-checked against the average
+// structure's bond lengths; flag when the two disagree by more than the shell's
+// width".
+//
+//   bonds     the average structure's first shell for the pair: every distance
+//             between the pair's site means (the basis `frac`, over the 26
+//             neighbouring cells, through the full cell metric) from the
+//             shortest to AVERAGE_SHELL_REACH_A beyond it — the join's reach
+//             (SPLIT_SHELL_REACH_A: a distorted polyhedron's bond lengths lie
+//             within it). Not each site's nearest partner: a site with no bond
+//             to the other element would count its nearest one as a bond (the
+//             Demo's second Se site, 4.26 Å from the nearest Ga).
+//   disagree  the furthest of those bonds lies outside first_shell.window_A by
+//             more than the shell's width, its first peak's FWHM (find_gr_peaks'
+//             peaks_A[0].fwhm, from the half-height walk). The window runs from
+//             the 1 % onset to the closing minimum, so a bond outside it lies
+//             where the configuration has (almost) no pairs; one FWHM is the
+//             shell's own spread, more than any offset of a site mean from the
+//             local bonds (libration, anharmonic tails), and the window's own
+//             width (0.5–1.4 Å on the Demo and the dev cases) would pass the
+//             fifth bond of a 4 + 1 polyhedron whose shell closes before it.
+//             The FWHM's overestimate on overlapping peaks errs towards silence.
+export const AVERAGE_SHELL_REACH_A = SPLIT_SHELL_REACH_A;
+// Coincident site means (a duplicated basis entry) are no bond.
+const COINCIDENT_A = 1e-3;
+
+/**
+ * The average structure's bond lengths for the pair a–b (Å, sorted, distinct
+ * to 1e-4 Å): its first shell (above). [] without a basis or a cell, or with
+ * no site of either element.
+ */
+export const averageStructureBonds = (structure, a, b) => {
+    const basis = structure?.basis;
+    const L = structure?.latticeVectors;
+    const supercell = structure?.supercell;
+    if (!Array.isArray(basis) || !basis.length || !Array.isArray(L) || L.length !== 3 || !Array.isArray(supercell)) return [];
+    const cell = L.map((row, i) => row.map((value) => value / Math.max(supercell[i] || 1, 1)));
+    const from = basis.filter((site) => site.el === a && Array.isArray(site.frac));
+    const to = basis.filter((site) => site.el === b && Array.isArray(site.frac));
+    // Every pair's distances over the neighbouring cells, each to `visit`.
+    const each = (visit) => {
+        for (const s of from) {
+            for (const t of to) {
+                for (let i = -1; i <= 1; i += 1) {
+                    for (let j = -1; j <= 1; j += 1) {
+                        for (let k = -1; k <= 1; k += 1) {
+                            const f0 = t.frac[0] + i - s.frac[0];
+                            const f1 = t.frac[1] + j - s.frac[1];
+                            const f2 = t.frac[2] + k - s.frac[2];
+                            const x = f0 * cell[0][0] + f1 * cell[1][0] + f2 * cell[2][0];
+                            const y = f0 * cell[0][1] + f1 * cell[1][1] + f2 * cell[2][1];
+                            const z = f0 * cell[0][2] + f1 * cell[1][2] + f2 * cell[2][2];
+                            const r = Math.sqrt(x * x + y * y + z * z);
+                            if (r > COINCIDENT_A) visit(r);
+                        }
+                    }
+                }
+            }
+        }
+    };
+    let shortest = Infinity;
+    each((r) => { if (r < shortest) shortest = r; });
+    if (!Number.isFinite(shortest)) return [];
+    const kept = new Set();
+    each((r) => { if (r <= shortest + AVERAGE_SHELL_REACH_A + 1e-9) kept.add(Math.round(r * 1e4) / 1e4); });
+    return [...kept].sort((x, y) => x - y);
+};
+
+/**
+ * find_gr_peaks' cross-check of a shell (a catalogue Shell) against the
+ * average structure's bonds (averageStructureBonds): `{ bonds: [shortest,
+ * longest], outsideA, widthA, disagrees }`, outsideA how far the furthest bond
+ * lies outside the shell's window (0 when every one lies in it), widthA the
+ * shell's width (its first peak's FWHM), `disagrees` when outsideA > widthA.
+ * Null without a closed shell or without bonds.
+ */
+export const averageShellCheck = (shell, bonds) => {
+    if (!shell?.window || !Array.isArray(bonds) || !bonds.length) return null;
+    const [lo, hi] = shell.window;
+    const outsideA = Math.max(0, ...bonds.map((r) => Math.max(lo - r, r - hi)));
+    const widthA = shell.peaks?.[0]?.fwhm;
+    return {
+        bonds: [bonds[0], bonds.at(-1)],
+        outsideA,
+        widthA: Number.isFinite(widthA) ? widthA : null,
+        disagrees: Number.isFinite(widthA) && outsideA > widthA
+    };
 };
 
 // --- the catalogue -----------------------------------------------------------------

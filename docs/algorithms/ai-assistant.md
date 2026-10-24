@@ -58,7 +58,7 @@ Workbench, and points at the page while it explains (Step 17, *View tools*).
 There is also an optional **convergence watchdog** chip on the Dashboard's R-value card. Neither
 feature sends your run files anywhere.
 
-The app first *computes a compact summary* of the run: a JSON object targeted at ~6,000 characters
+The app first *computes a compact summary* of the run: a JSON object targeted at ~6,500 characters
 (a best-effort budget, not a hard cap; see Step 12). It hands that summary and your question to the
 OpenAI-compatible chat endpoint you configured. When the model asks for an analysis, the Copilot runs
 it in the browser (or through the Flask engines in server mode) and sends back a compact result with
@@ -96,11 +96,11 @@ This subsection is normative: it is derived from every `fetch()` in the module �
 | # | When | Request | Run-derived payload |
 |---|------|---------|---------------------|
 | 1 | AI Copilot dock first opened (automatic, once per base URL; at load when it was left open), or **Test** pressed | `GET {baseUrl}/models` → `listModels()` | **None.** Only the API key, if one is set. |
-| 2 | You send a question | `POST {baseUrl}/chat/completions` (`stream: true`) → `postChat()` via `streamChat()` | The summarized context JSON (target ≤ ~6,000 chars, best-effort; Step 12), the system prompt, the last 8 memory messages (questions and final answers only) and your question. With analyses on, the tool definitions (names, descriptions, argument schemas). |
+| 2 | You send a question | `POST {baseUrl}/chat/completions` (`stream: true`) → `postChat()` via `streamChat()` | The summarized context JSON (target ≤ ~6,500 chars, best-effort; Step 12), the system prompt, the last 8 memory messages (questions and final answers only) and your question. With analyses on, the tool definitions (names, descriptions, argument schemas). |
 | 2a | The model asked for analyses (repeats ≤ 6 times per question, plus one last request) | the same `POST`, same body grown by the exchange | Row 2's body, plus the model's own tool calls echoed back and one `tool` message per call: the analysis summary and its checks. Each is ≤ 3,000 chars and ≤ 12,000 per question; older results are compacted to their checks. Step 17 lists what each analysis sends. |
 | 2b | Before each Copilot request to a server on this machine or on port 11434 (once per base URL for the kind, per request for the context) | `GET {origin}/api/version`, else `GET {origin}/api/v0/models`; for Ollama `GET {origin}/api/ps` and `POST {origin}/api/show` `{model}` (`contextGuard.js`) | **None** but the model name: they read the server's kind, the model's loaded and maximum context. A cloud URL is never probed. |
 | 2c | Instead of row 2 / 2a, when the server is Ollama | `POST {origin}/api/chat` (NDJSON stream) → `streamOllamaChat()` | Row 2/2a's messages and tools, plus `options.num_ctx` and `options.num_predict` sized to hold the prompt (*The context window* in Step 17). |
-| 3 | Watchdog enabled *and* a model configured | `POST {baseUrl}/chat/completions` (`stream: false`) → `completeChat()` | Five numbers only: `{n_steps, first, last, min, recent_window_delta}` plus two status words. |
+| 3 | Watchdog enabled *and* a model configured | `POST {baseUrl}/chat/completions` (`stream: false`) → `completeChat()` | Five numbers only: `{n_steps, first, last, min, change_last_10pct}` of the total χ² (or the charted column), the names of the terms still falling or rising, and two status words. |
 
 **Row 1 fires without you asking.** The dock's panel (`CopilotChat.jsx`) mounts on first open (or at
 load, when the dock was left open: its open state persists) and
@@ -217,8 +217,8 @@ through `useCopilotRun.js` in the app and `openRunFolder.js` in the validation h
 order) and the χ² history (`chartedRValueFile`: the r_value logs not in `hiddenPlotPaths`). The
 Copilot is handed the *unfiltered* list as `plotFiles` but the history of the visible logs as
 `rValueFile`. Consequence: **hiding a plot on the Dashboard does not remove it from `datasets` or
-`pair_correlations`, but hiding an R-value log silently removes it from `convergence`, from
-`recent_slope_per_step`, and from the watchdog.**
+`pair_correlations`, but hiding an R-value log silently removes it from `convergence` (its terms and
+total in `last_10pct` too) and from the watchdog.**
 
 **Flask mode: the plot data comes from `/api/plot/data`.** A picked folder's files are parsed up front
 (`parseDashboardPlotFile`), so they carry `plotData`. A server folder's charts fetch their own data,
@@ -722,8 +722,12 @@ quantity:
   `SEPARATION_G_FRACTION` $= 0.02$; **the constraint** (`constraint: {limitA, gFraction, limited}`):
   the pair's closest-approach distance from the run settings (`labelledMinimumDistances`:
   MINIMUM_DISTANCES labelled in RMCProfile's upper-triangle pair order, matched in either order),
-  the largest raw $g$ in $(d_{\min}, d_{\min} + 2.5\,\Delta r]$ over $h$, `limited` above the same
-  0.02 — one fraction for both. `find_gr_peaks`' old clause $r - \mathrm{FWHM}/2 \le d_{\min} + 0.05$
+  the largest raw $g$ in $(d_{\min}, d_{\min} + 2.5\,\Delta r]$ over $h$, `limited` above
+  `CONSTRAINT_LIMIT_FRACTION` $= 0.05$: the peak is constraint-limited, and nothing on its low-r side is
+  interpreted (the user's rule, 2026-10-24: "g(r) above 5 % of the peak at the cut"; until then the
+  separation's 0.02 decided both). On the Demo no reading moves: Ga–Se 8.7 % at 2.2 Å is limited under
+  both fractions, Ta–Se 1.4 % under neither, the other pairs 0; the dev cases have no constraints
+  (`shells.test.js`: a constructed Ga–Se cut at 3 % is not limited, at 9 % it is). `find_gr_peaks`' old clause $r - \mathrm{FWHM}/2 \le d_{\min} + 0.05$
   Å is dropped: a sharp peak on a fine grid whose half maximum lies just above the constraint, with
   $g$ at ~1 % of the peak there, is not cut (`shells.test.js`). Dropping it changed nothing the model
   sees on the Demo or the dev cases (the dev cases have no run settings);
@@ -930,7 +934,8 @@ the signal. An element without a tabulated amplitude drops that radiation's bloc
 
 ### Step 11 — Convergence series (`context.convergence`)
 
-**Input:** `rValueFile.plotData.series[0].y`.
+**Input:** `rValueFile.plotData.series[0].y` (the charted last column), and `rValueFile.plotData.chiTerms`
+— every χ² term of the logs and their total (run-dashboard.md, Step 4d) — for the verdict.
 
 **What the values are.** RMCProfile's `<stem>-NN.log` files are read by `readChi()` in
 `browserData.js` (mirroring `read_chi_log()` in Python): skip the first 2 lines, keep only data rows with
@@ -970,20 +975,26 @@ count, and the concatenation assumes the logs are in chronological order.
 **Statistics on the full series** (before any downsampling — this is deliberate):
 
 $$\mathrm{nSteps} = N,\quad \mathrm{first} = y_0,\quad \mathrm{last} = y_{N-1},\quad
-\min_k y_k,\quad \max_k y_k,\quad \mathrm{recentSlopePerStep} = m$$
+\min_k y_k,\quad \max_k y_k$$
 
-with $m$ the tail least-squares slope defined in Step 14. `first`/`last` are the raw end values (a
-non-finite latest value serializes as `null` — visible, not hidden); `min`, `max` and $m$ use only the
-finite values, in one pass (no argument spread). When any value is non-finite the block also carries
-`non_finite_steps` (the count) and a `non_finite_note` telling the model those rows are a blown-up run,
-not missing data. On output, `n_steps` is the **exact integer point count and is never rounded**;
-`first`, `last`, `min`, `max` are 3 s.f.; `recent_slope_per_step` is 2 s.f.
+of the charted column. `first`/`last` are the raw end values (a non-finite latest value serializes as
+`null` — visible, not hidden); `min` and `max` use only the finite values, in one pass (no argument
+spread). When any value is non-finite the block also carries `non_finite_steps` (the count) and a
+`non_finite_note` telling the model those rows are a blown-up run, not missing data. On output,
+`n_steps` is the **exact integer point count and is never rounded**; `first`, `last`, `min`, `max` are
+3 s.f.
 
-The block also carries `watchdog_status` — `classifyConvergence()` of the same series (Step 14),
-the dashboard's verdict — and, with ≥ 10 finite rows, `change_over_last_10pct` = the last finite
-value minus the one a tenth of the rows earlier (2 s.f.; −0.1 ≈ a 10 % χ² drop). Without them the
-model read the demo's still-falling 48-point trace (−0.11 over the last tenth) as a plateau and called
-the run converged.
+The block also carries `watchdog_status` — the dashboard's verdict on **every χ² term and their total**
+(`judgeRun()`, Step 14; the user's rule of 2026-10-24) — and `last_10pct`: `rows` (the window), and for
+the `total` (when the logs name their terms) and each non-zero term under `terms` (labelled by its header,
+repeats numbered: `Curvature #3`) its fitted ln χ² `change` across the window, the `noise_sd` about the
+fit and the `trend` (2 s.f.; −0.1 ≈ a 10 % χ² drop), with `zero_terms` counting the terms that are 0 in
+every row (constraints not in use). On the Demo: `rows` 227; F(Q)_1 −0.016 (noise 0.0015) and X_ray_(R)1
+−0.12 (0.0027) falling, Curvature #3 −0.073 (0.025) and #5 −0.098 (0.05) flat, the total −0.074 (0.024)
+falling, four zero terms. Without the recent change the model read the demo's still-falling 48-point
+trace (−0.11 over the last tenth) as a plateau and called the run converged. Until 2026-10-24 the block
+judged the charted column alone and carried `recent_slope_per_step` (the last 20 %'s slope) and
+`change_over_last_10pct` (an endpoint difference) instead of `last_10pct`.
 
 **Downsampling (`downsampleSeries`).** Uniform-stride resampling to at most `HISTORY_POINTS = 48` points
 that always retains the endpoints:
@@ -995,9 +1006,12 @@ value is rounded to 3 s.f. This is *decimation, not averaging* — no local mini
 survives, which is why the min/max/slope statistics are computed on the full series first.
 (`HISTORY_POINTS` is also the default argument of the exported `downsampleSeries`.)
 
-**Also emitted:** `quantity` — `"ln of the chi^2 in the last .log column 'X_ray_(R)1' (natural log;
-lower is better) — one fit term of the run, not a total"` (the column name comes from the log header,
-`plotData.chiColumn`, and is omitted when the log has none) — `column` (that header name), and
+**Also emitted:** `quantity` — with the logs' terms, `"ln chi^2 per .log row (natural log; lower is
+better). history, first, last, min, max: the last .log column 'X_ray_(R)1', one fit term (the
+dashboard's chart); last_10pct: every chi^2 term and their total"`; without them (a log that names no
+columns), `"ln of the chi^2 in the last .log column 'X_ray_(R)1' (natural log; lower is better) — one fit
+term of the run, not a total"` (the column name comes from the log header, `plotData.chiColumn`, and is
+omitted when the log has none) — `column` (that header name), and
 `final_chi_squared` = `plotData.metrics.final_chi_r`, the **un-logged** last value of that column, so
 $\mathrm{last} = \ln(\text{final\_chi\_squared})$ up to rounding. The series is **one term** of the
 fit (in the demo run the X-ray real-space χ²; the reciprocal-space `F(Q)_1` term is not included), which
@@ -1016,14 +1030,17 @@ is why the context names it rather than calling it the run's goodness of fit.
 >    the model so ("versus log rows (one per save period)"). The move counters in
 >    `configuration_optimization` (Step 3) are the only move numbers in the context.
 
-**Code:** `runContext.js` → `convergenceContext()`, `downsampleSeries()`, `seriesStats()`;
+**Code:** `runContext.js` → `convergenceContext()`, `trendContext()`, `downsampleSeries()`, `seriesStats()`;
+`watchdog/heuristics.js` → `judgeRun()`;
 `Dashboard.jsx` → `combineRValueFiles()`, `comparePlotFiles()`, `rValueLogParts()`.
 
 ---
 
 ### Step 12 — The character budget (`contextToJson`)
 
-**Input:** the assembled context object and a budget, default `CONTEXT_CHAR_BUDGET = 6000` **characters**
+**Input:** the assembled context object and a budget, default `CONTEXT_CHAR_BUDGET = 6500` **characters**
+(6000 until 2026-10-24: the convergence block's `last_10pct` added 486 characters on the Demo, 5,647 →
+6,133, which the old budget would have taken from its second g(r) peaks)
 (not tokens; ~1.8k tokens). Serialization is `compactJson()`: `JSON.stringify(context, null, 1)` with
 every array of plain values, and then every object of plain values (and such arrays), collapsed onto
 one line — about half the length of one value per line, and still valid JSON (a bracket or brace
@@ -1065,7 +1082,7 @@ JSON is returned immediately.
 **This is best-effort, not a guarantee.** Several sections are *never* trimmed — `structure`,
 `configuration_optimization`, `run_settings` (including a long `min_distances_A` map for a many-element
 system), the `convergence` summary statistics, and the pair list itself (only extra peaks are dropped,
-never whole pairs). A pathological run can therefore exceed 6,000 characters after all eight steps. The
+never whole pairs). A pathological run can therefore exceed 6,500 characters after all eight steps. The
 tests assert the budget holds for a 30-dataset, 50,000-step fixture and that a forced budget of 10
 characters triggers every trim step in order, but no test asserts the budget is met unconditionally.
 
@@ -1146,8 +1163,10 @@ Treat all three as prompt-level assertions from the app author, not as validated
 in the parameters table below for completeness.
 
 **Watchdog** (`buildWatchdogMessages()`): the same system prompt plus one user message containing
-`JSON.stringify(stats)` (Step 14) — introduced as the ln χ² of the named fit term (`chiColumn`, e.g.
-`X_ray_(R)1`, "one .log column, not the total") when the column is known — the heuristic label, the
+`JSON.stringify(stats)` (Step 14) — introduced as the ln of the total χ², the sum of every χ² term of the
+.log, with the terms still moving named (`of: 'total'`, since 2026-10-24), or, for a log that names no
+columns, as the ln χ² of the named fit term (`chiColumn`, e.g. `X_ray_(R)1`, "one .log column, not the
+total") when the column is known — the heuristic label, the
 previous label if any, and a demand for
 exactly one line of the form `` `STATUS: improving|converged|stalled|diverging — <one short sentence
 citing a number>` ``. **This payload is not fenced** — unlike the chat context, the stats JSON is
@@ -1168,82 +1187,85 @@ returning `{status, note}` or `null`. **The parsed `status` is not used to set t
 ### Step 14 — Convergence heuristics (the statistics)
 
 Source of truth: [`llm/watchdog/heuristics.js`](../../web_app/frontend/src/llm/watchdog/heuristics.js).
-These are pure functions over the $\ln\chi$ array; they work with **no model connected at all**.
+These are pure functions over the $\ln\chi^2$ arrays; they work with **no model connected at all**.
+The watchdog badge, `assess_convergence`, the context's `watchdog_status` and `last_10pct` (Step 11) and
+the answer check on "converged" (Step 17) read the one verdict.
 
-**Recent window.** For a series of $N$ points,
+**What is judged (the user's rule, 2026-10-24).** Every χ² term of the `.log` and their total: a run is
+converged only when **no term and not the total is still falling beyond its noise over the last tenth of
+the run**. `chiSeries(plotData)` takes the terms from `plotData.chiTerms` (run-dashboard.md, Step 4d),
+labels repeated header names apart (`termLabels`: `Curvature #1 … #6`), and reads the row the last log
+starts at from its `segments`; logs that name different terms give the total beside the charted column;
+a log whose line 1 names no columns gives the charted column alone, with no total. Until 2026-10-24 the
+verdict read the charted last column only, with a fixed threshold (below).
 
-$$n = \max\!\big(\min(N,5),\ \lceil 0.2N \rceil\big)$$
+**The window.** For a series of $N$ rows, the last $m = \max(\lceil 0.1N\rceil, \min(N, 10))$ rows
+(`TREND_WINDOW_FRACTION = 0.1`, `TREND_MIN_ROWS = 10`), never back past the last restart (a restart
+recomputes χ², so rows across it are not one series; a window the restart cuts is the rows after it).
+The Demo: $N = 2262$, $m = 227$, all in its third log.
 
-i.e. the last 20 % of the series, but never more than $N$ and never fewer than 5 **once $N \ge 5$**. For
-$5 \le N \le 25$ this is exactly 5 points; for $N < 5$ it is the whole series ($n = N$), which is
-reachable because the watchdog runs from $N \ge 2$; for $N = 500$ it is 100 points.
+**The trend (`seriesTrend`).** The window's finite values $y_k$ at their row indices $x_k$, fitted by
+least squares, $y \approx a + bx$; the fitted change across the window
+$\Delta = b\,(x_{\mathrm{last}} - x_{\mathrm{first}})$ and the scatter about the fit
+$s = \sqrt{\sum_k (y_k - a - b x_k)^2/(m'-2)}$ ($m'$ the finite values; fewer than 3: `unknown`).
 
-**Tail slope (`recentSlope`).** Ordinary least squares of the last $n$ values against their index
-$i = 0,\dots,n-1$:
+$$\text{trend} = \begin{cases}
+\texttt{falling} & -\Delta > k\,s\\
+\texttt{rising} & \Delta > k\,s\\
+\texttt{flat} & \text{otherwise (and } |\Delta| < 10^{-12}\text{, round-off)}
+\end{cases}\qquad k = \texttt{TREND\_NOISE\_FACTOR} = 3.$$
 
-$$m = \frac{\sum_i (i - \bar\imath)(y_i - \bar y)}{\sum_i (i - \bar\imath)^2},
-\qquad \bar\imath = \frac{n-1}{2},\qquad \bar y = \frac1n\sum_i y_i$$
+**Why $k = 3$, and why the change against the scatter.** For a flat series of independent noise of sd
+$\sigma$ the fitted change has sd $\sigma\sqrt{12(m-1)/(m(m+1))}$: 0.99 σ at $m = 10$, 0.23 σ over the
+Demo's 227 rows. So a flat series passes for falling with probability 0.12 % with σ known, 0.8 % with σ
+estimated from the 10 rows of the shortest window (Student's t with 8 degrees of freedom; 0.9 % in a
+seeded simulation), and never in 2000 simulated 227-row windows. The rule compares the drop with the
+scatter of the points, not a t statistic that grows with the row count: a long window does not make a
+negligible drift significant. Noise correlated from row to row wanders like a drift over a window not much
+longer than its correlation (lag-1 ρ = 0.9: 0.25 % falsely falling over 227 rows, 8.6 % over 50,
+simulated), and there the rule errs towards "still moving", never towards "converged". A noise-free
+decline, however slow, falls (its scatter is zero), and a single print quantum (the log's 3 significant
+digits) that steps down in mid-window can read as falling: it did fall. `heuristics.test.js` pins the
+rates on seeded noise.
 
-with $m = 0$ when the denominator vanishes ($n<2$) or the input has fewer than 2 points. Units:
-$\ln\chi$ per log step.
+**The run's status (`judgeConvergence`), in this order.**
 
-**Window delta — the actual decision variable.**
+| Status | When |
+|---|---|
+| `unknown` | no series has three finite values in its window |
+| `diverging` | a series' latest value is non-finite (a blown-up run), or the total rises beyond its noise |
+| `improving` | a term or the total still falls beyond its noise |
+| `diverging` | a term rises beyond its noise while none falls |
+| `stalled` | every series flat, and none ever dropped by `MIN_TOTAL_DROP = 0.1` from its first value to its last |
+| `converged` | every series flat after such a drop |
 
-$$\Delta_{\mathrm{win}} = m \,(n-1)$$
+A term that is 0 in every row (at the clamp $\ln 10^{-12}$: a constraint not in use) is listed apart
+(`zeroTerms`) and judged by no rule. `classifyConvergence(values)` judges one series alone by the same
+rule (no total); `detectDivergence()` / `detectStall()` are its predicates.
 
-the model-predicted change in $\ln\chi$ across the whole recent window. Because the series is a
-logarithm, an additive shift is a *relative* change in $\chi$:
-$\Delta_{\mathrm{win}} = \ln(\chi_{\mathrm{end}}/\chi_{\mathrm{start}})$, so the threshold is
-magnitude-independent — the same rule works for $\chi \sim 10^{-2}$ and $\chi \sim 10^{2}$.
+**Known answers** (`__tests__/heuristics.test.js`): a flat noisy history after a drop → `converged`;
+$\ln\chi^2 = 1 + 0.3\,e^{-t/1000}$ with noise 0.001 (−0.006 over its last tenth, ~6 × its noise) →
+`improving`, where the old rule's window changed by −0.013 < 0.02 and read it flat; one term decaying
+while a dominant flat term holds the total flat → `improving` (the charted column alone read
+`converged`); a jump at a restart inside the last tenth is no trend; a noise-free slow decline →
+`improving`; a rising tail → `diverging`. On the Demo: F(Q)_1 (−0.016 against 0.0015) and X_ray_(R)1
+(−0.12 against 0.0027) fall, the curvature constraints in use are flat (−0.073 against 0.025, −0.098
+against 0.05), the total falls (−0.074 against 0.024, 3.03 times): `improving`, as under the old rule.
+dev-fit-unconverged: both terms and the total fall, 14–23 times their noise: `improving`.
 
-> **$m$ and $\Delta_{\mathrm{win}}$ are different numbers, and both are shipped.** The chat context carries
-> the *per-step* slope, `recent_slope_per_step` $= m$ (Step 11). The watchdog payload carries the
-> *window* delta, `recent_window_delta` $= m\,(n-1)$. They differ by the factor $n-1$, which for a long
-> run is $0.2N - 1$. Do not compare the two fields as if they were the same quantity.
+**The old rule (until 2026-10-24),** on the charted column alone: the slope $m$ of the last
+$\max(\min(N,5), \lceil 0.2N\rceil)$ points against their index, $\Delta_{\mathrm{win}} = m(n-1)$, and
+`diverging` above 0.02, `improving` below −0.02, else `stalled`/`converged` by the total drop
+(`WINDOW_DELTA_EPSILON = 0.02`, gone): no noise entered it, so a slow steady decline read flat and a
+noisy flat history could read improving.
 
-**Thresholds (module constants).**
-
-- `WINDOW_DELTA_EPSILON = 0.02` — $|\Delta_{\mathrm{win}}| \le 0.02$ counts as flat.
-  $e^{0.02}-1 = 2.02\,\%$, so this is "the fit moved less than ~2 % across the recent window".
-- `MIN_TOTAL_DROP = 0.1` — a run must have improved by at least 0.1 in $\ln\chi$ *overall*
-  ($e^{0.1}-1 = 10.5\,\%$) to earn "converged" rather than "stalled".
-
-**Classification (`classifyConvergence`).**
-
-Non-finite values (the NaN rows above, or `null`) are handled first: **a non-finite latest value is
-`diverging`** — the run produced NaN/Inf χ² — and otherwise the rule below runs on the **finite values
-only** (an isolated earlier NaN does not break the trend; `unknown` if fewer than 2 remain). The
-browser used to drop such rows, so a log whose last 40 of 100 rows were NaN was classified `improving`
-from its finite prefix. `detectDivergence()`/`detectStall()` apply the same handling.
-
-$$\mathrm{status} = \begin{cases}
-\texttt{unknown} & N < 2\ \text{or input not an array}\\[2pt]
-\texttt{diverging} & \Delta_{\mathrm{win}} > 0.02\\[2pt]
-\texttt{improving} & \Delta_{\mathrm{win}} < -0.02\\[2pt]
-\texttt{stalled} & |\Delta_{\mathrm{win}}| \le 0.02 \ \wedge\ (y_0 - y_{N-1}) < 0.1\\[2pt]
-\texttt{converged} & |\Delta_{\mathrm{win}}| \le 0.02 \ \wedge\ (y_0 - y_{N-1}) \ge 0.1
-\end{cases}$$
-
-`detectDivergence()` and `detectStall()` are the same predicates exposed separately and are tested to
-agree with the classifier. Note the total-drop test uses the **first** point of the (possibly
-concatenated) history, not the maximum — a run that rose before falling is judged on
-$y_{\mathrm{first}} \to y_{\mathrm{last}}$.
-
-**Test coverage** (`__tests__/heuristics.test.js`), on synthetic 200–300 point series: a steady
-$-0.01$/step ramp → `improving`; 150 steps of ramp followed by 150 flat steps → `converged`; a
-$-0.0001$/step ramp (total drop 0.02 < 0.1) → `stalled`; a $-0.01$ ramp followed by a $+0.01$ ramp →
-`diverging`.
-
-**Watchdog payload (`watchdogStats`).** Five fields:
-`{n_steps, first, last, min, recent_window_delta}`, plus `non_finite_steps` when the history holds
-non-finite values. `n_steps` is the exact integer point count (never rounded); `first`, `last`, `min`
-are 3 s.f. and `recent_window_delta` 2 s.f., each `null` when not finite (a non-finite latest value is
-sent as `last: null`). The full history is *never* sent to the watchdog. Two implementation details
-worth knowing:
-
-- It **recomputes** `windowDelta()` over the finite values — a second `recentSlope` pass over the tail —
-  instead of reusing `stats.recentSlopePerStep` from the `seriesStats()` call it already made.
-- `max` and `recentSlopePerStep` from `seriesStats()` are deliberately dropped.
+**Watchdog payload (`watchdogRunStats`).** The total's (or, without one, the charted column's)
+`watchdogStats`: `{n_steps, first, last, min, change_last_10pct}`, plus `non_finite_steps` when the
+history holds non-finite values, `of: 'total'` when it is the total, and `still_falling` / `rising`
+naming the terms (and the total) still moving beyond their noise. `n_steps` is the exact integer point
+count (never rounded); `first`, `last`, `min` are 3 s.f. and `change_last_10pct` 2 s.f., each `null`
+when not finite. The full history is *never* sent to the watchdog; the prompt says the values are ln of
+the total χ², the sum of every term (`buildWatchdogMessages`).
 
 **Re-ask gate (`significantChange`).** Given the stats of the last LLM call and the current stats:
 
@@ -1255,8 +1277,8 @@ $$\mathrm{significant} \iff
 i.e. 200 new log lines, or a ≥2 % move in $\chi$. It returns `true` when there are no previous stats and
 `false` when there are no current stats. **Non-finite fallback:** if either `last` is not a finite number
 the $\ln(1.02)$ test is skipped entirely and the function returns the strict inequality
-`prevStats.last !== nextStats.last`. Since `watchdogStats` sends a non-finite `last` as `null`, two
-consecutive non-finite polls compare equal and do not force a model call. Unlike `WINDOW_DELTA_EPSILON` and `MIN_TOTAL_DROP` (module constants), the
+`prevStats.last !== nextStats.last`. Since `watchdogRunStats` sends a non-finite `last` as `null`, two
+consecutive non-finite polls compare equal and do not force a model call. Unlike the rule's thresholds (`TREND_NOISE_FACTOR`, `MIN_TOTAL_DROP`: module constants), the
 two re-ask thresholds are per-call options (`{relativeDelta = 0.02, stepDelta = 200}`); no caller
 overrides them — `useWatchdog` calls `significantChange(prev, next)` with no third argument.
 
@@ -1271,7 +1293,7 @@ history has ≥2 points.
 - **`'off'` is a distinct status from `'unknown'`.** When the watchdog is disabled or the history has
   fewer than 2 points the hook returns the literal `{status: 'off', source: 'heuristic', note: null,
   lastCheckedAt: null}` — that is what the badge renders against. `'unknown'` is what
-  `classifyConvergence()` returns for a too-short array and is only ever seen as the hook's *initial*
+  `classifyRun()` returns for a history too short to judge and is only ever seen as the hook's *initial*
   state.
 - **No timers of its own.** It observes the `rValueFile` prop, which the existing 3-second Live Data poll
   already refreshes. The effect is keyed off *content* — its dependency array is
@@ -1279,11 +1301,12 @@ history has ≥2 points.
   because Live Data produces a fresh object on every poll. **Blind spot:** a history whose *length and
   final value* are unchanged but whose interior changed does not re-classify. During Live Data this is a
   real (if brief) staleness window.
-- **The badge names its χ² term.** The history is the last `.log` column only (one fit term, e.g.
-  `X_ray_(R)1`), so the badge reads `X_ray_(R)1: Improving` and its tooltip adds "χ² of X_ray_(R)1
-  only, not the total" (`WatchdogBadge.jsx`, from `rValueFile.plotData.chiColumn`). Classifying on
-  every χ² term or on the total is deferred beyond 0.6.0.
-- **The badge status is always the heuristic.** `classifyConvergence()` runs on every change and sets the
+- **The badge says what it judged.** With the logs' χ² terms (2026-10-24) it judges every term and
+  their total (`classifyRun`, Step 14) and reads `Improving`, its tooltip "every χ² term of the .log and
+  their total: converged only when none still falls beyond its noise over the last tenth"; for a log that
+  names no columns it judges the last column alone and names it, `X_ray_(R)1: Improving`, its tooltip
+  "χ² of X_ray_(R)1 only, not the total" (`WatchdogBadge.jsx`, `useWatchdog`'s `allTerms` and `column`).
+- **The badge status is always the heuristic.** `classifyRun()` runs on every change and sets the
   badge for free. The LLM's parsed `status` is discarded; only `parsed.note` (or, if the format was
   ignored, the first 200 characters of the raw reply) becomes the tooltip, with `source` flipping to
   `'llm'`. When the heuristic status *flips*, the existing LLM note is cleared to `null` and `source`
@@ -1426,17 +1449,17 @@ not answer as asked". A tool is offered only when its inputs exist.
 | Tool | Offered when | Engine | `data` (what is sent) | Checks (thresholds) |
 |---|---|---|---|---|
 | `read_run_data(section)` | the context has the section | `buildRunContext` | one context section as built (the builder's caps apply: ≤ 12 sites, 48 history points), before `contextToJson`'s trims | — |
-| `assess_convergence()` | an R-value series exists | `classifyConvergence` (Step 14), `seriesStats` | column, status, n, first/last/min, total drop, least-squares slope per row over the last 10 / 25 / 50 % (≥ 3 points each) | note: judged on one `.log` column, not the total; ok: converged; note: improving; warn: stalled/diverging; warn: non-finite rows; warn: < 5 rows; fail: < 2 finite rows |
-| `find_gr_peaks(pair, r_max = 6, max_peaks = 3)` | a parsed partials file | `extractPeaks` (Step 8) for `peaks_A`; the run's shell reading (`shells.js`, Step 9) for the rest | peaks (r, FWHM) below `r_max` — a display: the shell does not depend on it; `first_shell`, the run's reading: its window (onset − one grid step to the boundary, to 0.01 Å), the peaks inside it, mean distance and sd from $r^2g$ over the window, the CN in both directions and with the top 0.2 Å earlier / later, the trough $\tilde g/h$ at the boundary, and for two or more resolved peaks `first_peak_only` (to the minimum between the first two: window, CN, trough; `first_peak_window_A`, $[r - \mathrm{FWHM}, r + \mathrm{FWHM}]$, left on 2026-10-19); for a shell joined across a deep trough, `split` (plan item 4.2, the catalogue's split, Step 9): `parts` short to long, each `{window_A, mean_d_A, sd_d_A, cn: {<counted>_per_<around>}, share}` with its CN in the direction the join decided (one key), and `long_minus_short_A` ± `long_minus_short_se_A`, the configuration's sampling error; the pair's `MINIMUM_DISTANCES` value, matched order-free, and `g_at_constraint_fraction` | warn: the first shell is not separated from the next (`separated`: $\tilde g/h > 0.02$ at its boundary: distances fill the gap, the CN depends on the cut); note: the shell holds several peaks (a split shell: use its window; the first peak alone's CN of the shell's); note: a split shell joined across a deep trough (review L1), by number since plan item 4.2: each part's CN at its mean distance (`first_shell.split.parts`), the summed count, both said in the direction that is ideal, long − short ± its sampling error and the shares by path (dev-jahn-teller: "3.98 F per Cu at 1.929 Å + 2.01 at 2.251 Å (first_shell.split.parts), 6 together … Long − short 0.321 ± 0.0043 Å (first_shell.split: long_minus_short_A ± long_minus_short_se_A, the configuration's sampling error); 66 % / 34 % of the shell's count"), and where the first peak alone ends (it no longer quotes the peaks' separation, which the review saw subtracted by hand); note: no peak below `r_max`, the first shell beyond it; note: no boundary below max(8, r₁ + 3 Å); note: no shell (no peak below 8 Å); warn: the closest-approach constraint cuts the distribution — raw $g$ in $(d_{\min}, d_{\min} + 2.5\,\Delta r]$ above 2 % of the peak (`SEPARATION_G_FRACTION`; demo Ga–Se 9 % at 2.2 Å; the old $r - \mathrm{FWHM}/2 \le d_{\min} + 0.05$ Å clause dropped 2026-10-19); ok: peak, shell edge, mean, CNs; fail: no peak below `r_max` and no shell |
-| `list_sites(element?)` | a browser-loaded run or Flask mode | worker `sites` / `/api/pca/sites` | per site: ref, label (composition if mixed), count, U_iso, rms axes, anisotropy, Mardia kurtosis; `kurtosis_axes`, the excess kurtosis along each principal axis on resolved axes only (null elsewhere; absent when none has one); `pc1_uvw`, PC1 as a direct-lattice `[u v w]` (`crystalOrientationRows`) when PC1 is resolved; on a split site, `delta_A` ± `delta_se_A`, its static displacement and sampling error (Step 20); split sites first (largest `delta_A` first), then by \|kurtosis\| and U_iso; top-3 refs by \|kurtosis\|, U_iso and anisotropy; the note defines only the fields the result holds | warn: parse warning; note: reconstructed sites; warn: zero-spread sites; note: the split sites by ref and label (PC1 resolved, κ₁ ≤ −0.5 and ≤ −3√(24/n): `isSplitSite`, the rule `analyze_clusters` uses); fail: no site (holding that element) |
-| `analyze_displacement_directions(site_ref \| element, frequency?)` | same | worker `orientation` / `/api/pca/orientation`, `geometry: false` | used / rejected points; peak enhancement, count, expected and calibrated `peakSignificance`; peak direction as a Cartesian unit vector, as `[u v w]` (direct lattice, $M^{-T}d$ scaled to max \|component\| = 1, sign kept, since the map is not antipodally folded) and as angles to a, b, c, with the peak cell's radius `radius_deg` (the engine's `peakCellRadiusDeg`: the largest angle from the cell's centre to its corners, so the direction is named only to within it; 37.4° at ν = 1, 19.3–20.9° at ν = 2; plan item 2.5); `mapSignificance`; antipodal asymmetry, its z and flag; orientation-tensor eigenvalues, anisotropy and its Bingham significance; the principal axis `[u v w]` (`crystalOrientationRows`) | warn: < 100 vectors; ok: peak ≥ 3σ, with its direction "[u v w] ± R°, the cell radius at ν = n" — and, where the cell is wider than `LOW_INDEX_CONE_DEG` (15°; `directionResolved`, every cell at ν ≤ 2), "not resolved finer than R° (over 15°), so it names no <100>, <110> or <111> family"; note: peak < 3σ; note: map test undefined; ok: map ≥ 3σ, said as *anisotropic* and, without a significant peak, "not a preferred direction" (with an unresolved one, the peak "places the preferred direction only to within its cell") (any anisotropic Gaussian ellipsoid passes the map test: the validation's thermal-only O, peak 2.3σ, map 7.2σ; review L3); note: tied peak cells; note: significant ± asymmetry; warn: parse warning; note: an element pooled over > 1 site (the site count from the basis) — where their local axes differ, as for the four vertices of a tetrahedral cluster, a per-site preference cancels, so an isotropic pooled map is not evidence against a per-site or cluster distortion |
+| `assess_convergence()` | an R-value series exists | `chiSeries` + `judgeConvergence` (Step 14), `seriesStats` | status, n, the window's rows; the total's first / last / min / drop and every non-zero term's last, each with its fitted ln χ² change over the last tenth, its noise sd and its trend; the terms zero throughout; the charted column (until 2026-10-24: one column, its total drop and slopes over the last 10 / 25 / 50 %) | note: judged on every χ² term of the .log and their total over the last tenth (or on the charted column alone when the log names no columns); ok: converged (after which series dropped how far); note: improving (which still fall); warn: stalled; warn: diverging (why); warn: non-finite rows; warn: < 5 rows; fail: < 3 finite rows in the window |
+| `find_gr_peaks(pair, r_max = 6, max_peaks = 3)` | a parsed partials file | `extractPeaks` (Step 8) for `peaks_A`; the run's shell reading (`shells.js`, Step 9) for the rest | peaks (r, FWHM) below `r_max` — a display: the shell does not depend on it; `first_shell`, the run's reading: its window (onset − one grid step to the boundary, to 0.01 Å), the peaks inside it, mean distance and sd from $r^2g$ over the window, the CN in both directions and with the top 0.2 Å earlier / later, the trough $\tilde g/h$ at the boundary, and for two or more resolved peaks `first_peak_only` (to the minimum between the first two: window, CN, trough; `first_peak_window_A`, $[r - \mathrm{FWHM}, r + \mathrm{FWHM}]$, left on 2026-10-19); for a shell joined across a deep trough, `split` (plan item 4.2, the catalogue's split, Step 9): `parts` short to long, each `{window_A, mean_d_A, sd_d_A, cn: {<counted>_per_<around>}, share}` with its CN in the direction the join decided (one key), and `long_minus_short_A` ± `long_minus_short_se_A`, the configuration's sampling error; `average_structure_d_A`, the average structure's first shell for the pair — its shortest and longest bond between the site means (`averageStructureBonds`: every site-mean distance of the pair over the 26 neighbouring cells, through the full cell metric, from the shortest to the join's reach beyond it, 0.5 Å; only with the basis; the coordination-shells interview, 2026-10-24); the pair's `MINIMUM_DISTANCES` value, matched order-free, and `g_at_constraint_fraction` | warn: the average structure's bonds lie outside `first_shell.window_A` by more than the shell's width, its first peak's FWHM (`averageShellCheck`; the user's rule of 2026-10-24: "flag when the two disagree by more than the shell's width"; the window runs from the 1 % onset to the closing minimum, so a bond outside it lies where the configuration has almost no pairs, one FWHM is the shell's own spread, and the window's width would pass the fifth bond of a 4 + 1 polyhedron whose shell closes before it; no Demo or dev pair disagrees: the Demo's Ta–Se 2.52–2.76 Å in 2.21–3.23 Å), with "check the window before using it" as method (left out for arm C); warn: the first shell is not separated from the next (`separated`: $\tilde g/h > 0.02$ at its boundary: distances fill the gap, the CN depends on the cut); note: the shell holds several peaks (a split shell: use its window; the first peak alone's CN of the shell's); note: a split shell joined across a deep trough (review L1), by number since plan item 4.2: each part's CN at its mean distance (`first_shell.split.parts`), the summed count, both said in the direction that is ideal, long − short ± its sampling error and the shares by path (dev-jahn-teller: "3.98 F per Cu at 1.929 Å + 2.01 at 2.251 Å (first_shell.split.parts), 6 together … Long − short 0.321 ± 0.0043 Å (first_shell.split: long_minus_short_A ± long_minus_short_se_A, the configuration's sampling error); 66 % / 34 % of the shell's count"), and where the first peak alone ends (it no longer quotes the peaks' separation, which the review saw subtracted by hand); note: no peak below `r_max`, the first shell beyond it; note: no boundary below max(8, r₁ + 3 Å); note: no shell (no peak below 8 Å); warn: the closest-approach constraint cuts the distribution — raw $g$ in $(d_{\min}, d_{\min} + 2.5\,\Delta r]$ above 5 % of the peak (`CONSTRAINT_LIMIT_FRACTION`, the user's rule of 2026-10-24; 2 % before; demo Ga–Se 9 % at 2.2 Å; the old $r - \mathrm{FWHM}/2 \le d_{\min} + 0.05$ Å clause dropped 2026-10-19): "… shapes the low-r side of the peak — constraint-limited", and as method (left out for arm C) ": interpret nothing on its low-r side; consider rerunning with the constraint loosened"; ok: peak, shell edge, mean, CNs; fail: no peak below `r_max` and no shell |
+| `list_sites(element?)` | a browser-loaded run or Flask mode | worker `sites` / `/api/pca/sites` | per site: ref, label (composition if mixed), count, U_iso, rms axes, anisotropy, Mardia kurtosis; `kurtosis_axes`, the excess kurtosis along each principal axis on resolved axes only (null elsewhere; absent when none has one); `pc1_uvw`, PC1 as a direct-lattice `[u v w]` (`crystalOrientationRows`) when PC1 is resolved; on a split site, `delta_A` ± `delta_se_A`, its static displacement and sampling error (Step 20); split sites first (largest `delta_A` first), then by \|kurtosis\| and U_iso; top-3 refs by \|kurtosis\|, U_iso and anisotropy; the note defines only the fields the result holds; `facts.sites` = `[{ref, element, elements, split, flat}]`, every site's species and whether it is split (`isSplitSite`) or flat-topped (a negative Mardia kurtosis that is not split), for the disorder check (2026-10-24) | warn: parse warning; note: reconstructed sites; warn: zero-spread sites; note: the split sites by ref and label (PC1 resolved, κ₁ ≤ −0.5 and ≤ −3√(24/n): `isSplitSite`, the rule `analyze_clusters` uses); fail: no site (holding that element) |
+| `analyze_displacement_directions(site_ref \| element, frequency?)` | same | worker `orientation` / `/api/pca/orientation`, `geometry: false` | used / rejected points; peak enhancement, count, expected and calibrated `peakSignificance`; peak direction as a Cartesian unit vector, as `[u v w]` (direct lattice, $M^{-T}d$ scaled to max \|component\| = 1, sign kept, since the map is not antipodally folded) and as angles to a, b, c, with the peak cell's radius `radius_deg` (the engine's `peakCellRadiusDeg`: the largest angle from the cell's centre to its corners, so the direction is named only to within it; 37.4° at ν = 1, 19.3–20.9° at ν = 2; plan item 2.5); `mapSignificance`; antipodal asymmetry, its z and flag; orientation-tensor eigenvalues, anisotropy and its Bingham significance; the principal axis `[u v w]` (`crystalOrientationRows`); `peak.tier`, the peak's tier (`directionTier`, the displacement-anisotropy interview, 2026-10-24: **finding** at ≥ 3σ unrounded, ≥ 1.2× isotropic (`DIRECTION_FINDING_ENHANCEMENT`) and held at the neighbouring resolution; **hint** at ≥ 3σ under 1.2×, at 2.5–3σ (`DIRECTION_HINT_SIGMA`), or not held; **none** below 2.5σ); `neighbour` `{frequency, significance_sigma, enhancement, radius_deg, apart_deg, holds}`, the engine's peak at the neighbouring resolution (`neighbourFrequency`: ν − 1, ν + 1 at ν = 1), asked only for a candidate (≥ 3σ, ≥ 1.2×: `directionCandidate`) at the engine's own resolution (no `frequency`, or the recommended one); a call at Auto ± 1 (the one the displacement-anisotropy skill asks for) reads the Auto ν itself as the other of the pair. The peak *holds* there when its own peak test passes (≥ 3σ, Šidák over its own cells) and the two peak directions, taken as axes, lie within the sum of the two cells' radii (`directionHolds`): every direction a cell takes lies within its radius, and an axis rather than a sense because a two-well site puts its peak on either well from one tiling to the next (dev-jahn-teller's F, 148° apart at ν = 1 and 2). ν − 1 because the engine's resolution is the finest whose cells keep ≥ 12 points each: ν + 1 would go below its own floor. At a `frequency` neither the Auto ν nor beside it a candidate is a hint (`not_auto`) | warn: < 100 vectors; ok: a finding, "Preferred direction (a finding): [u v w] ± R°, the cell radius at ν = n; … it holds: at ν = n − 1 the peak is xσ, y° from it as an axis (the two cells' radii z°)" — and, where the cell is wider than `LOW_INDEX_CONE_DEG` (15°; `directionResolved`, every cell at ν ≤ 2), "not resolved finer than R° (over 15°), so it names no <100>, <110> or <111> family"; note: a hint, "A hint of a direction, not a finding: …" with why (2.5–3σ, under 1.2×, not held, not at the engine's resolution); note: below 2.5σ, "No preferred direction: … nothing to report" (until 2026-10-24: ok at peak ≥ 3σ, note below); note: map test undefined; ok: map ≥ 3σ, said as *anisotropic* and, without a finding, "not a preferred direction, which needs a finding of the peak test" (with an unresolved finding, the peak "places the preferred direction only to within its cell") (any anisotropic Gaussian ellipsoid passes the map test: the validation's thermal-only O, peak 2.3σ, map 7.2σ; review L3); note: tied peak cells; note: significant ± asymmetry; warn: parse warning; note: an element pooled over > 1 site (the site count from the basis) — where their local axes differ, as for the four vertices of a tetrahedral cluster, a per-site preference cancels, so an isotropic pooled map is not evidence against a per-site or cluster distortion |
 | `compute_bond_angles(end1, apex, end2, r12_min, r12_max, r23_min?, r23_max?, bin_width = 1)` | same | worker `triplets` / `/api/triplets` (`APP_MAX_ANGLES` applies) | angle count, central atoms, mean ± sd; ≤ 3 modes (local maxima of a 5-bin running mean of the counts, each with the share of angles within ± 7.5°); the distribution in 18 bins of 10° (the engine's bins shared by overlap), raw and sin θ-corrected ($S_j = (N_j/N)\,/\,[(\cos\theta_j - \cos\theta_{j+1})/2]$, 1 for random directions); for an A–B–A triplet in one window that holds the whole shell (its CN the shell's within the CN margin; with no shell to compare, not cut by the counts) and a mean coordination within half an atom of 6 (`cnMatches`), the share and mean angle below and above 135° against an ideal octahedron (80 % cis at 90°, 20 % trans at 180°), of 4, the share within 15° of 109.47°; mean bond length, its sd from the engine's 40-bin length histogram, and unique bonds per window; coordination histogram, mean, modal count, `modal_share` and `unbonded_share` (the engine's `coordinationSummary`, information since 2026-10-19); `shell_ab` (and `shell_bc` for a B–C window of its own), each window against the run's first shell of its pair (`window()`): the shell's `window_A` and `cn`, the window's `cn_in_window` from the partial g(r), what it `holds`, absent where the run reads no shell for the pair; `facts.coordination.whole_shell` is that whole-shell reading | fail: 0 angles ("widen the window": find_gr_peaks' first_shell.window_A); a window that cuts its shell by the one cut rule (`windowCut`, the Workbench's; approved by the user, 2026-10-19), for each of its `shellWindows` (A–B, and B–C with a window of its own): it meets the shell and holds fewer partner atoms than the whole shell by ≥ max(0.5, 15 % of its CN), named by path ("it holds 3.75 Se per Ta (shell_ab.cn_in_window) of the shell's 6 (shell_ab.cn, in shell_ab.window_A)"), whatever the counts; only with no shell to compare (no partials, no closed shell, no density, a window apart from the first shell), the counts: > 50 % of central atoms with no A–B bond, else < 60 % with the most common A–B bond count (`countsCut`, the rule until 2026-10-19) — **refused** (fail) unless `window_confirmed`, the modes, mean, sd and histograms withheld (the coordination-shells skill's firm rule), else a warn "kept: the user chose this window"; no note for a count spread under a passing margin (on the dev windows a whole shell running into the next, or a window within 15 % of its shell's CN); note: raw counts deplete 180° (with the octahedron split); warn: parse warning; ok otherwise. Refused before running: min ≥ max, an r23 bound without its pair |
 | `polyhedral_distortion(centre, ligand, r_min, r_max, window_confirmed?)` | a browser-loaded run or Flask mode | worker `distortion` / `/api/distortion` (Step 21; `rMax` ≤ 8 Å, `APP_MAX_BONDS` = 10⁶) | `pair`; `window_A`; the coordination counts, mean, modal count, `modal_share` and `unbonded_share` (the engine's `coordinationSummary`, as `compute_bond_angles`); `shell`, the window against the run's first shell of the pair (`window()`, absent where the run reads none); `measured` (the most common count n among centres with a ligand, its `shape` — octahedron, tetrahedron or "n-coordinated (no ideal polyhedron)" —, centres, polyhedra, skipped); `configuration`: `bond_length_A` (mean, sd), `distortion_index` and, for octahedra and tetrahedra, `quadratic_elongation` and `angle_variance_deg2` (mean, sd, p10, median, p90; DI and σ²θ to 3 s.f., ⟨λ⟩ to 4 decimals, spreads to 2 s.f.), and for octahedra `trans_angle_deg` (mean, sd, 0.1°); `average_structure`: `polyhedra`, the same indices as mean and sd over its polyhedra of count n, `bond_ladder_A` (their sorted bond lengths averaged position by position, 0.001 Å), or `note` (no basis, no site holding mostly the centre, no site of count n). No facts | fail: a window that cuts its shell by `compute_bond_angles`' rule (`windowCut`, its one `shellWindows` entry: the CN margin where the window meets the run's shell, else the engine's counts), **refused** unless `window_confirmed` — the counts and the shell reading kept, `measured`, `configuration` and `average_structure` withheld — else a warn "kept: the user chose this window"; ok: how many centres have n ligands and how many are left out; note: n is neither 4 nor 6 (DI alone); warn: flat polyhedra without ⟨λ⟩; warn: parse warning. Refused before running: min ≥ max. The engine's own refusals (an unknown element, no polyhedra) reach the model as the call's error |
 | `detect_symmetry(tolerance_A ∈ [0.001, 1])` | the structure has a `basis` (a browser-loaded run's `structureFromRmc6f`, or a server folder's `/api/structure`, `structure_basis.py`; not a coords-only file) | `describeSymmetry` (the Detected SG card's finder), *not* changing the card | group, number (only when certain), point group and its facts (`point_group_facts`, as in the context), n ops, max residual, every orbit with `orbitLabel` Wyckoff label, site symmetry and representative fractional coordinates (4 decimals) | ok: group holds; note: the point group's facts ("take inversion, chirality and polarity from this"); note: undetermined; note: "≥" lower bound; warn: not analysed (caps); fail: no basis |
 | `measure_symmetry_lowering(parent_tolerance_A = 0.2, tolerance_A = 1.25 × noise floor)` | the structure has a `basis` | `symmetryShifts` (`symmetryShift.js`): the parent group at `parent_tolerance_A` (`analyseSymmetry`), each orbit averaged over its operations (`averageOrbit`), each member's ideal position the nearest image of that average; a member's shift = its mean − its ideal position, the common part the least-squares origin leaves removed by the geometric median of all members' shifts (Weiszfeld: the parent on the majority of the atoms, the description that moves the fewest); the lower group by `describeSymmetry` at `tolerance_A` | the parent and lower groups (the lower with its point-group facts), the noise floor, up to 12 sites (largest first) with `shift_A`, `direction_uvw`, `nearest_low_index` (within 15°, `LOW_INDEX_CONE_DEG`), `se_A` (the mean's sampling error along the shift) and `above_noise_floor`; `facts.lowering` = `{parent, lower, shifted: [{element, shift_A, direction_uvw}]}` | ok: each element whose largest shift exceeds the noise floor ("Ta shifted 0.065 Å along [0 0 1] (3.7° off) from the Pm-3m positions … a coherent shift every copy shares"); note: the parent → lower change in inversion and polarity; ok: no site above the noise floor; note: the lower tolerance still gives the parent group; warn: not analysed; fail: no basis, or no parent operation (review L4: the shift had to be worked out by hand from the orbit positions) |
 | `compare_fit(dataset, n_ranges = 6)` | a fit file with a model and a measured column (`xpdf`, `npdf`, `xray_sq`, `neutron_sq`, `bragg`; repeated kinds keyed `npdf_2`, …) | `fitTool` in `runTools.js` (roles by label `/exp\|obs/` vs `/calc\|rmc\|fit/`, else column order — `rwpColumns`, duplicated) | the dataset's $R$ (Step 10) over its range; per equal-width range of r or Q: $R$ there and its share of $\sum (y^\mathrm{calc}-y^\mathrm{expt})^2$; the 5 largest local extrema of the 5-point mean residual (position, model − data, relative to the data's rms) | ok (the card's headline): the overall $R$ and where the misfit lives — one range holding ≥ 40 % of the squared residual (`MISFIT_CONCENTRATION`), else spread; note: another range's own $R$ ≥ 3× the dataset's (`RELATIVE_MISFIT_FACTOR`) — weak signal poorly fitted, e.g. high-Q F(Q); fail: < 10 points |
 | `analyze_clusters(element, r_min, r_max)` | a browser-loaded run with site/cell columns, or Flask mode | worker `clusters` / `/api/clusters` (Step 18) | the cluster kind (members, edges, count, templates; other sizes); the average cluster's sorted edges, spread, median edge sampling error and spread/SE; per statistic obs / null mean / z / change = obs/null − 1 — the shape rows (edge ladder, ladder width, shape rms; tetrahedra: E and T2 rms and T2 trigonality; the fractions of long / short gyration axes within 15° of <100>, <110>, <111>) against `shapeNull`, the size rows (breathing sd, mean edge) against independent atoms (Step 18; review L2); `split_member_sites`: the analysed kind's member sites whose PC1 is resolved and whose PC1 excess kurtosis is ≤ −0.5 (`SPLIT_SITE_KURTOSIS`: two equal wells δ = σ, the onset of bimodality) and ≤ −3√(24/n) (`SPLIT_SITE_SE`) — `isSplitSite`, the rule `list_sites` reports — from the engine's verdict (`splitMemberSites`: the engine reads its own member clouds; until 2026-10-19 the tool made a second `sites` request, and a failed one dropped the note silently); bonds outside the window, contacts between clusters per atom. `facts.cluster` = `{element, members, window, distorted, static, breathing, rigid, split, families}`, the verdict's answers, for the cluster answer check. Every check below is a finding of the engine's verdict said through `CLUSTER_SENTENCES` (Step 18, *The verdict*) | fail: extended network; fail: no clusters; warn: other sizes hold > 10 % of clusters; note: the average cluster is distorted (spread ≥ 5 SE, `STATIC_SPREAD_SE`) or regular; ok: dimers (one edge) — the shape is the bond length, read from the size row; ok: ladder width departs from the shape null (\|z\| ≥ 3 **and** \|change\| ≥ 5 %: more distorted — a correlated distortion — or less — rigid units, unless an axis family or the trigonality shows a pattern: then a distortion whose amplitude the null already holds), or matches it while the pattern does not (a correlated distortion held by the sites' own displacements), or matches it; note: breathing departs (same rule): more — collective breathing, a size fluctuation, not a shape distortion; less — stiffer bonds, the atoms move together; note: trigonality departs (\|z\| ≥ 3, \|Δ\| ≥ 0.02); note: an axis family enhanced (z ≥ 3, obs/null ≥ 1.1); note: split sites — at least half the member sites split: the null holds the amplitude, "no distortion" does not make the clusters regular; warn: > 5 % of bonds outside the window; warn: > 0.05 inter-cluster contacts per atom |
-| `analyze_modulations(element?)` | same | worker `modulations` / `/api/modulations` (Step 19) | per element: the zone-boundary points as `[q, ratio to the median, percentile, σ]` rows, the three strongest modes as `[q, ratio, percentile, σ]` (σ only at a general q); a ratio or σ below its bar never rounded onto it (F2: 2.96, not 3; `'<3'` nearer than six significant digits); each ordered point's `polarisation` row (`q`, `uvw` to two decimals, `share`, `nearest_low_index` within 15°, plan item 4.3); the supercell, wavevector count and untestable points; `facts.modulation` = `{elements, ordered: [{element, q}], general: [{element, q}]}`, the element verdicts' `decidedBy`. σ and every check below come from the engine's verdict, said through `MODULATION_SENTENCES` (Step 19, *The verdict*); each element's `diffuse` row ([lag, correlation, σ], plan item 4.4); its own result budget, 4,500 characters (`MODULATION_RESULT_BUDGET`) | ok: ordered displacements at a zone-boundary point (ratio ≥ 3 and ≥ 3σ against independent cells, each cell's own correlations kept (F1), corrected over the points of every element, whichever the call names: F3), with its polarisation ("polarised along [0 0 1] (5.5° off; 100 % of the power at q)"); ok: no cell doubling (the most significant point named; "2.96σ after the correction: below the 3σ bar" where its usual rounding would read the bar); ok: correlated displacements between cells at a general q — one of the strongest modes that is neither a zone-boundary point nor a long wave, with ratio ≥ 3 and ≥ 3σ against independent cells (a complex Fourier sum, `generalModeSigma`), Šidák-corrected over the compared modes of every element — incommensurate or short-range order between cells, not a cell doubling (review L4), with its polarisation; note: a long-wavelength wave dominates (≥ 5×, every \|q_i\| ≤ 0.25); ok: short-range order between cells, an element correlated in antiphase between neighbouring cells (diffuse order, plan item 4.4); note: every element correlated in phase between neighbouring cells, in one sentence (neighbouring cells moving together, not a superstructure); note: untestable points (odd axes); fail: no displacements |
+| `analyze_modulations(element?)` | same | worker `modulations` / `/api/modulations` (Step 19) | per element: the zone-boundary points as `[q, ratio to the median, percentile, σ]` rows, the three strongest modes as `[q, ratio, percentile, σ]` (σ only at a general q); a ratio or σ below its bar never rounded onto it (F2: 2.96, not 3; `'<3'` nearer than six significant digits); each ordered point's `polarisation` row (`q`, `uvw` to two decimals, `share`, `nearest_low_index` within 15°, plan item 4.3); the supercell, wavevector count and untestable points; `facts.modulation` = `{elements, ordered: [{element, q}], general: [{element, q}], long_wave_q, long_waves, diffuse: [{element, phase, lag, correlation, sigma}]}`, the element verdicts' `decidedBy` and the diffuse verdicts that passed their bar (`antiphase` or `in_phase`; 2026-10-24). σ and every check below come from the engine's verdict, said through `MODULATION_SENTENCES` (Step 19, *The verdict*); each element's `diffuse` row ([lag, correlation, σ], plan item 4.4); its own result budget, 4,500 characters (`MODULATION_RESULT_BUDGET`) | ok: ordered displacements at a zone-boundary point (ratio ≥ 3 and ≥ 3σ against independent cells, each cell's own correlations kept (F1), corrected over the points of every element, whichever the call names: F3), with its polarisation ("polarised along [0 0 1] (5.5° off; 100 % of the power at q)"); ok: no cell doubling (the most significant point named; "2.96σ after the correction: below the 3σ bar" where its usual rounding would read the bar); ok: correlated displacements between cells at a general q — one of the strongest modes that is neither a zone-boundary point nor a long wave, with ratio ≥ 3 and ≥ 3σ against independent cells (a complex Fourier sum, `generalModeSigma`), Šidák-corrected over the compared modes of every element — incommensurate or short-range order between cells, not a cell doubling (review L4), with its polarisation; note: a long-wavelength wave dominates (≥ 5×, every \|q_i\| ≤ 0.25); ok: short-range order between cells, an element correlated in antiphase between neighbouring cells (diffuse order, plan item 4.4); note: every element correlated in phase between neighbouring cells, in one sentence (neighbouring cells moving together (correlated motion), not order; until 2026-10-24 "not a superstructure"); note: untestable points (odd axes); fail: no displacements |
 
 **Show in \<page\>.** A tool may declare `page` and `pageParams(args)`. The loop computes the
 parameters from the validated arguments (null after an error), and the step's button hands them to
@@ -1496,14 +1519,21 @@ names) or one reference file, with a note when the skill is a draft. The tool co
 FACTS: one row per facts key, its producing tools, its shape and the check that reads it, in the
 order below). A tool may return `facts` beside
 `data` and `checks` (kept by the loop, not sent to the model): `assess_convergence` its status,
-`detect_symmetry` its group with the point-group facts, `analyze_displacement_directions`
-`{subject, significant (peak ≥ 3σ), anisotropic (map ≥ 3σ), peak_sigma, map_sigma}` (until the 2026-10-14 review's L3, `significant` also counted the map test, which any thermal ellipsoid passes), `analyze_modulations`
-`{elements, ordered: [{element, q}], general: [{element, q}]}`, `analyze_clusters`
+`detect_symmetry` its group with the point-group facts, its operations in the cell and its
+tolerance (`n_ops`, `tolerance_A`, for the subgroup check, 2026-10-24), `analyze_displacement_directions`
+`{subject, significant (peak ≥ 3σ), anisotropic (map ≥ 3σ), peak_sigma, map_sigma, tier, because, enhancement, frequency}` (until the 2026-10-14 review's L3, `significant` also counted the map test, which any thermal ellipsoid passes; `tier` and `because` are `directionTier`'s, 2026-10-24), `list_sites`
+`[{ref, element, elements, split, flat}]` (2026-10-24), `analyze_modulations`
+`{elements, ordered: [{element, q}], general: [{element, q}], long_wave_q, long_waves: [{element, q}], diffuse: [{element, phase, lag, correlation, sigma}]}`
+(the engine's long-wave bound, `rules.longWaveQ` = 0.25, and the long waves among each element's three
+strongest modes; the diffuse verdicts that passed their bar, `antiphase` or `in_phase`; 2026-10-24), `analyze_clusters`
 `{element, members, window, distorted, static, breathing, rigid, split, families}`,
 `compute_bond_angles` and `find_gr_peaks` the whole-shell or chosen-window counts
-`{centre, partner, window, cn, whole_shell, confirmed}` (review L5), `measure_symmetry_lowering`
-`{parent, lower, shifted}` (no check reads it yet). The run context adds the watchdog's status and
-every ladder group (`contextAuditFacts`). When the model answers, the verification's reading
+`{centre, partner, window, cn, whole_shell, confirmed}` (review L5), `compute_bond_angles` (when it
+returns angles), `analyze_displacement_directions` and `analyze_clusters` (finite clusters) a
+`distribution` `{kind: bond_angles | directions | cluster_shape, subject, configurations: 1}`
+(2026-10-24), `measure_symmetry_lowering` `{parent, lower, shifted}` (no check reads it yet). The run context adds the watchdog's status,
+every ladder group with its operations in the cell and its rank on the ladder, the box (the supercell)
+and the run's elements (`contextAuditFacts`). When the model answers, the verification's reading
 (`reading.js`) splits it into sentences and clauses (a new clause at `;`, `:` and before
 "but", "while", "whereas", "unlike", "although", "though", "however") and looks for positive
 claims. One does not count in a question; after a negation (not, no, never, neither, nor, none,
@@ -1516,8 +1546,9 @@ has converged" is a claim; "To check whether the run has converged" is not). "Co
 "a", "an", "any", "every" or "each" names a kind ("a converged run would…"), not a claim.
 
 - *convergence:* "converged", "reached convergence", "at convergence" or "plateau" while the
-  latest status is improving or diverging, unless the sentence itself says the run still moves
-  (improving, diverging or "still falling" asserted, not "stopped improving");
+  latest status — the verdict on every χ² term and their total since 2026-10-24 (Step 14) — is
+  improving or diverging, unless the sentence itself says the run still moves (improving, diverging
+  or "still falling" asserted, not "stopped improving");
 - *chirality / centrosymmetry:* "chiral" (not "achiral", "non-chiral") or "centrosymmetric" (not
   "non-centrosymmetric") in a clause whose named groups (matched as whole symbols, however written)
   all lack the property; a clause that names no known group takes its sentence's, unless it names
@@ -1528,13 +1559,88 @@ has converged" is a claim; "To check whether the run has converged" is not). "Co
   ladder's rung with the most operations, or its two ends without operation counts);
 - *polar:* "polar" (not "non-polar", "nonpolar", "polar plot / coordinates / angle") in a clause
   whose named groups are all non-polar, read as for chirality (the local-symmetry skill's rule);
-- *direction:* "preferred (preferential) direction (orientation, axis)" when the question's
-  directions analyses found no peak at ≥ 3σ (a significant map test alone is anisotropy: L3);
+- *subgroup* (the user's rule, 2026-10-24, the local-symmetry interview's answer 4a; the groups row,
+  after the point-group checks): a group–subgroup relation the answer asserts — "H is a (maximal)
+  (t- / k-, translationengleiche / klassengleiche) subgroup of G", "G is a supergroup of H", "G has H
+  as a subgroup", or a step of a lowering ("lowers G to H", "from G to H", "G → H", only a connector
+  and at most a lowering verb between the two symbols, in a sentence that says lower, reduce, descend
+  or break down) — that does not hold. Where the run knows both groups (the context's ladder: each
+  rung's point group, operations in the cell and rank tight → loose; `detect_symmetry`'s facts: its
+  point group and operations), H is a subgroup of G when it is tighter on the ladder, with fewer
+  operations of the cell, which G's count divides (the ladder's rungs are nested:
+  `groupsByThreshold` only adds operations as the tolerance grows); the index is $|G|/|H|$ in the
+  cell; the type is t when the translations per cell (operations over the point group's order) stay,
+  k when the point group stays, else neither (a general subgroup, never maximal). The Demo's
+  P-42₁m in F-43m: index 96/8 = 12, the translations 4 → 1 per cell and the point group -43m → -42m
+  (3 × 4): neither t nor k. Where the run knows one group or none (a published phase), only the point
+  groups are read (`pointGroupOfSymbol`, the 32 groups' subgroup diagram, `isPointSubgroup`): H's
+  point group must be one of G's subgroups ("F-43m → P4/mmm" is not: 4/mmm has the inversion -43m
+  lacks), a k-subgroup keeps it, a t-subgroup lowers it by its index ("I-42m, t3 of F-43m" holds). The
+  index and type are read beside the relation (from the first symbol to just past the second; for a
+  chain "G → H (t3) → K (k2)", after each step's subgroup). A negated, hypothetical or asked relation
+  claims nothing;
+- *direction:* "preferred (preferential) direction (orientation, axis)" when none of the question's
+  directions analyses found one: a finding of the user's tiers (2026-10-24: ≥ 3σ, ≥ 1.2× isotropic,
+  held at the neighbouring resolution; `facts.direction.tier`), before 2026-10-24 any peak at ≥ 3σ (a
+  significant map test alone is anisotropy: L3). A clause that calls it a hint ("a hint of a preferred
+  direction", "tentatively", "not a finding") claims no finding and passes; the finding names each
+  analysis's σ, enhancement and tier;
+- *disorder* (the user's rule, 2026-10-24, the displacement-anisotropy interview's answer 8; the sites
+  row): ordered antiphase displacements give a site the same split cloud as random two-site disorder,
+  and only the correlation between cells tells them apart. A clause that asserts disorder
+  ("disorder(ed)" — not a ranking, "the most / more / least disordered site", nor thermal, dynamic or
+  vibrational disorder — or the gate's split-site words) about a site `list_sites` found split
+  (`isSplitSite`) or flat-topped (a negative Mardia kurtosis that is not split) — named by number
+  ("site 3", "sites 3 and 7"), else by an element the clause names, else one its sentence names — is
+  flagged when no `analyze_modulations` of the question tested that site's element (`facts.modulation.elements`).
+  Only once `list_sites` ran. On the answer corpus it raises no finding;
 - *superstructure:* "cell doubling", "doubles the cell", "zone-boundary order (modulation, mode,
   distortion)" or "commensurate modulation" when no `analyze_modulations` of the question found an
   ordered zone-boundary point; "superstructure", "supercell order", "ordered … displacements at q"
   or "incommensurate order (modulation)" when none found order at a zone-boundary point or a
   general wavevector;
+- *long-wave* (the user's rule, 2026-10-24; the modulation row, after the superstructure rule): a
+  clause that asserts order ("order(ed/ing)" — not "in order to", not "disorder" — "superstructure",
+  "modulat(ion/ed)", "incommensurate", "cell doubling", "correlated … displacements") at a box-scale
+  wavevector — a q written after q, k or "wavevector" (`q = (0.1, 0, 0)`, `q=[1/8 0 0]`, `(½, 0, 0)`;
+  `reading.js` `qVectorsIn`; never a bare [u v w]) whose every |q_i| is within the facts'
+  `long_wave_q`, or a "long-wave(length)", "longest wave" or "box-scale / box-size" wave in words —
+  whatever the mode's power: "a long wave is a correlation the finite box can't represent, so it says
+  nothing about order at its own q; a point or mode that passes its own test at another q is judged on
+  that test alone" (the user's words). A clause that also denies order ("a long wave, not order"), or
+  says "nothing" before the order word ("says nothing about order"), claims none; a q at a zone
+  boundary or a general wavevector is left to the superstructure rule. Only once an
+  `analyze_modulations` ran (its facts carry the bound);
+- *cell-doubling* (the user's rule, 2026-10-24, the local-symmetry interview's answer 4b; the modulation
+  row, after the long-wave rule): a clause that asserts a cell doubling (the superstructure rule's words,
+  or "a doubled cell", "doubles c", "the c axis is doubled", "2a × 2a × c") along the axes it names
+  (along a / b / c, a ½ component of a written wavevector or bare tuple, a factor 2 in a cell) when the
+  box (the context's supercell) is odd along one of them, or odd along every axis when it names none:
+  a doubled cell there does not fit in the box (its ½ wavevector is not on the box's grid), so the
+  configuration can neither show nor rule out the doubling — in a sentence about this run (an element of
+  it, or the run itself), unless the answer says the box cannot hold it ("cannot hold / fit /
+  represent", "neither confirm nor rule out"). And, once an `analyze_modulations` found ordered
+  zone-boundary points, a doubling along axes none of them is ½ on ("along c" when the order is at
+  (½, 0, 0)); a doubling with no ordered point at all is the superstructure rule's. The Demo's box is
+  10 × 10 × 10, every dev case's even;
+- *no-order*, *correlated-motion*, *no-correlation* (the user's rules, 2026-10-24, the local-order
+  interview's answers 5 and 6: "only antiphase or general-q diffuse order past the bar counts as
+  order; in-phase correlation is neighbouring cells moving together (correlated motion), not order,
+  and never supports a 'no correlation' statement"; the modulation row, after the cell-doubling
+  rule). Order found is an ordered zone-boundary point, an ordered general mode or a diffuse verdict
+  in antiphase (`facts.modulation.diffuse`); a correlation found is any of them or a diffuse verdict
+  in phase. *no-order*: "no order" (the gate's words: no local / short-range order, only thermal
+  motion, nothing beyond the average structure) when order was found, unless the sentence itself
+  names order between cells or antiphase ("no order beyond the antiphase correlation"); the finding
+  names up to three ("Nb in antiphase between cells [1 0 0] apart (−0.29, 3.7σ)"). *correlated-motion*:
+  order between cells ("short-range order", "order between (neighbouring) cells", "diffuse order")
+  when none was found — in phase only, "neighbouring cells moving together (correlated motion), not
+  order"; with nothing past its bar, unsupported. *no-correlation*: no correlation of displacements
+  or cells ("no correlation between neighbouring cells", "uncorrelated" said of cells,
+  displacements, sites or atoms, "move independently", "no correlated displacements") when a
+  correlation was found, in phase included ("correlated motion, not order, but correlation all the
+  same"). Only once an `analyze_modulations` ran. On the answer corpus they raise no finding; no dev
+  case passes the diffuse test, and the Demo's three elements pass it in phase;
 - *cluster* (review L5): "distorted clusters / tetrahedra / trimers / dimers / triangles /
   octahedra / polyhedra", "… are (adverb) distorted / deformed" (no negation in the adverb slot) or
   "cluster distortion"; "breathe / breathing"; "rigid", "move as (rigid) units / bodies" — checked
@@ -1549,8 +1655,42 @@ has converged" is a claim; "To check whether the run has converged" is not). "Co
   it fires when every whole-shell count of that element (`find_gr_peaks`' first shell both ways,
   `compute_bond_angles` in a window whose CN is the shell's within the CN margin, `windowCut`'s
   `whole`) differs by more than half an atom
-  and no window the user chose gave n. A clause about part of the shell — the first peak, the short
-  bonds, a window in Å — is not a claim about the whole.
+  and no window the user chose gave n. "n A per B" is B's count of A, read with that centre and
+  partner (2026-10-24: "the coordination is 3.99 Se per Ga" was read as Se's, the element nearest the
+  number). A clause about part of the shell — the first peak, the short bonds — is not a claim about
+  the whole, nor is one stating a window in Å other than the whole shell's; one stating the whole
+  shell's window (its top within 0.05 Å, starting no later than its onset: a cutoff "within 2.52 Å"
+  counts the same atoms) is a claim about the shell and is checked (since 2026-10-24: before, any
+  window in Å made the clause partial, and an answer that gave its window, as the window check below
+  asks, was never checked);
+- *window* (the user's rule, 2026-10-24, the coordination-shells interview's answer 8: "every CN or
+  angle in an answer carries its window in Å"; the coordination row, after the coordination rule): a
+  coordination number — "(n)-coordinated", "CN n", "n A per B", "n (A) neighbours" (a polyhedron
+  named in words gives no number) — or a bond angle — degrees in a sentence about angles (angle, cis,
+  trans, an A–B–C triplet), in a clause that is not about a direction (a cell radius, a cone, an
+  axis, PC1–3, a [u v w] or ⟨uvw⟩, a tilt, a family) nor an ideal or reference value — asserted
+  without a window in Å: neither in its sentence nor in another sentence of the answer that names no
+  element or every element the quoting sentence names (a window stated once for the pair carries its
+  numbers; a sentence that names no element is carried by any window). A window is a range in Å
+  ("2.18–2.79 Å", "between 2.18 and 2.79 Å", a filled reference "[2.18, 2.79] Å"), a cutoff ("within
+  3.2 Å", "r < 3.2 Å") or a range after the word "window", its top at least 1 Å (`reading.js`
+  `windowsIn`). Only once an analysis that counts a shell or measures angles ran (`find_gr_peaks` with
+  a first shell, `compute_bond_angles`: their coordination facts), whose windows the finding names.
+  On the answer corpus it raises no finding (the README GIF's GaSe₄ answer states its window for the
+  Ga–Se pair);
+- *single-configuration* (the user's rule, 2026-10-24; the distribution row): every analysis in the app
+  reads the run's one configuration, so a distribution it gives carries no spread between runs. Once a
+  distribution analysis ran (its `facts.distribution`), an answer that quotes a distribution's numbers —
+  a sentence with a statistic of it followed by a number (mean, average, median, sd, spread, width,
+  mode, modal share, share; peaks / centred at …), a share of it ("80 % cis", "20 % of the angles
+  lie …") or a coordination histogram ("3 948 of 4 000 Ga atoms having 4 …"), in a sentence that names
+  a distribution (angles, distribution, histogram, neighbours, coordination counts, cluster shapes,
+  edges or the edge ladder, breathing, a direction map) or gives degrees — and nowhere says they come from one configuration ("one /
+  a single / this one configuration, snapshot, box or run", "single-configuration", "configuration
+  alone") is flagged. A test's σ is no number of the distribution ("no preferred direction (peak
+  −0.89σ)" is left), nor is a first-shell distance or CN from `find_gr_peaks` (no distribution facts:
+  the user's answer 2 takes first-shell quantities as robust). On the answer corpus it fires once, on
+  the README GIF's GaSe₄ answer (judged right), and never falsely.
 
 The findings (`{rule, text}`, one per rule) reach the turn as `audit` and show under the answer,
 with the `reference` and `evidence` findings below; any finding makes the computed verdict **not
@@ -1558,22 +1698,36 @@ verified**.
 
 **The evidence gate** (the verification's claim catalogue, `copilot/verification/claims.js`
 CLAIMS, THY-18). Each row reads a kind of conclusion with `asserts` (the answer checks' claim
-reading) and names the analysis it needs in this turn (`backedBy`: `anyOf`, `firstOffered` or
-`allOf`), in this order:
+reading) and names the analysis it needs in this turn (`backedBy`: `anyOf` — met when any ran, asking
+for the first the turn offers (until 2026-10-24 the first listed, and a row whose first tool was not
+offered was never unmet) — `firstOffered` or `allOf`), in this order:
 order between cells (superstructure, cell doubling, zone-boundary order, modulation, incommensurate
 order) and a split site called random disorder (split site, two-site disorder, random
 off-centring or off-centring at random, a displacement of ± x Å or ± x Å along a direction — not a
-± sampling error) — `analyze_modulations`; a preferred direction —
-`analyze_displacement_directions`; distorted, breathing or rigid clusters — `analyze_clusters`; a
-coordination number, a polyhedral coordination, a split shell or a Jahn–Teller distortion —
+± sampling error) or a split or flat-topped site called disorder(ed) in one clause, with no negation
+between (since 2026-10-24, the displacement-anisotropy interview: before, the row read the split-site
+words alone, and a flat-topped site called disordered passed; it is met by any `analyze_modulations`
+of the turn, and the disorder check above asks for the site's own element) — `analyze_modulations`; a preferred direction —
+`analyze_displacement_directions`; distorted, breathing or rigid clusters (clusters, dimers,
+trimers, triangles, "cluster distortion") — `analyze_clusters`; distorted coordination polyhedra
+(octahedra, tetrahedra, polyhedra; an octahedral, tetrahedral or polyhedral distortion) —
+`polyhedral_distortion` where the run offers it, else `analyze_clusters`, either backing the claim (the
+coordination-shells interview, 2026-10-24, answer 7: a corner-sharing polyhedron or another extended
+network takes a distortion index, never the cluster null; EVIDENCE_RULES says "distorted polyhedra,
+polyhedral_distortion"); a coordination number, a polyhedral coordination, a split shell or a Jahn–Teller distortion —
 `find_gr_peaks` or `compute_bond_angles`; a lowering of the
 average structure (symmetry lowering, lowered symmetry, a coherent shift, a polar shift, a shift
 of x Å, "(coherent)"; not "coherent scattering") —
 `measure_symmetry_lowering` (`detect_symmetry` when that is not offered); "no order" (no local
 order, thermal motion only, nothing beyond the average structure; not the modulation tool's own
-"no order that doubles the cell") — `analyze_modulations`, a directions map with `site_ref`, and
+"no order that doubles the cell") — `analyze_modulations` (its diffuse verdict included), a directions map with `site_ref`,
 `analyze_clusters` for every element of the clarifier's shell catalog whose own first shell holds
-0.5–4.5 neighbours (`context/shells.js` `clusterElementsOf`, `CLUSTER_CN_MAX`). The verdict
+0.5–4.5 neighbours (`context/shells.js` `clusterElementsOf`, `CLUSTER_CN_MAX`), and, where the turn
+offers it, `polyhedral_distortion` with `centre` for every centre of polyhedra no finite cluster holds
+(`networkCentresOf`: no cluster element, its nearest closed first shell of another element holding 4
+or 6 within the CN margin, `POLYHEDRON_COUNTS`: the Demo's Ga, a perovskite's B site, both sites of
+MgO and CuBr — an extended network, or isolated polyhedra no finite cluster holds either; the
+local-order interview, 2026-10-24, answer 5; pinned with and without the tool). The verdict
 schema's words (`off_centre`, `cluster_distortion`, `cluster_breathing`, `rigid_cluster`,
 `jahn_teller`, `symmetry_lowering`, and an empty `"features": []` anywhere in the text for "no
 order") are not the app's: the validation harness adds them to its turns
@@ -2140,10 +2294,16 @@ doubling (the nearest miss of every element tested); ok — each element's first
 mode with its polarisation; note — a long wave dominates; ok — each element correlated in antiphase
 between neighbouring cells ("Short-range order between cells: … move in antiphase …, not a
 long-range superstructure"); note — every element correlated in phase, in one sentence ("…
-neighbouring cells moving together (as RMC's long waves and acoustic-like thermal motion give), not
-a superstructure"); note — untestable points. The long-wave note's "(common in RMC)" and the
-in-phase note's parenthetical say what the pattern is evidence of: method advice
-(`methodCheck`), which the validation's arm C reads without (protocol 2026-10-19.19). Each element's `diffuse` row is [lag, correlation, σ],
+neighbouring cells moving together (correlated motion; as RMC's long waves and acoustic-like
+thermal motion give), not order"; until 2026-10-24 "…, not a superstructure": the local-order
+interview's answer 6, only antiphase or general-q order past its bar is order, in-phase correlation
+is correlated motion and never supports "no correlation"); note — untestable points. The long-wave
+note's "(common in RMC)" and the in-phase note's "; as RMC's long waves …" say what the pattern is
+evidence of: method advice (`methodCheck`), which the validation's arm C reads without (protocol
+2026-10-19.19): arm C reads "… neighbouring cells moving together (correlated motion), not order".
+The verdict is read by one predicate pair in the tool (`isDiffuseOrder`: `correlated_antiphase`;
+`isCorrelatedMotion`: `correlated_in_phase`), which the tool's facts (`facts.modulation.diffuse`)
+and arm A+ (`SWEEP_RULES.diffuseOrder`) share. Each element's `diffuse` row is [lag, correlation, σ],
 the correlation shown by F2's rule against its 0.1 bar. A nearest miss whose σ is −∞ reads
 "< −8σ" (it printed "nullσ" until the calibrated null first reached it). A ratio or σ
 below its bar (3, 3σ) is never printed rounded onto it (finding F2, 2026-10-19): where its usual
@@ -2497,7 +2657,8 @@ Flask analyses read ([run-dashboard.md](run-dashboard.md), Step 9).
 
 | Name | Value | Units | Where | Meaning |
 |------|-------|-------|-------|---------|
-| `CONTEXT_CHAR_BUDGET` | 6000 | characters | `runContext.js` | Target size of the serialized context (`compactJson`) |
+| `CONTEXT_CHAR_BUDGET` | 6500 | characters | `runContext.js` | Target size of the serialized context (`compactJson`; 6000 until 2026-10-24) |
+| `TREND_WINDOW_FRACTION`, `TREND_MIN_ROWS`, `TREND_NOISE_FACTOR`, `MIN_TOTAL_DROP` | 0.1, 10, 3, 0.1 | of the rows; rows; × the residual sd; ln χ² | `watchdog/heuristics.js` | The convergence rule (Step 14, the user's of 2026-10-24): a series falls when its least-squares line over the last tenth (≥ 10 rows, from the last restart) drops by more than 3 × the scatter about it; a flat run that never dropped by 0.1 is stalled. `WINDOW_DELTA_EPSILON` (0.02) left |
 | `HISTORY_POINTS` | 48 | points | `runContext.js` | Convergence history cap; also `downsampleSeries`'s default argument |
 | history trim ladder | 24, then 12 | points | `contextToJson()` | Successive re-downsamples of the *already downsampled* 48-point array |
 | `MAX_SITES` | 12 | sites | `runContext.js` | Cap on symmetry sites and PCA sites at build time |
@@ -2540,12 +2701,14 @@ Flask analyses read ([run-dashboard.md](run-dashboard.md), Step 9).
 | `copilotTools` | `true` | — | `settings.js`, `ConnectionSettings.jsx` | *Let the Copilot run analyses* |
 | `MIN_ORIENTATION_POINTS` | 100 | vectors | `copilotTools.js` | Below: "the map is noisy" |
 | `SIGNIFICANCE_SIGMA` | 3 | σ (calibrated, one-sided) | `copilotTools.js`, `prompts/copilot.js` | Peak / map significance threshold for the checks |
+| `DIRECTION_FINDING_ENHANCEMENT`, `DIRECTION_HINT_SIGMA` | 1.2, 2.5 | × isotropic; σ | `copilotTools.js` (`directionTier`) | A peak direction is a finding at ≥ 3σ and ≥ 1.2× that holds at the neighbouring resolution, a hint at ≥ 3σ under 1.2×, at 2.5–3σ or not held, nothing below 2.5σ (the user's tiers, 2026-10-24); arm A+ takes a split site's peak only for a finding (`SWEEP_RULES.directionTier`) |
 | `UNBONDED_APEX_FRACTION` | 0.5 | fraction | `context/shells.js` (`countsCut`) | The counts fallback of the cut rule (`windowCut`), only where the run reads no shell to compare a window with: central atoms with no A–B bond in the window above this (the engine's `coordinationSummary.unbondedShare`) — `compute_bond_angles` refuses unless `window_confirmed` (then warn). Until 2026-10-19 the rule for every window |
 | `MODAL_COORDINATION_SHARE` | 0.6 | fraction | `context/shells.js` (`countsCut`) | The counts fallback, as above: central atoms with the most common A–B bond count (`coordinationSummary.modalShare`) below this share — refused unless `window_confirmed` (then warn) (a spread coordination, as when the window cuts through a shell; demo Se–Ta–Se at 2.3–2.7 Å: 0.47, whole shells 0.83–0.96). Where a shell exists the share is information (`coordination.modal_share`): dev-offcentre's whole Nb–Nb shell reads 0.52 |
 | `SHELL_TROUGH_FRACTION` | 0.2 | of the first peak | `context/shells.js` | A deeper local minimum closes the first shell; a shallower dip is inside a split shell |
 | `SHELL_ONSET_FRACTION`, `SHELL_EMPTY_FRACTION` | 0.01, 0.001 | of the first peak | `context/shells.js` | Shell onset; a tail below this closes the shell |
 | `PEAK_SEARCH_MAX_A`, `BOUNDARY_REACH_A`, `CUT_SHIFT_A` | 8, 3, 0.2 | Å | `context/shells.js` | Peaks below 8 Å; the minimum closing the shell sought to max(8, r₁ + 3); the shell's top moved this far for the cut sensitivity |
 | `DEFAULT_MAX_SEND_BACKS` | 2 | send-backs per turn | `verification/index.js` (`maxSendBacks`; a run's `limits.maxEvidenceGates` sets it) | The evidence gate sends an answer back at most this often, once per rule (THY-18) |
+| `POLYHEDRON_COUNTS` | [4, 6] | neighbours | `context/shells.js` (`networkCentresOf`) | An element that is no cluster element and whose nearest closed first shell of another element holds a tetrahedron or an octahedron (within `CN_MATCH_TOLERANCE`) centres polyhedra no finite cluster holds: "no order" needs `polyhedral_distortion` on it where the turn offers it (the local-order interview, 2026-10-24) |
 | `CLUSTER_CN_MAX` | 4.5 | neighbours | `context/shells.js` (`clusterElementsOf`) | An element whose own first shell holds 0.5 to this many neighbours may form finite clusters: "no order" needs `analyze_clusters` on it, and arm A+ tries its clusters (one rule since candidate 8) |
 | `APP_MAX_BONDS` | 10⁶ | bonds | `distortion.py`, `workers/distortion.js` | The bonds one `polyhedral_distortion` request may hold, counted by a search that stores nothing; above it the route and the worker refuse (the engine is unrestricted) |
 | `MAX_DISTORTION_WINDOW` | 8 | Å | `app.py`, `pcaKdeWorker.js` | `rMax` cap of `/api/distortion` and the worker's `distortion` request (a polyhedron's bonds are first-shell distances) |
@@ -2554,7 +2717,10 @@ Flask analyses read ([run-dashboard.md](run-dashboard.md), Step 9).
 | `CLUSTER_RESULT_BUDGET` | 4 500 | characters | `copilotTools.js` | `analyze_clusters`' own result budget |
 | `MODULATION_RESULT_BUDGET` | 4 500 | characters | `copilotTools.js` | `analyze_modulations`' own result budget (the largest results are three elements each: the Demo's 3,687 characters with its notes, dev-zone-boundary's 3,344 with an ordered point's polarisation; a fourth element adds about 500) |
 | `SPLIT_SHELL_REACH_A`, `IDEAL_COORDINATION`, `CN_MATCH_TOLERANCE` | 0.5, [4, 6, 8, 12], 0.5 | Å; atoms; atoms | `context/shells.js` | A later peak within the reach joins a shell cut at a deep trough when the summed CN is an ideal count (review L1); two counts agree within `CN_MATCH_TOLERANCE` (`cnMatches`: the Workbench's named polyhedron, the answer checks, the octahedron/tetrahedron reading; `IDEAL_CN_TOLERANCE` until 2026-10-19) |
-| `SEPARATION_G_FRACTION` | 0.02 | of the first peak | `context/shells.js` | $\tilde g$ at the shell boundary above this: shells not separated; raw $g$ just above a closest-approach constraint above this: the constraint limits the pair (one constant since 2026-10-19, for `CONSTRAINT_PILEUP_FRACTION`, `SHELL_OVERLAP_FRACTION` and `PAIR_FLAG_FRACTION`) |
+| `SEPARATION_G_FRACTION` | 0.02 | of the first peak | `context/shells.js` | $\tilde g$ at the shell boundary above this: shells not separated (one constant since 2026-10-19, for `SHELL_OVERLAP_FRACTION` and `PAIR_FLAG_FRACTION`; until 2026-10-24 also the constraint's) |
+| `CONSTRAINT_LIMIT_FRACTION` | 0.05 | of the first peak | `context/shells.js` | Raw $g$ just above a closest-approach constraint above this: the peak is constraint-limited (the user's rule, 2026-10-24) |
+| `AVERAGE_SHELL_REACH_A` | 0.5 (= `SPLIT_SHELL_REACH_A`) | Å | `context/shells.js` (`averageStructureBonds`) | The average structure's first shell for a pair: every site-mean distance from the shortest to this beyond it; `find_gr_peaks` warns when one lies outside the shell's window by more than the first peak's FWHM (`averageShellCheck`; the user's rule, 2026-10-24) |
+| `WINDOW_MATCH_A` | 0.05 | Å | `verification/facts.js` | A window an answer states is the whole shell's when its top agrees within this and it starts no later than the shell's onset: the coordination check then reads the claim as the shell's |
 | `MISFIT_CONCENTRATION`, `RELATIVE_MISFIT_FACTOR` | 0.4, 3 | share; × the dataset's R | `runTools.js` | `compare_fit`'s concentration and weak-signal notes |
 | `DEFAULT_SHUFFLES`, `SHUFFLE_SEED`, `AXIS_CONE_DEG` | 24, `0x5EED`, 15° | — | `clusters.py`, `clusters.js` | The cluster null and the axis families |
 | `MAX_CLUSTER_WINDOW` | 8 | Å | `app.py`, `pcaKdeWorker.js` | Largest `rMax` of a cluster request |
@@ -2650,7 +2816,7 @@ Flask analyses read ([run-dashboard.md](run-dashboard.md), Step 9).
   `convergence.column`. A run whose other terms stall while that one improves is still reported as
   improving.
 - **The character budget is best-effort.** Several blocks are never trimmed; an unusual run can exceed
-  6,000 characters. And only four of the eight trim steps leave an `*_omitted` counter — a dropped second
+  6,500 characters. And only four of the eight trim steps leave an `*_omitted` counter — a dropped second
   $g(r)$ peak, a re-downsampled history, and a dropped PCA `note` are invisible in the delivered JSON.
 - **Downsampling is decimation, not averaging.** A spike between kept indices disappears from the history
   shown to the model, though it still affects `min`/`max` (computed on the full series). Under budget

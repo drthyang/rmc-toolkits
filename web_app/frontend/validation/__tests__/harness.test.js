@@ -136,9 +136,10 @@ describe('the live harness, scripted model', () => {
         expect(square.steps[0].data.first_shell.cn.F_per_Cu).toBeCloseTo(6, 1);
         // Its empty feature list concludes "no order" without the analyses
         // that would show order: the gate sent it back once (THY-18), and the
-        // repeated answer keeps that finding beside the coordination check.
+        // repeated answer keeps that finding beside the coordination check,
+        // and its CN carries no window in Å (the window check, 2026-10-24).
         expect(square.gates.map((gate) => gate.id)).toEqual(['no-order']);
-        expect(square.final.audit.map((finding) => finding.rule)).toEqual(['coordination', 'evidence']);
+        expect(square.final.audit.map((finding) => finding.rule)).toEqual(['coordination', 'window', 'evidence']);
         expect(square.final.outcome.status).toBe('not verified');
         await pinRecord('harness.coordination-square', square);
     });

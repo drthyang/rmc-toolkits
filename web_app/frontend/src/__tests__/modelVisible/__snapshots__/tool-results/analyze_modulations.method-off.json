@@ -1,7 +1,7 @@
 {
   "tool": "analyze_modulations",
   "arguments": {},
-  "content_chars": 3579,
+  "content_chars": 3588,
   "content": {
     "ref": "r1",
     "checks": [
@@ -23,7 +23,7 @@
       },
       {
         "level": "note",
-        "text": "Ga, Se and Ta displacements are correlated in phase between neighbouring cells (the strongest, Se, +0.22 between cells [0 0 1] apart, > 8σ against independent cells): the power beyond the long waves leans toward the zone centre — neighbouring cells moving together, not a superstructure."
+        "text": "Ga, Se and Ta displacements are correlated in phase between neighbouring cells (the strongest, Se, +0.22 between cells [0 0 1] apart, > 8σ against independent cells): the power beyond the long waves leans toward the zone centre — neighbouring cells moving together (correlated motion), not order."
       }
     ],
     "data": {

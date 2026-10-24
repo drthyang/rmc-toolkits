@@ -28,7 +28,8 @@
 
 import assert from 'node:assert/strict';
 import {
-    directionResolved, LOW_INDEX_CONE_DEG, SIGNIFICANCE_SIGMA, summarizeBondAngles, summarizeOrientation, summarizeSymmetry
+    DIRECTION_FINDING_ENHANCEMENT, DIRECTION_HINT_SIGMA, directionHolds, directionResolved, directionTier, isCorrelatedMotion, isDiffuseOrder,
+    LOW_INDEX_CONE_DEG, neighbourFrequency, SIGNIFICANCE_SIGMA, summarizeBondAngles, summarizeOrientation, summarizeSymmetry
 } from '../../copilotTools';
 import { buildClarifier } from '../../llm/copilot/clarify';
 import { buildRunTools } from '../../llm/copilot/runTools';
@@ -36,9 +37,13 @@ import { toolResult } from '../../llm/copilot/tools';
 import { createVerification, FACTS } from '../../llm/copilot/verification';
 import { buildRunContext, lowerGroupTolerance, NOISE_FLOOR_MARGIN } from '../../llm/context/runContext';
 import {
-    CLUSTER_CN_MAX, CN_CHANGE_ABS, CN_CHANGE_REL, CN_MATCH_TOLERANCE, clusterElementsOf, cnMarginCut, cnMatches, IDEAL_COORDINATION,
-    isIdealCoordination, MODAL_COORDINATION_SHARE, SEPARATION_G_FRACTION, shellCatalogue, SPLIT_SHELL_REACH_A, UNBONDED_APEX_FRACTION
+    CLUSTER_CN_MAX, CN_CHANGE_ABS, CN_CHANGE_REL, CN_MATCH_TOLERANCE, clusterElementsOf, cnMarginCut, cnMatches, CONSTRAINT_LIMIT_FRACTION,
+    IDEAL_COORDINATION, isIdealCoordination, MODAL_COORDINATION_SHARE, networkCentresOf, SEPARATION_G_FRACTION, shellCatalogue,
+    SPLIT_SHELL_REACH_A, UNBONDED_APEX_FRACTION
 } from '../../llm/context/shells';
+import {
+    classifyConvergence, MIN_TOTAL_DROP, TREND_MIN_ROWS, TREND_NOISE_FACTOR, TREND_WINDOW_FRACTION
+} from '../../llm/watchdog/heuristics';
 import { SWEEP_RULES } from '../../../validation/armA';
 import {
     AXIS_CONE_DEG, AXIS_ENHANCEMENT, CLUSTER_EFFECT, CLUSTER_Z, SPLIT_SITE_KURTOSIS, SPLIT_SITE_SE, TRIGONALITY_EFFECT, isSplitSite
@@ -100,12 +105,17 @@ const CN_MARGIN_STATISTIC = {
 // --- probes: the code applies a constant, or enforces a firm rule, as stated ----------
 
 // An analyze_displacement_directions engine payload (no unit cell: no [u v w]).
-const orientationPayload = ({ peak, map }) => ({
-    referenceNumber: 1, element: 'Ta', frequency: 6, cellCount: 362, usedPoints: 4000, rejectedPoints: 0,
+const orientationPayload = ({ peak, map, frequency = 6, direction = null }) => ({
+    referenceNumber: 1, element: 'Ta', frequency, cellCount: 362, usedPoints: 4000, rejectedPoints: 0,
     vmin: 0.8, vmax: 1.3, peakEnhancement: 1.3, peakCount: 20, peakExpected: 11, peakSignificance: peak,
-    peakDirection: null, mapSignificance: map, antipodalAsymmetry: 0, antipodalAsymmetryZ: 0,
+    peakDirection: direction, peakCellRadiusDeg: 6.5, mapSignificance: map, antipodalAsymmetry: 0, antipodalAsymmetryZ: 0,
     antipodalAsymmetrySignificant: false, orientationEigenvalues: [0.4, 0.3, 0.3], orientationAnisotropy: 0.1,
     orientationAnisotropySignificance: 1, recommendedFrequency: 6
+});
+// A finding of the user's tiers (2026-10-24): ≥ 3σ, ≥ 1.2× isotropic, and it
+// holds at the neighbouring resolution (ν − 1: the same axis, ≥ 3σ there).
+const directionFinding = (peak) => summarizeOrientation(orientationPayload({ peak, map: 0.5, direction: [0, 0, 1] }), null, {
+    neighbour: orientationPayload({ peak: 3.5, map: 0.5, frequency: 5, direction: [0, 0.1, 0.99] })
 });
 
 // A compute_bond_angles engine payload with the coordination counts given
@@ -176,6 +186,81 @@ const cuF = (options) => shellCatalogue(splitShellRun(options)).shell('Cu', 'F')
 // An analysis with one A–B window (compute_bond_angles' shellWindows, in brief).
 const windowedAnalysis = {
     shellWindows: (args) => [{ centre: 'Cu', partner: 'F', window: [args.lo, args.hi], apply: ([lo, hi]) => ({ ...args, lo, hi }) }]
+};
+
+// A Ga–Se peak at 2.42 Å (σ 0.1 Å, height 8) cut at its closest-approach
+// constraint `limit`: g is 0 below it, and just above it the share of the
+// first peak the cut's position sets (2.13 Å: 3 %; 2.18 Å: 9 %).
+const constrainedGaSe = (limit) => {
+    const x = Array.from({ length: 1000 }, (_, i) => Number((i * 0.01).toFixed(6)));
+    const y = x.map((r) => (r <= limit ? 0 : 8 * Math.exp(-((r - 2.42) ** 2) / (2 * 0.1 ** 2))));
+    return {
+        plotFiles: [{ name: 'gase.csv', plotKind: 'pdf_partials', plotData: { series: [{ label: 'Ga-Se', x, y }] } }],
+        runSettings: { atoms: ['Ga', 'Se'], minimumDistancesA: [3.0, limit, 3.0] }
+    };
+};
+// The constraint-limited test (shells.js, the user's 5 %): 3 % of the peak at the
+// cut is not limited (it was under the separation's 2 %), 9 % is, and
+// find_gr_peaks says so with the user's advice.
+const verifyConstraintLimit = async () => {
+    const reading = (limit) => shellCatalogue(constrainedGaSe(limit)).shell('Ga', 'Se').constraint;
+    const low = reading(2.13);
+    assert.ok(low.gFraction > SEPARATION_G_FRACTION && low.gFraction < CONSTRAINT_LIMIT_FRACTION, `3 %: g_fraction ${low.gFraction}`);
+    assert.equal(low.limited, false, '3 % of the peak at the cut was called constraint-limited');
+    const high = reading(2.18);
+    assert.ok(high.gFraction > CONSTRAINT_LIMIT_FRACTION, `9 %: g_fraction ${high.gFraction}`);
+    assert.equal(high.limited, true, '9 % of the peak at the cut was not called constraint-limited');
+    const tool = buildRunTools(constrainedGaSe(2.18)).find((item) => item.name === 'find_gr_peaks');
+    const { checks } = await tool.run({ pair: 'Ga-Se' });
+    assert.ok(checks.some((check) => check.level === 'warn'
+        && /constraint-limited: interpret nothing on its low-r side; consider rerunning with the constraint loosened/.test(check.text)),
+    'find_gr_peaks does not say constraint-limited with the user\'s advice');
+};
+
+// A run whose small F(Q)_1 term still falls (0.01 → 0.006 in χ² over the run)
+// while a large flat constraint term, charted last, holds the total flat
+// within its noise: the convergence rule on every term and the total.
+const termStillFalling = () => {
+    let seed = 17;
+    const uniform = () => {
+        seed = (seed * 16807) % 2147483647;
+        return seed / 2147483647;
+    };
+    const noise = () => Math.sqrt(-2 * Math.log(uniform())) * Math.cos(2 * Math.PI * uniform());
+    const n = 400;
+    const small = Array.from({ length: n }, (_, t) => 0.01 * Math.exp(-t / 800) * Math.exp(0.002 * noise()));
+    const large = Array.from({ length: n }, (_, t) => (t < 60 ? 20 - 0.15 * t : 11) * Math.exp(0.01 * noise()));
+    const ln = (values) => values.map((value) => Math.log(value));
+    return {
+        name: 'run-00.log',
+        plotData: {
+            chiColumn: 'Curvature',
+            series: [{ y: ln(large) }],
+            chiTerms: { names: ['F(Q)_1', 'Curvature'], series: [ln(small), ln(large)], total: ln(small.map((value, t) => value + large[t])), segments: [n] }
+        }
+    };
+};
+
+// The user's tiers for a direction (interview 2026-10-24, answers 3 and 4):
+// analyze_displacement_directions' directionTier, its facts and the answer
+// check "direction" (the interview answer checks, 2026-10-24).
+const FINDING_ENHANCEMENT = constant('DIRECTION_FINDING_ENHANCEMENT', DIRECTION_FINDING_ENHANCEMENT, 'copilotTools.js, directionTier');
+const HINT_SIGMA = constant('DIRECTION_HINT_SIGMA', DIRECTION_HINT_SIGMA, 'copilotTools.js, directionTier');
+const tierPayload = (peak, enhancement, frequency = 6, direction = [0, 0, 1]) => ({
+    ...orientationPayload({ peak, map: 0.5, frequency, direction }), peakEnhancement: enhancement
+});
+const verifyDirectionTiers = () => {
+    const held = tierPayload(3.4, 1.3, 5, [0, 0.1, 0.99]);
+    assert.deepEqual(directionTier(tierPayload(SIGNIFICANCE_SIGMA, DIRECTION_FINDING_ENHANCEMENT), held), { tier: 'finding', because: 'holds' });
+    assert.deepEqual(directionTier(tierPayload(SIGNIFICANCE_SIGMA, DIRECTION_FINDING_ENHANCEMENT - 0.01), held), { tier: 'hint', because: 'small_enhancement' });
+    assert.deepEqual(directionTier(tierPayload(SIGNIFICANCE_SIGMA - 1e-9, 2), held), { tier: 'hint', because: 'below_sigma' });
+    assert.deepEqual(directionTier(tierPayload(DIRECTION_HINT_SIGMA, 2), held), { tier: 'hint', because: 'below_sigma' });
+    assert.deepEqual(directionTier(tierPayload(DIRECTION_HINT_SIGMA - 1e-9, 2), held), { tier: 'none', because: 'below_hint_sigma' });
+    // The tool says the tier and the answer check reads it: a hint backs no preferred direction.
+    const hint = summarizeOrientation(tierPayload(4, 1.1), null);
+    assert.equal(hint.facts.direction.tier, 'hint');
+    assert.ok(hint.checks.some((check) => /^A hint of a direction, not a finding/.test(check.text)));
+    findsRule('Site 1 has a preferred displacement direction along [0 0 1].', { facts: [hint.facts] }, 'direction');
 };
 
 // --- BINDINGS -------------------------------------------------------------------------
@@ -283,7 +368,8 @@ export const BINDINGS = [
         constants: [SIGMA]
     },
     // The user's three tiers (interview 2026-10-24, answer 3): the σ of each
-    // is the peak test's; the 1.2× and 2.5σ lines await their code (ALLOW_LIST).
+    // is the peak test's; the 1.2× and 2.5σ lines are directionTier's (the
+    // interview answer checks, 2026-10-24).
     {
         file: ANISOTROPY,
         gate: 'a finding (step 4)',
@@ -293,10 +379,47 @@ export const BINDINGS = [
     },
     {
         file: ANISOTROPY,
+        gate: 'a finding\'s enhancement (step 4)',
+        find: '**a finding** (a preferred direction):',
+        number: /σ and ≥ (?<n>\d+(?:\.\d+)?)× isotropic/,
+        constants: [FINDING_ENHANCEMENT],
+        verify: () => verifyDirectionTiers()
+    },
+    {
+        file: ANISOTROPY,
         gate: 'a hint (step 4)',
         find: '**a hint**:',
         number: /\*\*a hint\*\*: ≥ (?<n>\d+(?:\.\d+)?)σ under/,
         constants: [SIGMA]
+    },
+    {
+        file: ANISOTROPY,
+        gate: 'a hint\'s enhancement (step 4)',
+        find: '**a hint**:',
+        number: /σ under (?<n>\d+(?:\.\d+)?)× isotropic/,
+        constants: [FINDING_ENHANCEMENT]
+    },
+    {
+        file: ANISOTROPY,
+        gate: 'nothing to report (step 4)',
+        find: '**nothing to report**',
+        number: /\*\*nothing to report\*\* below (?<n>\d+(?:\.\d+)?)σ/,
+        constants: [HINT_SIGMA],
+        verify: () => verifyDirectionTiers()
+    },
+    {
+        file: ANISOTROPY,
+        gate: 'nothing to report (report)',
+        find: '"nothing to report" (below',
+        number: /\(below (?<n>\d+(?:\.\d+)?)σ\)/,
+        constants: [HINT_SIGMA]
+    },
+    {
+        file: ANISOTROPY,
+        gate: 'a finding\'s enhancement (checklist)',
+        find: '"Preferred direction" only for a finding (step 4:',
+        number: /unrounded, and ≥ (?<n>\d+(?:\.\d+)?)× isotropic/,
+        constants: [FINDING_ENHANCEMENT]
     },
     {
         file: ANISOTROPY,
@@ -659,14 +782,15 @@ export const BINDINGS = [
         constants: [LONG_WAVE]
     },
     {
-        // The user's line (interview 2026-10-24): 5 %; today's code flags a constraint-limited pair at
-        // SEPARATION_G_FRACTION (2 %). The fit-assessment code PR adds the 5 % constant.
+        // The user's line (interview 2026-10-24): 5 %, the shell module's own constant since the
+        // fit-assessment code PR (the shell separation keeps SEPARATION_G_FRACTION, 2 %).
         file: FIT,
         gate: 'a constraint-limited peak (step 4)',
         find: 'When g(r) just above the cut is above',
         number: /is above (?<n>\d+(?:\.\d+)?) % of the peak/,
         unit: '%',
-        constants: [constant('SEPARATION_G_FRACTION', SEPARATION_G_FRACTION, 'llm/context/shells.js, the constraint pile-up (find_gr_peaks\' g_at_constraint_fraction)')]
+        constants: [constant('CONSTRAINT_LIMIT_FRACTION', CONSTRAINT_LIMIT_FRACTION, 'llm/context/shells.js, the constraint-limited test (find_gr_peaks\' warning and g_at_constraint_fraction, the context\'s cut_at_min_distance)')],
+        verify: () => verifyConstraintLimit()
     }
 ];
 
@@ -696,7 +820,7 @@ export const NOT_GATES = [
     {
         file: FIT,
         find: 'at least 3 independent runs or configurations and at least 10 accepted moves per atom',
-        why: 'the user\'s sampling bar (interview 2026-10-24): no module decides it; the fit-assessment code PR flags a distribution quoted from a single configuration without saying so'
+        why: 'the user\'s sampling bar (interview 2026-10-24): no module decides the 3 runs or the 10 moves; the answer check "single-configuration" flags a distribution quoted without saying it is one configuration\'s'
     },
     { file: FIT, find: 'a partial under 5 % of the signal', why: 'the user\'s line for a weakly weighted partial (interview 2026-10-24): the context gives the weights, no module decides at 5 %' },
     {
@@ -719,8 +843,12 @@ export const FIRM_RULES = [
         probe: () => {
             const { facts } = summarizeOrientation(orientationPayload({ peak: 1.2, map: 0.5 }), null);
             findsRule('Site 1 has a preferred displacement direction along [1 1 1].', { facts: [facts] }, 'direction');
-            const significant = summarizeOrientation(orientationPayload({ peak: 4, map: 0.5 }), null).facts;
-            assert.deepEqual(judgeAnswer('Site 1 has a preferred displacement direction along [1 1 1].', { facts: [significant] }).audit, []);
+            // A finding passes (the user's tiers, 2026-10-24); a 4σ peak that is only a hint does not.
+            const finding = directionFinding(4).facts;
+            assert.equal(finding.direction.tier, 'finding');
+            assert.deepEqual(judgeAnswer('Site 1 has a preferred displacement direction along [1 1 1].', { facts: [finding] }).audit, []);
+            const unchecked = summarizeOrientation(orientationPayload({ peak: 4, map: 0.5 }), null).facts;
+            findsRule('Site 1 has a preferred displacement direction along [1 1 1].', { facts: [unchecked] }, 'direction');
             lowersOutcome('Site 1 has a preferred displacement direction.', { facts: [facts] });
         }
     },
@@ -833,6 +961,54 @@ export const FIRM_RULES = [
     },
     {
         file: FIT,
+        find: 'an answer that claims order at a box-scale wavevector',
+        enforcedBy: 'the answer check "long-wave" (the verification\'s FACTS, the modulation row), from analyze_modulations\' facts.modulation.long_wave_q (the engine\'s LONG_WAVE_Q, isLongWave)',
+        probe: async ({ tools } = {}) => {
+            // The facts as analyze_modulations returns them: the engine's bound, a long wave among the strongest modes.
+            const q = [0.1, 0.2, -0.1];
+            assert.equal(isLongWave(q), true);
+            const facts = { modulation: { elements: ['Se'], ordered: [], general: [], long_wave_q: MODULATION_RULES.longWaveQ, long_waves: [{ element: 'Se', q }] } };
+            findsRule('Se is ordered at q = (0.1, 0.2, -0.1).', { facts: [facts] }, 'long-wave');
+            findsRule('The Se displacements show a long-wavelength modulation.', { facts: [facts] }, 'long-wave');
+            lowersOutcome('Se is ordered at q = (0.1, 0.2, -0.1).', { facts: [facts] });
+            // The user's own wording, and a point that passed its own test at another q, raise no finding.
+            const said = judgeAnswer('Se\'s strongest mode, q = (0.1, 0.2, -0.1), is a long wave: a correlation the finite box can\'t represent, so it says nothing about order at its own q.', { facts: [facts] });
+            assert.deepEqual(said.audit, []);
+            const ordered = { modulation: { ...facts.modulation, ordered: [{ element: 'Se', q: [0, 0, 0.5] }] } };
+            assert.deepEqual(judgeAnswer('Se is ordered at q = (0, 0, ½).', { facts: [ordered] }).audit, []);
+            // On the Demo: the tool's facts carry the engine's bound.
+            const modulations = tools?.get('analyze_modulations');
+            if (modulations) {
+                const result = await modulations.run({});
+                assert.equal(result.facts.modulation.long_wave_q, LONG_WAVE_Q, 'analyze_modulations\' facts do not carry the long-wave bound');
+                assert.ok(result.facts.modulation.long_waves.every((wave) => isLongWave(wave.q)));
+            }
+        }
+    },
+    {
+        file: FIT,
+        find: 'an answer that quotes a distribution from a single configuration without saying so',
+        enforcedBy: 'the answer check "single-configuration" (the verification\'s FACTS, the distribution row), from compute_bond_angles\', analyze_displacement_directions\' and analyze_clusters\' facts.distribution',
+        probe: async ({ tools } = {}) => {
+            // A bond-angle distribution the tool returned (the counts uniform: not refused).
+            const { facts } = summarizeBondAngles(bondAnglePayload([0, 0, 0, 0, 0, 0, 1000]));
+            assert.equal(facts.distribution?.configurations, 1, 'compute_bond_angles returns no distribution fact');
+            findsRule('Se–Ta–Se angles: mean 100°, sd 20°.', { facts: [facts] }, 'single-configuration');
+            lowersOutcome('Se–Ta–Se angles: mean 100°, sd 20°.', { facts: [facts] });
+            // Its window stated (the coordination-shells interview's window check, 2026-10-24).
+            assert.deepEqual(judgeAnswer('In this one configuration the Se–Ta–Se angles in 2.3–2.7 Å have mean 100°, sd 20°.', { facts: [facts] }).audit, []);
+            const directions = summarizeOrientation(orientationPayload({ peak: 1.2, map: 0.5 }), null).facts;
+            assert.equal(directions.distribution?.kind, 'directions', 'analyze_displacement_directions returns no distribution fact');
+            // On the Demo: the whole GaSe4 shell's angles.
+            const angles = tools?.get('compute_bond_angles');
+            if (angles) {
+                const result = await angles.run({ end1: 'Se', apex: 'Ga', end2: 'Se', r12_min: 2.18, r12_max: 2.79 });
+                findsRule('Se–Ga–Se angles: mean 109.4°, sd 4.1°.', { facts: [result.facts] }, 'single-configuration');
+            }
+        }
+    },
+    {
+        file: FIT,
         find: 'the Outcome is computed from the checks; the model\'s line only explains it',
         enforcedBy: 'the computed verdict (verification/verdict.js computeOutcome; the model\'s Outcome line is read by outcome.js as `claimed` only)',
         probe: () => {
@@ -867,6 +1043,82 @@ export const FIRM_RULES = [
             assert.equal(judged.sendBack.id, 'no-order');
             assert.deepEqual(judged.sendBack.missing.map((item) => item.split(' ')[0]), ['analyze_modulations', 'analyze_displacement_directions', 'analyze_clusters']);
             assert.ok(judged.sendBack.missing[2].startsWith('analyze_clusters for Mo'), 'the gate does not ask for the finite-cluster element');
+        }
+    },
+    // The interviewed skills' firm rules (2026-10-24), built by the interview answer checks.
+    {
+        file: SHELLS,
+        find: 'every CN or angle in an answer carries its window in Å',
+        enforcedBy: 'the answer check "window" (the verification\'s FACTS, the coordination row), from find_gr_peaks\' and compute_bond_angles\' facts.coordination',
+        probe: () => {
+            const counted = { coordination: { centre: 'Ta', partner: 'Se', window: [2.21, 3.23], cn: 6, whole_shell: true, confirmed: false } };
+            findsRule('Each Ta is 6-coordinated by Se.', { facts: [counted] }, 'window');
+            findsRule('The Se–Ta–Se angles split into cis near 89° and trans near 159°.', { facts: [counted] }, 'window');
+            lowersOutcome('Each Ta is 6-coordinated by Se.', { facts: [counted] });
+            assert.deepEqual(judgeAnswer('In the whole Ta–Se first shell, 2.21–3.23 Å, each Ta has 6 Se.', { facts: [counted] }).audit, []);
+        }
+    },
+    {
+        file: SYMMETRY,
+        find: 'an answer that claims a group–subgroup relation that',
+        enforcedBy: 'the answer check "subgroup" (the verification\'s FACTS, the groups row), from the context\'s ladder (operations in the cell, rank) and detect_symmetry\'s facts, else the point groups (pointGroups.js isPointSubgroup)',
+        probe: () => {
+            const context = buildRunContext({ symmetry: demoSymmetry });
+            findsRule('P-42₁m is a t-subgroup of F-43m.', { context }, 'subgroup');
+            findsRule('F-43m lowers to P4/mmm.', { context }, 'subgroup');
+            lowersOutcome('P-42₁m is a t-subgroup of F-43m.', { context });
+            assert.deepEqual(judgeAnswer('P-42₁m is a subgroup of F-43m of index 12.', { context }).audit, []);
+        }
+    },
+    {
+        file: SYMMETRY,
+        find: 'an answer that claims a cell doubling the box\'s average',
+        enforcedBy: 'the answer check "cell-doubling" (the verification\'s FACTS, the modulation row), from the context\'s box (structure.supercell) and analyze_modulations\' ordered points',
+        probe: () => {
+            const odd = { structure: { supercell: [5, 5, 5], elements: { Ti: 125, O: 375 } } };
+            findsRule('The Ti displacements double the cell along c.', { context: odd }, 'cell-doubling');
+            lowersOutcome('The Ti displacements double the cell along c.', { context: odd });
+            assert.deepEqual(judgeAnswer('This box (5 × 5 × 5) cannot hold a doubled cell, so it can neither confirm nor rule out the doubling.',
+                { context: odd }).audit, []);
+            const ordered = [{ modulation: { elements: ['Ti'], ordered: [{ element: 'Ti', q: [0.5, 0, 0] }], general: [], long_wave_q: 0.25, long_waves: [] } }];
+            findsRule('The Ti order doubles the cell along c.', { facts: ordered, context: { structure: { supercell: [8, 8, 8], elements: { Ti: 512 } } } }, 'cell-doubling');
+        }
+    },
+    {
+        file: ANISOTROPY,
+        find: 'an answer that calls a split or flat-topped site "disorder"',
+        enforcedBy: 'the answer check "disorder" (the verification\'s FACTS, the sites row), from list_sites\' facts.sites and analyze_modulations\' tested elements; the evidence gate\'s split-site row (claims.js) reads a flat-topped site called disordered too',
+        probe: () => {
+            const sites = { sites: [{ ref: 3, element: 'Ti', elements: ['Ti'], split: true, flat: false }, { ref: 5, element: 'O', elements: ['O'], split: false, flat: true }] };
+            findsRule('Site 3 is disordered.', { facts: [sites] }, 'disorder');
+            findsRule('Site 5 (O) is statically disordered.', { facts: [sites] }, 'disorder');
+            lowersOutcome('Site 3 is disordered.', { facts: [sites] });
+            const tested = { modulation: { elements: ['Ti', 'O'], ordered: [], general: [], long_wave_q: 0.25, long_waves: [] } };
+            assert.deepEqual(judgeAnswer('Site 3 is disordered.', { facts: [sites, tested] }).audit, []);
+            const gate = createVerification().judge('The flat-topped O site is disordered.', { canSendBack: true });
+            assert.equal(gate?.sendBack?.id, 'split-site', 'the gate does not send a flat-topped site called disordered back');
+        }
+    },
+    {
+        file: LOCAL_ORDER,
+        find: 'an answer that concludes "no order" is refused until every',
+        enforcedBy: 'the evidence gate\'s "no order" row (claims.js): analyze_modulations (its diffuse verdict included), a per-site directions map, '
+            + 'analyze_clusters for each element clusterElementsOf names, and polyhedral_distortion for each centre networkCentresOf names, where the turn offers it',
+        probe: () => {
+            // A perovskite's shells: Ti centres TiO₆ (Ti–Ti six: no finite cluster).
+            const shells = {
+                'Ti-O': { window: [1.66, 2.3], cn: 6 }, 'Ti-Ti': { window: [3.6, 4.2], cn: 6 }, 'O-Ti': { window: [1.66, 2.3], cn: 2 },
+                'O-O': { window: [2.5, 3.1], cn: 8 }
+            };
+            const catalog = { elements: ['O', 'Ti'], shell: (a, b) => shells[`${a}-${b}`] ?? null };
+            assert.deepEqual(networkCentresOf(catalog), ['Ti']);
+            const answer = 'There is no local order beyond thermal motion.';
+            const missing = (offered) => createVerification({ catalog, offered }).judge(answer).done.audit[0]?.missing ?? [];
+            assert.deepEqual(missing(null), ['analyze_modulations', 'analyze_displacement_directions on each kind of site (site_ref)',
+                'polyhedral_distortion for Ti (centre Ti: its polyhedra form no finite cluster)']);
+            // Not offered: never asked; the rest of the list stands.
+            assert.deepEqual(missing(['analyze_modulations', 'analyze_displacement_directions', 'analyze_clusters']),
+                ['analyze_modulations', 'analyze_displacement_directions on each kind of site (site_ref)']);
         }
     }
 ];
@@ -1107,15 +1359,22 @@ export const VALUES = [
 // entry repeats them), and `verify` checks the app and A+ apply `app`.
 const SPLIT_RULE = `PC1 resolved, its excess kurtosis ≤ ${String(SPLIT_SITE_KURTOSIS).replace('-', '−')} and ≥ ${SPLIT_SITE_SE} sampling errors below 0 (isSplitSite)`;
 const CLUSTER_RULE = `analyze_clusters for each element whose own first shell holds 0.5–${CLUSTER_CN_MAX} neighbours (clusterElementsOf, CLUSTER_CN_MAX)`;
-const CONVERGENCE_RULE = 'assess_convergence and the watchdog read one fit term, the last .log column (runTools.js convergenceTool, chiColumn)';
+const CONVERGENCE_RULE = `every χ² term of the .log and their total, none still falling beyond ${TREND_NOISE_FACTOR} × its noise (the scatter about `
+    + `its least-squares line) over the last tenth (≥ ${TREND_MIN_ROWS} rows, from the last restart): assess_convergence, the watchdog and the `
+    + 'context\'s watchdog_status (watchdog/heuristics.js judgeConvergence)';
 const TOLERANCE_RULE = `a group counts where it holds to ${NOISE_FLOOR_MARGIN} × the noise floor (lowerGroupTolerance, NOISE_FLOOR_MARGIN)`;
-// analyze_displacement_directions today: one test, one tier, one resolution.
-const DIRECTION_TIERS_RULE = `a preferred direction at a peak σ ≥ ${SIGNIFICANCE_SIGMA} (unrounded) whatever its enhancement, else "no significant peak direction": no hint tier (summarizeOrientation)`;
-const DIRECTION_RESOLUTION_RULE = `any one directions analysis at ≥ ${SIGNIFICANCE_SIGMA}σ backs a preferred direction, at whichever frequency it ran (facts.direction, the answer check "direction")`;
-// Order between cells as the answer checks and arm A+ read it today (the
-// diffuse verdict, plan item 4.4, was left as the user's call).
-const BETWEEN_CELLS_RULE = 'the answer checks and arm A+ read a zone-boundary point and a general mode only, not the diffuse verdict '
-    + '(facts.modulation; validation/armA.js MODULATION_FINDINGS_READ)';
+// analyze_displacement_directions since the interview answer checks
+// (2026-10-24): three tiers, a finding at two resolutions.
+const DIRECTION_TIERS_RULE = `a finding at a peak σ ≥ ${SIGNIFICANCE_SIGMA} (unrounded) and ≥ ${DIRECTION_FINDING_ENHANCEMENT}× isotropic that holds at a `
+    + `neighbouring resolution; a hint at ≥ ${SIGNIFICANCE_SIGMA}σ under ${DIRECTION_FINDING_ENHANCEMENT}×, at ${DIRECTION_HINT_SIGMA}–${SIGNIFICANCE_SIGMA}σ `
+    + `or not held; nothing below ${DIRECTION_HINT_SIGMA}σ (directionTier; the answer check "direction" takes a finding only)`;
+const DIRECTION_RESOLUTION_RULE = 'a finding holds at the Auto ν and at ν ± 1 — the tool reads ν − 1 (ν + 1 at ν = 1) for a candidate, and a call at '
+    + 'ν ± 1 the Auto ν — passing its own peak test on the same axis within the two cells\' radii; one resolution alone is a hint '
+    + '(directionHolds, neighbourFrequency)';
+// Order between cells as the answer checks and arm A+ read the diffuse verdict
+// (the interview answer checks, 2026-10-24): antiphase only.
+const BETWEEN_CELLS_RULE = 'the diffuse verdict in antiphase past its bar is order between cells (short-range order), read by the answer checks '
+    + '(facts.modulation.diffuse) and arm A+ (SWEEP_RULES.diffuseOrder); in phase it is correlated motion, not order (isDiffuseOrder)';
 
 const verifySplitRule = () => {
     assert.equal(SWEEP_RULES.splitSite, isSplitSite, 'arm A+ does not read the app\'s split rule');
@@ -1149,17 +1408,30 @@ const verifyToleranceRule = () => {
 
 export const RULES = [
     {
+        // The user's convergence rule (interview 2026-10-24, answer 1), the fit-assessment code PR's.
         file: FIT,
         rule: 'convergence',
         find: 'Judge every fit term and the total',
-        states: /\bone fit term\b|\blast `?\.log`? column\b/,
+        after: 160,
+        states: /every fit term and the total[\s\S]*\bstill falling beyond its noise over the\s+last tenth\b/,
         skill: 'every fit term and the total, none still falling beyond its noise over the last tenth',
         app: CONVERGENCE_RULE,
         verify: async () => {
-            // Today the tool takes no term and reads the one history it is given: the chiColumn's.
-            const tool = buildRunTools({ rValueFile: fallingHistory }).find((item) => item.name === 'assess_convergence');
-            assert.deepEqual(Object.keys(tool.parameters.properties), [], 'assess_convergence takes a term: update this rule');
-            assert.equal((await tool.run({})).data.column, 'X_ray_(R)1');
+            // The window is the last tenth (≥ 10 rows), "beyond its noise" 3 × the residual sd.
+            assert.deepEqual([TREND_WINDOW_FRACTION, TREND_MIN_ROWS, TREND_NOISE_FACTOR, MIN_TOTAL_DROP], [0.1, 10, 3, 0.1]);
+            // One term still falling keeps the run improving, though the charted column alone reads converged.
+            const rValueFile = termStillFalling();
+            assert.equal(classifyConvergence(rValueFile.plotData.series[0].y), 'converged', 'the probe\'s charted column no longer reads flat');
+            const tool = buildRunTools({ rValueFile }).find((item) => item.name === 'assess_convergence');
+            const { data, facts } = await tool.run({});
+            assert.equal(data.status, 'improving', 'assess_convergence judges the charted column only');
+            assert.deepEqual(data.terms.map((term) => [term.term, term.trend]), [['F(Q)_1', 'falling'], ['Curvature', 'flat']]);
+            assert.equal(data.total.trend, 'flat');
+            assert.equal(facts.convergence, 'improving');
+            const context = buildRunContext({ rValueFile });
+            assert.equal(context.convergence.watchdog_status, 'improving', 'the context\'s watchdog_status judges the charted column only');
+            assert.equal(context.convergence.last_10pct.terms['F(Q)_1'].trend, 'falling');
+            findsRule('The run has converged.', { context }, 'convergence');
         }
     },
     {
@@ -1173,39 +1445,38 @@ export const RULES = [
         verify: verifySplitRule
     },
     // The user's tiers and two resolutions (interview 2026-10-24, answers 3 and
-    // 4): the displacement-anisotropy code PR builds them (ALLOW_LIST).
+    // 4), built by the interview answer checks (2026-10-24).
     {
         file: ANISOTROPY,
         rule: 'a direction\'s tiers',
         find: 'Three tiers for a direction',
         after: 260,
-        states: /whatever (?:its|the) enhancement|no hint tier/,
+        states: /≥ 1\.2× isotropic[\s\S]*under 1\.2× isotropic, or 2\.5–3σ/,
         skill: 'a finding at ≥ 3σ (unrounded) and ≥ 1.2× isotropic; a hint at ≥ 3σ under 1.2×, or 2.5–3σ; nothing below 2.5σ (the user, 2026-10-24)',
         app: DIRECTION_TIERS_RULE,
-        verify: () => {
-            // A 3σ peak at 1.1× isotropic is a preferred direction today, and a 2.7σ peak no direction at all.
-            const small = summarizeOrientation({ ...orientationPayload({ peak: SIGNIFICANCE_SIGMA, map: 0.5 }), peakEnhancement: 1.1 }, null);
-            assert.equal(small.facts.direction.significant, true, 'a 3σ direction under 1.2× isotropic is no longer preferred: update this rule');
-            assert.ok(small.checks.some((check) => /^Preferred direction/.test(check.text)));
-            const near = summarizeOrientation(orientationPayload({ peak: 2.7, map: 0.5 }), null);
-            assert.ok(near.checks.some((check) => /^No significant peak direction/.test(check.text)));
-            assert.doesNotMatch(JSON.stringify(near), /\bhint\b/i, 'the tool labels a hint: update this rule');
-        }
+        verify: () => verifyDirectionTiers()
     },
     {
         file: ANISOTROPY,
         rule: 'a finding at two resolutions',
         find: 'Two resolutions for a finding.',
         after: 360,
-        states: /\bone resolution\b|\bwhichever frequency\b/,
+        states: /holds at the Auto ν and at a neighbouring ν/,
         skill: 'a finding holds at the Auto ν and at a neighbouring ν (ν ± 1); one at the Auto ν alone is a hint (the user, 2026-10-24)',
         app: DIRECTION_RESOLUTION_RULE,
         verify: () => {
-            // One analysis at one frequency backs a preferred direction today, and its fact names no frequency.
-            const { facts } = summarizeOrientation(orientationPayload({ peak: SIGNIFICANCE_SIGMA + 1, map: 0.5 }), null);
-            assert.deepEqual(judgeAnswer('Site 1 has a preferred displacement direction along [1 1 1].', { facts: [facts] }).audit, [],
-                'one resolution no longer backs a preferred direction: update this rule');
-            assert.ok(!('frequency' in facts.direction), 'the direction fact names its resolution: update this rule');
+            assert.deepEqual([neighbourFrequency(6), neighbourFrequency(2), neighbourFrequency(1)], [5, 1, 2]);
+            // The same axis within the two cells' radii (either sense), and ≥ 3σ at the second resolution.
+            const first = tierPayload(4, 1.5);
+            assert.equal(directionHolds(first, tierPayload(3.2, 1.3, 5, [0, 0.1, -0.99])).holds, true);
+            assert.equal(directionHolds(first, tierPayload(2.9, 1.3, 5, [0, 0.1, 0.99])).holds, false, 'a second resolution below 3σ held');
+            assert.equal(directionHolds(first, tierPayload(3.2, 1.3, 5, [1, 0, 0])).holds, false, 'a peak on another axis held');
+            // One resolution alone is a hint, and backs no preferred direction.
+            const { facts } = summarizeOrientation(tierPayload(SIGNIFICANCE_SIGMA + 1, 1.5), null);
+            assert.deepEqual([facts.direction.tier, facts.direction.because], ['hint', 'unchecked']);
+            findsRule('Site 1 has a preferred displacement direction along [0 0 1].', { facts: [facts] }, 'direction');
+            const held = summarizeOrientation(tierPayload(SIGNIFICANCE_SIGMA + 1, 1.5), null, { neighbour: tierPayload(3.5, 1.3, 5, [0, 0.1, 0.99]) });
+            assert.deepEqual(judgeAnswer('Site 1 has a preferred displacement direction along [0 0 1].', { facts: [held.facts] }).audit, []);
         }
     },
     {
@@ -1248,19 +1519,34 @@ export const RULES = [
         verify: verifyToleranceRule
     },
     // The user's interview of local-order (2026-10-24, answer 6): the diffuse
-    // verdict counts as order between cells; its code is a later PR (ALLOW_LIST).
+    // verdict's short-range order — neighbouring cells in antiphase
+    // (order-signatures.md) — counts as order between cells; in phase is
+    // correlated motion (the interview answer checks, 2026-10-24).
     {
         file: LOCAL_ORDER,
         rule: 'order between cells',
         find: 'no diffuse short-range order: the diffuse verdict',
         after: 80,
-        states: /not the diffuse|only (?:a|the) zone-boundary point and (?:a|the) general/,
+        states: /diffuse short-range order/,
         skill: 'the diffuse verdict past its calibrated bar counts as order between cells, read by arm A+ and the answer checks (the user, 2026-10-24)',
         app: BETWEEN_CELLS_RULE,
         verify: () => {
-            // The modulation fact the answer checks read holds no diffuse verdict today.
+            assert.equal(SWEEP_RULES.diffuseOrder, isDiffuseOrder, 'arm A+ does not read the tool\'s diffuse rule');
+            assert.deepEqual([isDiffuseOrder({ because: 'correlated_antiphase' }), isDiffuseOrder({ because: 'correlated_in_phase' })], [true, false]);
+            assert.equal(isCorrelatedMotion({ because: 'correlated_in_phase' }), true);
             const modulation = FACTS.find((fact) => fact.key === 'modulation');
-            assert.deepEqual(Object.keys(modulation.shape), ['elements', 'ordered', 'general'], 'the modulation fact reads the diffuse verdict: update this rule');
+            assert.ok('diffuse?' in modulation.shape, 'the modulation fact holds no diffuse verdict');
+            // Antiphase is order ("no order" flagged), in phase correlated motion (short-range order flagged, "no order" not).
+            const facts = (phase) => [{
+                modulation: {
+                    elements: ['Nb'], ordered: [], general: [], long_wave_q: 0.25, long_waves: [],
+                    diffuse: [{ element: 'Nb', phase, lag: [1, 0, 0], correlation: phase === 'antiphase' ? -0.3 : 0.3, sigma: 4 }]
+                }
+            }];
+            findsRule('There is no local order beyond thermal motion.', { facts: facts('antiphase') }, 'no-order');
+            assert.deepEqual(judgeAnswer('There is no local order beyond thermal motion.', { facts: facts('in_phase') }).audit, []);
+            findsRule('Nb shows short-range order between cells.', { facts: facts('in_phase') }, 'correlated-motion');
+            findsRule('The Nb displacements are uncorrelated between cells.', { facts: facts('in_phase') }, 'no-correlation');
         }
     },
     // local-order (batch 1) states the same three rules for "no order".
@@ -1313,118 +1599,12 @@ export const RULES = [
 // user's interviews of 2026-10-24. AWAITS CODE: an interviewed skill states the
 // user's rule, which a code PR still has to build (each names its PR); the
 // entry leaves when that code lands.
-// The user's interview of rmc-fit-assessment (2026-10-24): the code half is its own PR off main.
-const FIT_CODE_PR = 'awaits the fit-assessment code PR';
-// The user's interview of coordination-shells (2026-10-24): the firm rule's code is a later PR.
-const SHELLS_CODE_PR = 'awaits the coordination code PR';
-// The user's interview of local-symmetry (2026-10-24): the firm rules' code is a later PR.
-const SYMMETRY_CODE_PR = 'awaits the local-symmetry code PR';
-// The user's interview of displacement-anisotropy (2026-10-24): the tiers, the two resolutions
-// and the firm rule's code are a later PR.
-const ANISOTROPY_CODE_PR = 'awaits the displacement-anisotropy code PR';
-// The user's interview of local-order (2026-10-24): the extended evidence gate and the diffuse
-// verdict's reading are a later answer-check PR. The extended networks' tool (answer 1b),
-// polyhedral_distortion, landed in its own PR (2026-10-24): the tool check finds it among the
-// tools the Copilot offers (buildCopilotTools), so it needs no entry.
-const ORDER_CODE_PR = 'awaits the local-order answer-check code PR';
-export const ALLOW_LIST = [
-    {
-        check: 'firm-rule',
-        file: LOCAL_ORDER,
-        fragment: 'an answer that concludes "no order" is refused until every',
-        why: `AWAITS CODE: the user's firm rule (interview 2026-10-24, answer 5); today the evidence gate asks only for analyze_modulations, one per-site directions map and analyze_clusters for each cluster element: ${ORDER_CODE_PR} (the extended gate), then mapped in FIRM_RULES`
-    },
-    {
-        check: 'rule',
-        file: LOCAL_ORDER,
-        fragment: 'no diffuse short-range order: the diffuse verdict',
-        line: 34,
-        skill: 'the diffuse verdict past its calibrated bar counts as order between cells, read by arm A+ and the answer checks (the user, 2026-10-24)',
-        app: BETWEEN_CELLS_RULE,
-        why: `AWAITS CODE: the user's rule for the diffuse verdict (interview 2026-10-24, answer 6); arm A+ and the answer checks read no diffuse verdict today: ${ORDER_CODE_PR} (the diffuse verdict read as order between cells)`
-    },
-    {
-        check: 'gate',
-        file: ANISOTROPY,
-        fragment: '1.2× isotropic',
-        why: `AWAITS CODE: the user's enhancement line for a finding (interview 2026-10-24, answer 3); no module applies an enhancement threshold to a direction today (summarizeOrientation calls one preferred at ≥ 3σ whatever its enhancement): ${ANISOTROPY_CODE_PR} (the 1.2× constant)`
-    },
-    {
-        check: 'gate',
-        file: ANISOTROPY,
-        fragment: 'below 2.5σ',
-        why: `AWAITS CODE: the user's floor for a hint (interview 2026-10-24, answer 3); summarizeOrientation has no hint tier today: ${ANISOTROPY_CODE_PR} (the tier labels and their 2.5σ constant)`
-    },
-    {
-        check: 'rule',
-        file: ANISOTROPY,
-        fragment: 'Three tiers for a direction',
-        line: 52,
-        skill: 'a finding at ≥ 3σ (unrounded) and ≥ 1.2× isotropic; a hint at ≥ 3σ under 1.2×, or 2.5–3σ; nothing below 2.5σ (the user, 2026-10-24)',
-        app: DIRECTION_TIERS_RULE,
-        why: `AWAITS CODE: the user's three tiers (interview 2026-10-24, answer 3); analyze_displacement_directions labels a preferred direction or none, with no hint: ${ANISOTROPY_CODE_PR} (the tier labels)`
-    },
-    {
-        check: 'rule',
-        file: ANISOTROPY,
-        fragment: 'Two resolutions for a finding.',
-        line: 58,
-        skill: 'a finding holds at the Auto ν and at a neighbouring ν (ν ± 1); one at the Auto ν alone is a hint (the user, 2026-10-24)',
-        app: DIRECTION_RESOLUTION_RULE,
-        why: `AWAITS CODE: the user's neighbouring-ν rule (interview 2026-10-24, answer 4); one analysis at one frequency backs a preferred direction today: ${ANISOTROPY_CODE_PR} (a finding at two resolutions)`
-    },
-    {
-        check: 'firm-rule',
-        file: ANISOTROPY,
-        fragment: 'an answer that calls a split or flat-topped site "disorder"',
-        why: `AWAITS CODE: the user's firm rule (interview 2026-10-24, answer 8); today the evidence gate's split-site claim sends back a split site called random disorder until analyze_modulations ran in the question, for any element, and reads no flat-topped site: ${ANISOTROPY_CODE_PR} (its answer check), then mapped in FIRM_RULES`
-    },
-    {
-        check: 'firm-rule',
-        file: SYMMETRY,
-        fragment: 'an answer that claims a group–subgroup relation that',
-        why: `AWAITS CODE: the user's firm rule (interview 2026-10-24, answer 4a); no answer check reads a group–subgroup claim today: ${SYMMETRY_CODE_PR} (its answer check), then mapped in FIRM_RULES`
-    },
-    {
-        check: 'firm-rule',
-        file: SYMMETRY,
-        fragment: 'an answer that claims a cell doubling the box\'s average',
-        why: `AWAITS CODE: the user's firm rule (interview 2026-10-24, answer 4b); the superstructure check reads analyze_modulations, not what the box's average structure can hold: ${SYMMETRY_CODE_PR} (its answer check), then mapped in FIRM_RULES`
-    },
-    {
-        check: 'firm-rule',
-        file: SHELLS,
-        fragment: 'every CN or angle in an answer carries its window in Å',
-        why: `AWAITS CODE: the user's firm rule (interview 2026-10-24, answer 8); no answer check flags a CN or angle without its window today: ${SHELLS_CODE_PR} (its answer check), then mapped in FIRM_RULES`
-    },
-    {
-        check: 'rule',
-        file: FIT,
-        fragment: 'Judge every fit term and the total',
-        line: 26,
-        skill: 'every fit term and the total, none still falling beyond its noise over the last tenth',
-        app: CONVERGENCE_RULE,
-        why: `AWAITS CODE: the user's convergence rule (interview 2026-10-24, answer 1); assess_convergence and the watchdog judge one term today: ${FIT_CODE_PR} (every-term convergence)`
-    },
-    {
-        check: 'gate',
-        file: FIT,
-        fragment: 'When g(r) just above the cut is above 5 % of the',
-        line: 38,
-        skill: '5 %',
-        tool: 'SEPARATION_G_FRACTION = 0.02',
-        why: `AWAITS CODE: the user's line for a constraint-limited peak (interview 2026-10-24, answer 4); find_gr_peaks flags it at 2 % today: ${FIT_CODE_PR} (the 5 % constraint constant)`
-    },
-    {
-        check: 'firm-rule',
-        file: FIT,
-        fragment: 'an answer that claims order at a box-scale wavevector',
-        why: `AWAITS CODE: the user's firm rule (interview 2026-10-24, answer 8a); no answer check flags it today: ${FIT_CODE_PR} (its answer check), then mapped in FIRM_RULES`
-    },
-    {
-        check: 'firm-rule',
-        file: FIT,
-        fragment: 'an answer that quotes a distribution from a single',
-        why: `AWAITS CODE: the user's firm rule (interview 2026-10-24, answer 8b); no answer check flags it today: ${FIT_CODE_PR} (its answer check), then mapped in FIRM_RULES`
-    }
-];
+// The user's interview of rmc-fit-assessment (2026-10-24): its four entries (the every-term
+// convergence rule, the 5 % constraint and two firm rules) left with the fit-assessment code PR,
+// which bound them above (RULES, BINDINGS, FIRM_RULES).
+// The interviews of coordination-shells, local-symmetry, displacement-anisotropy and local-order
+// (2026-10-24): their nine entries (five firm rules, two gates, three rules but one) left with the
+// interview answer checks, which bound them above (FIRM_RULES, BINDINGS, RULES). The extended
+// networks' tool, polyhedral_distortion, landed in its own PR (2026-10-24): the tool check finds it
+// among the tools the Copilot offers (buildCopilotTools), so it needs no entry.
+export const ALLOW_LIST = [];

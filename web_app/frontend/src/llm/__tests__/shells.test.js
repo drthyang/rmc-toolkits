@@ -17,6 +17,7 @@ import {
     CN_CHANGE_ABS,
     CN_CHANGE_REL,
     CN_MATCH_TOLERANCE,
+    CONSTRAINT_LIMIT_FRACTION,
     CUT_SHIFT_A,
     IDEAL_COORDINATION,
     MODAL_COORDINATION_SHARE,
@@ -25,6 +26,9 @@ import {
     SHELL_TROUGH_FRACTION,
     SPLIT_SHELL_REACH_A,
     UNBONDED_APEX_FRACTION,
+    AVERAGE_SHELL_REACH_A,
+    averageShellCheck,
+    averageStructureBonds,
     cnChanges,
     cnMarginCut,
     cnMatches,
@@ -225,7 +229,37 @@ describe('one search range: peaks below 8 Å, the closing minimum to max(8, r₁
     });
 });
 
-describe('separation and the closest-approach pile-up: one fraction, SEPARATION_G_FRACTION', () => {
+describe('the constraint-limited rule: g above 5 % of the peak at the cut (the user\'s rule, 2026-10-24)', () => {
+    // A Ga–Se peak at 2.42 Å (σ 0.1 Å) cut at its closest-approach
+    // constraint: g is 0 below it, and just above it the share of the first
+    // peak that the cut's position sets.
+    const settings = (limit) => ({ atoms: ['Ga', 'Se'], minimumDistancesA: [3.0, limit, 3.0] });
+    const cutAt = (limit) => {
+        const x = grid(1000, 0.01);
+        const series = { label: 'Ga-Se', x, y: x.map((r) => (r <= limit ? 0 : gaussian(r, 2.42, 0.1, 8))) };
+        return catalogueOf(series, { runSettings: settings(limit) }).shell('Ga', 'Se').constraint;
+    };
+
+    it('its own constant, 5 %; the shell separation keeps 2 %', () => {
+        expect(CONSTRAINT_LIMIT_FRACTION).toBe(0.05);
+        expect(SEPARATION_G_FRACTION).toBe(0.02);
+    });
+
+    it('3 % of the peak at the cut is not constraint-limited (it was under the old 2 %)', () => {
+        const constraint = cutAt(2.13);
+        expect(Math.round(constraint.gFraction * 100)).toBe(3);
+        expect(constraint.gFraction).toBeGreaterThan(SEPARATION_G_FRACTION);
+        expect(constraint).toMatchObject({ limitA: 2.13, limited: false });
+    });
+
+    it('9 % of the peak at the cut is constraint-limited, like the Demo\'s Ga–Se (8.7 % at 2.2 Å)', () => {
+        const constraint = cutAt(2.18);
+        expect(Math.round(constraint.gFraction * 100)).toBe(9);
+        expect(constraint).toMatchObject({ limitA: 2.18, limited: true });
+    });
+});
+
+describe('the shell separation (SEPARATION_G_FRACTION, 2 %) and the closest-approach pile-up', () => {
     it('a shell is separated when g at its boundary is at most 2 % of its peak', () => {
         expect(SEPARATION_G_FRACTION).toBe(0.02);
         const x = grid(700, 0.01);
@@ -242,6 +276,9 @@ describe('separation and the closest-approach pile-up: one fraction, SEPARATION_
         expect(clean.separated).toBe(true);
     });
 
+    // The title keeps the 2 % of the shell-catalogue decision that cites it
+    // (2026-10-19); since 2026-10-24 the constraint has its own fraction, 5 %
+    // (CONSTRAINT_LIMIT_FRACTION, the describe above). Both cases hold under it.
     it('a constraint limits a pair when raw g just above it is above 2 % of the peak — the FWHM edge clause is gone', () => {
         const settings = (limit) => ({ atoms: ['Ga', 'Se'], minimumDistancesA: [3.0, limit, 3.0] });
         // Cut at the constraint: g is 0 below 2.2 Å, ~9 % of the peak just above it.
@@ -259,6 +296,7 @@ describe('separation and the closest-approach pile-up: one fraction, SEPARATION_
         expect(peak.r - peak.fwhm / 2).toBeLessThanOrEqual(2.43 + 0.05);
         const clear = catalogueOf(sharp, { runSettings: settings(2.43) }).shell('Ga', 'Se').constraint;
         expect(clear.gFraction).toBeLessThan(SEPARATION_G_FRACTION);
+        expect(clear.gFraction).toBeLessThan(CONSTRAINT_LIMIT_FRACTION);
         expect(clear.limited).toBe(false);
         // No constraint for the pair: none.
         expect(catalogueOf(cutSeries).shell('Ga', 'Se').constraint).toBeNull();
@@ -619,6 +657,52 @@ describe('the CN match and the two cut readings', () => {
         // Nothing to decide with (the Workbench, before a call): not cut.
         expect(windowCut(apart)).toEqual({ cut: false, by: null, rule: null, whole: false });
         expect(windowCut(null)).toEqual({ cut: false, by: null, rule: null, whole: false });
+    });
+});
+
+describe('the average structure\'s first shell: find_gr_peaks\' cross-check (the user\'s rule, 2026-10-24)', () => {
+    // A 10 Å cubic cell (supercell 2×2×2: the conventional cell is the
+    // lattice over it): a centre M at the cell's centre with four X at 1.93 Å
+    // in a square and a fifth at 2.40 Å above it, a 4 + 1 pyramid, and a
+    // second X site with no M within the reach.
+    const a = 10;
+    const site = (el, x, y, z) => ({ el, frac: [x / a, y / a, z / a] });
+    const structure = {
+        latticeVectors: [[2 * a, 0, 0], [0, 2 * a, 0], [0, 0, 2 * a]],
+        supercell: [2, 2, 2],
+        basis: [
+            site('M', 5, 5, 5),
+            site('X', 6.93, 5, 5), site('X', 3.07, 5, 5), site('X', 5, 6.93, 5), site('X', 5, 3.07, 5), site('X', 5, 5, 7.4),
+            site('X', 0.5, 0.5, 0.5)
+        ]
+    };
+
+    it('reads every bond between site means from the shortest to the join\'s reach beyond it, either way round', () => {
+        expect(AVERAGE_SHELL_REACH_A).toBe(SPLIT_SHELL_REACH_A);
+        expect(averageStructureBonds(structure, 'M', 'X')).toEqual([1.93, 2.4]);
+        expect(averageStructureBonds(structure, 'X', 'M')).toEqual([1.93, 2.4]);
+        // Not each site's nearest partner: the lone X's nearest M (7.79 Å) is no bond.
+        expect(Math.max(...averageStructureBonds(structure, 'X', 'M'))).toBeLessThan(1.93 + AVERAGE_SHELL_REACH_A + 1e-9);
+        // Periodic, through the cell metric: two M a cell apart along a are 10 Å apart.
+        expect(averageStructureBonds(structure, 'M', 'M')).toEqual([10]);
+        expect(averageStructureBonds({ ...structure, basis: [] }, 'M', 'X')).toEqual([]);
+        expect(averageStructureBonds(structure, 'M', 'Y')).toEqual([]);
+        expect(averageStructureBonds(null, 'M', 'X')).toEqual([]);
+    });
+
+    it('disagrees only when a bond lies outside the window by more than the first peak\'s FWHM', () => {
+        const shell = { window: [1.7, 2.17], peaks: [{ r: 1.93, fwhm: 0.12 }] };
+        expect(averageShellCheck(shell, [1.93])).toEqual({ bonds: [1.93, 1.93], outsideA: 0, widthA: 0.12, disagrees: false });
+        // The pyramid's fifth bond, 0.23 Å past the closing minimum.
+        expect(averageShellCheck(shell, [1.93, 2.4])).toMatchObject({ bonds: [1.93, 2.4], disagrees: true });
+        expect(averageShellCheck(shell, [1.93, 2.4]).outsideA).toBeCloseTo(0.23, 12);
+        // Just within one width beyond the window, and just past it.
+        expect(averageShellCheck(shell, [2.28]).disagrees).toBe(false);
+        expect(averageShellCheck(shell, [2.3]).disagrees).toBe(true);
+        // Below the window's onset too.
+        expect(averageShellCheck(shell, [1.5]).disagrees).toBe(true);
+        expect(averageShellCheck({ window: null, peaks: [] }, [1.93])).toBeNull();
+        expect(averageShellCheck(shell, [])).toBeNull();
     });
 });
 

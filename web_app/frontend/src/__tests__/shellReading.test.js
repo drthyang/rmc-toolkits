@@ -16,7 +16,7 @@ import { buildClarifier } from '../llm/copilot/clarify';
 import { buildRunTools } from '../llm/copilot/runTools';
 import { createVerification } from '../llm/copilot/verification';
 import { buildRunContext } from '../llm/context/runContext';
-import { CLUSTER_CN_MAX, CN_MATCH_TOLERANCE, clusterElementsOf, shellCatalogue } from '../llm/context/shells';
+import { CLUSTER_CN_MAX, CN_MATCH_TOLERANCE, clusterElementsOf, networkCentresOf, POLYHEDRON_COUNTS, shellCatalogue } from '../llm/context/shells';
 import { buildCase, DEV_CASES } from '../../validation/cases';
 import { loadRun } from '../../validation/runFolder';
 import { runArmSweep } from '../../validation/armA';
@@ -113,6 +113,32 @@ describe('one shell reading per pair, per run', () => {
             .map((shell) => `${shell.centre} clusters in ${shell.window[0]}–${shell.window[1]} Å (engine verdict)`);
         expect(windows).toEqual(expected);
     }, 60000);
+
+    // The local-order interview (2026-10-24): "no order" needs
+    // polyhedral_distortion on each centre of octahedra or tetrahedra no
+    // finite cluster holds (networkCentresOf): its nearest first shell of
+    // another element holds 4 or 6, its own holds no finite cluster.
+    it('the centres of polyhedra no finite cluster holds: the Demo\'s GaSe₄, a perovskite\'s BO₆, both rock-salt and zincblende sites, no cluster element', () => {
+        expect(POLYHEDRON_COUNTS).toEqual([4, 6]);
+        const centres = (name) => networkCentresOf(shellCatalogue(runs.get(name).props));
+        // The Demo: Ga (4 Se, Ga–Ga twelve); not Ta, a cluster element whose TaSe₆ octahedra analyze_clusters reaches; not Se (½ Ga).
+        expect(centres('demo')).toEqual(['Ga']);
+        expect(clusterElementsOf(shellCatalogue(runs.get('demo').props))).toEqual(['Ta']);
+        // Perovskites: the B site (BO₆; B–B six), not the A site (AO₁₂) nor O (two B).
+        for (const [name, centre] of [['dev-zone-boundary', 'Ti'], ['dev-thermal-null', 'Ti'], ['dev-offcentre', 'Nb'], ['dev-symmetry-lowering', 'Ta']]) {
+            expect(centres(name), name).toEqual([centre]);
+        }
+        // MgO (rock salt) and CuBr (zincblende): both sites; isolated CuF₆ (each F bonds one Cu): Cu, F's own F–F shell a cluster's.
+        expect(centres('dev-fit-unconverged')).toEqual(['Mg', 'O']);
+        expect(centres('dev-chirality-trap')).toEqual(['Br', 'Cu']);
+        expect(centres('dev-jahn-teller')).toEqual(['Cu']);
+        // Cluster elements only (Mo₃, W₆): no centre outside them.
+        expect(centres('dev-breathing')).toEqual([]);
+        expect(centres('dev-octahedral-clusters')).toEqual([]);
+        // FeSi (seven Si): no octahedron or tetrahedron.
+        expect(centres('dev-chiral')).toEqual([]);
+        expect(networkCentresOf(null)).toEqual([]);
+    });
 
     // Plan item 4.2: a joined shell's split by number. The Demo joins no
     // shell (its Ta–Se and Se–Se peaks overlap without a deep trough), so it

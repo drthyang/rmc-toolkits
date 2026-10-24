@@ -226,7 +226,22 @@ export const summarizeSites = (payload, { element = null, unitCell = undefined }
     if (sites.length && !checks.some((check) => check.level === 'warn' || check.level === 'fail')) {
         checks.push({ level: 'ok', text: `${sites.length} sites, ${payload?.totalAtoms ?? '?'} atoms.` });
     }
-    return { data, checks };
+    // For the disorder check (the displacement-anisotropy interview,
+    // 2026-10-24): which sites are split (the app's rule) or flat-topped (a
+    // negative Mardia kurtosis that misses it), with their species.
+    const facts = {
+        sites: picked.map((site) => {
+            const split = isSplitSite(site);
+            return {
+                ref: site.referenceNumber,
+                element: site.element,
+                elements: Object.keys(site.elementCounts || { [site.element]: 1 }),
+                split,
+                flat: !split && Number.isFinite(site.nonGaussianity) && site.nonGaussianity < 0
+            };
+        })
+    };
+    return { data, checks, facts };
 };
 
 // --- analyze_displacement_directions ---------------------------------------------
@@ -259,6 +274,72 @@ const anglesToCell = (direction, unitCell) => unitCell.map((edge) => {
 // (validation/armA.js, SWEEP_RULES.directionResolved).
 export const directionResolved = (radiusDeg) => Number.isFinite(radiusDeg) && radiusDeg <= LOW_INDEX_CONE_DEG;
 
+// --- a direction's tier (the displacement-anisotropy interview, 2026-10-24) -----
+
+// The user's three tiers for a peak direction, on its unrounded σ and its
+// enhancement: a finding at ≥ 3σ and ≥ 1.2× isotropic that holds at a
+// neighbouring resolution; a hint at ≥ 3σ under 1.2×, or 2.5–3σ, or one
+// that holds only at the engine's own resolution; nothing below 2.5σ.
+export const DIRECTION_FINDING_ENHANCEMENT = 1.2;
+export const DIRECTION_HINT_SIGMA = 2.5;
+
+/**
+ * The neighbouring resolution a finding is checked at: ν − 1, or ν + 1 at
+ * ν = 1. The engine's resolution (recommended_frequency) is the finest tiling
+ * whose cells keep at least 12 points each on average; ν − 1 keeps that
+ * occupancy (coarser cells, more points each), ν + 1 would take it below the
+ * engine's own floor.
+ */
+export const neighbourFrequency = (frequency) => (frequency > 1 ? frequency - 1 : frequency + 1);
+
+// The angle (degrees) between two directions taken as axes (±u one axis).
+const axisAngleDeg = (u, v) => {
+    const norm = Math.hypot(...u) * Math.hypot(...v);
+    if (!(norm > 0)) return null;
+    const cosine = Math.abs(u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / norm;
+    return Math.acos(Math.min(1, cosine)) * 180 / Math.PI;
+};
+
+/**
+ * Whether a peak direction holds at the neighbouring resolution (`second`,
+ * the engine's payload there): its own peak test passes (≥ 3σ, corrected over
+ * its own cells) and its peak cell can hold the same axis as the first's —
+ * the two directions, taken as axes, lie within the sum of the two cells'
+ * radii (every direction assigned to a cell lies within its radius of its
+ * centre). An axis, not a sense: the map is not antipodally folded, and a
+ * site with two equal wells puts its peak on either well from one tiling to
+ * the next (dev-jahn-teller's F: 148° apart at ν = 1 and 2); the +u/−u
+ * imbalance has its own test. Returns { holds, apartDeg }.
+ */
+export const directionHolds = (first, second) => {
+    const apartDeg = Array.isArray(first?.peakDirection) && Array.isArray(second?.peakDirection)
+        ? axisAngleDeg(first.peakDirection, second.peakDirection) : null;
+    const within = apartDeg != null && Number.isFinite(first.peakCellRadiusDeg) && Number.isFinite(second.peakCellRadiusDeg)
+        && apartDeg <= first.peakCellRadiusDeg + second.peakCellRadiusDeg + 1e-9;
+    return { holds: Boolean(within && second.peakSignificance >= SIGNIFICANCE_SIGMA), apartDeg };
+};
+
+/**
+ * A peak direction's tier: { tier: 'finding' | 'hint' | 'none', because }.
+ * `first` is the engine's payload at the call's resolution, `second` at the
+ * other of the pair (null when not asked), `auto` whether the call's
+ * resolution is the engine's own or beside it (Auto ± 1): a finding is
+ * judged on the Auto resolution and a neighbour.
+ */
+export const directionTier = (first, second = null, { auto = true } = {}) => {
+    const sigma = first?.peakSignificance;
+    if (!(sigma >= DIRECTION_HINT_SIGMA)) return { tier: 'none', because: 'below_hint_sigma' };
+    if (sigma < SIGNIFICANCE_SIGMA) return { tier: 'hint', because: 'below_sigma' };
+    if (!(first.peakEnhancement >= DIRECTION_FINDING_ENHANCEMENT)) return { tier: 'hint', because: 'small_enhancement' };
+    if (!auto) return { tier: 'hint', because: 'not_auto' };
+    if (!second) return { tier: 'hint', because: 'unchecked' };
+    return directionHolds(first, second).holds ? { tier: 'finding', because: 'holds' } : { tier: 'hint', because: 'not_held' };
+};
+
+/** Whether a peak is a finding candidate: ≥ 3σ and ≥ 1.2× isotropic (what the neighbouring resolution then checks). */
+export const directionCandidate = (payload) => payload?.peakSignificance >= SIGNIFICANCE_SIGMA
+    && payload.peakEnhancement >= DIRECTION_FINDING_ENHANCEMENT;
+
 // The peak direction as the checks write it: the crystal [u v w], else the
 // Cartesian triple.
 const peakDirectionText = (peak) => {
@@ -267,7 +348,19 @@ const peakDirectionText = (peak) => {
     return 'the peak cell\'s centre';
 };
 
-// direction_uvw, angles_to_abc_deg and principal_axis_uvw need the unit cell.
+// The engine's payload at the neighbouring resolution, as the result holds it.
+const NEIGHBOUR_SHAPE = {
+    frequency: 'number',
+    significance_sigma: 'number|null',
+    enhancement: 'number|null',
+    radius_deg: 'number|null',
+    apart_deg: 'number|null',
+    holds: 'boolean'
+};
+
+// direction_uvw, angles_to_abc_deg and principal_axis_uvw need the unit cell;
+// neighbour only when the neighbouring resolution was asked (a finding
+// candidate at the engine's own resolution).
 const ORIENTATION_SHAPE = {
     note: 'string',
     site: 'number|null',
@@ -285,8 +378,10 @@ const ORIENTATION_SHAPE = {
         direction_cartesian: oneOf(XYZ, 'null'),
         'direction_uvw?': oneOf(XYZ, 'null'),
         'angles_to_abc_deg?': XYZ,
-        radius_deg: 'number|null'
+        radius_deg: 'number|null',
+        tier: 'string'
     },
+    'neighbour?': NEIGHBOUR_SHAPE,
     map_significance_sigma: 'number|null',
     antipodal_asymmetry: 'number|null',
     antipodal_asymmetry_z: 'number|null',
@@ -300,8 +395,16 @@ const ORIENTATION_SHAPE = {
     recommended_frequency: 'number'
 };
 
-export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}) => {
+/**
+ * The directions result the model reads. `neighbour` is the engine's payload
+ * at the neighbouring resolution (neighbourFrequency), asked for a finding
+ * candidate at the engine's own resolution; `auto` whether the call ran at
+ * the engine's own resolution. The peak's tier (directionTier) leads its
+ * check, and the answer check reads it (facts.direction.tier).
+ */
+export const summarizeOrientation = (payload, unitCell, { pooledSites = 0, neighbour = null, auto = true } = {}) => {
     const direction = payload.peakDirection;
+    const { tier, because } = directionTier(payload, neighbour, { auto });
     const peak = {
         enhancement: round(payload.peakEnhancement),
         count: payload.peakCount,
@@ -316,6 +419,8 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
     // How finely the peak names its direction: the peak cell's radius.
     const radius = Number.isFinite(payload.peakCellRadiusDeg) ? roundFixed(payload.peakCellRadiusDeg, 1) : null;
     peak.radius_deg = radius;
+    peak.tier = tier;
+    const held = neighbour ? directionHolds(payload, neighbour) : null;
     const tensor = {
         eigenvalues: (payload.orientationEigenvalues || []).map((value) => round(value)),
         anisotropy: round(payload.orientationAnisotropy),
@@ -328,7 +433,10 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
     const data = {
         note: 'enhancement = density / isotropic (1 = isotropic); significances are calibrated one-sided sigma; '
             + 'the map is not antipodally folded, so +u and −u differ; [u v w] is a direct-lattice direction, not a plane normal; '
-            + 'peak.radius_deg is the peak cell\'s radius: the peak names its direction only to within it',
+            + 'peak.radius_deg is the peak cell\'s radius: the peak names its direction only to within it; '
+            + `peak.tier: finding (≥ ${SIGNIFICANCE_SIGMA}σ, ≥ ${DIRECTION_FINDING_ENHANCEMENT}×, held at the neighbouring resolution), hint, `
+            + `or none (below ${DIRECTION_HINT_SIGMA}σ); the first check says why`
+            + (neighbour ? '; neighbour: the peak at that resolution (held: ≥ 3σ, the same axis within the two cells\' radii)' : ''),
         site: payload.referenceNumber ?? null,
         element: payload.element ?? 'all',
         frequency: payload.frequency,
@@ -337,6 +445,16 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
         rejected_points: payload.rejectedPoints,
         enhancement_range: [round(payload.vmin), round(payload.vmax)],
         peak,
+        ...(neighbour ? {
+            neighbour: {
+                frequency: neighbour.frequency,
+                significance_sigma: round(neighbour.peakSignificance),
+                enhancement: round(neighbour.peakEnhancement),
+                radius_deg: Number.isFinite(neighbour.peakCellRadiusDeg) ? roundFixed(neighbour.peakCellRadiusDeg, 1) : null,
+                apart_deg: held.apartDeg == null ? null : roundFixed(held.apartDeg, 1),
+                holds: held.holds
+            }
+        } : {}),
         map_significance_sigma: round(payload.mapSignificance),
         antipodal_asymmetry: round(payload.antipodalAsymmetry),
         antipodal_asymmetry_z: round(payload.antipodalAsymmetryZ),
@@ -348,35 +466,53 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
     if (payload.usedPoints < MIN_ORIENTATION_POINTS) {
         checks.push({ level: 'warn', text: `Only ${payload.usedPoints} displacement vectors: the map is noisy.` });
     }
-    if (payload.peakSignificance >= SIGNIFICANCE_SIGMA) {
-        const strength = `the peak cell is ${round(payload.peakEnhancement)}× isotropic at ${round(payload.peakSignificance)}σ (corrected over all cells)`;
-        const where = `${peakDirectionText(peak)}${radius == null ? '' : ` ± ${radius}°, the cell radius at ν = ${payload.frequency}`}`;
+    const sigma = round(payload.peakSignificance);
+    const strength = `the peak cell is ${round(payload.peakEnhancement)}× isotropic at ${sigma}σ (corrected over all cells)`;
+    const where = `${peakDirectionText(peak)}${radius == null ? '' : ` ± ${radius}°, the cell radius at ν = ${payload.frequency}`}`;
+    const atNeighbour = neighbour
+        ? `at ν = ${neighbour.frequency} the peak is ${round(neighbour.peakSignificance)}σ, ${held.apartDeg == null ? 'its direction unknown' : `${roundFixed(held.apartDeg, 1)}° from it as an axis`} `
+            + `(the two cells' radii ${roundFixed(payload.peakCellRadiusDeg + neighbour.peakCellRadiusDeg, 1)}°)`
+        : '';
+    if (tier === 'finding') {
         checks.push({
             level: 'ok',
             // A cell wider than LOW_INDEX_CONE_DEG cannot say which low-index
             // family the direction belongs to: say so, and name none.
             text: radius != null && !directionResolved(radius)
-                ? `Preferred direction: ${strength}, toward ${where}. The direction is not resolved finer than ${radius}° `
-                    + `(over ${LOW_INDEX_CONE_DEG}°), so it names no <100>, <110> or <111> family.`
-                : `Preferred direction: ${where}; ${strength}.`
+                ? `Preferred direction (a finding): ${strength}, toward ${where}; it holds: ${atNeighbour}. The direction is not resolved `
+                    + `finer than ${radius}° (over ${LOW_INDEX_CONE_DEG}°), so it names no <100>, <110> or <111> family.`
+                : `Preferred direction (a finding): ${where}; ${strength}; it holds: ${atNeighbour}.`
         });
+    } else if (tier === 'hint') {
+        const why = {
+            below_sigma: `the peak is ${sigma}σ, between ${DIRECTION_HINT_SIGMA}σ and ${SIGNIFICANCE_SIGMA}σ`,
+            small_enhancement: `${strength}, under the ${DIRECTION_FINDING_ENHANCEMENT}× a finding needs`,
+            not_held: `${strength}, but it does not hold: ${atNeighbour}`,
+            not_auto: `${strength}, but at ν = ${payload.frequency}, neither the engine's resolution (ν = ${payload.recommendedFrequency}) nor beside it, where a finding is judged`,
+            unchecked: `${strength}, not checked at a neighbouring resolution`
+        }[because];
+        checks.push({ level: 'note', text: `A hint of a direction, not a finding: ${why}; toward ${where}.` });
     } else {
-        checks.push({ level: 'note', text: `No significant peak direction (${round(payload.peakSignificance)}σ < ${SIGNIFICANCE_SIGMA}σ).` });
+        checks.push({
+            level: 'note',
+            text: `No preferred direction: the peak is ${sigma}σ, below ${DIRECTION_HINT_SIGMA}σ: nothing to report.`
+        });
     }
     if (payload.mapSignificance == null) {
         checks.push({ level: 'note', text: 'The whole-map test is undefined here (too few points per cell).' });
     } else if (payload.mapSignificance >= SIGNIFICANCE_SIGMA) {
         // Any anisotropic Gaussian ellipsoid passes the map test (a
         // thermal-only O flattened across its bond: map 7.2σ, peak 2.3σ):
-        // it shows anisotropy, and only the peak test a preferred direction.
+        // it shows anisotropy, and only a finding of the peak test a
+        // preferred direction.
         checks.push({
             level: 'ok',
             text: `The displacements are anisotropic: the map departs from isotropy at ${round(payload.mapSignificance)}σ. `
-                + (payload.peakSignificance >= SIGNIFICANCE_SIGMA
+                + (tier === 'finding'
                     ? (radius != null && !directionResolved(radius)
                         ? 'The peak test above places the preferred direction only to within its cell.'
                         : 'The peak test above names the preferred direction.')
-                    : 'Thermal ellipsoids pass this test too: it is not a preferred direction, which needs the peak test.')
+                    : 'Thermal ellipsoids pass this test too: it is not a preferred direction, which needs a finding of the peak test.')
         });
     }
     if (payload.peakTieCount > 1) {
@@ -400,18 +536,26 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
                 + 'against a per-site or cluster distortion.',
             { method: ' Test single sites (site_ref), or analyze_clusters for a cluster\'s shape.' }));
     }
-    // For the answer check: no "preferred direction" unless the peak test of
-    // one of the question's analyses found it at ≥ 3σ. The map test alone is
-    // anisotropy (review L3, approved 2026-10-14): before, it counted too, and
-    // let a preferred direction through on plain thermal anisotropy.
+    // For the answer check: no "preferred direction" unless one of the
+    // question's analyses found one — a finding of the user's tiers
+    // (2026-10-24); before, any peak at ≥ 3σ. The map test alone is
+    // anisotropy (review L3, approved 2026-10-14).
+    const subject = payload.referenceNumber != null ? `site ${payload.referenceNumber}` : (payload.element || 'all atoms');
     const facts = {
         direction: {
-            subject: payload.referenceNumber != null ? `site ${payload.referenceNumber}` : (payload.element || 'all atoms'),
+            subject,
             significant: payload.peakSignificance >= SIGNIFICANCE_SIGMA,
             anisotropic: payload.mapSignificance >= SIGNIFICANCE_SIGMA,
-            peak_sigma: round(payload.peakSignificance),
-            map_sigma: payload.mapSignificance == null ? null : round(payload.mapSignificance)
-        }
+            peak_sigma: sigma,
+            map_sigma: payload.mapSignificance == null ? null : round(payload.mapSignificance),
+            tier,
+            because,
+            enhancement: round(payload.peakEnhancement),
+            frequency: payload.frequency
+        },
+        // For the single-configuration check (the user's rule, 2026-10-24):
+        // a distribution read from the run's one configuration.
+        distribution: { kind: 'directions', subject: `the ${subject} displacement-direction distribution`, configurations: 1 }
     };
     return { data, checks, facts };
 };
@@ -694,6 +838,10 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false, shells =
             ' If the user wants this window, ask them (ask_user) and call again with window_confirmed: true.'));
         return { data, checks, facts };
     }
+    // For the single-configuration check (the user's rule, 2026-10-24): the
+    // angle distribution and the coordination counts of the run's one
+    // configuration (a refused window returns no distribution).
+    if (total > 0) facts.distribution = { kind: 'bond_angles', subject: `the ${a}–${b}–${c} bond-angle distribution`, configurations: 1 };
     if (cutText) checks.push({ level: 'warn', text: `${cutText} Kept: the user chose this window; say that its angles are of a partial shell.` });
     if (!cutText) {
         checks.push({ level: 'ok', text: `${total} angles around ${apexTotal} ${b} atoms (mean coordination ${round(meanCoordination)}).` });
@@ -943,6 +1091,24 @@ const polyhedronShellWindows = (args) => [{
 
 // analyze_clusters' own result budget (characters of the tool message).
 export const CLUSTER_RESULT_BUDGET = 4500;
+
+/**
+ * analyze_clusters' method advice (llm copilot/method.js; arm C reads none):
+ * where its window comes from, and which questions it answers — finite
+ * clusters, never a corner-sharing polyhedron or another extended network,
+ * which has no finite clusters for its null (the coordination-shells
+ * interview, 2026-10-24, answer 7: a distortion index there). `polyhedra`:
+ * the run offers polyhedral_distortion, which the advice then names.
+ */
+// (A constant: written inline before a ternary's colon, the tool name read as
+// a result field to the skill lint's key scan.)
+const POLYHEDRA_ADVICE = ': use polyhedral_distortion';
+export const clusterMethod = ({ polyhedra = false } = {}) => [
+    { after: 'in the average structure', text: ' (take the window from find_gr_peaks: first_shell.window_A of that element pair)' },
+    'Use it for finite clusters (dimers, trimers, M4 tetrahedra, isolated polyhedra): their distortion, Jahn–Teller, '
+        + 'dimerization or trimerization; single-site displacement directions cannot show these. Corner-sharing polyhedra '
+        + `or another extended network have no finite clusters for its null${polyhedra ? POLYHEDRA_ADVICE : ''}.`
+];
 
 // One statistic against its null: change = obs/null − 1, when both are finite.
 const NULL_ROW = { obs: 'number|null', null: 'number|null', z: 'number|null', 'change?': 'number' };
@@ -1296,7 +1462,10 @@ export const summarizeClusters = (payload) => {
             rigid: verdict.rigid.answer,
             split: verdict.splitMemberSites.answer,
             families: favoured.map((family) => `${AXIS_VERB[family.axis]} <${family.family}>`)
-        }
+        },
+        // For the single-configuration check (the user's rule, 2026-10-24):
+        // the clusters' shape distribution in the run's one configuration.
+        distribution: { kind: 'cluster_shape', subject: `the ${element}${kind.members} cluster-shape distribution`, configurations: 1 }
     };
     return { data, checks, facts };
 };
@@ -1439,6 +1608,17 @@ const polarisedText = (row) => {
 // "Ga", "Ga and Se", "Ga, Se and Ta".
 const listText = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0]);
 
+/**
+ * How the diffuse verdict (the modulation engine's diffuseOrder finding) is
+ * read (the local-order interview, 2026-10-24): only a correlation in
+ * antiphase that passes its bar is order between cells; one in phase is
+ * correlated motion — neighbouring cells moving together — never order, and
+ * correlation all the same. The tool's facts and arm A+
+ * (validation/armA.js, SWEEP_RULES.diffuseOrder) read these.
+ */
+export const isDiffuseOrder = (finding) => finding?.because === 'correlated_antiphase';
+export const isCorrelatedMotion = (finding) => finding?.because === 'correlated_in_phase';
+
 export const MODULATION_SENTENCES = {
     cellDoubling: {
         ordered_point: ({ element, point, family, polarisation }) => ({
@@ -1482,7 +1662,9 @@ export const MODULATION_SENTENCES = {
     },
     // Plan item 4.4: correlation between neighbouring cells spread over many
     // q. In antiphase it is short-range order, said per element; in phase it
-    // is neighbouring cells moving together, said once for every element.
+    // is neighbouring cells moving together, correlated motion and not order
+    // (the local-order interview, 2026-10-24: only antiphase or general-q
+    // order past its bar is order), said once for every element.
     diffuseOrder: {
         correlated_antiphase: ({ element, diffuse, family }) => ({
             level: 'ok',
@@ -1494,9 +1676,10 @@ export const MODULATION_SENTENCES = {
         correlated_in_phase: ({ elements, strongest, diffuse }) => methodCheck('note',
             `${listText(elements)} displacements are correlated in phase between neighbouring cells (${elements.length > 1 ? `the strongest, ${strongest}, ` : ''}`
                 + `${signedText(round(diffuse.correlation, 2))} between cells ${lagLabel(diffuse.lag)} apart, ${sigmaText(diffuse.sigma)} against `
-                + 'independent cells): the power beyond the long waves leans toward the zone centre — neighbouring cells moving together',
-            { method: ' (as RMC\'s long waves and acoustic-like thermal motion give)' },
-            ', not a superstructure.'),
+                + 'independent cells): the power beyond the long waves leans toward the zone centre — neighbouring cells moving together '
+                + '(correlated motion',
+            { method: '; as RMC\'s long waves and acoustic-like thermal motion give' },
+            '), not order.'),
         below_correlation: null,
         below_sigma: null,
         undefined_statistic: null,
@@ -1618,13 +1801,33 @@ export const summarizeModulations = (payload, { unitCell = null } = {}) => {
         checks.push({ level: 'note', text: `An odd supercell axis cannot hold ${data.untestable_zone_boundary.join(', ')}: not tested.` });
     }
     // For the answer check: a superstructure claim needs an ordered point.
+    // A claim of order at a box-scale wavevector (a long wave: every
+    // |q_i| ≤ rules.longWaveQ, the engine's isLongWave) is flagged whatever
+    // the mode's power (the user's rule, 2026-10-24): the rule's bound and the
+    // long waves among each element's strongest modes, as the data shows them.
     const facts = {
         modulation: {
             elements: tested.map((entry) => entry.element),
             ordered: tested.flatMap((entry) => entry.verdict.cellDoubling.decidedBy.map((q) => ({ element: entry.element, q }))),
             general: tested
                 .filter((entry) => entry.verdict.generalOrder.answer === true)
-                .map((entry) => ({ element: entry.element, q: entry.verdict.generalOrder.decidedBy[0] }))
+                .map((entry) => ({ element: entry.element, q: entry.verdict.generalOrder.decidedBy[0] })),
+            long_wave_q: rules.longWaveQ,
+            long_waves: tested.flatMap((entry) => entry.strongest.slice(0, 3)
+                .filter((mode) => mode.kind === 'long_wave')
+                .map((mode) => ({ element: entry.element, q: mode.q }))),
+            // The diffuse verdicts that passed their bar (the local-order
+            // interview, 2026-10-24): antiphase is order between cells, in
+            // phase correlated motion — correlation, never order.
+            diffuse: tested
+                .filter((entry) => isDiffuseOrder(entry.verdict.diffuseOrder) || isCorrelatedMotion(entry.verdict.diffuseOrder))
+                .map((entry) => ({
+                    element: entry.element,
+                    phase: isDiffuseOrder(entry.verdict.diffuseOrder) ? 'antiphase' : 'in_phase',
+                    lag: [...entry.diffuse.lag],
+                    correlation: round(entry.diffuse.correlation, 2),
+                    sigma: round(entry.diffuse.sigma, 3)
+                }))
         }
     };
     return { data, checks, facts };
@@ -1687,9 +1890,13 @@ export const summarizeSymmetry = (described, tolerance) => {
     }
     // For the answer check (llm/copilot/verification/facts.js): the group and what its
     // point group implies.
+    // Its operations in the cell and its tolerance, for the group–subgroup
+    // check (the local-symmetry interview, 2026-10-24).
     const result = { data, checks };
     if (facts && !String(described.spaceGroup).startsWith('≥') && described.spaceGroup !== 'undetermined') {
-        result.facts = { groups: [{ symbol: described.spaceGroup, ...facts }] };
+        result.facts = {
+            groups: [{ symbol: described.spaceGroup, ...facts, ...(Number.isFinite(described.nSpace) ? { n_ops: described.nSpace } : {}), tolerance_A: tolerance }]
+        };
     }
     return result;
 };
@@ -1885,7 +2092,8 @@ export const buildCopilotTools = ({ request, structure, elements = [], plotFiles
             name: 'analyze_displacement_directions',
             description: 'Histogram the displacement directions of one site (site_ref, from list_sites) or of every atom '
                 + 'of one element (element; "all" pools every atom) on the sphere, and test them: the peak direction '
-                + '(Cartesian and crystal [u v w], ± its cell\'s radius) with its calibrated significance, the whole-map test against '
+                + '(Cartesian and crystal [u v w], ± its cell\'s radius) with its calibrated significance, labelled a finding, a hint '
+                + 'or nothing (a finding is checked at a neighbouring resolution), the whole-map test against '
                 + 'isotropy, the +u/−u asymmetry, and the orientation-tensor anisotropy.',
             parameters: {
                 type: 'object',
@@ -1911,11 +2119,23 @@ export const buildCopilotTools = ({ request, structure, elements = [], plotFiles
                 else params.element = element;
                 if (frequency != null) params.frequency = frequency;
                 const payload = await request('orientation', params, { signal });
+                // A finding holds at the engine's own (Auto) resolution and at
+                // a neighbouring one, Auto ± 1 (the user's tiers, 2026-10-24):
+                // a second engine call, only for a candidate (≥ 3σ, ≥ 1.2×) —
+                // at the Auto ν it reads ν − 1 (neighbourFrequency), and at
+                // Auto ± 1 (a call the displacement-anisotropy skill asks for)
+                // the Auto ν itself.
+                const recommended = payload.recommendedFrequency;
+                const auto = frequency == null || frequency === recommended;
+                const besideAuto = !auto && Number.isFinite(recommended) && Math.abs(payload.frequency - recommended) === 1;
+                const neighbour = (auto || besideAuto) && directionCandidate(payload)
+                    ? await request('orientation', { ...params, frequency: auto ? neighbourFrequency(payload.frequency) : recommended }, { signal })
+                    : null;
                 const basis = structure?.basis || [];
                 const pooledSites = referenceNumber != null
                     ? 0
                     : (element === 'all' ? basis.length : basis.filter((site) => site.el === element).length);
-                return summarizeOrientation(payload, unitCellFrom(payload), { pooledSites });
+                return summarizeOrientation(payload, unitCellFrom(payload), { pooledSites, neighbour, auto: auto || besideAuto });
             }
         });
 
@@ -2052,12 +2272,10 @@ export const buildCopilotTools = ({ request, structure, elements = [], plotFiles
                 + 'a random other cluster: is there a distortion beyond independent atoms, which edge pattern '
                 + '(tetrahedra: E/T2 modes, trigonal vs one edge), along which lattice axis (<100>/<110>/<111>), and is '
                 + 'the average cluster itself distorted.',
-            // Where the window comes from (inside the first sentence), and which questions need the tool.
-            method: [
-                { after: 'in the average structure', text: ' (take the window from find_gr_peaks: first_shell.window_A of that element pair)' },
-                'Use it for cluster or polyhedron distortion, Jahn–Teller, '
-                    + 'dimerization or trimerization questions; single-site displacement directions cannot show these.'
-            ],
+            // Where the window comes from (inside the first sentence), and which
+            // questions need the tool: set below, once the list shows whether
+            // the run offers polyhedral_distortion (clusterMethod).
+            method: clusterMethod({ polyhedra: false }),
             parameters: {
                 type: 'object',
                 properties: {
@@ -2181,5 +2399,10 @@ export const buildCopilotTools = ({ request, structure, elements = [], plotFiles
             )
         });
     }
+    // analyze_clusters' method names polyhedral_distortion for an extended
+    // network only where the run offers it (that tool is its own PR: with or
+    // without it, the advice names no tool the model lacks).
+    const clusters = tools.find((tool) => tool.name === 'analyze_clusters');
+    if (clusters) clusters.method = clusterMethod({ polyhedra: tools.some((tool) => tool.name === 'polyhedral_distortion') });
     return tools;
 };

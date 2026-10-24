@@ -3,7 +3,7 @@
     "type": "function",
     "function": {
       "name": "read_run_data",
-      "description": "Read one section of the run summary in full (the context you were given is trimmed to fit). Sections: structure (cell lengths/angles of one unit cell, supercell, atom counts); configuration_optimization (move counters from the .rmc6f header); run_settings (the RMCProfile .dat control file: constraints, move sizes, fitted data); symmetry (detected space group, tolerance ladder, Wyckoff orbits with displacement); pair_correlations (partial g(r) first peaks vs the average-structure neighbour distance); datasets (per-dataset Rwp); convergence (ln(chi^2) history of the last .log column).",
+      "description": "Read one section of the run summary in full (the context you were given is trimmed to fit). Sections: structure (cell lengths/angles of one unit cell, supercell, atom counts); configuration_optimization (move counters from the .rmc6f header); run_settings (the RMCProfile .dat control file: constraints, move sizes, fitted data); symmetry (detected space group, tolerance ladder, Wyckoff orbits with displacement); pair_correlations (partial g(r) first peaks vs the average-structure neighbour distance); datasets (per-dataset Rwp); convergence (ln(chi^2) history of the last .log column; the last-tenth trend of every chi^2 term and their total).",
       "parameters": {
         "type": "object",
         "properties": {
@@ -21,7 +21,7 @@
     "type": "function",
     "function": {
       "name": "assess_convergence",
-      "description": "Classify the convergence of the ln(chi^2) history (the last .log column — one fit term, not the total) with the dashboard watchdog heuristics, and report the slope per log row over the last 10 %, 25 % and 50 % of the run. Status: improving | converged | stalled | diverging.",
+      "description": "Classify the convergence of every chi^2 term of the .log and of their total (ln chi^2 per log row; the dashboard charts only the last column), with the dashboard watchdog's rule: a series is still falling when the least-squares line through its last tenth (at least 10 rows, never back past the last restart) drops by more than 3 × the scatter of its points about that line; the run is converged only when no term and not the total still falls (or rises), stalled when it is flat without any of them ever dropping by 10 %. Status: improving | converged | stalled | diverging.",
       "parameters": {
         "type": "object",
         "properties": {}
@@ -32,7 +32,7 @@
     "type": "function",
     "function": {
       "name": "find_gr_peaks",
-      "description": "Analyse one partial g(r) (from the run's partial-PDF file): its peaks below r_max (position, approximate FWHM) and its first coordination shell, which does not depend on r_max — the window from onset to the first deep minimum (use first_shell.window_A for compute_bond_angles: it holds the whole shell, split shells included), mean distance and spread from r²g(r), coordination numbers in both directions with their sensitivity to the cut, whether the shell is separated from the next, for a split shell joined across a deep trough its parts (CN, share, mean distance) and the long − short bond difference, and whether the pair's hard minimum-distance constraint cuts the distribution.",
+      "description": "Analyse one partial g(r) (from the run's partial-PDF file): its peaks below r_max (position, approximate FWHM) and its first coordination shell, which does not depend on r_max — the window from onset to the first deep minimum (use first_shell.window_A for compute_bond_angles: it holds the whole shell, split shells included), mean distance and spread from r²g(r), coordination numbers in both directions with their sensitivity to the cut, whether the shell is separated from the next, for a split shell joined across a deep trough its parts (CN, share, mean distance) and the long − short bond difference, the average structure's bond lengths for the pair against the window, and whether the pair's hard minimum-distance constraint cuts the distribution.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -143,7 +143,7 @@
     "type": "function",
     "function": {
       "name": "analyze_displacement_directions",
-      "description": "Histogram the displacement directions of one site (site_ref, from list_sites) or of every atom of one element (element; \"all\" pools every atom) on the sphere, and test them: the peak direction (Cartesian and crystal [u v w], ± its cell's radius) with its calibrated significance, the whole-map test against isotropy, the +u/−u asymmetry, and the orientation-tensor anisotropy.",
+      "description": "Histogram the displacement directions of one site (site_ref, from list_sites) or of every atom of one element (element; \"all\" pools every atom) on the sphere, and test them: the peak direction (Cartesian and crystal [u v w], ± its cell's radius) with its calibrated significance, labelled a finding, a hint or nothing (a finding is checked at a neighbouring resolution), the whole-map test against isotropy, the +u/−u asymmetry, and the orientation-tensor anisotropy.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -272,7 +272,7 @@
     "type": "function",
     "function": {
       "name": "analyze_clusters",
-      "description": "Shape of the finite clusters one element forms — the M4 tetrahedra of a lacunar spinel, dimers, trimers — with bonds in [r_min, r_max] Å in the average structure (take the window from find_gr_peaks: first_shell.window_A of that element pair). Every cluster in the configuration is compared with a shuffle null in which each atom keeps its own site's displacements but takes them from a random other cluster: is there a distortion beyond independent atoms, which edge pattern (tetrahedra: E/T2 modes, trigonal vs one edge), along which lattice axis (<100>/<110>/<111>), and is the average cluster itself distorted. Use it for cluster or polyhedron distortion, Jahn–Teller, dimerization or trimerization questions; single-site displacement directions cannot show these.",
+      "description": "Shape of the finite clusters one element forms — the M4 tetrahedra of a lacunar spinel, dimers, trimers — with bonds in [r_min, r_max] Å in the average structure (take the window from find_gr_peaks: first_shell.window_A of that element pair). Every cluster in the configuration is compared with a shuffle null in which each atom keeps its own site's displacements but takes them from a random other cluster: is there a distortion beyond independent atoms, which edge pattern (tetrahedra: E/T2 modes, trigonal vs one edge), along which lattice axis (<100>/<110>/<111>), and is the average cluster itself distorted. Use it for finite clusters (dimers, trimers, M4 tetrahedra, isolated polyhedra): their distortion, Jahn–Teller, dimerization or trimerization; single-site displacement directions cannot show these. Corner-sharing polyhedra or another extended network have no finite clusters for its null.",
       "parameters": {
         "type": "object",
         "properties": {

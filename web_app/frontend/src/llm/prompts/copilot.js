@@ -57,8 +57,9 @@ export const REFERENCE_RULES = [
 export const EVIDENCE_RULES = [
     'Every conclusion needs its analysis in this question: order between cells',
     'or a split site called disorder, analyze_modulations; a preferred direction,',
-    'analyze_displacement_directions; clusters, analyze_clusters; a coordination',
-    'number or split shell, find_gr_peaks; a lowering of the average structure,',
+    'analyze_displacement_directions; clusters, analyze_clusters; distorted',
+    'polyhedra, polyhedral_distortion; a coordination number or split shell,',
+    'find_gr_peaks; a lowering of the average structure,',
     'measure_symmetry_lowering; "no order", every one of them. The app sends an',
     'answer back when its analysis did not run.'
 ].join(' ');

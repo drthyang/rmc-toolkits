@@ -28,18 +28,19 @@ each failure they describe, remove the draft status line, and show them the diff
 
 Answered by the user on 2026-10-24. Each answer, and where it landed: the skill's text, code (the
 fit-assessment code PR, its own PR off main) or an eval scenario (its replays in
-`src/__tests__/copilotSkillReplays.test.js`, in the fit-assessment code PR). Until that PR lands,
-the skill lint holds each line today's code does not apply as an entry marked "awaits the
-fit-assessment code PR".
+`src/__tests__/copilotSkillReplays.test.js`, from the same PR). That PR binds every line the skill
+states as code in the skill lint (RULES, BINDINGS, FIRM_RULES), so none is held as an entry marked
+"awaits the fit-assessment code PR" any more.
 
 1. *Convergence: the last `.log` column, or every fit term, the total, the configurations?*
    Judge every fit term and the total; say "converged" only when none is still falling beyond its
    noise over the last tenth of the run. **Landed:** the skill (step 2, the checklist) and code
-   (every-term convergence, in the fit-assessment code PR; lint entry: the convergence rule).
+   (every-term convergence: `watchdog/heuristics.js` `judgeConvergence`, 3 × the residual sd over
+   the last tenth; the lint's convergence rule).
 2. *When is "improving, but slowly" good enough?* First-shell quantities (distances, CN) may be
    answered with a "still improving" caveat; for subtle effects (distortions, directions, order)
-   the run must continue. **Landed:** the skill (step 2) and an eval scenario (in the
-   fit-assessment code PR).
+   the run must continue. **Landed:** the skill (step 2) and an eval scenario (answer 2: the
+   caveat passes, "converged" is flagged; no check ties a subtle effect to the convergence status).
 3. *Which misfit makes you distrust a run, for X-ray and for neutron data?* No fixed Rw cutoff.
    Distrust the run when most of the misfit sits in one r or Q range that the box size or the
    scale doesn't explain, or when residual features rise above the data's noise; the same rule for
@@ -47,16 +48,18 @@ fit-assessment code PR".
 4. *Constraints: when is a peak constraint-shaped, and when do you rerun?* g(r) above 5 % of the
    peak at the cut means the peak is constraint-limited: interpret nothing on its low-r side, and
    suggest rerunning with the constraint loosened. **Landed:** the skill (step 4, the checklist)
-   and code (the 5 % constant, in the fit-assessment code PR; today's code flags it at 2 %: lint
-   entry).
+   and code (`shells.js` `CONSTRAINT_LIMIT_FRACTION`, 5 %, and `find_gr_peaks`' advice; bound in
+   the lint).
 5. *How much sampling before a distribution?* At least 3 independent runs or configurations, and
    at least 10 accepted moves per atom past convergence, before quoting a distribution or a small
    effect; below that the answer says so (3.5 moves per atom is too light). **Landed:** the skill
-   (step 5, the checklist, the report) and an eval scenario (in the fit-assessment code PR).
+   (step 5, the checklist, the report) and an eval scenario (answer 5, through the
+   single-configuration check; no check reads the 3 runs or the 10 moves).
 6. *Overfitting: what do you refuse to report?* As a finding, never: an Rw below the noise
    presented as a better fit; a detailed claim about a partial under 5 % of the signal; order at a
    box-scale q; any feature that differs between independent runs. **Landed:** the skill (step 6)
-   and an eval scenario (in the fit-assessment code PR).
+   and an eval scenario (answer 6, through the long-wave check; no check reads an Rw against the
+   noise, a partial's weight or a second run).
 7. *What must a report always contain, and never claim?* Always the datasets and their weights,
    the convergence status, each dataset's Rw and where its misfit sits, the constraint-limited
    pairs, and the sampling with the number of runs; never "refinement", never esds as if
@@ -64,8 +67,7 @@ fit-assessment code PR".
 8. *Firm rules?* Besides the existing converged-versus-improving flag: (a) a claim of order at a
    box-scale wavevector is flagged; (b) a distribution quoted from a single configuration without
    saying so is flagged. **Landed:** the skill (two firm-rule sentences, its known failure modes)
-   and code (the two answer checks, in the fit-assessment code PR; lint entries until then, then
-   mapped in FIRM_RULES).
+   and code (the answer checks `long-wave` and `single-configuration`, mapped in FIRM_RULES).
 9. *A recent run; a fit you trusted that turned out wrong.* Not answered on 2026-10-24: open.
 
 The long waves, in the user's words (answering the batch-1 item below and the fact sync's item 5):

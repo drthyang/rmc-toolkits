@@ -13,6 +13,7 @@ import { loadRun } from '../runFolder';
 import { ARM_A_RULES, runArmA, runArmSweep } from '../armA';
 import { scoreVerdict } from '../scoring';
 import { zoneBoundarySigma } from '../../src/workers/modulations';
+import modulationsFixture from '../../src/__tests__/fixtures/modulations_fixture.json';
 
 const runBoth = async (item) => {
     const built = buildCase(item);
@@ -50,6 +51,11 @@ const runBoth = async (item) => {
 // calibrated null, its seeds by its rule): dev-weak-order-b's A+ is 0.8333
 // again — its weak order is below the bar, 2.63σ — and no other pin moved
 // (dev-weak-order-a's A+ claims its order at 3.02σ, as before at 6.41σ).
+// Protocol 2026-10-24.2 (the interviews): A+ takes a split site's peak only
+// as a finding of the tool's tiers, and reads the diffuse verdict (antiphase
+// a modulation claim with no q, in phase correlated motion): no pin moved —
+// every dev split site's peak is a finding, and no dev case's diffuse verdict
+// passes its bar.
 const BAR = [
     ['dev-offcentre', 1, [], 1, []],
     ['dev-zone-boundary', 0.6667, ['off_centre Ti'], 1, []],
@@ -106,10 +112,28 @@ describe('the model-free arms on the dev cases (the bar)', () => {
         expect(breathing.sweep.verdict.features).toEqual([{ kind: 'cluster_breathing', element: 'Mo' }]);
         const zone = await runBoth(DEV_CASES.find((item) => item.id === 'dev-zone-boundary'));
         const modulations = zone.sweep.readings.find((r) => r.page === 'analyze_modulations');
-        expect(modulations.reading).toBe('cell doubling: Ti at (0, 0, 0.5); order at a general q: none; long wave: Sr at (0.125, 0, 0)');
+        expect(modulations.reading).toBe('cell doubling: Ti at (0, 0, 0.5); order at a general q: none; long wave: Sr at (0.125, 0, 0); '
+            + 'diffuse order (antiphase): none; correlated motion (in phase, not order): none');
+        expect(modulations.value.Ti.diffuseOrder).toBe('false (below_sigma)');
         const jt = await runBoth(DEV_CASES.find((item) => item.id === 'dev-jahn-teller'));
         expect(jt.sweep.readings.find((r) => r.page === 'analyze_clusters').value)
             .toMatchObject({ distorted: 'true (axis_family)', splitMemberSites: 'true (half_or_more_split)', rigid: 'false (split_sites)' });
+    });
+
+    it('A+ reads the diffuse verdict as the user does: antiphase is order between cells (a modulation claim with no q), in phase correlated motion (the local-order interview, 2026-10-24)', async () => {
+        // The modulation fixture's two diffuse cases (6 × 6 × 6, Nb correlated with its neighbour cells), opened as a run folder.
+        const sweepOf = async (prefix) => runArmSweep(await loadRun({ rmc6f: modulationsFixture.cases.find((entry) => entry.name.startsWith(prefix)).text }, { ladder: false }));
+        const anti = await sweepOf('diffuse order in antiphase');
+        expect(anti.verdict.features.filter((feature) => feature.kind === 'modulation')).toEqual([{ kind: 'modulation', element: 'Nb' }]);
+        expect(anti.readings.find((r) => r.page === 'analyze_modulations').reading)
+            .toMatch(/; diffuse order \(antiphase\): Nb \[1 0 0\] -0\.29 at 3\.67σ; correlated motion \(in phase, not order\): none$/);
+        const together = await sweepOf('diffuse order in phase');
+        expect(together.verdict.features.filter((feature) => feature.kind === 'modulation')).toEqual([]);
+        expect(together.readings.find((r) => r.page === 'analyze_modulations').reading)
+            .toMatch(/; diffuse order \(antiphase\): none; correlated motion \(in phase, not order\): Nb \[0 0 1\] 0\.47 at 4\.6σ$/);
+        // The claim scores as the verdict stands: a planted modulation with a q is found, its q undetermined (0.5).
+        const planted = { features: [{ kind: 'modulation', element: 'Nb', accept: ['modulation'], q: [0.5, 0, 0] }], tolerated: [], symmetry: null };
+        expect(scoreVerdict(planted, anti.verdict).features[0]).toMatchObject({ found: true, q_ok: false, accurate: false });
     });
 
     it('A+ reads a modulation\'s direction from the engine\'s polarisation, not the PC1 of a prolate site (plan item 4.3)', async () => {
@@ -176,11 +200,12 @@ describe('the model-free arms on the dev cases (the bar)', () => {
         // tolerated, unscored.
         expect(jt.sweep.verdict.features[0]).toEqual({ kind: 'off_centre', element: 'F', direction_uvw: [1, 0, -0.01], magnitude_A: 0.16 });
         const offcentre = await runBoth(DEV_CASES.find((item) => item.id === 'dev-offcentre'));
-        // ν = 2 (512 copies): the peak names [0 0 −1], a cell centre, but its
-        // cell is 20.9° wide, so A+ takes PC1, the same axis.
+        // ν = 2 (512 copies): the peak names [0 0 −1], a cell centre, a finding
+        // (it holds at ν = 1: the tool's tiers, 2026-10-24), but its cell is
+        // 20.9° wide, so A+ takes PC1, the same axis.
         expect(offcentre.sweep.verdict.features).toEqual([{ kind: 'off_centre', element: 'Nb', direction_uvw: [0, -0.01, 1], magnitude_A: 0.202 }]);
         expect(offcentre.sweep.readings.find((r) => r.page === 'Displacement Directions').reading)
-            .toBe('preferred direction [0 0 -1] ± 20.9°, the cell radius at ν = 2: not resolved finer than that, so the claim takes PC1');
+            .toBe('preferred direction [0 0 -1] ± 20.9°, the cell radius at ν = 2 (a finding: it holds at ν = 1, 9.38σ): not resolved finer than that, so the claim takes PC1');
         expect(offcentre.a.verdict.features[0].direction_uvw).toEqual([0, 0, -1]);
         expect(offcentre.a.verdict.features[0].magnitude_A).toBe(0.201);
         // The cluster elements: the gate's (CN 0.5–4.5); perovskite O (CN 8) no longer tried.
