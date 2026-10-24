@@ -5,6 +5,1349 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+### Dashboard: the G(r) error ribbon, F(Q)'s σ propagated through RMCProfile's transform (protocol 2026-10-24.4)
+
+- New module `rmc_toolkits/ft_uncertainty.py` (exported; the browser port is
+  `src/ftUncertainty.js` with its run glue `src/ftUncertaintyRun.js`). It rebuilds the transform
+  RMCProfile writes as `<stem>_FT_XFQ<n>.csv`: `X_ray_exp_renorm` = Σ ΔQ·Q·(F + c)·sin(Qr) over the
+  run's F(Q) grid, a rectangle rule with no 2/π and no ρ₀ (Keen's D(r) × π/2), no Lorch, c the run's
+  fitted offset. The run's `F(Q)_Expt` is the `.dat`'s input file renormalised by the fitted scale
+  s and, with `CONVOLVE`, box-convolved at the PDFpartials' last r, minus c. Two reproduction tests
+  establish the chain on the run's own files before anything is drawn, each to 10⁻⁶ of the
+  function's maximum. The demo's G(r) reproduces to 1.5×10⁻¹⁴, and two local runs' F(Q) from their
+  input files to 5×10⁻¹⁵.
+- σ comes only from the input file's own third column, clean by `usable_sigma`'s rule, times s. It
+  is propagated exactly: σ(r) and the full covariance ½[P(r − r′) − P(r + r′)], with the correlation
+  between r points and the number of independent points. The box convolution is left out of the
+  propagation and checked exactly to change σ(r) by under 1 % (0.19 % at r ≤ 20 Å on the demo's
+  grids).
+- The Dashboard's xPDF card draws the ribbon (InteractivePlot's opt-in `ribbon`: a band under the
+  experiment, in the legend, ± σ in the readout). When the G(r) file has its own σ column, that one
+  is drawn and the propagated one is a toggle. The caption says the r points are correlated, and
+  its ? help gives the transform, both reproduction residuals and the tolerance. With no σ it says
+  why: on the demo, "F(Q) carries no uncertainties: scale_ft_rmc.fq (named in GTS_250K.dat) is not
+  in the run folder". A failure is also a Problems-section warning, and Live Data re-reads the
+  ribbon with its files.
+- Flask's `/api/plot/data` sends the same payload as `uncertainty` on an xPDF plot (cached on the
+  transform and its companions; the input read only inside the data roots). A column naming an
+  uncertainty is the experimental series' `sigma`. One golden holds both runtimes to 10⁻⁹:
+  `ft_uncertainty_fixture.json` (`tests/generate_ft_uncertainty_fixture.py`). Known answers cover a
+  brute-force Jacobian, Monte Carlo, white noise, the Nyquist grid, MATERIA's pystog golden adapted
+  to RMCProfile's convention, and StoG (data-gated).
+- `compare_fit` calls an X-ray G(r)'s residual feature above noise only against σ(r) (≥ 3 σ). Its
+  `noise` block gives the σ's source, the residual's rms in σ, the reproduction residual and
+  tolerance, and the correlation. A G(r) without σ(r) says so and calls nothing above noise.
+  Model-visible: its description (+56 tokens on the worst turns; 48k headroom 5,200 dock and
+  7,999 arm B) and the Demo's G(r) result (new snapshot `compare_fit.xpdf.json`). Arms A and A+ on
+  dev are unchanged. Approved by the manager on the user's delegation, 2026-10-24
+  (`validation/findings/decisions/2026-10-24-ft-error-propagation.json`).
+
+### Copilot: `polyhedral_distortion`, a polyhedron's distortion indices (protocol 2026-10-24.3)
+
+- A new engine, `rmc_toolkits/distortion.py` (`polyhedral_distortion`, exported from
+  `rmc_toolkits`; source of truth) with its straight port `workers/distortion.js`: a centre
+  element's coordination polyhedra — its ligands within an inclusive window, from the bond-angle
+  engine's own neighbour search, the polyhedra of the most common count measured and the rest
+  counted — by Baur's bond-length distortion index DI = (1/n) Σ |lᵢ − l̄| / l̄ (*Acta Cryst.* B30,
+  1974) and, for octahedra and tetrahedra, Robinson's quadratic elongation ⟨λ⟩ = (1/n) Σ (lᵢ/l₀)²
+  (l₀ of the regular polyhedron of the same volume) and bond-angle variance σ²θ over the cis
+  angles (12 of an octahedron, the trans pairs being the matching with the largest angle sum;
+  6 of a tetrahedron; θ₀ = 90° or arccos(−1/3)) (*Science* 172, 1971). Each is summarised (mean,
+  sd, 10th, 50th and 90th percentile) over the configuration's polyhedra and over the average
+  structure's (the site means of the average-structure basis), so a static distortion separates
+  from thermal spread.
+- The PCA worker's `distortion` request and `GET /api/distortion` (`rMax` ≤ 8 Å; a window holding
+  more than 10⁶ bonds is refused before any is stored); the request contract gains the route, its
+  limits and 17 cases. Known answers: regular polyhedra 0, 1 and 0; the 4 × 1.93 + 2 × 2.25 Å
+  Jahn–Teller octahedron DI = 0.069831 exactly; trigonal and flattened polyhedra and an off-centred
+  atom in closed form; a thermal-only network whose mean DI is √(2/π)·√(5/6)·s/l̄ for a bond spread
+  s, and whose average octahedron is regular. A parity golden (`distortion_fixture.json`) holds the
+  port to 1e-9, refusals included.
+- The AI Copilot's `polyhedral_distortion(centre, ligand, r_min, r_max, window_confirmed?)` renders
+  the configuration's and the average structure's indices. It refuses a window that cuts the
+  coordination shell by `compute_bond_angles`' rule (the Workbench asks first), unless the user chose
+  it. Its description says only what it computes, which is what the validation's arm C reads; the
+  method advice (where the window comes from, octahedra or tetrahedra isolated or in an extended
+  network, the static/local reading) goes to the dock and arm B. On the Demo the TaSe6 octahedra
+  carry a static 3 + 3 distortion (average structure DI 0.0415, configuration 0.0469), while the GaSe4
+  tetrahedra are regular on average (0.0010 against 0.0278).
+- A fact sync of the interviewed skills, the tool being on main: coordination-shells step 7 names
+  `polyhedral_distortion` and what it returns (it said no Workbench tool computes a distortion
+  index), local-order step 4 says what it returns (it said "where the Workbench offers it"), and the
+  skill lint, which now finds the tool among those the Copilot offers, drops its allow-list entry
+  ("awaits the polyhedral_distortion PR").
+- What the model sees: the tool's definition (+1,745 characters in the dock, +1,741 in arm B, +1,246
+  in arm C), the first request's tool lists, a new tool-results sample, and read_skill's
+  coordination-shells text (+160 characters). The 32k budget pins move by +812 (dock) and +808
+  (arm B) tokens; at the live runs' 48k the dock keeps 4,873 tokens and arm B 7,607, with the
+  interviewed skills. Arms A and A+ do not read the tool, and their dev records are unchanged.
+  Approved by the manager on the user's delegation, 2026-10-24 (the user's interview answer 7 for
+  coordination-shells; `validation/findings/decisions/2026-10-24-polyhedral-distortion.json`).
+
+### Tests: the χ² clamp compared to 1e-12 relative (oldest-deps CI)
+
+- `test_log_data_carries_every_chi_term_and_their_total` compared the zero curvature term's clamp,
+  `np.log(1e-12)`, with `math.log(1e-12)` bit for bit. Under the oldest pinned numpy its SIMD log
+  can differ in the last ulp, depending on the runner's CPU, which turned main's Python 3.9 job red.
+  The test now checks the same things exactly — one value on every row, the right row count — and
+  the clamp's value to 1e-12 relative. The code is unchanged.
+
+### Copilot: the interview answers of four skills as checks — coordination shells, local symmetry, displacement anisotropy, local order (protocol 2026-10-24.2)
+
+- **coordination-shells.** Every coordination number or bond angle in an answer carries its window
+  in Å: an answer that gives one without it — in its sentence, or stated once for the pair or the
+  whole answer — gets a `window` finding under it (the user's rule, 2026-10-24). The coordination
+  check reads "4 F per Cu" as Cu's count of F, and a clause that states the whole shell's window as
+  a claim about the shell (before, any window in Å made the clause partial). `find_gr_peaks` gives
+  the average structure's first shell for the pair, `first_shell.average_structure_d_A` (its
+  shortest and longest bond between the site means), and warns when a bond lies outside the window
+  by more than the first peak's FWHM: no Demo or dev pair does (the Demo's Ta–Se 2.52–2.76 Å in
+  2.21–3.23 Å); a 4 + 1 pyramid whose shell closes before its fifth bond does. The evidence gate
+  backs distorted octahedra or polyhedra with `polyhedral_distortion` where the run offers it, else
+  `analyze_clusters` (EVIDENCE_RULES says so), an `anyOf` row now asks for the first analysis the
+  turn offers, and `analyze_clusters`' method keeps it to finite clusters. Approved by the user,
+  2026-10-24 (`validation/findings/decisions/2026-10-24-coordination-shells-interview.json`).
+- **local-symmetry.** A group–subgroup relation the answer claims that does not hold gets a
+  `subgroup` finding: read against the run's own groups where it knows both (the ladder's rungs are
+  nested; the index is |G|/|H| in the cell; t when the translations per cell stay, k when the point
+  group stays, else a general subgroup, never maximal — the Demo's P-42₁m in F-43m is index 12,
+  neither t nor k), and by the point groups alone for a published phase the run does not hold
+  ("F-43m → P4/mmm" cannot be: 4/mmm has an inversion centre -43m lacks). A cell doubling the box
+  cannot hold — odd along an axis it doubles — gets a `cell-doubling` finding, as does a doubling
+  along axes no ordered zone-boundary point of `analyze_modulations` doubles. The symmetry-averaged
+  CIF calls itself an "average-structure model of an RMC configuration", never a refined structure.
+  Approved by the user, 2026-10-24
+  (`validation/findings/decisions/2026-10-24-local-symmetry-interview.json`).
+- **displacement-anisotropy.** `analyze_displacement_directions` labels its peak in the user's
+  three tiers: a **finding** at ≥ 3σ (unrounded) and ≥ 1.2× isotropic that holds at the
+  neighbouring resolution (ν − 1; ν + 1 at ν = 1), which the tool reads for a candidate — the peak
+  test passes there and the two peaks lie on one axis within the two cells' radii; a call at
+  Auto ± 1, as the skill asks, reads the Auto resolution as the other; a **hint** at
+  ≥ 3σ under 1.2×, at 2.5–3σ or not held; **nothing** below 2.5σ. The second reading costs 0.7 ms
+  on the Demo and about 240 tokens per finding. On the Demo, Ta site 17 and Se site 34 are
+  findings and Ta site 25 (4.47σ at ν = 2, 2.33σ at ν = 1) is now a hint; every dev split site is
+  a finding. The direction check and arm A+ take a finding only (no dev verdict moves). An answer
+  that calls a split or flat-topped site disorder before `analyze_modulations` tested its element
+  gets a `disorder` finding (ordered antiphase displacements give the same split cloud), and the
+  evidence gate reads a flat-topped site called disordered as it reads a split site. Approved by
+  the user, 2026-10-24
+  (`validation/findings/decisions/2026-10-24-displacement-anisotropy-interview.json`).
+- **local-order.** "No order" now also needs `polyhedral_distortion` on each centre of octahedra or
+  tetrahedra no finite cluster holds (the Demo's Ga, a perovskite's B site), where the run offers
+  it; its diffuse verdict is `analyze_modulations`' own. The diffuse verdict is read as the user
+  reads it: only antiphase (or general-q) order past its bar is order; in-phase correlation is
+  "neighbouring cells moving together (correlated motion), not order", as `analyze_modulations` now
+  says it, and never supports "no correlation". Three checks on the answer: `no-order` ("no order"
+  when order was found), `correlated-motion` (order between cells when only in-phase correlation, or
+  none, was found) and `no-correlation` (uncorrelated displacements when a correlation passed, in
+  phase included). Arm A+ claims an antiphase verdict as a modulation with no q, the verdict's one
+  kind for order between cells; no dev case passes the diffuse test, so no dev record moves.
+  Approved by the user, 2026-10-24
+  (`validation/findings/decisions/2026-10-24-local-order-interview.json`).
+
+### Copilot: the fit-assessment interview's rules in code — convergence on every χ² term, the 5 % constraint, two answer checks (protocol 2026-10-24.1)
+
+- **Every χ² term of the log and their total.** Both runtimes read every χ² column after `Time
+  moves_acc moves_gen` (`readChi` / `read_chi_log`, `CHI_TERMS_START`), each row's total and the rows
+  per log, and hand them to the Copilot and the watchdog as `plotData.chiTerms` (`/api/plot/data` sends
+  them in Flask mode); the per-term histories concatenate only when every log names the same terms. The
+  Dashboard's chart still draws the last column.
+- **Converged only when no term and not the total still falls beyond its noise** over the last tenth
+  of the run (the user's rule, 2026-10-24). A series falls when the least-squares line through its last
+  tenth (at least 10 rows, never back past the last restart) drops by more than 3 × the scatter of its
+  points about that line — the app's 3σ bar: a flat series of independent noise passes for falling
+  0.8 % of the time over 10 rows and never over the Demo's 227 (`src/llm/watchdog/heuristics.js`:
+  `seriesTrend`, `judgeConvergence`; the old fixed 0.02 in ln χ² is gone). `assess_convergence` reports
+  every term and the total (change, noise, trend), the context's `convergence.last_10pct` replaces
+  `change_over_last_10pct` and `recent_slope_per_step`, the system prompt says what `watchdog_status`
+  judges, and the watchdog badge moved to the same rule (AGENTS.md next step 6). The Demo stays
+  `improving` (F(Q)_1, X_ray_(R)1 and the total fall; its curvature constraints are flat), as does
+  dev-fit-unconverged.
+- **Constraint-limited above 5 %.** `find_gr_peaks` calls a peak constraint-limited when g(r) just
+  above the closest-approach constraint is above 5 % of the peak (`CONSTRAINT_LIMIT_FRACTION`; the
+  shell separation keeps 2 %), and advises interpreting nothing on its low-r side and rerunning with
+  the constraint loosened (method: arm C reads the reading alone). No reading moves on the Demo
+  (Ga–Se 8.7 % at 2.2 Å) or the dev cases (no constraints).
+- **Two checks on the answer:** `long-wave` flags order claimed at a box-scale wavevector (every
+  |q_i| ≤ the modulation engine's 0.25, or a long wave in words): a long wave says nothing about order
+  at its own q; `single-configuration` flags a distribution's numbers (bond angles, coordination
+  counts, displacement directions, cluster shapes) quoted without saying they come from one
+  configuration. On the answer corpus they raise one finding, on the README GIF's GaSe₄ answer
+  (judged right), and no false alarm. Scripted replays on the Demo pin the user's answers 1, 2, 5 and
+  6 wherever a check can catch the wrong answer.
+- The skill lint binds the interviewed rmc-fit-assessment skill's four lines this code builds — the
+  every-term convergence rule (with a probe), the 5 % gate to `CONSTRAINT_LIMIT_FRACTION`, and the
+  two firm rules to the `long-wave` and `single-configuration` checks (with probes) — so their
+  allow-list entries ("awaits the fit-assessment code PR") leave.
+- What the model reads: the system prompt +226 characters; `assess_convergence`'s description 274 →
+  575 characters and its Demo result 435 → 1,111; the Demo context +486 characters, with the context
+  budget raised from 6,000 to 6,500 characters so its second g(r) peaks stay. Arms A, A+ and D on dev
+  are unchanged. Approved by the user, 2026-10-24
+  (`validation/findings/decisions/2026-10-24-fit-assessment-interview.json`).
+
+### Skills: the facts synced with the tools (the user's decision of 2026-10-19)
+
+- The batch-1 skill drafts now state the numbers and rules that the tools apply. Nothing else in
+  them changed: no method, step order or judgment call.
+  - The Demo's Ta–Se first peak is 2.21–2.65 Å, holding 3.25 Se per Ta. The drafts said
+    2.33–2.71 Å and 3.9, from before shells.js moved the first peak to the inter-peak minimum.
+  - A split site is the app's rule: a resolved PC1 whose excess kurtosis is ≤ −0.5 and at least 3
+    sampling errors below zero. A negative Mardia kurtosis alone is not one.
+  - A preferred direction needs the peak test at 3σ or more on the unrounded σ.
+  - The low-index cone is "within 15°", 15° included. That is under half the 35.3° between <110>
+    and <111>, not half of it.
+  - A family is named only when the peak cell's radius is 15° or less (plan item 2.5).
+  - compute_bond_angles' cut rule is the CN margin (max(0.5, 15 % of the shell's CN)), as #113
+    made it. The counts are its fallback when there is no shell to compare.
+  - analyze_clusters runs for elements whose own first shell holds 0.5–4.5 neighbours of their
+    own kind. It reads the shape against a shuffle null at each cluster's own size, and the size
+    against independent atoms.
+  - The average structure's group is read from 1.25 × the noise floor.
+  - The order rule is ratio ≥ 3 and ≥ 3σ, against independent cells (F1).
+  - The cluster tool's z is no tail probability.
+  - The Displacement Directions page opens at Auto, the engine's resolution, with its numbers from
+    the raw histogram (the skill said ν = 10).
+  - A wrong reason in rmc-fit-assessment step 7 (long waves "left out of the background") is
+    removed.
+- The skill lint's allow-list holds no FACT entry any more, #113's three "awaits the skill
+  fact-sync PR" entries included. One JUDGMENT stays: how to word a rung just above the noise
+  floor. The bindings follow the new text:
+  - the CN margin is bound to `CN_CHANGE_ABS` and `CN_CHANGE_REL`, with #113's
+    compute_bond_angles asserts;
+  - the counts fallback to `MODAL_COORDINATION_SHARE` and `UNBONDED_APEX_FRACTION`;
+  - the split rule to `SPLIT_SITE_KURTOSIS` and `SPLIT_SITE_SE`;
+  - the cell radius to `directionResolved`.
+- `docs/SKILL_INTERVIEWS.md` lists the eleven choices the sync found and left to the user. The
+  read_skill and over-claim record snapshots are re-recorded. The 32k budget pins move by 853 tokens
+  (dock) and 854 (arm B). At 48k, 6,886 and 9,615 tokens are left to spare.
+- **rmc-fit-assessment interviewed (2026-10-24).** The skill is now the user's own answers. Its
+  status reads "Interviewed 2026-10-24", and `docs/SKILL_INTERVIEWS.md` §1 records each answer and
+  where it landed. The rules it now states:
+  - convergence judged on every fit term and the total;
+  - a "still improving" caveat only for first-shell quantities;
+  - no fixed Rw cutoff;
+  - a peak constraint-limited above 5 %;
+  - at least 3 independent runs and 10 accepted moves per atom past convergence before a
+    distribution;
+  - the user's list of what is never a finding, and the report's always and nevers;
+  - two new firm rules;
+  - the user's wording for long waves.
+
+  The code half (every-term convergence, the 5 % constant, the two answer checks, the replays) is
+  its own PR. Until it lands, four skill-lint entries are marked "awaits the fit-assessment code
+  PR". `copilotSkills.test.js` tells an interviewed skill from a draft.
+- **coordination-shells interviewed (2026-10-24).** The skill is now the user's own answers, and
+  §2 records where each landed. The rules it now states:
+  - the window cross-checked against the average structure's bond lengths;
+  - a split shell's long − short ± its sampling error always quoted;
+  - a shell not separated from the next cut at the minimum, with the 0.2 Å range beside it;
+  - the cut rule kept, with no exemption for disordered or glassy systems (the user's window
+    instead);
+  - angles read from the sin θ-corrected histogram;
+  - a distortion needs the cluster effect at z ≥ 3, the same sign in ≥ 3 independent runs, and
+    angle spreads;
+  - extended networks get angle spreads plus a polyhedral distortion index;
+  - a new firm rule: every CN or angle carries its window. It waits for a later coordination code
+    PR, as a skill-lint entry.
+- **local-symmetry interviewed (2026-10-24).** The skill is now the user's own answers, and §3
+  records where each landed. The rules it now states:
+  - the 1.25 × margin, with a rung below it "at the limit of the sampling", never a lowering;
+  - "the" group is the lowest rung at or above the margin;
+  - a lowering is described by its lost operations plus the group–subgroup index and its t or k
+    type;
+  - against a published cell-doubled phase, only what the box can represent is compared;
+  - CIF export rules;
+  - groups named as "consistent with ⟨group⟩ at ⟨tolerance⟩ Å";
+  - two new firm rules, which wait for a later local-symmetry code PR as skill-lint entries.
+
+  The lint's last JUDGMENT entry is gone: the margin is bound to `NOISE_FLOOR_MARGIN`.
+- **displacement-anisotropy interviewed (2026-10-24).** The skill is now the user's own answers,
+  and §4 records where each landed. The rules it now states:
+  - "the most disordered site": split sites first, then U_iso and anisotropy;
+  - a negative-kurtosis site that misses the split rule is "flat-topped, not split";
+  - an element pooled only for an element-wide summary, with the frames caveat;
+  - three tiers for a direction: a finding at ≥ 3σ and ≥ 1.2× isotropic, a hint at ≥ 3σ under
+    1.2× or at 2.5–3σ, nothing below 2.5σ;
+  - a finding holds at the Auto resolution and at a neighbouring ν;
+  - every reported direction carries ± its cell's radius, and the 15° cone stays;
+  - a cluster distortion needs z ≥ 3 with the same sign in at least 3 independent runs;
+  - a new firm rule: a split or flat-topped site is called disorder only after
+    `analyze_modulations` ran for its element.
+
+  The tiers, the two resolutions and the firm rule wait for a later displacement-anisotropy code
+  PR, as five skill-lint entries. The skill is now the largest the Copilot reads (8,896 of
+  read_skill's 9,000 characters). The 32k budget pins move by 868 tokens, and at 48k 5,685 (dock)
+  and 8,415 (arm B) tokens are left to spare.
+- **local-order interviewed (2026-10-24): all five skills are now the user's own.** §5 records
+  where each answer landed. The rules it now states:
+  - the list adds `analyze_modulations`' diffuse verdict and, for an extended network,
+    `polyhedral_distortion`;
+  - the diffuse verdict, past its calibrated bar, counts as order between cells;
+  - directions for every symmetry-inequivalent site, not only the outliers;
+  - a partial under 5 % of the signal is "not constrained by the data", and "no order" leaves it
+    out;
+  - never a bare "no order": a test that could not run is named with its reason;
+  - a new firm rule: "no order" is refused until every applicable analysis has run.
+
+  Three skill-lint entries wait for their code: the extended evidence gate and the diffuse
+  verdict's reading (a later local-order answer-check code PR), and `polyhedral_distortion` (its
+  own PR). No snapshot or budget pin moves.
+
+### Validation: the held-out marginal pair re-set (protocol 2026-10-19.20)
+
+- The marginal situation was re-set after F1's corrected null raised the test's power. A fresh author
+  who had seen no dev value re-chose the two held-out marginal matches' amplitude from the updated
+  `judgment-spec.md`, with new seeds by a rule fixed beforehand; the values are sealed
+  (`TEST_SET_SHA256` changes). The lead checked the author's blindness from its tool log. The holdout
+  scan no longer reads the digits that end an identifier (`SHA256`) as a number. Arms A and A+ on the
+  test set are re-recorded with `--final` from a clean tree. Approved by the manager on the user's
+  delegation, 2026-10-19; the user may reverse it before the freeze.
+
+### Validation: the marginal situation re-set for the independent-cell null (protocol 2026-10-19.19)
+
+- **Why.** The modulation engines' calibrated null (F1, protocol 2026-10-19.16) gives an isotropic
+  site three components where the earlier null took one. The dev weak-order pair's amplitude had
+  been set from that one-component bound to an expected 3σ, so both of its seeds read far above the
+  bar, and "a signal at the edge of significance" was no longer at the edge.
+- **The spec** (`validation/judgment-spec.md`, the held-out author's only description of the knob)
+  gives the expected significance under the new null:
+  - the B power at q is σ²/(3σ² + δ²) · χ'²₃(nδ²/σ²);
+  - the null is Σ λ_k χ²₁ with λ = n/(n − 1) · (σ², σ², σ² + δ²)/(3σ² + δ²);
+  - the Šidák family is every zone-boundary point of every element;
+  - the expected significance is the median realised σ, the σ of the median power.
+
+  The spec also says how to evaluate it and how to check it with the engine on fresh
+  configurations. It holds no dev value, and `judgment.test.js` still scans it.
+- **The dev pair.** Its amplitude is re-set by that formula to an expected 3σ, and the engine over
+  fresh configurations agrees (about half clear the bar). Its seeds come from the pair's own rule,
+  fixed before any σ was read at the new amplitude; every other parameter is kept. The values are
+  in `validation/findings/decisions/2026-10-19-marginal-reset-dev.json`, which the held-out author
+  does not read. `judgment.test.js` checks the formula with the engine's own functions, the pair's
+  expected 3σ and its seed rule.
+- **Arm C.** `analyze_modulations`' long-wave and in-phase notes lose their causal parentheticals
+  ("(common in RMC)", "(as RMC's long waves and acoustic-like thermal motion give)"): what a pattern
+  is evidence of is inference, which arm C drops while keeping definitions and limits. Both notes
+  are built with `methodCheck`. Arm B and the dock read them byte for byte as before, and every
+  model-visible snapshot passes unchanged. New arm C samples:
+  `tool-results/analyze_modulations.method-off.json` and `analyze_modulations.element.method-off.json`.
+- **Arms A, A+ and D on dev.** Only the two re-set cases' six records move. One A+ record still
+  claims the weak order; the other, below the bar, no longer does. They are re-recorded in
+  `validation/baseline/arm-a-dev.json`; every other record and every arm A and D score is unchanged.
+  The held-out marginal matches are re-set from the spec by their author, separately.
+- Approved by the manager on the user's delegation, 2026-10-19; the user may reverse it before the
+  freeze.
+
+### Copilot: one cut rule — compute_bond_angles refuses on the Workbench's CN margin (protocol 2026-10-19.18)
+
+- Whether a bond window cuts its coordination shell is decided once, by the shell module's
+  `windowCut` (`src/llm/context/shells.js`), for the Workbench's question before an analysis runs and
+  for `compute_bond_angles`' refusal: a window that meets its first shell is cut when it holds fewer
+  partner atoms than the whole shell by at least max(0.5, 15 % of its CN), whatever its coordination
+  counts. Until now the tool refused on the counts (more than half the central atoms unbonded, or
+  fewer than 60 % with the most common count) while the Workbench asked on the CN margin; the counts
+  now decide only where the run reads no shell to compare the window with: no partials file, no
+  closed shell for the pair, no density for a CN, or a window apart from the first shell (the module
+  reads first shells only). Approved by the user, 2026-10-19
+  (`validation/findings/decisions/2026-10-19-shell-cut-rule.json`).
+- What changes: a whole shell is never refused (dev-offcentre's Nb–Nb, which runs into the next
+  shell, 52 % of its Nb at the modal count), nor a window within the margin (the top 0.2 Å early);
+  a sub-shell first peak is refused unless the user chose it (the Demo's Ta–Se, 3.25 of 6;
+  dev-jahn-teller's four short Cu–F). On the 149 natural windows of the decision record, 15 change
+  verdict (11 no longer refused, 4 refused now), and the Workbench asks on every window the tool
+  refuses (`validation/run.js shell-cuts` shows both beside the old counts rule).
+- What the model reads: the refusal names the CN shortfall by path ("it holds 3.75 Se per Ta
+  (shell_ab.cn_in_window) of the shell's 6 (shell_ab.cn, in shell_ab.window_A)…"); every result adds
+  the shell reading (`shell_ab`, and `shell_bc` for a B–C window of its own) and the counts' `modal`,
+  `modal_share` and `unbonded_share` as information, with no note for a count spread; the
+  coordination answer check counts a window as the whole shell when its CN is the shell's within
+  the margin. The tool's description and schema are unchanged; five `compute_bond_angles` tool
+  results and four Workbench tool messages grow by about 200–250 characters.
+- `buildCopilotTools` takes the run's `plotFiles` and `runSettings`, so the tool reads the shell
+  catalogue the Workbench reads; `window()` loses its `counts` option and the llm module exports
+  `windowCut` instead of `countsCut` and its two thresholds, which stay in the shell module as the
+  fallback.
+- The coordination-shells skill still states the counts rule: the skill lint binds its 60 % and
+  "most" to the CN margin and holds the three lines on its allow-list, with both sides, until the
+  skill fact-sync PR. Arms A, A+ and D on dev are unchanged (A+ reads no bond-angle window).
+
+### Displacement Directions: the page and the tool at the same settings, and the direction's resolution (plan item 2.5; protocol 2026-10-19.17)
+
+- **The page opens at Auto**, the engine's recommended resolution (the finest ν whose cells still
+  average at least 12 displacements), which is the tiling `analyze_displacement_directions` reads.
+  Until now it opened at ν = 10. The Auto choice is labelled with the ν the engine chose for the site
+  on screen (`Auto · ν=2 (42)`), also while another resolution is picked. A picked resolution
+  overrides Auto and stays, like every option on the page: across a site change, a tab switch and
+  another run, until the user picks again or a Copilot step's Show in sets it.
+- **Every readout comes from the raw histogram.** Both engines pick the peak cell on the smoothed
+  map, so with smoothing on, the peak's cell, direction and σ moved with the Smoothing slider (on a
+  dev case at ν = 10, two passes turned a −0.28σ peak into −10.4σ). The page now asks for the
+  readouts at smoothing 0 (the tool's request) and draws the same request smoothed: the smoothing
+  only redraws the map, its colorbar and the hover's enhancement. A smoothing change asks for the
+  map only. The map test, the ± asymmetry and the Bingham anisotropy never depended on it.
+- **The map opens unsmoothed** (smoothing 0, was 2). Auto's cells already average at least 12
+  displacements, and on its coarse tilings two passes left about 30 % of a cell's excess in place.
+  This is UI only: no readout, and no score of the validation's arms, depends on it.
+- **The direction's resolution is reported.** The peak direction is the peak cell's centre, so it
+  names a direction only to within the cell. Both engines (`orientation.py`, `workers/orientation.js`)
+  now return `peakCellRadiusDeg`, the peak cell's circumscribed radius: the largest angle from its
+  centre to its corners, so every direction counted in the cell lies within it — 37.4° at ν = 1,
+  19.3–20.9° at ν = 2, under 15° from ν = 3. The page prints the peak "± R°, the cell radius at
+  ν = n"; `analyze_displacement_directions` gives `peak.radius_deg` and the same wording, and above
+  15° (`LOW_INDEX_CONE_DEG`) says the direction is not resolved finer than R° and names no <100>,
+  <110> or <111> family. The orientation golden pins the field in both runtimes.
+- One module holds the page's defaults and both requests (`src/directionSettings.js`), and
+  `src/useDirectionHistogram.js` asks for both; `OrientationView` draws `result` and prints its
+  readouts from `readout` (`DirectionReadouts`).
+- **Validation:** arm A, and A+ through the same reading, reads a split site's direction map at
+  the page's own defaults (`ARM_A_RULES.DIRECTION_SETTINGS` is `DIRECTION_DEFAULTS`); the reading
+  records the ν it read and the peak cell's radius. Arm A takes a significant peak whatever its
+  radius, as a user reading the page; arm A+ applies the tool's bound and takes PC1 where the peak
+  cell is wider than 15° (`SWEEP_RULES.directionResolved`). `PROTOCOL_VERSION` 2026-10-19.17. On the
+  dev set nine A and A+ records move, every one through that reading. One judgment case's arm A
+  score falls: a significant peak on Auto's 12-cell tiling names a direction 31.7° off its cube axis
+  (beyond the 15° tolerance) where PC1 named it before. Its A+ score is unchanged, since A+ keeps
+  PC1 there. The moved records are re-recorded in `validation/baseline/arm-a-dev.json`, the others
+  as recorded. The test set was not run.
+- Known answers: on every site of the dev thermal case the page's default readout equals the
+  tool's result field for field, and arm A reads exactly that; its flattened O sites clear 3σ on
+  the map test there and stayed below it on the old default. A planted [0 0 1] split site of 216
+  copies reads ν = 1, ± 37.4° and the unresolved wording; at 4000 copies, ν = 5 and resolved.
+- What the model sees changes in `analyze_displacement_directions` only: its description names the
+  cell radius (+21 characters a request) and its result gives `peak.radius_deg`, a longer note and
+  the new wording. The model-visible snapshots, the record snapshots and the context-budget pins are
+  updated for it. The displacement-anisotropy skill still says the page defaults to ν = 10 (two
+  sentences), for the skill fact-sync PR.
+- Decision record: `validation/findings/decisions/2026-10-19-directions-auto-resolution.json`.
+  Approved by the manager on the user's delegation, 2026-10-19.
+
+### Modulations: the independent-cell null (F1) and diffuse order between cells (plan item 4.4; protocol 2026-10-19.16)
+
+- **F1.** The modulation engines (`modulations.py`, `workers/modulations.js`) test an element's
+  power against its own cells placed at random: every correlation inside a cell is kept (the
+  ligands of a Jahn–Teller octahedron, the vertices of a cluster), every correlation between cells
+  destroyed. The null's cross-spectral matrix is white, N/(N − 1) Σ_c y(c) y(c)ᵀ at every q ≠ 0, so
+  the power is a weighted sum of χ²₁ (zone boundary) or χ²₂/2 (general q) terms with its
+  eigenvalues as weights (`independent_cell_null` / `independentCellNull`); the tail is a
+  Lugannani–Rice saddlepoint, 0 to +8 % above the exact tail from 10⁻² to 10⁻⁹ (`null_tail` /
+  `nullTail`). Each element reports `nullDof`. The null of independent sites it replaces found
+  order in 8.8–31.8 % of fresh configurations of the dev Jahn–Teller, two-feature and octahedral generator
+  kinds (1,000 each); the calibrated null in 0.1–0.6 %, each of its three tests at its 0.135 %. It
+  also stops holding an independent site to one component: a weak order on one isotropic site is
+  found in 99 % of configurations where it was found in 44 %, and both dev weak orders are now far above the
+  3σ bar.
+- **4.4.** Each element gains `diffuse` and `verdict.diffuseOrder`: the ranks of the power over the
+  compared modes (no long wave, no zone-boundary point, none found ordered) regressed on the 13
+  neighbour-cell lags cos(2π q·R), χ²_r under independent cells, Šidák over the elements; diffuse
+  order needs 3σ and a neighbour-cell correlation |Γ| ≥ 0.1. Its Finding carries one Evidence
+  record in the cluster engine's form, `clears` recomputable. Parseval fixes the total power, so
+  the test reads how the power is spread. Planted short-range order (neighbour correlation ∓0.27)
+  is found in every configuration, in antiphase or in phase; no configuration without order between cells
+  reads as it beyond its bar (`tests/test_modulation_calibration.py`: a fast CI subset, and 1,000
+  configurations per family with `RMC_TOOLKITS_FULL_CALIBRATION=1`). One strong mode never makes it. The
+  Demo's three elements are correlated in phase beyond the long waves.
+- `analyze_modulations` shows a `diffuse` row [lag, correlation, σ] per element (F2's rule on the
+  correlation's 0.1 bar), says antiphase correlation as short-range order and in-phase correlation
+  in one note as neighbouring cells moving together, and reads its σ "against independent cells".
+  A nearest miss at σ = −∞ reads "< −8σ" (it printed "nullσ"). Its result budget is 4,500
+  characters. What the model sees changes in this tool's result only: both tool-result snapshots
+  (`analyze_modulations.json`, `analyze_modulations.element.json`).
+- Arm A+ reads cellDoubling, generalOrder and longWave only (no feature kind for diffuse order).
+  On the dev set one A+ record moves: a weak order now above the bar is claimed (re-recorded in
+  `validation/baseline/arm-a-dev.json`); every arm A and D record and every other score is
+  unchanged. The marginal judgment situation needs its amplitude re-set from the calibrated null,
+  the user's call. Approved by the manager on the user's delegation, 2026-10-19
+  (`validation/findings/decisions/2026-10-19-modulation-null.json`, `2026-10-19-diffuse-order.json`).
+
+### Flask mode: the AI Copilot gets the plot data a picked folder gives it
+
+- In Flask mode each Dashboard chart fetched `/api/plot/data` for itself, so the files the Dashboard
+  publishes for the Copilot carried no `plotData`. On the Demo run the dock offered 8 analyses
+  instead of 11, without `assess_convergence`, `find_gr_peaks` and `compare_fit`. Its run context had
+  no dataset titles or Rwp, no `pair_correlations` and no `convergence`.
+- Once the Copilot is open, the Dashboard now fetches every plot file's payload, hidden ones
+  included, and attaches `plotData` (or `parseError`) to the files it publishes. The χ² history is
+  fetched once, for the charted log: the server already concatenates every log of its run, so no copy
+  is spliced in per log. For the same files the run module now gives the browser path's tools, cards
+  and run context.
+- A new module, `src/plotDataCache.js`, sends one request per file and version, and InteractivePlot
+  and the Dashboard both read through it. A chart already drawn costs no second request. Masked
+  points (JSON `null`) are `NaN` again, as the browser parser gives them. A failed request is not
+  kept, so the next reader tries again.
+- A Live Data poll asks again only for the files whose version moved, and a file keeps its previous
+  data until the new answer lands. A load of another folder drops the answers still in flight for the
+  folder before. A failure is listed in the Problems section, hidden or collapsed charts included.
+- The χ² chart's `refreshKey` is now the version of every log of its run. A Flask chart therefore
+  follows a later restart log as it grows; before, it followed only the first log.
+- `/api/structure` keeps the `.rmc6f`'s species order on the wire. The app's JSON provider sorts
+  object keys, so `elementCounts` arrived as Ga, Se, Ta and the Copilot labelled the partial weights
+  `Se-Ta`; for the same files picked in the browser they were `Ta-Se`. The route is now serialized in
+  build order, so `elementCounts`, `atomIndices` and each basis row's `elementCounts` follow the
+  `.rmc6f` in both runtimes. `tests/test_parsers_demo_run.py` pins the wire order.
+- `flaskCopilotRun.test.jsx` builds the Flask payloads from `plot_parity_fixture.json` and serves the
+  Demo's model and logs beside them. On those files the Flask Dashboard's published run gives the
+  browser path's 11 tools with identical definitions, the same cards and the same context text, and
+  the dataset titles and Rwp the fixture pins. It also checks one request per file and version, Live
+  Data, a folder switch and a failure. The browser path's model-visible snapshots pass unchanged. In
+  Flask mode the model now gets the three tools and the context blocks above.
+
+### Shells: a joined shell's split by number (plan item 4.2, protocol 2026-10-19.15)
+
+- The shell catalogue (`src/llm/context/shells.js`) gives a shell joined across a deep trough its
+  `split`: the parts cut at the minimum of the smoothed g between each two successive resolved
+  peaks (the first is the first peak alone), the last ending at the shell's boundary; each part's
+  CN over exactly its window (the parts sum to the shell's), its share and its mean distance and
+  spread from r²g; `longMinusShort`, the last part's mean minus the first's, with
+  `longMinusShortSe`, the configuration's sampling error (each part's spread over √ its bonds in
+  the box, the bonds taken as independent; not the fit's uncertainty); and `direction`, the count
+  the join decided by. A 2 + 2 + 2 octahedron keeps three parts and long − short is the longest
+  minus the shortest: in the E⊗e Jahn–Teller problem that measures the amplitude whatever the mix
+  of the Q₂ and Q₃ modes, and the shares show the mix. A shell whose peaks overlap without a deep
+  trough has no split (its minimum cuts through both bond groups).
+- Known answers (`shells.test.js`): 4 × 1.93 + 2 × 2.25 Å at σ 0.05 Å on 0.005–0.02 Å grids reads
+  4 + 2, shares 2/3 and 1/3, long − short 0.32 Å within 0.002 Å; 2 + 2 + 2 three thirds and 0.37 Å;
+  the reverse direction; the cut's bias (+0.001–0.0017 Å at a 0.07 Å spread, +0.006 Å at the edge
+  of the join); and the sampling error's 95 % coverage, 0.953 over 300 synthetic configurations.
+- `find_gr_peaks` returns it as `first_shell.split` (`parts` with window, mean, sd, CN in the
+  join's direction and share; `long_minus_short_A` ± `long_minus_short_se_A`), declares it in its
+  dataShape, names it in its description, and its joined-shell note quotes the parts, long − short
+  and the shares by path instead of the peaks' separation, so the model quotes the split by
+  reference. dev-jahn-teller's Cu–F reads 3.98 F per Cu at 1.929 Å + 2.01 at 2.251 Å, long − short
+  0.321 ± 0.0043 Å (planted 0.32). What the model sees: the three tool-list snapshots (+123
+  characters each; the budget pins +48 and +49 tokens); the Demo joins no shell.
+- Arm A+ takes a Jahn–Teller claim's magnitude from the catalogue's split where it joins the
+  claimed shell (else the g(r) maxima's separation arm A reads). On the dev set one record moves:
+  dev-jahn-teller's A+ claim reads 0.321 Å where it read 0.31, with the same score (re-recorded in
+  `validation/baseline/arm-a-dev.json`). Approved by the manager on the user's delegation,
+  2026-10-19 (`validation/findings/decisions/2026-10-19-jt-split.json`).
+
+### Detected SG and the symmetry tools for server folders: the basis from Flask (plan item 4.5)
+
+- `/api/structure` returns `basis`, the average-structure basis that `structureFromRmc6f` adds to a
+  browser-loaded run's structure: one row per reference number, with `el`, `referenceNumber`,
+  `frac`, `dispA`, `count`, `elementCounts`, `mean` and `covFrac`. A new module,
+  `rmc_toolkits/structure_basis.py` (`structure_basis`, `read_structure_basis`, both exported),
+  computes it with the browser's steps in the browser's order. Each copy's unit-cell fraction is
+  folded with C's `fmod`, and its per-axis circular mean is `frac`. Offsets are wrapped by
+  `Math.round`'s rule (a tie goes towards +∞). `mean` is the arithmetic mean unwrapped about `frac`,
+  `covFrac` the population covariance (÷ n), `dispA` the rms displacement through the full metric,
+  and `el` the first atom's element.
+- A file of coords-only atoms gets `basis: []`. A basis holding NaN or Infinity (a coordinate too
+  large to fold into the cell) is a computed result, so the route answers 400 rather than writing
+  null.
+- Above `MAX_BASIS_SITES` = 2000 sites, the space-group finder's cap (`MAX_SYMMETRY_SITES`, pinned
+  equal in both test suites), nothing in the app can use the basis, so the route sends `basis: null`
+  and `basisOmitted: {sites, cap}`; a one-site-per-atom box of 52 000 atoms would otherwise send
+  15 MB on every request. The page turns that count into the browser's own "not analysed"
+  description: the card, its missing ladder and CIF button, the Copilot's `symmetry` context and its
+  two symmetry tools (offered, answering "Not analysed") are the same as for the same file picked in
+  the browser. Two things the browser derives from the rows are not sent: the sampling noise floor
+  (the context's `noise_floor_A` and the lowering tool's default tolerance; null in the browser too
+  when every site has one copy, the usual case above the cap) and the pooled-site count in
+  `analyze_displacement_directions`' note for an element.
+- In Flask mode a server folder now gets the Detected SG card, its CIF button, the Copilot's
+  `symmetry` context and the `detect_symmetry` / `measure_symmetry_lowering` tools. Until now only a
+  browser-loaded run had a basis. The browser path is unchanged, and so is everything the model is
+  sent for one: the model-visible snapshots pass unchanged. For a server folder the model now also
+  gets the symmetry block and the two tools.
+- In Flask mode the Dashboard's structure follows App's `configEpoch`, as the analysis pages do. A
+  Load of the same folder, or a Live Data poll, that sees a new `.rmc6f` makes it re-read the
+  structure in place; a read that lands mid-write keeps the previous one, with its *previous read*
+  chip. So the card and the Copilot's symmetry tools read the configuration the Copilot's Flask
+  analyses read. The plots still follow Live Data. Of overlapping structure requests, only the
+  latest one's answer is applied.
+- New golden `structure_basis_fixture.json` (`tests/generate_structure_basis_fixture.py` →
+  `structureBasisParity.test.js`; `tests/test_structure_basis_fixture.py` checks it is current). Its
+  cases are the demo run, a synthetic oblique-cell configuration and a coords-only file. The
+  synthetic one has a site straddling the cell edge, a mixed site whose first atom is the minority
+  species, a split, a correlated, a still and a one-copy site, and coords-only atoms. The browser
+  matches the golden to 1e-12 (measured: 2e-16). On the demo run the server's basis gives the
+  browser's ladder, orbits and CIF byte for byte.
+
+### Copilot: result statuses on the tool contract; the event stream is the transcript (architecture candidate #11)
+
+- `src/llm/copilot/tools.js` decides how every call ends, and the agent loop only forwards it. A
+  call ends as one ToolResult — `{ resultStatus, args, data, checks, error, facts?, ms, cached, note,
+  choice? }` — with `resultStatus` one of `RESULT_STATUSES`: `ok`, `refused` (the tool's own `fail`
+  check, no error), `error`, `unknown_tool`, `skipped` (the loop's refusals, a closed set of
+  reasons: the calls per round, one question at a time, the questions per request). The
+  constructors (`executeToolCall`, `skippedCall`, `unknownToolCall`, `repeatedCall`, `withNote`,
+  `questionResult`, `toolResult`) check the invariants and throw a TypeError on a result that
+  breaks one; `severityOf` is the old `stepStatus`, `ran` the old `executed`; `toolMessage` and
+  `compactToolMessage` moved there verbatim.
+- `tool_end` carries the result: `resultStatus`, `note` (what the app added for the model; for a
+  Workbench question, which sends no message, the text the model read in its place) and `choice`
+  (a question the user answered: `{ source, index, confirmed }`, `confirmed` the clarifier choice's
+  flag, which replaces reading "Keep …" off the label), beside the severity. No store: the dock and
+  the validation harness read the same events, and the verification records the ToolResult
+  itself (a `refused` step still counts as an analysis that ran).
+- The dock: each step keeps the status, the note and the choice; the question card and the screen
+  reader's line read a question's state from them in one wording (a skipped question is announced
+  "Skipped: the Copilot uses its default, …", as the card says it, no longer "Answered: …"; a
+  question that never reached the user "Not asked: …"); `ToolStep` shows the note sent to the
+  model.
+- The validation record: each step gains `result_status`, `note`, `choice`, `ref` and
+  `analysis`; a step running when a turn stops is listed as stopped; `failed_calls` and
+  `unknown_tool_calls` are read from the status (unchanged values), and `refused_calls` is added.
+  The transcript prints a non-ok status and the note, and labels a Workbench question's card as not
+  sent to the model.
+- Protocol 2026-10-19.13: two stricter readings, approved by the manager on the user's
+  delegation. "Asked before" in `unsafe_actions` counts only a question that reached the user (not
+  a malformed or refused one, nor a window the Workbench settled with no card); number provenance
+  credits only what the model was told (each tool message it read, its error and note included;
+  never a Workbench question's card). Decision records `2026-10-19-asked-before.json` and
+  `2026-10-19-provenance-told.json`.
+- Unchanged: every byte, note and order the model reads (every model-visible snapshot, and a new
+  corpus of raw tool messages written first, on the code before the change); `isAnalysis`, the
+  evidence gate, the Outcome and the computed verdict; arms A and A+; the replays; the answer
+  corpus; the scripted records (pinned as files before the change, equal after it with the added
+  keys left out). Tests: `tools.test.js` (every status, the invariant table), `toolOutcomes.test.jsx`
+  (one turn through the dock and the harness: the drift list), `toolMessages.test.js` (the raw
+  messages), the harness's known-answer runs for both readings. Details: [the llm
+  README](../web_app/frontend/src/llm/README.md), *How a call ends*.
+
+### Shells: a split M₃/M₄ cluster shell does not join (F5, a known limit)
+
+- A split first shell joins only when its summed CN is an ideal polyhedral count (4, 6, 8, 12), so a
+  metal triangle or tetrahedron whose edges a distortion splits stays cut at its first trough. Accepting
+  CN 2 and 3 was tried and left out: on the Demo and the dev cases it helps no shell and breaks one
+  (dev-cell-wrap's V dimers read as an extended network; arm A+ there 1.00 → 0.83). The limit is
+  documented with its evidence in `docs/algorithms/ai-assistant.md` and pinned by a known-answer test.
+  Decided by the manager on the user's delegation, 2026-10-19
+  (`validation/findings/decisions/2026-10-19-f5-shell-join.json`); the user may reopen it.
+
+### Copilot validation: the held-out test set sealed before the freeze
+
+- The test cases' definitions move out of `validation/cases.js` into one sealed module,
+  `validation/holdout/testCases.js`, with the test set's arm A / A+ / D records
+  (`holdout/arm-a-test.json`, formerly `baseline/`). Builders and agents never open, print, grep
+  or import that folder. `cases.js` keeps only the public ids (`TEST_CASE_IDS`), so `splitOf`, the
+  findings schema and the records still name a test case. A generator helper only a test case used
+  moved with it.
+- One opt-in loader, `validation/holdoutLoader.js` (`loadTestCases`, `casesFor`): a dynamic import
+  that runs only on `run.js`'s `--final` path (`arm-a`, `live` and `write` with `--split test`; the
+  command line needs `--final` whatever the environment) or when `RMC_VALIDATION_HOLDOUT=1` is set;
+  anything else gets `HoldoutSealedError` before importing. CI's frontend test step sets the flag.
+  Every consumer goes through it (`run.js`, `split.test.js`, `scoring.test.js`, `caseBlind.test.js`);
+  `answerCorpus.test.js` and the findings need only the public ids. A test-set file written inside
+  the repository goes under the sealed folder or a gitignored output folder.
+- Locally the tests that need the definitions are skipped (`it.skipIf`), and the holdout scan looks
+  for the ids only; CI runs everything. Nothing a run sends changes and no case changes:
+  `buildCase` gives byte-identical output for every case, dev and test, before and after, and
+  `TEST_SET_SHA256` holds (checked with the flag). No protocol bump.
+- New `validation/__tests__/holdoutGate.test.js`: no module of `src/**` or `validation/**` but the
+  loader names the sealed folder in code (a small lexer reads every string and template literal:
+  static and dynamic imports, `require`, globs, paths); no test file or model-visible snapshot
+  writes a held-out id and no test title is built from the held-out list; the loader and the CLI
+  refuse without `--final` or the flag.
+- The holdout scan widens: it now reads the validation itself outside the sealed folder (its js
+  and md files and its findings, the decision records among them) and
+  `docs/algorithms/copilot-validation.md` (ids allowed there, nothing else), besides every md under
+  `docs/` (the change notes and the CHANGELOG). New token kinds: the seed (next to the word
+  "seed"), the supercell (next to its element), a thermal width a case sets itself and a breathing
+  sd; a lattice parameter and a thermal width count next to a cation, not the shared anion. Its two
+  lists move to `validation/__tests__/holdoutLists.js`, with four id-only entries (the protocol
+  document, the id manifest, the one decision record on a test case, the lists themselves).
+- Every held-out value is scrubbed from the docs and records: copilot-validation.md (the Cases
+  table, protocol notes 2026-10-19.2 and .11, the Arm A tables' test readings),
+  the recomposed-case decision record, the 2026-10-19.11 change note, `judgment-spec.md`, the
+  validation's comments, AGENTS.md and, once and on the manager's instruction, two passages of
+  docs/CHANGELOG.md. Each now points at the sealed module and `TEST_SET_SHA256`; the scrubbed
+  facts are kept behind the seal. Git history keeps the old text: anyone who read it is closed out
+  of science, threshold and scoring work on the validation.
+
+### Copilot: one turn policy decides what ends a turn (architecture candidate #10)
+
+- `src/llm/copilot/turnPolicy.js` owns every counter that ends a turn — the rounds of tools, the
+  turn's time, the rounds that added nothing, the one reminder and the warmer retry, the
+  last-request note, the answer the evidence gate withdrew — and the order of the steps, behind one
+  event-driven interface: `createTurnPolicy({ limits, clock, tools, judge }).next(event)`, the
+  events `start`, `reply`, `round` and `no_tools`, the steps `ask` (why, tool choice, retry, notes,
+  the verification's send-back), `run` and `end` (the `done`, and the text to say first). The agent
+  loop reports each event and does what the step says; the policy judges each answer through the
+  verification's `judge` and decides when (a send-back only with tools on, before the last request
+  and with time left; the `stoppedBy` an answer is judged under; the withdrawn answer stands), the
+  verification what. Turn time is read at most once per event, never in round 0, and the user's
+  waits stay off it.
+- One `done` shape on every path, built only by the policy: `{ type, text, rawText, outcome,
+  rounds, stoppedBy, cut, reason, audit, references, gates }`. An answer gains `reason: null` and
+  always has `rawText`; the "budget used" answer gains `rawText`, `references: null`, `gates: []` and
+  `reason: null`, its Outcome kept to status, note and body (adding `computed` / `reasons` would
+  change the harness's `record.final`); an empty reply gains `rawText: ''`, `references: null` and
+  `gates: []`.
+- `STOPPED_BY` is the one set of endings — answer, max_rounds, no_progress, empty, stopped, error —
+  each with `cutShort` and the dock's note, and `stoppedByFailure` maps a thrown turn to 'stopped'
+  (an AbortError) or 'error' (a stall included). The turn's `stopped` / `failed` events carry it,
+  the dock closes a turn on it, `CopilotView` shows the row's note (its STOP_NOTES are gone, the
+  sentences unchanged), the computed Outcome reads `cutShort`, and the validation harness records
+  `record.stopped_by` from every terminal event.
+- What left the agent loop: its rounds, start time, waits total, no-progress count, stall flag,
+  reminder count, warmer flag, last-note flag and `why`, both turn-time tests, the stoppedBy
+  derivation and the two inline `done` literals; the notes and fixed answers moved verbatim. The
+  calls per round and the questions stay in the loop: they refuse a call and never end a turn.
+- Unchanged: what the model sees (every model-visible snapshot), every scripted replay, the
+  agentLoop and robustness assertions, the answer corpus, the harness's expectations and its
+  `record.final` on every path (checked against the previous code on 23 scripted endings in both
+  arms), the turn tests. No protocol bump: what a run sends is unchanged; `record.stopped_by` is a
+  new, derived field. Tests: `turnPolicy.test.js` (rows of events → steps, the policy in the loop)
+  and `src/__tests__/turnEndings.test.jsx` (every ending through the dock and the harness alike).
+  Details: [the llm README](../web_app/frontend/src/llm/README.md), *The turn policy*.
+
+### Modulations: the polarisation of an ordered mode (plan item 4.3), F2 and F3 (protocol 2026-10-19.12)
+
+- `displacement_modulations` (`modulations.py`, `workers/modulations.js`) gives every zone-boundary
+  point and strongest mode its `polarisation`: the leading eigenvector of the real part of the
+  element's cross-spectral tensor at q, (1/m) Σ_s Re[U_s U_sᴴ] / (n_s tr C_s), whose trace is the
+  power. It comes as a Cartesian unit `direction` and a direct-lattice `uvw` (largest component 1,
+  the form of `list_sites`' `pc1_uvw`), both in the sense that makes the closest crystal axis acute,
+  with its `share` λ₁/tr (1: one direction; ⅓: none preferred). The share is not a significance:
+  one site at a zone-boundary point gives share 1 by construction. `element_spectrum` /
+  `elementSpectrum` return the power and the tensor field. The parity fixture pins every
+  polarisation, and its generator refuses an eigenvalue gap or a sense decided near its tolerance.
+- Known answers: both sites of an element displaced 0.1 Å along the direct-lattice [1 0 1] of a
+  monoclinic cell (14° from the Cartesian (1, 0, 1)) at q = (½, 0, 0) are found within 5°, with a
+  share above 0.95; over 60 seeds the scatter is the sampling error σ/(δ√(mn)) rad per component.
+  The existing planted modes are read along their axes.
+- F3: the Šidák family is every element of the configuration with displacements, whichever element
+  the call names. Asking about one element after seeing the data is selective inference, and
+  naming it shrank the family to its own points: a weak doubling at 2.98σ over the 21 points of
+  three elements read 3.30σ, "ordered", over its own 7. The payload's `family` names its
+  `elements`. A call without an element is unchanged.
+- `analyze_modulations` shows each ordered point's polarisation (a `polarisation` row: [u v w] to
+  two decimals, share, the nearest <100>/<110>/<111> within 15°) and says it in the point's check.
+  F2: a ratio or σ below its bar (3, 3σ) is never printed rounded onto it. Where the usual rounding
+  reads at or above the bar, it is shown with the fewest significant digits that stay below (2.98,
+  not 3), and nearer than six digits as `'<3'`; the no-order sentence adds "below the 3σ bar". The
+  note says the correction is over every element's points. The tool gets its own 4,000-character
+  result budget (`MODULATION_RESULT_BUDGET`). What the model sees changes in this tool's result
+  only: the tool-result snapshot and a new sample of a call naming one element.
+- Arm A+ reads a modulation claim's direction from the engine's polarisation, no longer from the
+  PC1 of the element's most prolate site. On the dev set every arm A and D record, and every
+  score, is unchanged; two A+ records move in their claim's direction and reading (re-recorded in
+  `validation/baseline/arm-a-dev.json`). Approved by the manager on the user's delegation,
+  2026-10-19 (`validation/findings/decisions/2026-10-19-mode-polarisation.json`).
+
+### Copilot: one verification module answers "is this answer verified?" (architecture candidate #4)
+
+- `src/llm/copilot/verification/` holds the evidence gate, the checks on the answer, numbers by
+  reference and the computed Outcome behind one factory and two operations:
+  `createVerification({ context, catalog, offered, phrasings, maxSendBacks, method })`,
+  `record(step, show)` once per tool step (refs r1, r2, … in record order, none for a step with an
+  error, whose facts are dropped; `show(ref)` builds the tool message and the ref resolves to
+  exactly its data) and `judge(text, { canSendBack, rounds, stoppedBy, cut })` → a send-back, the
+  turn's `done` event, or null for a blank reply with no answer standing. judge's order is fixed
+  inside: fill the references, decide a send-back on the filled text, run the checks, add the
+  unfilled-reference and missing-evidence findings, compute the Outcome. One verification serves
+  one turn (record or judge after `done` throws); a phrasing for an unknown claim, or an asserted
+  pattern that is not a global RegExp, is a TypeError.
+- The internals are two declarative catalogues: CLAIMS (`claims.js`: one row per claim in
+  send-back order — what, scope, phrasings, `backedBy` through `anyOf` / `firstOffered` /
+  `allOf`, the prompt's phrase) and FACTS (`facts.js`: one row per facts key in check order — the
+  producing tools, the shape, the phrasings it reads, the check; the `lowering` row has none yet).
+  `evidence.js` and `answerAudit.js` are gone; `verdict.js` (with `isAnalysis`, the one
+  definition of an analysis), `outcome.js`, `contextAuditFacts` and `shownContext` moved inside;
+  `references.js` stays (without its unused `add`); the shell catalogue gives the finite clusters
+  (`shells.js` `clusterElementsOf`, `CLUSTER_CN_MAX`). The turn builds one verification where it
+  built four loop parameters, the method riding on it (both send-back wordings byte for byte);
+  the agent loop records every tool step and judges every answer with it, and lost its reference
+  store, step log, facts, gate state and `finish`.
+- `EVIDENCE_RULES` stays written by hand; a binding test renders it from CLAIMS byte for byte
+  (`evidenceSentence`) and pins what it does not say (`promptGaps`: coordination also takes
+  `compute_bond_angles`, a lowering falls back to `detect_symmetry`, "no order" needs a per-site
+  map and each finite cluster but neither `find_gr_peaks` nor `measure_symmetry_lowering`).
+- Three behaviour changes, each pinned: the dock footer counts `tool_end.analysis` (views,
+  unknown or skipped calls and a step stopped mid-run no longer count), as the computed Outcome
+  does; the app's claim catalogue no longer reads the validation verdict's words — the harness
+  passes them (`validation/verdict.js` `VERDICT_PHRASINGS`, the turn's `config.phrasings`), so
+  its runs read as before; `DEFAULT_LIMITS` loses `maxEvidenceGates`, now the verification's
+  `DEFAULT_MAX_SEND_BACKS` (2) — `config.limits.maxEvidenceGates` still sets it and the run policy
+  still states it (`runPolicy.js` `TURN_LIMITS`, records unchanged). Also fixed: the dock fills an
+  earlier segment's `{{ctx.…}}` from the context the model read.
+- Unchanged: every send-back text, finding, computed verdict and `done` field; what the model
+  sees (every model-visible snapshot); arms A and A+, the harness's expectations, the scripted
+  replays and the answer corpus pins (its adapter moved onto the interface). No protocol bump.
+  Tests at the interface (`verification.test.js`, `answerChecks.test.js`), the binding test
+  (`verificationCatalogue.test.js`), the real tools' facts against FACTS on the Demo
+  (`verificationFacts.test.js`) and the verdict's words (`validation/__tests__/verdictPhrasings.test.js`).
+  Details: [the llm README](../web_app/frontend/src/llm/README.md), *Evidence, numbers by
+  reference, the computed verdict*.
+
+### Validation: the judgment subset's held-out matches join the test set (protocol 2026-10-19.11)
+
+- Five judgment cases join the test set (sealed since the holdout gate:
+  `validation/holdoutLoader.js`), one per dev judgment case, each with its situation, kind and
+  option: two features at once (`jahn_teller` with `offCentre`), a
+  signal at the edge of significance (`zone_boundary`, `weak: true`, `decoy: null`; two seeds of
+  one amplitude, one on each side of the 3σ bar), two tools read differently (`offcentre`,
+  `wells: 8`) and a choice only the user can make (`elongated_clusters`).
+- Written blind from `validation/judgment-spec.md` alone: no dev judgment parameter, dev record,
+  arm pin or result was read, and no arm or model ran on them. Each seed is the first of its own
+  sequence that a rule fixed before any configuration was built accepts, from the case's engine
+  readings; the property each rule checks is in docs/algorithms/copilot-validation.md (protocol
+  2026-10-19.11), and the seeds and readings are sealed with the cases.
+- `PROTOCOL_VERSION` is 2026-10-19.11 and `TEST_SET_SHA256` changes: results on the earlier test
+  set are not comparable with this one.
+
+### Copilot validation: arm C without the method (plan item 1.8; protocol 2026-10-19.10)
+
+- The turn takes `config.method: 'full' | 'off'` (`src/llm/copilot/method.js`, `TURN_METHODS`), and
+  `planTurn` alone decides from it what the model reads. `'full'` (the dock, arm B) sends every
+  request byte for byte as before. `'off'` (arm C, decided 2026-10-19) sends none of the method: no
+  `read_skill` and no skills' index, no `EVIDENCE_RULES`, no method sentence of `TOOL_RULES` (the
+  calibrated-σ reading, which analysis tells a distortion, effect size with z) or `ASK_RULES` ("Settle
+  what the data can first: e.g. run find_gr_peaks …"), no method advice in a tool description or a
+  check. The tools, their refusals, the Workbench's questions, the evidence gate and the answer checks
+  run under both; `start.method` and the harness record say which one a turn followed.
+- Tool specs gain an optional `method` field: the advice split out of the description, which keeps
+  what the tool does and returns; put back with `'full'` (a string after a space, `{ after, text }`
+  inside a sentence), left out with `'off'`. Split out: `list_sites`, `compute_bond_angles`,
+  `analyze_clusters` (two pieces), `analyze_modulations`, `detect_symmetry`,
+  `measure_symmetry_lowering`, `find_gr_peaks`, `compare_fit`.
+- Checks built with `methodCheck` list the advice inside their text; arm C reads the fact and the
+  verdict without it, and a refusal still refuses: the cut-window refusal, no angles, the pooled
+  directions note, `analyze_clusters`' window failures and split-site note, `find_gr_peaks`' two
+  split-shell notes; and three reading hints that name no tool (the manager, 2026-10-19):
+  `find_gr_peaks`' "Ask whether the crystal has A–B distances there", `compute_bond_angles`' "Read the
+  shape from histogram_10deg_sin_corrected …", `detect_symmetry`'s "Take inversion, chirality and
+  polarity from this, not from memory". The text everyone else reads (the step cards, the record,
+  arm A+) is unchanged.
+- The shared system prompt's ground rules are written part by part (`src/llm/prompts/system.js`
+  `GROUND_RULES`), each part a definition (what a context field is: quantity, units, computation,
+  limits as a measurement), an inference (which field to use for a conclusion, or what a pattern is
+  evidence of) or conduct (how to answer); a sentence that does both is split. Method `'off'` sends no
+  inference part, the tool-free prompt included (the manager, 2026-10-19): of 26 sentences, 7
+  definitions, 2 inference, 4 conduct, 13 split. `'full'` is byte for byte the prompt as before.
+- The harness's `ARMS.C` sets `method: 'off'`; `ARMS.B` is unchanged. What the model sees moves for
+  arm C only: `harness/first-request.arm-C.txt` (its system prompt is the `tools-ask.method-off`
+  variant, 5,975 characters against 8,575), new `harness/tools.arm-C.json`, five
+  `system-prompt/*.method-off.txt` variants and five `tool-results/*.method-off.json` samples; the
+  dock's and arm B's snapshots and the budget pins pass unchanged. A test checks arm C's first request
+  for every skill name, the skills' step headings, the method sentences, `EVIDENCE_RULES` and every
+  piece of tool advice. Arms A, A+ and D are unaffected.
+- The evidence gate checks the same rules under method `'off'`, but its send-back names no analysis
+  and no tool: "… but this conclusion needs its evidence from an analysis run in this question. …"
+  (`OFF_NUDGE`, decided by the manager on the user's delegation, 2026-10-19); arm B's wording is
+  unchanged. The gate's notice and finding (the step card, the record) still name the analyses.
+  Snapshots: `harness/gate-send-back.arm-B.txt` and `.arm-C.txt`.
+
+### Validation: arm A+ reads the app's rules (architecture candidate 8; not a protocol change)
+
+- Arm A+ (the engine sweep, `validation/armA.js`) applied three rules of its own where the app has
+  one. It now calls the app's functions, held in `SWEEP_RULES`, so the control arm and the Copilot
+  read a run the same way:
+  - **The split site.** A+ used arm A's rule (PC1/PC2 ≥ 1.3 and κ₁ ≤ −0.5). It now uses
+    `isSplitSite` (PC1 resolved, κ₁ ≤ −0.5 and at least 3 sampling errors below zero) with
+    `list_sites`' static displacement δ = √(rms1² − rms⊥²) ± its error (`splitDisplacement`). Its
+    readings say `list_sites` with κ₁, its z and δ. On synthetic prolate Gaussian sites, arm A's
+    rule called 3.6 % (216 copies) to 14 % (100 copies) split; `isSplitSite` called none.
+  - **The cluster elements.** A+ tried every same-element first shell peaking below 3.6 Å. It now
+    tries the evidence gate's elements: those whose own first shell holds 0.5–4.5 neighbours. The
+    rule is one function, `clusterElementsOf` (`llm/context/shells.js`, which now holds
+    `CLUSTER_CN_MAX`), and `evidence.js` imports it.
+  - **The lower group's tolerance.** A+ read the space group at the sampling noise floor. It now
+    reads it at 1.25 × the floor: `lowerGroupTolerance` (`llm/context/runContext.js`), which is
+    `measure_symmetry_lowering`'s default. The margin is `NOISE_FLOOR_MARGIN`, one constant read by
+    the tool, the Workbench's tolerance question (`clarify.js`, until now its own `NOISE_MARGIN`)
+    and A+.
+- Arm A's rules are the frozen protocol's and are unchanged. On the dev set every arm A and D
+  record is identical, and so is every score and claim. Every A+ record moves in its readings; on
+  the ten paired cases:
+  - The group is now read at 1.25 × the floor, with the same group in every case.
+  - Eight cluster readings of extended networks (CN 6–12) are gone: the O of four perovskites,
+    FeSi's Fe and Si, rock-salt Mg and O.
+  - In dev-jahn-teller, two F sites are no longer split (2.8 sampling errors). The F claim stays.
+  - dev-offcentre's δ is now 0.202 Å, where it was 0.201 (planted 0.2).
+  - The judgment subset's five A+ records move in the same ways, with unchanged scores (their
+    readings stay in the records and pins).
+  - The moved records are re-recorded in `arm-a-dev.json`.
+- What the model sees is unchanged: the model-visible snapshots pass as they were. Live runs stay
+  comparable, and `PROTOCOL_VERSION` stays 2026-10-19.9.
+- The skill lint gained a `rule` check (`RULES`). It flags a skill sentence that states one of the
+  three rules otherwise. Its allow-list now holds five sentences, awaiting the user's skill review:
+  - displacement-anisotropy SKILL.md:27 and significance-reading.md:17: a split site is a negative
+    Mardia kurtosis;
+  - coordination-shells SKILL.md:51: any polyhedron distortion goes to `analyze_clusters`;
+  - local-symmetry SKILL.md:38: the floor itself is the line;
+  - local-symmetry SKILL.md:59: the margin is left to the user.
+- Known-answer tests: `validation/__tests__/aplusRules.test.js`. Decision record:
+  `validation/findings/decisions/2026-10-19-aplus-app-rules.json`.
+
+### Copilot validation: the judgment dev subset (plan 1.6, part ii)
+
+- Five dev cases where arm A+'s fixed joining rules are ambiguous or wrong, so a model has room to
+  add. Each is marked `judgment: true` with a `situation`, and `devOnly` until its held-out match
+  exists:
+  - two features at once: Jahn–Teller octahedra whose centre is also off-centred;
+  - a signal at 2.5–4σ: one weak cell-doubling order, one seed on each side of the 3σ bar;
+  - two tools read differently: eight-site <111> off-centring;
+  - a choice only the user can make: elongated octahedral clusters whose split shell the Workbench
+    joins and asks about. Since protocol 2026-10-19.8 A+ reads that joined shell too, so on the
+    score this case is the subset's control.
+- Their parameters sit in `validation/judgmentCases.js`, apart from `validation/cases.js`, which
+  builds them:
+  - new options on existing kinds: `jahn_teller` `offCentre`, `zone_boundary` `weak` (no decoy),
+    `offcentre` `wells: 8`;
+  - one new kind, `elongated_clusters`.
+
+  Without an option, a kind draws exactly as before: every earlier case, dev and test, builds byte
+  for byte as it did.
+- **A spec for the held-out author:** `validation/judgment-spec.md`. It gives the situations, the
+  kinds and options, what makes each a judgment case and the knobs, with no dev value, result or
+  arm score. `validation/__tests__/judgment.test.js` scans it, the docs section and this note for
+  the dev cases' ids and values.
+- **The report:** each split with judgment cases gets a table of each column's mean score per
+  situation, over the subset and over the rest (`report.js` `renderJudgment`). The truth of a
+  judgment case says so (`truth.judgment`), and a transcript's planted truth names the situation.
+- **Two situations through the harness, scripted** (`judgment.test.js`): a window that cuts the
+  octahedral clusters' split shell is asked about and the skip keeps the whole shell; a
+  superstructure claimed below the bar scores as a claim while the answer check flags it.
+- **The split test:** a judgment case may use a paired kind's options, and no test case is one yet.
+  `TEST_SET_SHA256` is unchanged. The holdout scan never lets a judgment case remove a test token.
+- Arms A, A+ and D on the five cases are appended to `validation/baseline/arm-a-dev.json`. The
+  earlier records are unchanged.
+- `PROTOCOL_VERSION` 2026-10-19.9 (2026-10-19.8 is the shell catalogue's): a dev batch now holds the
+  subset. Approved by the manager on the user's delegation
+  (`validation/findings/decisions/2026-10-19-judgment-dev-cases.json`).
+
+### PCA Ellipsoid: one fit subsample in both runtimes (plan 2.6)
+
+- Above `MAX_PCA_FIT_POINTS` (20 000 points: a pooled element cloud, or one site in a box of 28 or
+  more cells per edge) the KDE volume is fitted on a subsample. Python drew it with numpy's
+  generator and the browser with mulberry32, so Flask and the static app fitted different points.
+  Python now draws the browser's subsample, index for index: `pca_kde.fit_subsample_indices` and
+  `mulberry32_uint32`, a bit-exact port of `fitSubsampleIndices` / `mulberry32` in
+  `workers/pcaKde.js`. The draw seeds mulberry32 with the seed modulo 2³², runs a partial
+  Fisher–Yates with `floor(u·(n−i))` in float64, and keeps the first 20 000 positions sorted
+  ascending. Python computes it in uint64 arithmetic, so it runs on numpy 1.22.
+- A pooled cloud is now site-major in Python too (`displacement_cloud`: sites by reference number,
+  file order within a site), as the browser builds it. RMCProfile writes each element cell by cell,
+  so the two orders differed, and the subsample picks rows by position. Below the cap only
+  summation round-off changes (≤ 3e-13 relative on the demo's pooled Ga; single sites are
+  bit-identical).
+- Python's numbers change above the cap, because it fits a different subset. On a 27 000-copy
+  Gaussian site the eigenvalues move up to 0.5% and the density up to 6% of its peak. On the demo's
+  pooled Se cloud (32 000 atoms) they move 1.8% and 11%. They now equal the browser's. The page asks
+  for single sites, and the AI Copilot and the validation's arms never request a KDE volume. None of
+  the validation cases exceeds the cap: the largest cloud is 2 560 atoms.
+- New golden `pca_kde_fixture.json` (`tests/generate_pca_kde_fixture.py` → `pcaKdeParity.test.js`;
+  `tests/test_pca_kde_fixture.py` checks it is current). It pins the mulberry32 stream and the drawn
+  indices exactly, then two volumes above the cap to the golden rule: a 21 952-copy synthetic site
+  that both runtimes build from the same stream, and the demo's pooled Se. The existing
+  site-statistics, orientation, cluster and modulation goldens are unchanged.
+- The browser's mulberry32 now wraps its state modulo 2³² explicitly. This makes no difference
+  below 4.9 million draws, and the app draws at most 20 000.
+
+### Copilot: one shell reading per pair, per run (architecture candidate 6; protocol 2026-10-19.8)
+
+- `src/llm/context/shells.js` reads the first coordination shell of every pair in the partials file
+  once (`shellCatalogue(run)`, memoised per partials data, structure and run settings; frozen
+  Shells), and every reader takes it from there: the run context's `pair_correlations`,
+  `find_gr_peaks`, the Workbench's questions (`buildShellCatalog` is gone), the evidence gate, the
+  answer checks (`cnMatches`), `compute_bond_angles`' window refusal (`countsCut`) and arm A+'s
+  cluster windows. Before, five readers searched their own r ranges, rounded their own way and
+  integrated the coordination number their own way.
+- One rule per quantity: peaks below 8 Å and the closing minimum to max(8, r₁ + 3) Å, whatever range a
+  caller passes; windows rounded to 0.01 Å and every CN integrated over exactly the window quoted
+  with it (a count can move in its third digit: the Demo's Ta–Ta 2.76 → 2.75); separation and the
+  closest-approach pile-up on one 2 % fraction (`find_gr_peaks`' FWHM edge clause is dropped; it
+  moved nothing on the Demo or the dev cases); half an atom for every CN match.
+- **The first peak alone ends at the minimum between the first two resolved peaks**, and exists only
+  with two or more; r ± FWHM reached into the second peak. The Demo's Ta–Se first peak: 2.21–2.65 Å,
+  3.25 Se per Ta (it read 2.33–2.71 Å, 3.86–3.9). Known answer: a 3 + 3 split with overlapping widths
+  gives 3 ± 0.1 on three grids, where r ± FWHM gives 3.4–4.0. Approved by the manager on the user's
+  delegation, 2026-10-19.
+- `find_gr_peaks`: `first_peak_window_A` leaves; `first_shell.first_peak_only` (window, CN, trough)
+  for every shell of two or more resolved peaks, its CN in the split-shell note; the shell no longer
+  depends on `r_max` (a first peak above it gets a note and the shell, no longer "no peak"), as its
+  description now says. The context adds `first_peak_to_A` / `first_peak_cn` for the same shells and
+  lists peaks to 8 Å.
+- The window-cut rule is unchanged: the Workbench asks on the CN margin, `compute_bond_angles` refuses
+  on the coordination counts (60 % modal share, more than half unbonded; the Demo's 47 % text
+  verbatim). Both readings live in the module; `validation/run.js shell-cuts` tabulates them on the
+  dev windows (149: agree on 134, the counts alone refuse 11, the margin alone asks on 4). The
+  CN-margin rule for the tool is a recommendation awaiting the user.
+- The bond-angle engines (`triplets.py`, `workers/triplets.js`) return `coordinationSummary`
+  `{mean, modal, modalShare, unbondedShare}`, the lowest count winning a tie; the Bond Geometry page
+  and `compute_bond_angles` read it instead of recomputing it. Both golden fixtures pin it.
+- The skill lint gains a value check (Demo values a skill quotes, against the tool): the four places
+  the coordination-shells skill quotes the old first peak are allow-listed with both values until the
+  user's skill review, a precondition for the freeze. What the model sees moves (`find_gr_peaks`, the
+  context, the tool's description); the `compute_bond_angles` snapshots do not; the dock's worst
+  turn grows by 90 tokens, arm B's by 16.
+  Arms A and A+ on dev: scores and claims unchanged, three A+ cluster windows 0.01 Å lower at their
+  start (re-recorded).
+
+### Tests: an App-level smoke test of the Copilot dock's state lifecycle; the Demo no longer follows a folder's Live Data (plan 1.4)
+
+- `src/__tests__/appDockLifecycle.test.jsx` drives the real App, Dashboard, Detected SG card, run
+  module and dock on the Demo run's files, with no model (a recording fake at
+  `streamCopilotChat`, where the dock's model port sends each request) and no server (axios refuses
+  every call; fetch serves only the Demo's files and a stubbed model list). The Demo's files are
+  picked as a folder in the static build with Live Data on; RMCProfile's save is a new `.rmc6f` in
+  that folder, seen by the Live Data poll.
+- It checks, end to end: after a save the dock draws the configuration divider; the next request
+  carries no earlier question or answer, and its system prompt, tools and context are a fresh
+  conversation's (the context is the run as App hands it now, the first context with only the new
+  move count); memory resumes from the divider; a Detected SG pick (a ladder brick) is kept across
+  another save of the same run, on the card and in the Copilot's context; another run (the Demo
+  button) brings the card and the context back to `DEFAULT_VIEW.toleranceA` and a new conversation.
+- **Fix: opening the Demo stops static-mode Live Data watching the folder picked before.** Before,
+  a later save into that folder replaced the Demo's data (name, plots, structure) under the Demo's
+  `runKey`, so the Copilot kept the conversation and the Detected SG pick. `handleToggleDemo` now
+  clears the folder handle and its signature, and each poll tick reads the folder open at that
+  moment and drops a read whose folder was replaced meanwhile. Live Data switched on with no
+  folder open now watches the next folder picked (before, it did not start until switched off and
+  on). Pinned by two more cases in the same test file.
+- Not covered in jsdom (left for the browser check): the real File System Access handle and Web
+  Worker (stand-ins here), the provider's streaming, the dock's sheet layout, and Flask-mode Live
+  Data with the real dock.
+
+### Requests: one contract for the worker and Flask adapters (architecture candidate 9)
+
+- `requestAnalysis` (useSiteCloud.js) is the analysis request seam, and its doc comment is the
+  interface. `kind` must be a key of `ANALYSIS_ROUTES`, which moved into `workers/requestGuards.js`;
+  the PCA worker's kinds are its keys. `params` are flat scalars that cannot override kind, text,
+  dir or id. A refusal names the parameter. The comment also gives the cancel semantics.
+  `pcaKdeWorker.js` exports `inProcessEngine`, the worker's handler in-thread behind the same
+  interface. `openRunFolder` and the eight test helpers that rebuilt `{ kind, ...params }` use it.
+- One hand-written fixture, `src/__tests__/fixtures/analysis_requests.json`, says what each kind
+  accepts and refuses. It holds the 128-atom Nb/Se configuration, the six routes, 19 limits (each
+  with the Copilot tool property that sends it) and 130 cases. `analysisRequests.test.js` replays it
+  on the worker and in-process adapters and checks the Flask routing with axios mocked. It also
+  runs the cancel table on the worker, Flask and in-process adapters and on useCopilotRun's engine,
+  and checks the tool schemas against the limits (the schemas are unchanged). Its coverage checks
+  give every bound an at-bound case and a past-bound case. `tests/test_analysis_requests.py`
+  replays the cases on Flask. `test_backend_contract.py` checks that every limit is in its
+  REFERENCE.md row. That check found that the `/api/triplets` and `/api/clusters` rows left out
+  the lower bound 0 of `r12Min`, `r23Min` and `rMin`; the rows now state it.
+- Three behaviour changes, each pinned by a fixture case:
+  1. An unknown or missing kind is refused at `requestAnalysis` on every adapter. Flask used to
+     answer it with a silent KDE.
+  2. The worker's modulations request reads `'ALL'` and `' all '` as every element, as Flask does.
+     It used to refuse them ("no site holds All").
+  3. An in-process request aborted while it runs now rejects with AbortError when it finishes. It
+     used to resolve.
+
+  Every accepted request returns what it returned before.
+- 19 cases where the adapters still differ are kept, each with its reason, and the JS test fixes
+  their number. Eight differ in outcome: a fractional `grid` (Flask 400, worker rounds), a blank
+  `grid` (48 or 8), a negative `minAmplitude`, numeric text for `bwScale`, `extent` and
+  `referenceNumber` (accepted by Flask only), a null `probability` (accepted by Flask only) and a
+  blank `binWidth` (accepted by Flask only). Ten are refused by both but named differently by the
+  worker's engines (`numeric bandwidth`, `reference number`, `bond12`). One is read by the worker
+  only (`clusterThreshold`).
+- The tests the fixture replaces were removed: the worker and route request tables in
+  workerGuards, pcaKdeWorker, tripletsWorker, clusters, orientationFixes, modulations and
+  test_backend_validation. The NaN-result, work-budget, cache-key and kde/slice tests stay.
+
+### Copilot validation: the report beside the case score (plan 1.6, part i)
+
+- `run.js report` takes each split's case score apart (`validation/comparison.js`). It adds three
+  sections under the split's tables:
+  - **the score's parts:** each column's feature-only score (the planted features alone), its
+    spurious-claim test and its symmetry fields, with each live column minus A+ on the cases both
+    have;
+  - **every component against A+:** arm A, A+, each live column and its difference;
+  - **every disagreement with the planted truth:** a missed feature and what took its place (wrong
+    kind or wrong element), a direction, magnitude or q off, a spurious claim, a symmetry field
+    wrong or unanswered, no verdict. Each gives the answer, the truth and the columns and runs that
+    made it.
+- The case score, every existing export of `validation/scoring.js` and the arm A/A+ pins are
+  unchanged. New in `scoring.js`: `scoreComponents`, the components read back from the score,
+  whose mean is the case score; and `restrictedScore`. `validation/__tests__/comparison.test.js`
+  runs the dev baselines and synthetic B runs through the report: B matching A+, over-claiming,
+  missing a feature, and better than A+ on the JT long axis. It also checks that the dev baselines
+  re-score exactly as recorded. A split with no live run or no A+ record says so.
+- On the dev baselines the feature-only score is A 0.25 and A+ 0.92, against case scores of 0.825
+  and 0.99. A+'s one disagreement is the JT long axis.
+- Not a protocol change: the report reads records and changes none, so `PROTOCOL_VERSION` stays
+  2026-10-19.7.
+
+### State lifecycle: a new configuration ends the Copilot's memory; the Detected SG pick resets with the run (plan 1.4)
+
+- **A Live Data save that brings a new `.rmc6f` is a new configuration of the same run.** App
+  passes the AI Copilot a `configKey` beside its `runKey`: `configEpoch` in Flask mode, and for a
+  browser-loaded run (static-mode Live Data included) the signature of its `.rmc6f` files
+  (`configurationSignature` in `browserData.js`, which the Flask check now uses too). A save of the
+  plots or the `.log` alone changes neither.
+- **The conversation stays, but the model no longer reads the old answers as current.** Before, a
+  save kept up to four earlier exchanges about the previous configuration in the model's memory
+  while the context described the new one. Now each question remembers the configuration it was
+  asked under; the dock draws a one-line divider where it changed ("New configuration saved —
+  earlier answers were about the previous one", announced to screen readers), after an answer that
+  was still running at the save, and a turn's history holds only the questions asked under the
+  current configuration since the last change (`turnHistory(turns, configKey)`,
+  `configurationBreaks`). The choice keeps the user's conversation readable without misleading the
+  model; starting a new conversation on every save would have thrown away what the user can still
+  read.
+- **What the model is sent changes in one case only:** the first question after a configuration
+  change is sent with no memory, exactly as a fresh conversation's first request, and later
+  questions remember only the exchanges since the change. The first request of a fresh
+  conversation is unchanged (the model-visible snapshots pass as they were). The validation asks
+  one question per fresh run, with no Live Data save, so its requests are unchanged: no protocol
+  bump.
+- **The Detected SG pick resets with the run.** The shared tolerance (`useRunTolerance` in
+  `symTolContext.js`) returns to the card's default (`DEFAULT_VIEW.toleranceA`, 0.2 Å) whenever
+  another run opens (`runKey`), even one that was open before, so one run's pick never sets the
+  next run's card or Copilot context. It is kept across page switches and across a Live Data save or
+  a Load of the same run. The analysis pages' Live Data behaviour is unchanged.
+- Pinned by `src/__tests__/appStateLifecycle.test.jsx` (Flask and static-mode Live Data: run vs
+  configuration, the pick kept or reset), the dock's divider and memory in
+  `src/llm/__tests__/copilotChat.test.jsx`, `turnHistory` / `configurationBreaks` in
+  `src/llm/__tests__/turn.test.js`, and `configurationSignature` in `browserData.test.js`.
+
+### Engines: the cluster and modulation engines return their own verdicts (architecture candidate 5)
+
+- `cluster_distortion` (`rmc_toolkits/clusters.py`, `workers/clusters.js`) always returns a
+  `verdict`. Each question is a Finding `{answer, because, evidence}`: distorted, less distorted,
+  breathing, rigid, a static distortion of the average cluster, split member sites, a trigonal
+  lean, favoured gyration axes, and what the window did. `answer` is null where a question does
+  not apply or its statistic is undefined, never for "not significant". Each Evidence record
+  names its null, observed and null values, z, change, bar and side; its `clears` can be
+  recomputed from the record. The rules are the Copilot tool's, ported rule for rule and echoed
+  in the payload (`CLUSTER_RULES`). They are read from the unrounded statistics. The split rule
+  (`isSplitSite`) moved into the cluster engine: `list_sites` imports it, and the engine reads the
+  split member sites from its own clouds.
+- `displacement_modulations` (`modulations.py`, `workers/modulations.js`) gives every zone-boundary
+  point and strongest mode its calibrated `sigma`, its `kind`, whether it is `ordered`, `because`
+  and its `bar`. σ is the tool's χ²/Šidák arithmetic, unchanged; +∞ is reported as `SIGMA_MAX` = 40
+  and −∞ as null, as the tool showed them. Each element gets a `verdict` {cellDoubling,
+  generalOrder, longWave}, with the q that decided each and the nearest miss. The payload also
+  carries the `family` the corrections counted and the `rules`. One long-wave predicate replaces
+  two (they agree on every grid point).
+- `analyze_clusters` and `analyze_modulations` now only shape the data and say each finding through
+  a sentence table keyed by (finding, because); their `facts` are the answers. What the model sees
+  is unchanged: the model-visible snapshots pass as they were. Today's summaries and the new
+  renderers give the same data and checks on 1,010 tool results. `analyze_clusters` makes one
+  engine request instead of two. Before, when its second (`sites`) request failed, the split-site
+  note was dropped silently, and split sites could read as rigid.
+- The two engines agree: both fixtures now pin the verdicts and their vocabularies. Their
+  generators refuse a case where a decided statistic sits within 10⁻⁶ of its threshold. New known
+  answers: a pinched edge, rigid tetrahedra, split F₆ octahedra, rigid dimers, and order at
+  q = (3/8, 0, 0), alone and under a long wave. Staleness tests (`test_clusters_fixture.py`,
+  `test_modulations_fixture.py`) catch stale fixtures, and the Flask routes return the engine
+  verdicts.
+- Arm A+ reads the engines' verdicts, so its cluster claims follow the tool's rules where it had
+  its own: trigonality counts for tetrahedra; rigidity defers to the engine's split member sites
+  (not arm A's split site) and to a pattern beside a narrower edge spread, and collective
+  breathing no longer blocks it. On the dev set every score and claim is unchanged; only its
+  cluster and modulation readings change (the ten dev A+ records, re-recorded in
+  `validation/baseline/arm-a-dev.json`). Only a held-out case would exercise the rule changes.
+  Approved by the manager on the user's delegation, 2026-10-19.
+
+### Copilot: the provider quirks behind the model port (architecture candidate 3)
+
+- `providerModel` (`src/llm/provider/model.js`) owns what differs between providers; the turn's
+  and the loop's interfaces are unchanged. Its `prepare` is now async: it detects the server
+  (`detectServer`, which probes only localhost or port 11434), puts the tool choice in that
+  server's form, and asks the context guard for its decision (`planCopilotChat`, split out of
+  `streamCopilotChat` in `contextGuard.js`). It returns the request as it goes out, with
+  `plan`: the server kind; Ollama's `numCtx`, `numPredict`, estimate, loaded and maximum context;
+  LM Studio's loaded context; and the tool choice's form (`TOOL_CHOICE_FORMS`: `body`, `omitted`,
+  `tools_withheld`). `stream` sends under that plan. The guard's numbers and rules are unchanged
+  (2.5 and 1.4 characters a token, the 8,192-token reserve, LM Studio's 4,096 tokens of room).
+- **Behaviour change for Ollama runs:** the final request (the analysis budget used, `tool_choice:
+  'none'`) now carries no tools, because Ollama's native `/api/chat` has no `tool_choice`. The
+  model can no longer answer it with calls only, so it no longer ends on the "budget used" fallback
+  for that reason. The earlier calls and results still travel as messages. The estimate counts
+  what is sent, so the final request's estimate leaves out the tool schemas. OpenAI, Gemini,
+  Anthropic and LM Studio get the same body as before: `"tool_choice"` beside the tools.
+- **Typed failures.** A request the guard refuses throws `ContextLimitError` from `prepare`, before
+  anything is sent. The turn then emits no `request` event for it, as for a spend cap, and a record
+  has no entry for it. A model that cannot take tools fails `stream` with a
+  `ToolsUnsupportedError`, read from the provider's response: Ollama's 400 `{ error: "<model> does
+  not support tools" }`, OpenAI's 400 `{ error: { param: 'tools', code: 'unsupported_parameter' } }`,
+  then the old text pattern as the port's one fallback (LM Studio, Gemini, Anthropic). The agent
+  loop retries on the type, not on the text: `isToolsUnsupportedError` and its regex left
+  `agentLoop.js`. `client.js` and `ollama.js` keep the parsed error body on the Error (`httpError`).
+- The loop keeps its final-round guard: calls in the final round are never run, and a reply with no
+  answer ends on the fixed "budget used" answer. LM Studio, Gemini and Anthropic take the field but
+  are not verified to honour it. The port's server probes now run in `prepare`, which the loop
+  puts under the stall clock (`beforeStall`, `robustness.js`).
+- Validation (protocol 2026-10-19.7): the run policy's Ollama final-round form is now "no tools
+  sent", and the scripted check pins it. Each request's `num_ctx` is read from `sent.plan`
+  (`observeContext` is removed). Ollama runs under earlier protocols are not comparable on their
+  final round.
+- Tests: `modelPort.test.js` (the port over fake servers: the plan and form per server, the refusal
+  in `prepare`, the typed failure and every case it must not catch, the loop over the port);
+  `planCopilotChat` in `contextGuard.test.js`; the refused request with no `request` event in
+  `turn.test.js` and `runPolicy.test.js`. The model-visible snapshots, `arms.test.js` and the
+  budget test are unchanged. Details: [the llm README](../web_app/frontend/src/llm/README.md), *The
+  model port*, and [copilot-validation.md](algorithms/copilot-validation.md), Protocol 2026-10-19.7.
+
+### Copilot validation: a fit-data dev case (plan 4.6)
+
+- **dev-fit-unconverged**, a dev-only case (`devOnly` in `validation/cases.js`; no test twin, no
+  reported number), is the first case with fit files, so `assess_convergence`, `compare_fit` and
+  the rmc-fit-assessment skill are exercised. Rock-salt MgO, 6³ cells, isotropic thermal motion
+  only (no order, Fm-3m), seeded. Besides the `.rmc6f` (now with RMCProfile's run counters: 9.4
+  accepted moves per atom) and the partials, its run folder holds RMCProfile's X-ray file family
+  in the Demo's formats: `rmc_run_FQ1.csv`, its Fourier transform `rmc_run_FT_XFQ1.csv` and the
+  χ² log `rmc_run-00.log`. `runFolder.js` passes them as run-folder entries (`caseFiles`), so the
+  run module detects their kinds as for a user's run.
+- The planted fit truth (`truth.fit`): the X_ray_(R)1 χ² is still falling after a fast drop (the
+  plot's end looks flat; the watchdog and `assess_convergence` say improving, ln χ² −0.034 over
+  the last tenth), and the measured G(r) holds a peak at 2.55 Å the configuration does not
+  reproduce (`compare_fit`: 97 % of the G(r) misfit in 2.17–3.33 Å; in F(Q), the same
+  measurement, a misfit at low Q).
+- Scored on its structure like every case; the scoring and the verdict schema are unchanged. The
+  fit truth is checked by the context, the fit tools and the answer check's convergence rule
+  (`validation/__tests__/fitCase.test.js`, scripted model). Arms A and A+ score 1 on it (appended
+  to `validation/baseline/arm-a-dev.json`); the other 27 dev records and the test set are
+  unchanged.
+- Pins updated: `arms.test.js`, `split.test.js` (a dev-only kind), `caseBlind.test.js` (the dev
+  cases now offer every tool its sweep calls), `toolDataShapes.test.js` (the fit tools on the
+  case), and `contextBudget.test.js`: arm B's largest dev case is now this one, 35,906 tokens
+  needed, 3,138 over 32,768.
+
+### Copilot validation: the run policy, and LM Studio models at 48k (plan 1.2)
+
+- `validation/runPolicy.js` states what a live run runs under besides the cases, the prompt, the
+  tools and the scoring: the server kind and version, the temperature and the warmer retry's
+  floor, the loop's limits, the minimum window per server kind, the window read before and after
+  the run, the `num_ctx` each Ollama request was sent, the reply cap, the context guard's
+  decisions and the final round's `tool_choice` form. Each record keeps it (`record.policy`, and
+  `num_ctx` on each request), each transcript prints it under its header, and the report adds
+  *What a comparison across models also compares*: the columns' policies side by side, whether
+  the limits, temperature and guard are the same in every run, and what no policy sets (sampling
+  beyond the temperature, the reasoning mode, the tokenizer, the quantization).
+- The decision of 2026-10-19 (the manager, on the user's delegation): the guard, its estimate, the
+  8,192-token reply reserve, the budgets and the prompt are unchanged, since refusing rather than
+  cutting is wanted. The live runs load each LM Studio model with at least 49,152 tokens (48k),
+  which holds the worst two-skill turn of the dock and of arm B with 10,590 and 14,033 tokens to
+  spare (`contextBudget.test.js`). Before every run, `run.js live` reads the server
+  (`preflight`): another kind, none, a model not loaded, or one loaded below 48k stops the batch
+  with what was found, what is needed and how to reload (`lms load <model> --context-length
+  49152`). Nothing is sent and no record is written, so the batch resumes. Ollama still sizes
+  `num_ctx` itself and is recorded only. `models.js` names each model's server kind.
+- A scripted check sends a final round to each provider preset through the production port and
+  pins what goes out today: `"tool_choice": "none"` with the tools for OpenAI, Gemini, Anthropic
+  and LM Studio, and no `tool_choice` on Ollama's native API, where the tools are still offered.
+  No provider behaviour changed; enforcing the final round on Ollama is the model port's job.
+- Protocol 2026-10-19.5: what the model is sent is unchanged, but a run's conditions are now part
+  of the protocol and earlier records do not state theirs. Details:
+  [copilot-validation.md](algorithms/copilot-validation.md), *The run policy*.
+
+### Copilot: one module runs one question; the dock and the harness are its adapters
+
+- `src/llm/copilot/turn.js` is the turn module: `runTurn(spec)` takes the question, the run props,
+  a model port, the caller's tools, an ask-user port, the skills, the history, a signal, a clock
+  and `{ toolsEnabled, method, limits }`, and builds everything else — the context and the context
+  as the model reads it, `ask_user` and `read_skill` after the caller's tools, the prompt variant,
+  the history window, the Workbench's questions, the evidence gate, the answer checks' context
+  facts and the references. Its events are the loop's, each stamped with `at`, between a `start`
+  (what is offered, the prompt, the method, whether tools are active, the shown context) and
+  exactly one terminal event: `done`, `stopped` or `failed` (with the message and the hint).
+  `describeTurn(spec)` is the same assembly, not run. Invalid input (a tool named `ask_user` or
+  `read_skill`, no model) throws at the first step; after `start` it never throws.
+- `src/llm/provider/model.js` is the model port (`prepare(intent) → sent`, `stream(sent)`), and
+  `providerModel` its production adapter over `streamCopilotChat`: a request asked again after a
+  looping reply runs at a temperature of 0.6 or more, and the request as sent never holds the API
+  key. The agent loop calls the port and emits each request as sent, with why it was made.
+- The dock (`useCopilot.js`) keeps its React state, Stop, the question card, the card focus, the
+  models that refused tools and the run reset; CopilotChat no longer builds the clarifier, parses
+  the skills or adds `ask_user` and `read_skill`. What the dock sends is unchanged (the
+  model-visible snapshots pass as they were). `CHAT_HISTORY_TURNS` is renamed `HISTORY_MESSAGES`.
+- The validation harness runs each question through the same module (protocol 2026-10-19.3), with
+  four changes, each pinned: the warmer retry at 0.6 or more (it ran at the model's 0.2), the
+  no-tools prompt for a model that refuses tools, number provenance against the context as the
+  model read it, and every request kept in the record (`record.requests`). `run.js` builds the
+  port with `providerModel`, and `spend.js` `meteredModel` meters it (replacing `meteredCall`; a
+  request the cap refuses is never sent). Arms A and A+ are unchanged.
+- Tests: `turn.test.js` at the interface (a scripted port, a fake ask-user, a fake clock);
+  `modelVisible/turnRequests.test.js` (the turn's first request for a dock-shaped and a
+  harness-shaped spec equals the snapshot files); the prompt-assembly, memory, warmer-retry and
+  "when to ask" tests moved onto the turn; the scripted replays run through `runTurn` with their
+  assertions unchanged. Details: [the llm README](../web_app/frontend/src/llm/README.md), *The
+  turn*, and [copilot-validation.md](algorithms/copilot-validation.md), Protocol 2026-10-19.3.
+
+### Copilot: a corpus of real answers for the gate's and the checks' claim readings (plan 3.5)
+
+- `src/__tests__/answerCorpus.test.js` runs real model answers through the evidence gate and the
+  checks on the answer as they are today. The answers sit one file each in
+  `src/__tests__/answerCorpus/entries/`, each with its text, source (file, lines, commit), model,
+  question and run (the Demo or a dev case, never a test case). Where the record shows them, an
+  entry also lists the steps that ran, and those steps must reproduce the transcript's numbers
+  with the real engines.
+- One adapter (`answerCorpus/readAnswer.js` `readAnswer`, public functions only) gives the reading
+  each entry pins: the claims the gate reads, its send-back given the steps (or "steps
+  unknown"), and the checks that fire. Each reading carries a person's judgement, so false alarms
+  are counted.
+- Nine answers today: gemma4:26b's three correct ones of 2026-10-11 (verbatim), Muse Glimmer's
+  GaSe₄ answer from the README GIF (transcribed), and five wrong ones of the 2026-10-10 spot check
+  and review, as the docs and skills quote them. Four readings fire, all right: chirality,
+  inversion lost, convergence, and the gate's cluster send-back. There is no false alarm and one
+  miss ("no cluster distortion" from a pooled map needs no analysis). No regex, check, prompt or
+  snapshot changed.
+- [copilot-validation.md](algorithms/copilot-validation.md#the-answer-corpus-plan-item-35)
+  says how to add an answer from the live runs' records. A regex change must keep the pins or
+  update them with a judgement.
+
+### Copilot: `list_sites` shows the split (plan 4.1)
+
+- Each `list_sites` row now carries, where it applies, the excess kurtosis along each resolved
+  principal axis (`kurtosis_axes`, null where an axis is not resolved), PC1 as a direct-lattice
+  direction (`pc1_uvw`, when PC1 is resolved), and for a split site its static displacement with its
+  sampling error (`delta_A`, `delta_se_A`), so an answer quotes the engine's number by reference
+  instead of working out √(rms1² − rms⊥²) by hand. A site is split by the rule the cluster summary
+  already used (PC1 resolved, PC1 excess kurtosis ≤ −0.5 and three sampling errors below zero), now
+  one function, `isSplitSite`, for both tools.
+- δ² = λ₁ − (λ₂ + λ₃)/2: rms⊥ is the RMS of the two other axes, unbiased where PC2 and PC3 are
+  equal (rms2 alone, the larger of two equal sample variances, reads δ low). Its error comes from
+  the eigenvalues' sampling errors, (κ + 2)·m₂²/n each, by the delta method
+  ([ai-assistant.md](algorithms/ai-assistant.md), Step 20). Known answer over 1,000 seeds for each of
+  five planted splits (equal and unequal occupation, 216–512 copies, anisotropic thermal motion;
+  cubic, hexagonal and monoclinic cells): (δ̂ − δ)/SE has a mean of −0.01 to 0.07, an sd of
+  0.99–1.04 and 94–96 % within ±1.96, and PC1 lies within 7.6° of the planted [u v w]. No Gaussian
+  ellipsoid is called split. On the dev cases the planted 0.2 and 0.1 Å splits read
+  0.202 ± 0.0028 and 0.0989 ± 0.0029 Å.
+- Split sites come first in the table, so trimming to the result budget never drops one before
+  another site, and a note check names them; the tool's description lists the new fields. What the
+  model sees changes: the `list_sites` result and description snapshots. The description adds 38
+  tokens to every request, so the 32k budget test's pins move: the dock's worst turn needs 38,562
+  tokens (5,794 over 32,768) and arm B's 35,119 (2,351 over). Arms A and A+ do not read
+  `list_sites`, and their dev records are unchanged. Approved by the manager on the user's
+  delegation, 2026-10-19.
+
+### Copilot validation: one file per decision record
+
+- Decisions on the validation itself are kept one JSON file per record,
+  `validation/findings/decisions/<id>.json` (the id: the date and a slug), read in id order by
+  `parseFindingFiles` and validated by the findings schema, so parallel changes never edit the same
+  file. `decisions.jsonl` is gone: its one record (the recomposed held-out breathing case) moved
+  there unchanged, beside plan 4.1's, `2026-10-19-list-sites-split.json`. `run.js findings <folder>`
+  validates such a folder.
+
+### Copilot: the budget test for a 32k window (plan 5.5)
+
+- `src/__tests__/contextBudget.test.js` runs the worst realistic turn through the real agent loop
+  with a scripted model and counts it with the context guard's own estimator and constants: the
+  dock's largest system prompt and full tool set, the Demo's context block, the two largest
+  skills read whole (`read_skill`'s budget and keep rule), a round of analyses filling the loop's
+  12,000-character turn budget, and the 8,192-token reply reserve. The same for the harness's arm
+  B on the dev case with the largest first request.
+- It does not fit today: the guard counts tool messages at 1.4 characters a token, so the dock's
+  worst turn needs 38,525 tokens (5,757 over 32,768) and arm B's 35,081 (2,313 over). The test pins
+  every term and the overflow, and keeps "fits in 32,768" as an expected failure (`it.fails`) that
+  turns red once it fits. Plan 5.5's other half, moving long skill material to on-demand
+  references, waits for the user's skill review; no prompt, tool, skill or snapshot changed.
+
+### Tests: a lint for the Copilot's skills (AGENT_PLAN 5.1)
+
+- `src/__tests__/skillLint.test.js` reads every `.claude/skills` file the app bundles (it never
+  edits them) and checks three things. **Tools:** every snake_case name in a skill is a tool the
+  builders offer on the Demo (all 16), or else a parameter or a result or context field the model
+  sees. **Gate numbers:** each threshold a skill states equals the constant of the module that
+  decides it (`skillLint/tables.js` `BINDINGS`: 16 bindings to `SIGNIFICANCE_SIGMA`,
+  `MODAL_COORDINATION_SHARE`, `CLUSTER_Z`, `MAP_TEST_MIN_PAIRS`, `AXIS_RESOLUTION_SIGMAS`, …, some
+  with the statistic they gate and a probe of the code), and every number after a comparator is
+  bound or listed as no gate. **Firm rules:** each "*Firm rule in the app:*" is mapped to the
+  answer check, refusal or context that enforces it, and that code is run.
+- Today's three violations, all in displacement-anisotropy, sit in an allow-list with why: the
+  low-index cone has no number (the app uses 15°), "preferred direction" does not name the peak
+  test, and the split site is a negative kurtosis where the tools use PC1 ≤ −0.5 (plan 5.3). A new
+  violation fails, and so does an entry a fix has cleared.
+- `workers/pcaKde.js` exports `AXIS_RESOLUTION_SIGMAS` (no change in behaviour).
+
 ### Copilot: one module for the run as the Copilot sees it; the harness records its view
 
 - `src/copilotRun.js` turns an open run and the view on screen into everything the AI Copilot is
