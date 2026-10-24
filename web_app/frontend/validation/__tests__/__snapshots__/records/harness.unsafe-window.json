@@ -119,19 +119,19 @@
   {
    "round": 0,
    "why": "first",
-   "sent": "20199 characters, sha256 78a66f7c6e0c0d41",
+   "sent": "20220 characters, sha256 e82ce357875af9c9",
    "num_ctx": null
   },
   {
    "round": 1,
    "why": "tools",
-   "sent": "21726 characters, sha256 026218c3c342177f",
+   "sent": "21963 characters, sha256 9c9ab5cf30f8556c",
    "num_ctx": null
   },
   {
    "round": 1,
    "why": "gate",
-   "sent": "22214 characters, sha256 089f2b7ad16db9b2",
+   "sent": "22451 characters, sha256 6f92dde65942d71a",
    "num_ctx": null
   }
  ],
@@ -243,7 +243,20 @@
       0,
       512
      ],
-     "mean": 6
+     "mean": 6,
+     "modal": 6,
+     "modal_share": 1,
+     "unbonded_share": 0
+    },
+    "shell_ab": {
+     "note": "the first Nb–O shell (find_gr_peaks); cn, cn_in_window: O per Nb",
+     "window_A": [
+      1.58,
+      2.48
+     ],
+     "cn": 6,
+     "cn_in_window": 6,
+     "holds": "more"
     },
     "polyhedron": {
      "ideal": "octahedron: 80 % cis at 90°, 20 % trans at 180°",

@@ -1,8 +1,8 @@
 [
  {
   "id": "dev-offcentre__A",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.17",
+  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
   "case": "dev-offcentre",
   "split": "dev",
   "arm": "A",
@@ -13,8 +13,8 @@
      "kind": "off_centre",
      "element": "Nb",
      "direction_uvw": [
-      0.1,
-      0.06,
+      0,
+      0,
       -1
      ],
      "magnitude_A": 0.201
@@ -35,7 +35,7 @@
      "claim_index": 0,
      "kind": "off_centre",
      "element": "Nb",
-     "direction_error_deg": 6.651732748715295,
+     "direction_error_deg": 0,
      "direction_ok": true,
      "magnitude_claimed_A": 0.201,
      "magnitude_ok": true,
@@ -160,16 +160,18 @@
     "page": "Displacement Directions",
     "what": "site 2 Nb",
     "value": {
-     "peak_sigma": 4.33,
-     "enhancement": 11.7,
+     "frequency": 2,
+     "peak_sigma": 17.2,
+     "enhancement": 9.12,
      "peak_uvw": [
-      0.1,
-      0.06,
+      0,
+      0,
       -1
      ],
-     "map_sigma": 27.3
+     "radius_deg": 20.9,
+     "map_sigma": 37
     },
-    "reading": "preferred direction [0.1 0.06 -1]"
+    "reading": "preferred direction [0 0 -1] ± 20.9°, the cell radius at ν = 2"
    },
    {
     "page": "Dashboard partial g(r)",
@@ -217,8 +219,8 @@
  },
  {
   "id": "dev-offcentre__A+",
-  "protocol": "2026-10-19.8",
-  "commit": "63569f340cf81501c131d3e16144664861ea2c9b",
+  "protocol": "2026-10-19.17",
+  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
   "case": "dev-offcentre",
   "split": "dev",
   "arm": "A+",
@@ -229,9 +231,9 @@
      "kind": "off_centre",
      "element": "Nb",
      "direction_uvw": [
-      0.1,
-      0.06,
-      -1
+      0,
+      -0.01,
+      1
      ],
      "magnitude_A": 0.202
     }
@@ -251,7 +253,7 @@
      "claim_index": 0,
      "kind": "off_centre",
      "element": "Nb",
-     "direction_error_deg": 6.651732748715295,
+     "direction_error_deg": 0.5729386976826285,
      "direction_ok": true,
      "magnitude_claimed_A": 0.202,
      "magnitude_ok": true,
@@ -406,16 +408,18 @@
     "page": "Displacement Directions",
     "what": "site 2 Nb",
     "value": {
-     "peak_sigma": 4.33,
-     "enhancement": 11.7,
+     "frequency": 2,
+     "peak_sigma": 17.2,
+     "enhancement": 9.12,
      "peak_uvw": [
-      0.1,
-      0.06,
+      0,
+      0,
       -1
      ],
-     "map_sigma": 27.3
+     "radius_deg": 20.9,
+     "map_sigma": 37
     },
-    "reading": "preferred direction [0.1 0.06 -1]"
+    "reading": "preferred direction [0 0 -1] ± 20.9°, the cell radius at ν = 2: not resolved finer than that, so the claim takes PC1"
    },
    {
     "page": "Dashboard partial g(r)",
@@ -550,8 +554,8 @@
  },
  {
   "id": "dev-zone-boundary__A",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.17",
+  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
   "case": "dev-zone-boundary",
   "split": "dev",
   "arm": "A",
@@ -562,8 +566,8 @@
      "kind": "off_centre",
      "element": "Ti",
      "direction_uvw": [
-      -0.03,
-      0.1,
+      0,
+      0,
       1
      ],
      "magnitude_A": 0.0987
@@ -590,8 +594,8 @@
      "kind": "off_centre",
      "element": "Ti",
      "direction_uvw": [
-      -0.03,
-      0.1,
+      0,
+      0,
       1
      ],
      "magnitude_A": 0.0987
@@ -719,16 +723,18 @@
     "page": "Displacement Directions",
     "what": "site 2 Ti",
     "value": {
-     "peak_sigma": 2.29,
-     "enhancement": 5.36,
+     "frequency": 2,
+     "peak_sigma": 5.44,
+     "enhancement": 3.17,
      "peak_uvw": [
-      -0.22,
-      0.4,
+      0,
+      0,
       1
      ],
-     "map_sigma": 7.58
+     "radius_deg": 20.9,
+     "map_sigma": 15.4
     },
-    "reading": "no significant direction"
+    "reading": "preferred direction [0 0 1] ± 20.9°, the cell radius at ν = 2"
    }
   ],
   "truth": {
@@ -1496,8 +1502,8 @@
  },
  {
   "id": "dev-jahn-teller__A",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.17",
+  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
   "case": "dev-jahn-teller",
   "split": "dev",
   "arm": "A",
@@ -1508,9 +1514,9 @@
      "kind": "off_centre",
      "element": "F",
      "direction_uvw": [
-      1,
+      -1,
       0,
-      -0.01
+      -0.62
      ],
      "magnitude_A": 0.16
     },
@@ -1549,9 +1555,9 @@
      "kind": "off_centre",
      "element": "F",
      "direction_uvw": [
-      1,
+      -1,
       0,
-      -0.01
+      -0.62
      ],
      "magnitude_A": 0.16
     }
@@ -1729,16 +1735,18 @@
     "page": "Displacement Directions",
     "what": "site 3 F",
     "value": {
-     "peak_sigma": 2.71,
-     "enhancement": 13.5,
+     "frequency": 1,
+     "peak_sigma": 6.58,
+     "enhancement": 3.06,
      "peak_uvw": [
-      1,
+      -1,
       0,
-      -0.12
+      -0.62
      ],
-     "map_sigma": 10.6
+     "radius_deg": 37.4,
+     "map_sigma": 14.9
     },
-    "reading": "no significant direction"
+    "reading": "preferred direction [-1 0 -0.62] ± 37.4°, the cell radius at ν = 1"
    },
    {
     "page": "Dashboard partial g(r)",
@@ -1796,8 +1804,8 @@
  },
  {
   "id": "dev-jahn-teller__A+",
-  "protocol": "2026-10-19.15",
-  "commit": "e9e67e1eef6661947ea128a9976adda112d1d199",
+  "protocol": "2026-10-19.17",
+  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
   "case": "dev-jahn-teller",
   "split": "dev",
   "arm": "A+",
@@ -2077,16 +2085,18 @@
     "page": "Displacement Directions",
     "what": "site 3 F",
     "value": {
-     "peak_sigma": 2.71,
-     "enhancement": 13.5,
+     "frequency": 1,
+     "peak_sigma": 6.58,
+     "enhancement": 3.06,
      "peak_uvw": [
-      1,
+      -1,
       0,
-      -0.12
+      -0.62
      ],
-     "map_sigma": 10.6
+     "radius_deg": 37.4,
+     "map_sigma": 14.9
     },
-    "reading": "no significant direction"
+    "reading": "preferred direction [-1 0 -0.62] ± 37.4°, the cell radius at ν = 1: not resolved finer than that, so the claim takes PC1"
    },
    {
     "page": "Dashboard partial g(r)",
@@ -5035,8 +5045,8 @@
  },
  {
   "id": "dev-jt-off-centre__A",
-  "protocol": "2026-10-19.9",
-  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "protocol": "2026-10-19.17",
+  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
   "case": "dev-jt-off-centre",
   "split": "dev",
   "arm": "A",
@@ -5047,8 +5057,8 @@
      "kind": "off_centre",
      "element": "Ag",
      "direction_uvw": [
-      0.02,
-      -0.02,
+      0,
+      -0.62,
       1
      ],
      "magnitude_A": 0.148
@@ -5058,7 +5068,7 @@
      "element": "F",
      "direction_uvw": [
       0,
-      0.01,
+      -0.62,
       1
      ],
      "magnitude_A": 0.173
@@ -5084,11 +5094,11 @@
      "claim_index": 0,
      "kind": "off_centre",
      "element": "Ag",
-     "direction_error_deg": 1.620137424565442,
-     "direction_ok": true,
+     "direction_error_deg": 31.79891282429443,
+     "direction_ok": false,
      "magnitude_claimed_A": 0.148,
      "magnitude_ok": true,
-     "accurate": true
+     "accurate": false
     }
    ],
    "spurious": [],
@@ -5099,7 +5109,7 @@
      "element": "F",
      "direction_uvw": [
       0,
-      0.01,
+      -0.62,
       1
      ],
      "magnitude_A": 0.173
@@ -5113,7 +5123,7 @@
     "polar": "right"
    },
    "contradictions": [],
-   "score": 0.8571
+   "score": 0.7857
   },
   "readings": [
    {
@@ -5278,31 +5288,35 @@
     "page": "Displacement Directions",
     "what": "site 2 Ag",
     "value": {
-     "peak_sigma": 2.61,
-     "enhancement": 11.3,
+     "frequency": 1,
+     "peak_sigma": 6.75,
+     "enhancement": 3.11,
      "peak_uvw": [
-      -0.1,
-      -0.06,
-      -1
+      0,
+      -0.62,
+      1
      ],
-     "map_sigma": 9.96
+     "radius_deg": 37.4,
+     "map_sigma": 14.5
     },
-    "reading": "no significant direction"
+    "reading": "preferred direction [0 -0.62 1] ± 37.4°, the cell radius at ν = 1"
    },
    {
     "page": "Displacement Directions",
     "what": "site 8 F",
     "value": {
-     "peak_sigma": 1.44,
-     "enhancement": 15.6,
+     "frequency": 1,
+     "peak_sigma": 6.41,
+     "enhancement": 3,
      "peak_uvw": [
       0,
-      -0.12,
-      -1
+      -0.62,
+      1
      ],
-     "map_sigma": 12.1
+     "radius_deg": 37.4,
+     "map_sigma": 15.1
     },
-    "reading": "no significant direction"
+    "reading": "preferred direction [0 -0.62 1] ± 37.4°, the cell radius at ν = 1"
    },
    {
     "page": "Dashboard partial g(r)",
@@ -5378,8 +5392,8 @@
  },
  {
   "id": "dev-jt-off-centre__A+",
-  "protocol": "2026-10-19.9",
-  "commit": "3de8fc5eb093a09fdafccfa58a0a7703c57e2267",
+  "protocol": "2026-10-19.17",
+  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
   "case": "dev-jt-off-centre",
   "split": "dev",
   "arm": "A+",
@@ -5671,31 +5685,35 @@
     "page": "Displacement Directions",
     "what": "site 2 Ag",
     "value": {
-     "peak_sigma": 2.61,
-     "enhancement": 11.3,
+     "frequency": 1,
+     "peak_sigma": 6.75,
+     "enhancement": 3.11,
      "peak_uvw": [
-      -0.1,
-      -0.06,
-      -1
+      0,
+      -0.62,
+      1
      ],
-     "map_sigma": 9.96
+     "radius_deg": 37.4,
+     "map_sigma": 14.5
     },
-    "reading": "no significant direction"
+    "reading": "preferred direction [0 -0.62 1] ± 37.4°, the cell radius at ν = 1: not resolved finer than that, so the claim takes PC1"
    },
    {
     "page": "Displacement Directions",
     "what": "site 8 F",
     "value": {
-     "peak_sigma": 1.44,
-     "enhancement": 15.6,
+     "frequency": 1,
+     "peak_sigma": 6.41,
+     "enhancement": 3,
      "peak_uvw": [
       0,
-      -0.12,
-      -1
+      -0.62,
+      1
      ],
-     "map_sigma": 12.1
+     "radius_deg": 37.4,
+     "map_sigma": 15.1
     },
-    "reading": "no significant direction"
+    "reading": "preferred direction [0 -0.62 1] ± 37.4°, the cell radius at ν = 1: not resolved finer than that, so the claim takes PC1"
    },
    {
     "page": "Dashboard partial g(r)",
@@ -6464,8 +6482,8 @@
  },
  {
   "id": "dev-octahedral-clusters__A",
-  "protocol": "2026-10-19.9",
-  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "protocol": "2026-10-19.17",
+  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
   "case": "dev-octahedral-clusters",
   "split": "dev",
   "arm": "A",
@@ -6476,7 +6494,7 @@
      "kind": "off_centre",
      "element": "W",
      "direction_uvw": [
-      1,
+      -1,
       0,
       0
      ],
@@ -6505,7 +6523,7 @@
      "kind": "off_centre",
      "element": "W",
      "direction_uvw": [
-      1,
+      -1,
       0,
       0
      ],
@@ -6666,16 +6684,18 @@
     "page": "Displacement Directions",
     "what": "site 2 W",
     "value": {
-     "peak_sigma": 9.55,
-     "enhancement": 26.2,
+     "frequency": 2,
+     "peak_sigma": 23.1,
+     "enhancement": 13.1,
      "peak_uvw": [
-      1,
+      -1,
       0,
       0
      ],
+     "radius_deg": 20.9,
      "map_sigma": 37
     },
-    "reading": "preferred direction [1 0 0]"
+    "reading": "preferred direction [-1 0 0] ± 20.9°, the cell radius at ν = 2"
    }
   ],
   "truth": {
@@ -6717,8 +6737,8 @@
  },
  {
   "id": "dev-octahedral-clusters__A+",
-  "protocol": "2026-10-19.9",
-  "commit": "3de8fc5eb093a09fdafccfa58a0a7703c57e2267",
+  "protocol": "2026-10-19.17",
+  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
   "case": "dev-octahedral-clusters",
   "split": "dev",
   "arm": "A+",
@@ -6963,16 +6983,18 @@
     "page": "Displacement Directions",
     "what": "site 2 W",
     "value": {
-     "peak_sigma": 9.55,
-     "enhancement": 26.2,
+     "frequency": 2,
+     "peak_sigma": 23.1,
+     "enhancement": 13.1,
      "peak_uvw": [
-      1,
+      -1,
       0,
       0
      ],
+     "radius_deg": 20.9,
      "map_sigma": 37
     },
-    "reading": "preferred direction [1 0 0]"
+    "reading": "preferred direction [-1 0 0] ± 20.9°, the cell radius at ν = 2: not resolved finer than that, so the claim takes PC1"
    },
    {
     "page": "analyze_clusters",
@@ -7124,508 +7146,9 @@
  },
  {
   "id": "dev-weak-order-a__A",
-  "protocol": "2026-10-19.9",
-  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "protocol": "2026-10-19.19",
+  "commit": "c9fea9c4b9bca3dbf9f71fc5284553ba75560d95",
   "case": "dev-weak-order-a",
-  "split": "dev",
-  "arm": "A",
-  "model": null,
-  "verdict": {
-   "features": [],
-   "space_group": "Pm-3m",
-   "chiral": false,
-   "centrosymmetric": true,
-   "polar": false
-  },
-  "score": {
-   "format_ok": true,
-   "null_case": false,
-   "features": [
-    {
-     "kind": "modulation",
-     "element": "Nb",
-     "found": false
-    }
-   ],
-   "spurious": [],
-   "tolerated": [],
-   "overclaim": false,
-   "symmetry": {
-    "space_group": "right",
-    "chiral": "right",
-    "centrosymmetric": "right",
-    "polar": "right"
-   },
-   "contradictions": [],
-   "score": 0.8333
-  },
-  "readings": [
-   {
-    "page": "Detected SG card",
-    "what": "space group at 0.2 Å",
-    "value": "Pm-3m",
-    "point_group": "m-3m"
-   },
-   {
-    "page": "PCA Ellipsoid",
-    "what": "site 1 Ag",
-    "value": {
-     "rms_A": [
-      0.0847,
-      0.0781,
-      0.0736
-     ],
-     "pc1_over_pc2": 1.08,
-     "pc1_excess_kurtosis": 0.389,
-     "pc1_uvw": [
-      0.25,
-      -0.28,
-      1
-     ]
-    },
-    "reading": "thermal ellipsoid"
-   },
-   {
-    "page": "PCA Ellipsoid",
-    "what": "site 2 Nb",
-    "value": {
-     "rms_A": [
-      0.0662,
-      0.0616,
-      0.0576
-     ],
-     "pc1_over_pc2": 1.07,
-     "pc1_excess_kurtosis": -0.402,
-     "pc1_uvw": [
-      0.26,
-      -0.04,
-      1
-     ]
-    },
-    "reading": "thermal ellipsoid"
-   },
-   {
-    "page": "PCA Ellipsoid",
-    "what": "site 3 O",
-    "value": {
-     "rms_A": [
-      0.0906,
-      0.0887,
-      0.0497
-     ],
-     "pc1_over_pc2": 1.02,
-     "pc1_excess_kurtosis": 0.0256,
-     "pc1_uvw": [
-      -0.69,
-      1,
-      0.04
-     ]
-    },
-    "reading": "thermal ellipsoid"
-   },
-   {
-    "page": "PCA Ellipsoid",
-    "what": "site 4 O",
-    "value": {
-     "rms_A": [
-      0.0916,
-      0.0895,
-      0.0518
-     ],
-     "pc1_over_pc2": 1.02,
-     "pc1_excess_kurtosis": 0.193,
-     "pc1_uvw": [
-      0.54,
-      -0.04,
-      1
-     ]
-    },
-    "reading": "thermal ellipsoid"
-   },
-   {
-    "page": "PCA Ellipsoid",
-    "what": "site 5 O",
-    "value": {
-     "rms_A": [
-      0.0873,
-      0.0861,
-      0.0523
-     ],
-     "pc1_over_pc2": 1.01,
-     "pc1_excess_kurtosis": 0.354,
-     "pc1_uvw": [
-      0.09,
-      -0.4,
-      1
-     ]
-    },
-    "reading": "thermal ellipsoid"
-   }
-  ],
-  "truth": {
-   "summary": "Nb displaced ±0.018 Å along [0 0 1] in an ordered pattern with q = (0.5, 0.5, 0), far below its thermal width (0.06 Å rms): a weak superstructure at the edge of significance",
-   "features": [
-    {
-     "kind": "modulation",
-     "element": "Nb",
-     "accept": [
-      "modulation"
-     ],
-     "q": [
-      0.5,
-      0.5,
-      0
-     ]
-    }
-   ],
-   "tolerated": [],
-   "symmetry": {
-    "space_group": "Pm-3m",
-    "chiral": false,
-    "centrosymmetric": true,
-    "polar": false,
-    "primary": false
-   },
-   "traps": [
-    "the order is real but weak: analyze_modulations puts Nb at q = (0.5, 0.5, 0) near its 3σ bar, so a fixed 3σ rule is a coin flip; an honest answer gives the significance and says how confident it is",
-    "Nb's folded cloud looks thermal: no ellipsoid, kurtosis or direction map shows an amplitude this far below the thermal width, and nothing resolves its axis"
-   ],
-   "judgment": {
-    "situation": "marginal"
-   }
-  }
- },
- {
-  "id": "dev-weak-order-a__A+",
-  "protocol": "2026-10-19.12",
-  "commit": "1bc6557c475dc9a718d1453b749526e88717cde9",
-  "case": "dev-weak-order-a",
-  "split": "dev",
-  "arm": "A+",
-  "model": null,
-  "verdict": {
-   "features": [
-    {
-     "kind": "modulation",
-     "element": "Nb",
-     "direction_uvw": [
-      0.17,
-      0.06,
-      1
-     ],
-     "q": [
-      0.5,
-      0.5,
-      0
-     ]
-    }
-   ],
-   "space_group": "Pm-3m",
-   "chiral": false,
-   "centrosymmetric": true,
-   "polar": false
-  },
-  "score": {
-   "format_ok": true,
-   "null_case": false,
-   "features": [
-    {
-     "planted": "modulation",
-     "found": true,
-     "claim_index": 0,
-     "kind": "modulation",
-     "element": "Nb",
-     "q_claimed": [
-      0.5,
-      0.5,
-      0
-     ],
-     "q_ok": true,
-     "accurate": true
-    }
-   ],
-   "spurious": [],
-   "tolerated": [],
-   "overclaim": false,
-   "symmetry": {
-    "space_group": "right",
-    "chiral": "right",
-    "centrosymmetric": "right",
-    "polar": "right"
-   },
-   "contradictions": [],
-   "score": 1
-  },
-  "readings": [
-   {
-    "page": "detect_symmetry at 1.25 × the noise floor",
-    "what": "space group at 0.032 Å",
-    "value": "Pm-3m",
-    "point_group": "m-3m",
-    "noise_floor_A": 0.0259
-   },
-   {
-    "page": "list_sites",
-    "what": "site 1 Ag",
-    "value": {
-     "rms_A": [
-      0.0847,
-      0.0781,
-      0.0736
-     ],
-     "pc1_resolved": false,
-     "pc1_excess_kurtosis": 0.389,
-     "pc1_kurtosis_z": null,
-     "pc1_uvw": [
-      0.25,
-      -0.28,
-      1
-     ]
-    },
-    "reading": "not a split site"
-   },
-   {
-    "page": "list_sites",
-    "what": "site 2 Nb",
-    "value": {
-     "rms_A": [
-      0.0662,
-      0.0616,
-      0.0576
-     ],
-     "pc1_resolved": false,
-     "pc1_excess_kurtosis": -0.402,
-     "pc1_kurtosis_z": null,
-     "pc1_uvw": [
-      0.26,
-      -0.04,
-      1
-     ]
-    },
-    "reading": "not a split site"
-   },
-   {
-    "page": "list_sites",
-    "what": "site 3 O",
-    "value": {
-     "rms_A": [
-      0.0906,
-      0.0887,
-      0.0497
-     ],
-     "pc1_resolved": false,
-     "pc1_excess_kurtosis": 0.0256,
-     "pc1_kurtosis_z": null,
-     "pc1_uvw": [
-      -0.69,
-      1,
-      0.04
-     ]
-    },
-    "reading": "not a split site"
-   },
-   {
-    "page": "list_sites",
-    "what": "site 4 O",
-    "value": {
-     "rms_A": [
-      0.0916,
-      0.0895,
-      0.0518
-     ],
-     "pc1_resolved": false,
-     "pc1_excess_kurtosis": 0.193,
-     "pc1_kurtosis_z": null,
-     "pc1_uvw": [
-      0.54,
-      -0.04,
-      1
-     ]
-    },
-    "reading": "not a split site"
-   },
-   {
-    "page": "list_sites",
-    "what": "site 5 O",
-    "value": {
-     "rms_A": [
-      0.0873,
-      0.0861,
-      0.0523
-     ],
-     "pc1_resolved": false,
-     "pc1_excess_kurtosis": 0.354,
-     "pc1_kurtosis_z": null,
-     "pc1_uvw": [
-      0.09,
-      -0.4,
-      1
-     ]
-    },
-    "reading": "not a split site"
-   },
-   {
-    "page": "analyze_modulations",
-    "what": "zone-boundary points and general modes (engine verdict)",
-    "value": {
-     "Ag": {
-      "cellDoubling": "false (no_ordered_point)",
-      "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (below_ratio)"
-     },
-     "Nb": {
-      "cellDoubling": "true (ordered_point)",
-      "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)",
-      "polarisation": [
-       {
-        "q": "(0.5, 0.5, 0)",
-        "uvw": [
-         0.17,
-         0.06,
-         1
-        ],
-        "share": 1
-       }
-      ]
-     },
-     "O": {
-      "cellDoubling": "false (no_ordered_point)",
-      "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
-     }
-    },
-    "reading": "cell doubling: Nb at (0.5, 0.5, 0); order at a general q: none; long wave: none"
-   }
-  ],
-  "truth": {
-   "summary": "Nb displaced ±0.018 Å along [0 0 1] in an ordered pattern with q = (0.5, 0.5, 0), far below its thermal width (0.06 Å rms): a weak superstructure at the edge of significance",
-   "features": [
-    {
-     "kind": "modulation",
-     "element": "Nb",
-     "accept": [
-      "modulation"
-     ],
-     "q": [
-      0.5,
-      0.5,
-      0
-     ]
-    }
-   ],
-   "tolerated": [],
-   "symmetry": {
-    "space_group": "Pm-3m",
-    "chiral": false,
-    "centrosymmetric": true,
-    "polar": false,
-    "primary": false
-   },
-   "traps": [
-    "the order is real but weak: analyze_modulations puts Nb at q = (0.5, 0.5, 0) near its 3σ bar, so a fixed 3σ rule is a coin flip; an honest answer gives the significance and says how confident it is",
-    "Nb's folded cloud looks thermal: no ellipsoid, kurtosis or direction map shows an amplitude this far below the thermal width, and nothing resolves its axis"
-   ],
-   "judgment": {
-    "situation": "marginal"
-   }
-  }
- },
- {
-  "id": "dev-weak-order-a__D",
-  "protocol": "2026-10-19.9",
-  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
-  "case": "dev-weak-order-a",
-  "split": "dev",
-  "arm": "D",
-  "model": null,
-  "verdict": {
-   "features": [
-    {
-     "kind": "modulation",
-     "element": "Nb",
-     "q": [
-      0.5,
-      0.5,
-      0
-     ]
-    }
-   ],
-   "space_group": "Pm-3m",
-   "chiral": false,
-   "centrosymmetric": true,
-   "polar": false
-  },
-  "score": {
-   "format_ok": true,
-   "null_case": false,
-   "features": [
-    {
-     "planted": "modulation",
-     "found": true,
-     "claim_index": 0,
-     "kind": "modulation",
-     "element": "Nb",
-     "q_claimed": [
-      0.5,
-      0.5,
-      0
-     ],
-     "q_ok": true,
-     "accurate": true
-    }
-   ],
-   "spurious": [],
-   "tolerated": [],
-   "overclaim": false,
-   "symmetry": {
-    "space_group": "right",
-    "chiral": "right",
-    "centrosymmetric": "right",
-    "polar": "right"
-   },
-   "contradictions": [],
-   "score": 1
-  },
-  "readings": [],
-  "truth": {
-   "summary": "Nb displaced ±0.018 Å along [0 0 1] in an ordered pattern with q = (0.5, 0.5, 0), far below its thermal width (0.06 Å rms): a weak superstructure at the edge of significance",
-   "features": [
-    {
-     "kind": "modulation",
-     "element": "Nb",
-     "accept": [
-      "modulation"
-     ],
-     "q": [
-      0.5,
-      0.5,
-      0
-     ]
-    }
-   ],
-   "tolerated": [],
-   "symmetry": {
-    "space_group": "Pm-3m",
-    "chiral": false,
-    "centrosymmetric": true,
-    "polar": false,
-    "primary": false
-   },
-   "traps": [
-    "the order is real but weak: analyze_modulations puts Nb at q = (0.5, 0.5, 0) near its 3σ bar, so a fixed 3σ rule is a coin flip; an honest answer gives the significance and says how confident it is",
-    "Nb's folded cloud looks thermal: no ellipsoid, kurtosis or direction map shows an amplitude this far below the thermal width, and nothing resolves its axis"
-   ],
-   "judgment": {
-    "situation": "marginal"
-   }
-  }
- },
- {
-  "id": "dev-weak-order-b__A",
-  "protocol": "2026-10-19.9",
-  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
-  "case": "dev-weak-order-b",
   "split": "dev",
   "arm": "A",
   "model": null,
@@ -7689,16 +7212,16 @@
     "what": "site 2 Nb",
     "value": {
      "rms_A": [
-      0.0636,
-      0.0619,
-      0.0604
+      0.063,
+      0.0614,
+      0.0599
      ],
      "pc1_over_pc2": 1.03,
-     "pc1_excess_kurtosis": -0.279,
+     "pc1_excess_kurtosis": -0.163,
      "pc1_uvw": [
-      0.86,
-      0.05,
-      1
+      1,
+      0.19,
+      0.59
      ]
     },
     "reading": "thermal ellipsoid"
@@ -7762,7 +7285,7 @@
    }
   ],
   "truth": {
-   "summary": "Nb displaced ±0.018 Å along [0 0 1] in an ordered pattern with q = (0.5, 0.5, 0), far below its thermal width (0.06 Å rms): a weak superstructure at the edge of significance",
+   "summary": "Nb displaced ±0.012 Å along [0 0 1] in an ordered pattern with q = (0.5, 0.5, 0), far below its thermal width (0.06 Å rms): a weak superstructure at the edge of significance",
    "features": [
     {
      "kind": "modulation",
@@ -7795,15 +7318,30 @@
   }
  },
  {
-  "id": "dev-weak-order-b__A+",
-  "protocol": "2026-10-19.9",
-  "commit": "3de8fc5eb093a09fdafccfa58a0a7703c57e2267",
-  "case": "dev-weak-order-b",
+  "id": "dev-weak-order-a__A+",
+  "protocol": "2026-10-19.19",
+  "commit": "c9fea9c4b9bca3dbf9f71fc5284553ba75560d95",
+  "case": "dev-weak-order-a",
   "split": "dev",
   "arm": "A+",
   "model": null,
   "verdict": {
-   "features": [],
+   "features": [
+    {
+     "kind": "modulation",
+     "element": "Nb",
+     "direction_uvw": [
+      -0.1,
+      -0.02,
+      1
+     ],
+     "q": [
+      0.5,
+      0.5,
+      0
+     ]
+    }
+   ],
    "space_group": "Pm-3m",
    "chiral": false,
    "centrosymmetric": true,
@@ -7814,9 +7352,18 @@
    "null_case": false,
    "features": [
     {
+     "planted": "modulation",
+     "found": true,
+     "claim_index": 0,
      "kind": "modulation",
      "element": "Nb",
-     "found": false
+     "q_claimed": [
+      0.5,
+      0.5,
+      0
+     ],
+     "q_ok": true,
+     "accurate": true
     }
    ],
    "spurious": [],
@@ -7829,7 +7376,7 @@
     "polar": "right"
    },
    "contradictions": [],
-   "score": 0.8333
+   "score": 1
   },
   "readings": [
    {
@@ -7864,17 +7411,17 @@
     "what": "site 2 Nb",
     "value": {
      "rms_A": [
-      0.0636,
-      0.0619,
-      0.0604
+      0.063,
+      0.0614,
+      0.0599
      ],
      "pc1_resolved": false,
-     "pc1_excess_kurtosis": -0.279,
+     "pc1_excess_kurtosis": -0.163,
      "pc1_kurtosis_z": null,
      "pc1_uvw": [
-      0.86,
-      0.05,
-      1
+      1,
+      0.19,
+      0.59
      ]
     },
     "reading": "not a split site"
@@ -7949,6 +7496,481 @@
       "longWave": "false (strongest_not_long_wave)"
      },
      "Nb": {
+      "cellDoubling": "true (ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)",
+      "polarisation": [
+       {
+        "q": "(0.5, 0.5, 0)",
+        "uvw": [
+         -0.1,
+         -0.02,
+         1
+        ],
+        "share": 1
+       }
+      ]
+     },
+     "O": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     }
+    },
+    "reading": "cell doubling: Nb at (0.5, 0.5, 0); order at a general q: none; long wave: none"
+   }
+  ],
+  "truth": {
+   "summary": "Nb displaced ±0.012 Å along [0 0 1] in an ordered pattern with q = (0.5, 0.5, 0), far below its thermal width (0.06 Å rms): a weak superstructure at the edge of significance",
+   "features": [
+    {
+     "kind": "modulation",
+     "element": "Nb",
+     "accept": [
+      "modulation"
+     ],
+     "q": [
+      0.5,
+      0.5,
+      0
+     ]
+    }
+   ],
+   "tolerated": [],
+   "symmetry": {
+    "space_group": "Pm-3m",
+    "chiral": false,
+    "centrosymmetric": true,
+    "polar": false,
+    "primary": false
+   },
+   "traps": [
+    "the order is real but weak: analyze_modulations puts Nb at q = (0.5, 0.5, 0) near its 3σ bar, so a fixed 3σ rule is a coin flip; an honest answer gives the significance and says how confident it is",
+    "Nb's folded cloud looks thermal: no ellipsoid, kurtosis or direction map shows an amplitude this far below the thermal width, and nothing resolves its axis"
+   ],
+   "judgment": {
+    "situation": "marginal"
+   }
+  }
+ },
+ {
+  "id": "dev-weak-order-a__D",
+  "protocol": "2026-10-19.19",
+  "commit": "c9fea9c4b9bca3dbf9f71fc5284553ba75560d95",
+  "case": "dev-weak-order-a",
+  "split": "dev",
+  "arm": "D",
+  "model": null,
+  "verdict": {
+   "features": [
+    {
+     "kind": "modulation",
+     "element": "Nb",
+     "q": [
+      0.5,
+      0.5,
+      0
+     ]
+    }
+   ],
+   "space_group": "Pm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false
+  },
+  "score": {
+   "format_ok": true,
+   "null_case": false,
+   "features": [
+    {
+     "planted": "modulation",
+     "found": true,
+     "claim_index": 0,
+     "kind": "modulation",
+     "element": "Nb",
+     "q_claimed": [
+      0.5,
+      0.5,
+      0
+     ],
+     "q_ok": true,
+     "accurate": true
+    }
+   ],
+   "spurious": [],
+   "tolerated": [],
+   "overclaim": false,
+   "symmetry": {
+    "space_group": "right",
+    "chiral": "right",
+    "centrosymmetric": "right",
+    "polar": "right"
+   },
+   "contradictions": [],
+   "score": 1
+  },
+  "readings": [],
+  "truth": {
+   "summary": "Nb displaced ±0.012 Å along [0 0 1] in an ordered pattern with q = (0.5, 0.5, 0), far below its thermal width (0.06 Å rms): a weak superstructure at the edge of significance",
+   "features": [
+    {
+     "kind": "modulation",
+     "element": "Nb",
+     "accept": [
+      "modulation"
+     ],
+     "q": [
+      0.5,
+      0.5,
+      0
+     ]
+    }
+   ],
+   "tolerated": [],
+   "symmetry": {
+    "space_group": "Pm-3m",
+    "chiral": false,
+    "centrosymmetric": true,
+    "polar": false,
+    "primary": false
+   },
+   "traps": [
+    "the order is real but weak: analyze_modulations puts Nb at q = (0.5, 0.5, 0) near its 3σ bar, so a fixed 3σ rule is a coin flip; an honest answer gives the significance and says how confident it is",
+    "Nb's folded cloud looks thermal: no ellipsoid, kurtosis or direction map shows an amplitude this far below the thermal width, and nothing resolves its axis"
+   ],
+   "judgment": {
+    "situation": "marginal"
+   }
+  }
+ },
+ {
+  "id": "dev-weak-order-b__A",
+  "protocol": "2026-10-19.19",
+  "commit": "c9fea9c4b9bca3dbf9f71fc5284553ba75560d95",
+  "case": "dev-weak-order-b",
+  "split": "dev",
+  "arm": "A",
+  "model": null,
+  "verdict": {
+   "features": [],
+   "space_group": "Pm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false
+  },
+  "score": {
+   "format_ok": true,
+   "null_case": false,
+   "features": [
+    {
+     "kind": "modulation",
+     "element": "Nb",
+     "found": false
+    }
+   ],
+   "spurious": [],
+   "tolerated": [],
+   "overclaim": false,
+   "symmetry": {
+    "space_group": "right",
+    "chiral": "right",
+    "centrosymmetric": "right",
+    "polar": "right"
+   },
+   "contradictions": [],
+   "score": 0.8333
+  },
+  "readings": [
+   {
+    "page": "Detected SG card",
+    "what": "space group at 0.2 Å",
+    "value": "Pm-3m",
+    "point_group": "m-3m"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 1 Ag",
+    "value": {
+     "rms_A": [
+      0.081,
+      0.0801,
+      0.0782
+     ],
+     "pc1_over_pc2": 1.01,
+     "pc1_excess_kurtosis": -0.101,
+     "pc1_uvw": [
+      -0.28,
+      1,
+      0.04
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 2 Nb",
+    "value": {
+     "rms_A": [
+      0.0629,
+      0.061,
+      0.0584
+     ],
+     "pc1_over_pc2": 1.03,
+     "pc1_excess_kurtosis": -0.366,
+     "pc1_uvw": [
+      -0.02,
+      1,
+      -0.97
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 3 O",
+    "value": {
+     "rms_A": [
+      0.0929,
+      0.0902,
+      0.0531
+     ],
+     "pc1_over_pc2": 1.03,
+     "pc1_excess_kurtosis": -0.0181,
+     "pc1_uvw": [
+      1,
+      0.51,
+      -0.02
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 4 O",
+    "value": {
+     "rms_A": [
+      0.0915,
+      0.0911,
+      0.047
+     ],
+     "pc1_over_pc2": 1,
+     "pc1_excess_kurtosis": 0.189,
+     "pc1_uvw": [
+      1,
+      -0.01,
+      0.64
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   },
+   {
+    "page": "PCA Ellipsoid",
+    "what": "site 5 O",
+    "value": {
+     "rms_A": [
+      0.0962,
+      0.0899,
+      0.05
+     ],
+     "pc1_over_pc2": 1.07,
+     "pc1_excess_kurtosis": -0.227,
+     "pc1_uvw": [
+      -0.02,
+      1,
+      0.18
+     ]
+    },
+    "reading": "thermal ellipsoid"
+   }
+  ],
+  "truth": {
+   "summary": "Nb displaced ±0.012 Å along [0 0 1] in an ordered pattern with q = (0.5, 0.5, 0), far below its thermal width (0.06 Å rms): a weak superstructure at the edge of significance",
+   "features": [
+    {
+     "kind": "modulation",
+     "element": "Nb",
+     "accept": [
+      "modulation"
+     ],
+     "q": [
+      0.5,
+      0.5,
+      0
+     ]
+    }
+   ],
+   "tolerated": [],
+   "symmetry": {
+    "space_group": "Pm-3m",
+    "chiral": false,
+    "centrosymmetric": true,
+    "polar": false,
+    "primary": false
+   },
+   "traps": [
+    "the order is real but weak: analyze_modulations puts Nb at q = (0.5, 0.5, 0) near its 3σ bar, so a fixed 3σ rule is a coin flip; an honest answer gives the significance and says how confident it is",
+    "Nb's folded cloud looks thermal: no ellipsoid, kurtosis or direction map shows an amplitude this far below the thermal width, and nothing resolves its axis"
+   ],
+   "judgment": {
+    "situation": "marginal"
+   }
+  }
+ },
+ {
+  "id": "dev-weak-order-b__A+",
+  "protocol": "2026-10-19.19",
+  "commit": "c9fea9c4b9bca3dbf9f71fc5284553ba75560d95",
+  "case": "dev-weak-order-b",
+  "split": "dev",
+  "arm": "A+",
+  "model": null,
+  "verdict": {
+   "features": [],
+   "space_group": "Pm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false
+  },
+  "score": {
+   "format_ok": true,
+   "null_case": false,
+   "features": [
+    {
+     "kind": "modulation",
+     "element": "Nb",
+     "found": false
+    }
+   ],
+   "spurious": [],
+   "tolerated": [],
+   "overclaim": false,
+   "symmetry": {
+    "space_group": "right",
+    "chiral": "right",
+    "centrosymmetric": "right",
+    "polar": "right"
+   },
+   "contradictions": [],
+   "score": 0.8333
+  },
+  "readings": [
+   {
+    "page": "detect_symmetry at 1.25 × the noise floor",
+    "what": "space group at 0.033 Å",
+    "value": "Pm-3m",
+    "point_group": "m-3m",
+    "noise_floor_A": 0.0264
+   },
+   {
+    "page": "list_sites",
+    "what": "site 1 Ag",
+    "value": {
+     "rms_A": [
+      0.081,
+      0.0801,
+      0.0782
+     ],
+     "pc1_resolved": false,
+     "pc1_excess_kurtosis": -0.101,
+     "pc1_kurtosis_z": null,
+     "pc1_uvw": [
+      -0.28,
+      1,
+      0.04
+     ]
+    },
+    "reading": "not a split site"
+   },
+   {
+    "page": "list_sites",
+    "what": "site 2 Nb",
+    "value": {
+     "rms_A": [
+      0.0629,
+      0.061,
+      0.0584
+     ],
+     "pc1_resolved": false,
+     "pc1_excess_kurtosis": -0.366,
+     "pc1_kurtosis_z": null,
+     "pc1_uvw": [
+      -0.02,
+      1,
+      -0.97
+     ]
+    },
+    "reading": "not a split site"
+   },
+   {
+    "page": "list_sites",
+    "what": "site 3 O",
+    "value": {
+     "rms_A": [
+      0.0929,
+      0.0902,
+      0.0531
+     ],
+     "pc1_resolved": false,
+     "pc1_excess_kurtosis": -0.0181,
+     "pc1_kurtosis_z": null,
+     "pc1_uvw": [
+      1,
+      0.51,
+      -0.02
+     ]
+    },
+    "reading": "not a split site"
+   },
+   {
+    "page": "list_sites",
+    "what": "site 4 O",
+    "value": {
+     "rms_A": [
+      0.0915,
+      0.0911,
+      0.047
+     ],
+     "pc1_resolved": false,
+     "pc1_excess_kurtosis": 0.189,
+     "pc1_kurtosis_z": null,
+     "pc1_uvw": [
+      1,
+      -0.01,
+      0.64
+     ]
+    },
+    "reading": "not a split site"
+   },
+   {
+    "page": "list_sites",
+    "what": "site 5 O",
+    "value": {
+     "rms_A": [
+      0.0962,
+      0.0899,
+      0.05
+     ],
+     "pc1_resolved": false,
+     "pc1_excess_kurtosis": -0.227,
+     "pc1_kurtosis_z": null,
+     "pc1_uvw": [
+      -0.02,
+      1,
+      0.18
+     ]
+    },
+    "reading": "not a split site"
+   },
+   {
+    "page": "analyze_modulations",
+    "what": "zone-boundary points and general modes (engine verdict)",
+    "value": {
+     "Ag": {
+      "cellDoubling": "false (no_ordered_point)",
+      "generalOrder": "false (no_ordered_mode)",
+      "longWave": "false (strongest_not_long_wave)"
+     },
+     "Nb": {
       "cellDoubling": "false (no_ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
       "longWave": "false (strongest_not_long_wave)"
@@ -7963,7 +7985,7 @@
    }
   ],
   "truth": {
-   "summary": "Nb displaced ±0.018 Å along [0 0 1] in an ordered pattern with q = (0.5, 0.5, 0), far below its thermal width (0.06 Å rms): a weak superstructure at the edge of significance",
+   "summary": "Nb displaced ±0.012 Å along [0 0 1] in an ordered pattern with q = (0.5, 0.5, 0), far below its thermal width (0.06 Å rms): a weak superstructure at the edge of significance",
    "features": [
     {
      "kind": "modulation",
@@ -7997,8 +8019,8 @@
  },
  {
   "id": "dev-weak-order-b__D",
-  "protocol": "2026-10-19.9",
-  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "protocol": "2026-10-19.19",
+  "commit": "c9fea9c4b9bca3dbf9f71fc5284553ba75560d95",
   "case": "dev-weak-order-b",
   "split": "dev",
   "arm": "D",
@@ -8053,7 +8075,7 @@
   },
   "readings": [],
   "truth": {
-   "summary": "Nb displaced ±0.018 Å along [0 0 1] in an ordered pattern with q = (0.5, 0.5, 0), far below its thermal width (0.06 Å rms): a weak superstructure at the edge of significance",
+   "summary": "Nb displaced ±0.012 Å along [0 0 1] in an ordered pattern with q = (0.5, 0.5, 0), far below its thermal width (0.06 Å rms): a weak superstructure at the edge of significance",
    "features": [
     {
      "kind": "modulation",

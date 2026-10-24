@@ -564,3 +564,42 @@ describe('orientation anisotropy null (Bingham test)', () => {
         expect(above2 / anisotropy.length).toBeLessThanOrEqual(0.06);
     });
 });
+
+// Plan item 2.5: the direction resolution, a measurement limit (the twin of
+// PeakCellRadiusTests). peakDirection is the peak cell's centre, so it names a
+// direction no more finely than the cell's circumscribed radius,
+// peakCellRadiusDeg: every direction assigned to the cell lies within it.
+describe('the peak cell radius (peakCellRadiusDeg)', () => {
+    const angle = (u, v) => Math.acos(Math.max(-1, Math.min(1, (u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / Math.hypot(...u))));
+
+    it('is the dodecahedron\'s closed form at nu = 1', () => {
+        const exact = Math.acos(Math.sqrt((5 + 2 * Math.sqrt(5)) / 15));
+        goldbergTiling(1).radii.forEach((radius) => expect(Math.abs(radius - exact)).toBeLessThan(1e-12));
+        expect(exact * 180 / Math.PI).toBeCloseTo(37.3774, 4);
+    });
+
+    it('bounds every direction assigned to a cell', () => {
+        const directions = cloud(6000, 31);
+        for (const nu of [1, 2, 3, 6]) {
+            const tiling = goldbergTiling(nu);
+            const cells = assignCells(tiling, directions);
+            cells.forEach((cell, index) => {
+                expect(angle(directions[index], tiling.centers[cell])).toBeLessThanOrEqual(tiling.radii[cell] + 1e-12);
+            });
+        }
+    });
+
+    it('puts the 15 degree line between nu = 2 and nu = 3', () => {
+        const degrees = (nu) => goldbergTiling(nu).radii.map((radius) => radius * 180 / Math.PI);
+        expect(Math.min(...degrees(2))).toBeGreaterThan(15);
+        expect(Math.max(...degrees(3))).toBeLessThan(15);
+    });
+
+    it('is reported for the peak cell', () => {
+        for (const frequency of [1, 2, 4, null]) {
+            const result = orientationHistogram(goldenCloud(), { frequency, geometry: false });
+            const tiling = goldbergTiling(result.frequency);
+            expect(result.peakCellRadiusDeg).toBe(tiling.radii[result.peakCell] * (180 / Math.PI));
+        }
+    });
+});

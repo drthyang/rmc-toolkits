@@ -14,9 +14,11 @@ from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
+from scipy.special import gammaincc
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import modulation_configs as configs  # noqa: E402
 from cluster_configs import (  # noqa: E402
     POLARISED_CELL,
     cluster_config_text,
@@ -25,8 +27,13 @@ from cluster_configs import (  # noqa: E402
     polarised_direction,
     wave_config_text,
 )
+from rmc_toolkits.clusters import evidence_clears  # noqa: E402
 from rmc_toolkits.modulations import (  # noqa: E402
     AXIS_TIE_RTOL,
+    DIFFUSE_CORRELATION,
+    DIFFUSE_LAGS,
+    DIFFUSE_PHASES,
+    DIFFUSE_SIGMA,
     LONG_WAVE_Q,
     LONG_WAVE_RATIO,
     MODE_KINDS,
@@ -36,10 +43,14 @@ from rmc_toolkits.modulations import (  # noqa: E402
     MODULATION_SIGMA,
     SIGMA_MAX,
     _folded,
+    diffuse_order,
     displacement_modulations,
+    element_spectrum,
     general_mode_sigma,
+    independent_cell_null,
     is_long_wave,
     mode_polarisation,
+    null_tail,
     zone_boundary_points,
     zone_boundary_sigma,
 )
@@ -205,12 +216,28 @@ class ModulationVerdictTests(unittest.TestCase):
         # The family is every element with displacements (F3): it holds every
         # element tested here, and each counts its points and compared modes.
         family = result["family"]
-        self.assertEqual(set(family), {"zoneBoundaryPoints", "comparedModes", "elements"})
+        self.assertEqual(set(family), {"zoneBoundaryPoints", "comparedModes", "diffuse", "elements"})
         self.assertEqual(family["elements"], sorted(family["elements"]))
+        self.assertEqual(family["diffuse"], len(family["elements"]))
         self.assertTrue({entry["element"] for entry in tested} <= set(family["elements"]))
         for entry in tested:
             self.assertEqual(family["zoneBoundaryPoints"], len(entry["zoneBoundary"]) * len(family["elements"]))
             self.assertEqual(family["comparedModes"], entry["comparedModes"] * len(family["elements"]))
+            # The diffuse finding: its answer is its one record's clears, recomputable.
+            finding = entry["verdict"]["diffuseOrder"]
+            diffuse = entry["diffuse"]
+            self.assertEqual(len(diffuse["correlations"]), len(DIFFUSE_LAGS))
+            if diffuse["df"] is None:
+                self.assertEqual((finding["answer"], finding["because"], finding["evidence"]), (None, "too_few_modes", []))
+            else:
+                [record] = finding["evidence"]
+                self.assertEqual(record["clears"], evidence_clears(record))
+                self.assertEqual(record["bar"], {"z": DIFFUSE_SIGMA, "change": DIFFUSE_CORRELATION})
+                if finding["answer"] is not None:
+                    self.assertEqual(finding["answer"], record["clears"])
+                if finding["answer"]:
+                    self.assertIn(diffuse["phase"], DIFFUSE_PHASES)
+                    self.assertEqual(finding["because"], f"correlated_{diffuse['phase']}")
             for point in entry["zoneBoundary"] + entry["strongest"]:
                 pol = point["polarisation"]
                 self.assertEqual(set(pol), {"direction", "uvw", "share"})
@@ -271,7 +298,7 @@ class ModulationVerdictTests(unittest.TestCase):
         # The family is every element of the configuration, whichever the call
         # names (F3): Ti alone counts O's 7 points too, as a call for both does.
         # (Until 2026-10-19 it was the elements of the call: 7.)
-        self.assertEqual(result["family"], {"zoneBoundaryPoints": 14, "comparedModes": 196, "elements": ["O", "Ti"]})
+        self.assertEqual(result["family"], {"zoneBoundaryPoints": 14, "comparedModes": 196, "diffuse": 2, "elements": ["O", "Ti"]})
         self.assertEqual(displacement_modulations(_load_text(long_wave_config_text()))["family"], result["family"])
 
     def test_order_at_a_general_wavevector(self):
@@ -324,7 +351,7 @@ class ModulationVerdictTests(unittest.TestCase):
         self.assertEqual(entry["sites"], 0)
         for finding in entry["verdict"].values():
             self.assertEqual((finding["answer"], finding["because"]), (None, "no_displacements"))
-        self.assertEqual(result["family"], {"zoneBoundaryPoints": 0, "comparedModes": 0, "elements": []})
+        self.assertEqual(result["family"], {"zoneBoundaryPoints": 0, "comparedModes": 0, "diffuse": 0, "elements": []})
         # An element that does not move is not in the family of the others either.
         still = replace(sites, displacements=np.where(
             (np.asarray(sites.elements)[sites.site_index] == "Nb")[:, None], 0.0, sites.displacements))
@@ -444,16 +471,18 @@ class FamilyTests(unittest.TestCase):
     """F3 (2026-10-19): the Sidak family is every element of the configuration, whichever the call names."""
 
     def test_a_point_just_below_the_bar_stays_below_it_when_its_element_is_named(self):
-        # A weak doubling (Nb +-0.03 A along z in alternate c layers, under
-        # 0.06 A of noise): its (0, 0, 1/2) point sits at 2.98 sigma over the
-        # 21 zone-boundary points of Ga, Nb and Se. Naming Nb used to shrink
-        # the family to its own 7 points, which took it to 3.30 sigma:
-        # "ordered". It is the same point, the same data and the same verdict
-        # either way now.
-        sites = _load_text(cluster_config_text("doubled", supercell=(4, 4, 4), delta=0.09, seed=26))
+        # A weak doubling (Nb +-0.02 A along z in alternate c layers, under
+        # 0.06 A of noise): its (0, 0, 1/2) point sits at 2.99 sigma over the
+        # 21 zone-boundary points of Ga, Nb and Se (against the
+        # independent-cell null, F1). Naming Nb used to shrink the family to
+        # its own 7 points, which takes it to 3.31 sigma: "ordered". It is the
+        # same point, the same data and the same verdict either way now.
+        # (Under the null before F1 the same known answer was Nb +-0.03 A,
+        # seed 26: 2.98 and 3.30 sigma.)
+        sites = _load_text(cluster_config_text("doubled", supercell=(4, 4, 4), delta=0.06, seed=33))
         every = displacement_modulations(sites)
         named = displacement_modulations(sites, "Nb")
-        self.assertEqual(every["family"], {"zoneBoundaryPoints": 21, "comparedModes": 66, "elements": ["Ga", "Nb", "Se"]})
+        self.assertEqual(every["family"], {"zoneBoundaryPoints": 21, "comparedModes": 66, "diffuse": 3, "elements": ["Ga", "Nb", "Se"]})
         self.assertEqual(named["family"], every["family"])
         point = next(p for p in _element(every, "Nb")["zoneBoundary"] if p["q"] == [0.0, 0.0, 0.5])
         again = next(p for p in _element(named, "Nb")["zoneBoundary"] if p["q"] == [0.0, 0.0, 0.5])
@@ -465,7 +494,7 @@ class FamilyTests(unittest.TestCase):
             self.assertEqual(_element(result, "Nb")["verdict"]["cellDoubling"]["answer"], False)
         # The old family (Nb's 7 points) would have called it ordered.
         power = point["ratio"] * _element(named, "Nb")["medianPower"]
-        self.assertGreaterEqual(zone_boundary_sigma(power, _element(named, "Nb")["sites"], 7), MODULATION_SIGMA)
+        self.assertGreaterEqual(zone_boundary_sigma(power, independent_cell_null(sites, "Nb"), 7), MODULATION_SIGMA)
 
 
 @unittest.skipUnless(DEMO_RMC6F.exists(), "the committed demo run is missing")
@@ -480,7 +509,7 @@ class DemoModulationTests(unittest.TestCase):
         # strongest mode a box-scale wave (no general mode among the five).
         sites = load_site_displacements(DEMO_RMC6F)
         result = displacement_modulations(sites)
-        self.assertEqual(result["family"], {"zoneBoundaryPoints": 21, "comparedModes": 1323, "elements": ["Ga", "Se", "Ta"]})
+        self.assertEqual(result["family"], {"zoneBoundaryPoints": 21, "comparedModes": 1323, "diffuse": 3, "elements": ["Ga", "Se", "Ta"]})
         # F3: a call naming one element corrects over the same family.
         self.assertEqual(displacement_modulations(sites, "Ta")["family"], result["family"])
         for entry in result["elements"]:
@@ -489,6 +518,194 @@ class DemoModulationTests(unittest.TestCase):
                              (False, "no_ordered_point"), entry["element"])
             self.assertEqual(verdict["longWave"]["answer"], True, entry["element"])
             self.assertTrue(all(math.isfinite(p["ratio"]) for p in entry["zoneBoundary"]))
+            # Plan item 4.4: the power beyond the long waves is spread toward
+            # the zone centre -- neighbouring cells move together, in phase
+            # (the tail of RMC's box-scale waves), never in antiphase.
+            diffuse = entry["diffuse"]
+            self.assertEqual(diffuse["phase"], "in_phase", entry["element"])
+            self.assertGreater(diffuse["sigma"], 5, entry["element"])
+            self.assertTrue(all(c > 0 for c in diffuse["correlations"][:3]), entry["element"])
+        se = _element(result, "Se")
+        self.assertGreater(se["diffuse"]["correlation"], 0.15)
+        self.assertEqual(se["verdict"]["diffuseOrder"]["because"], "correlated_in_phase")
+
+
+class NullTests(unittest.TestCase):
+    """F1 (2026-10-19): the independent-cell null keeps every correlation inside a cell."""
+
+    def test_the_weights_sum_to_the_mean_power(self):
+        # Parseval with each site's mean subtracted: the power averages
+        # N/(N - 1) over q != 0, and so do the null's weights.
+        for make in configs.NULL_FAMILIES.values():
+            sites = configs.site_displacements(make(5))
+            n_q = int(np.prod(sites.supercell))
+            for name in sorted(set(sites.elements)):
+                power = element_spectrum(sites, name)[0].ravel()
+                self.assertAlmostEqual(float(power[1:].mean()), n_q / (n_q - 1), places=12)
+                self.assertAlmostEqual(float(independent_cell_null(sites, name).sum()), n_q / (n_q - 1), places=12)
+
+    def test_a_shared_cell_variable_leaves_fewer_independent_components(self):
+        # Independent isotropic sites: about three components per site. The
+        # six F of a Jahn-Teller octahedron share its long axis: about three
+        # in all, where the null before F1 assumed six (one per site).
+        thermal = displacement_modulations(configs.site_displacements(configs.thermal(5)))
+        self.assertAlmostEqual(_element(thermal, "Ti")["nullDof"], 3.0, delta=0.1)
+        jt = displacement_modulations(configs.site_displacements(configs.jahn_teller(5)))
+        self.assertEqual(_element(jt, "F")["sites"], 6)
+        self.assertLess(_element(jt, "F")["nullDof"], 4.0)
+
+    def test_equal_weights_are_the_exact_gamma(self):
+        # An int m is m equal weights 1/m, the bound the engine used before F1.
+        self.assertAlmostEqual(null_tail(9, 1, True), 0.0026997960632601866, places=15)
+        self.assertAlmostEqual(null_tail(9, [0.5, 0.5], False), math.exp(-18) * 19, places=15)
+        self.assertEqual(null_tail(9, 2, False), null_tail(9, [0.5, 0.5], False))
+        self.assertIsNone(null_tail(0.0, 3, True))
+        self.assertIsNone(null_tail(1.0, [], True))
+
+    def test_the_saddlepoint_tail_is_never_anticonservative(self):
+        # Against the exact tail (the Moschopoulos series of a sum of gammas)
+        # for weight patterns the engine meets -- one dominant component over
+        # several small ones, an anisotropic site, two equal ones over many --
+        # the saddlepoint lies within -1 % and +8 % of it from p = 1e-2 to 1e-6.
+        # (A three-moment gamma fell to 0.36 of it at 1e-6.)
+        def exact_tail(weights, real):
+            """P(sum lambda_k Y_k > x) as a function of x: a gamma mixture whose
+            coefficients (they do not depend on x) are computed once."""
+            lam = np.asarray(weights, dtype=float)
+            alpha = np.full(lam.size, 0.5 if real else 1.0)
+            beta = lam * (2.0 if real else 1.0)
+            b1 = beta.min()
+            rho = alpha.sum()
+            ratio = 1.0 - b1 / beta
+            terms = 2000  # the slowest pattern's coefficients fall below 1e-12 of the sum by about 900
+            k = np.arange(1, terms)
+            weighted = np.array([0.0] + [float(np.sum(alpha * ratio ** j)) for j in k])  # j gamma_j
+            delta = np.zeros(terms)
+            delta[0] = 1.0
+            for j in k:
+                delta[j] = float(weighted[1:j + 1] @ delta[j - 1::-1]) / j
+            scale = math.exp(float(np.sum(alpha * np.log(b1 / beta))))
+            orders = rho + np.arange(terms)
+            return lambda x: scale * float(np.sum(delta * gammaincc(orders, x / b1)))
+
+        patterns = [[0.429] + [0.0713] * 8, [0.6, 0.25, 0.15], [0.39, 0.39] + [0.01375] * 16]
+        for weights in patterns:
+            for real in (True, False):
+                exact = exact_tail(weights, real)
+                for target in (1e-2, 1e-4, 1e-6):
+                    lo, hi = 0.0, 100.0
+                    for _ in range(80):
+                        mid = 0.5 * (lo + hi)
+                        lo, hi = (mid, hi) if exact(mid) > target else (lo, mid)
+                    ratio = null_tail(0.5 * (lo + hi), weights, real) / target
+                    self.assertTrue(0.99 < ratio < 1.08, (weights[:2], real, target, ratio))
+
+    def test_shared_variables_no_longer_read_as_order(self):
+        # F1's repro: an F mode of Jahn-Teller octahedra and a W mode of
+        # elongated octahedral clusters, five to six times the median, which
+        # the null of independent sites put above 3 sigma (3.66 and 4.46): the
+        # sites of each octahedron share one variable, so the element's power
+        # has about three components, not six. Against the independent-cell
+        # null both are below 2 sigma, and nothing is ordered.
+        for make, seed, name, want_q in ((configs.jahn_teller, 11, "F", (0.5, 0.5, 1 / 3)),
+                                         (configs.octahedral, 4, "W", (0.0, 0.375, 0.25))):
+            sites = configs.site_displacements(make(seed))
+            result = displacement_modulations(sites)
+            entry = _element(result, name)
+            mode = next(m for m in entry["strongest"] if np.allclose(m["q"], want_q))
+            self.assertEqual(mode["kind"], "general")
+            self.assertGreater(mode["ratio"], 4.5)
+            old = general_mode_sigma(mode["ratio"] * entry["medianPower"], entry["sites"], result["family"]["comparedModes"])
+            self.assertGreater(old, 3.5)
+            self.assertLess(mode["sigma"], 2.0)
+            self.assertEqual((mode["ordered"], mode["because"]), (False, "below_sigma"))
+            for other in result["elements"]:
+                for finding in ("cellDoubling", "generalOrder", "diffuseOrder"):
+                    self.assertNotEqual(other["verdict"][finding]["answer"], True, (make.__name__, other["element"], finding))
+
+    def test_independent_isotropic_sites_are_no_longer_held_to_the_bound(self):
+        # One isotropic site has three components: the bound chi2_1 the null
+        # took before F1 read a weak doubling (B +-0.018 A along z at
+        # (1/2, 1/2, 0) over 0.06 A of thermal motion, the weak order the
+        # validation's judgment pair had until protocol 2026-10-19.19 re-set
+        # it) near 3 sigma; the null reads it above 5.
+        result = displacement_modulations(configs.site_displacements(configs.zone_mode(3, delta=0.018, q=(0.5, 0.5, 0))))
+        ti = _element(result, "Ti")
+        point = next(p for p in ti["zoneBoundary"] if p["q"] == [0.5, 0.5, 0.0])
+        old = zone_boundary_sigma(point["ratio"] * ti["medianPower"], 1, result["family"]["zoneBoundaryPoints"])
+        self.assertLess(old, point["sigma"] - 1.5)
+        self.assertTrue(point["ordered"])
+
+
+class DiffuseOrderTests(unittest.TestCase):
+    """Plan item 4.4: diffuse order between cells, spread over many q."""
+
+    def test_short_range_order_in_antiphase_with_no_single_mode(self):
+        # B displacements in neighbouring cells along a correlated by -0.27
+        # (antiphase): the power lies on the whole sheet q_a = 1/2, no mode
+        # stands out (no cell doubling, no general order), and the diffuse
+        # test finds it, along [1 0 0], in antiphase.
+        result = displacement_modulations(configs.site_displacements(configs.diffuse(1)))
+        nb = _element(result, "Nb")
+        verdict = nb["verdict"]
+        self.assertEqual((verdict["cellDoubling"]["answer"], verdict["generalOrder"]["answer"]), (False, False))
+        finding = verdict["diffuseOrder"]
+        self.assertEqual((finding["answer"], finding["because"]), (True, "correlated_antiphase"))
+        diffuse = nb["diffuse"]
+        self.assertEqual((diffuse["lag"], diffuse["phase"], diffuse["df"], diffuse["modes"]), ([1, 0, 0], "antiphase", 13, 190))
+        self.assertLess(diffuse["correlation"], -0.15)
+        self.assertGreater(diffuse["sigma"], 5)
+        [record] = finding["evidence"]
+        self.assertEqual((record["observed"], record["z"], record["clears"]), (abs(diffuse["correlation"]), diffuse["sigma"], True))
+        self.assertEqual(record["side"], "above")
+        # The other elements move independently: no diffuse order there.
+        for name in ("Ag", "O"):
+            self.assertNotEqual(_element(result, name)["verdict"]["diffuseOrder"]["answer"], True, name)
+
+    def test_in_phase_correlation(self):
+        result = displacement_modulations(configs.site_displacements(configs.diffuse(1, sign=1.0, axis=2)))
+        nb = _element(result, "Nb")
+        self.assertEqual(nb["verdict"]["diffuseOrder"]["because"], "correlated_in_phase")
+        self.assertEqual((nb["diffuse"]["lag"], nb["diffuse"]["phase"]), ([0, 0, 1], "in_phase"))
+        self.assertGreater(nb["diffuse"]["correlation"], 0.15)
+
+    def test_one_strong_mode_alone_is_not_diffuse_order(self):
+        # A cell doubling (dev-zone-boundary's kind: B +-0.1 A at (0, 0, 1/2))
+        # is the zone-boundary test's: its point is not among the diffuse
+        # test's modes. An ordered general mode is the general test's: it is
+        # left out of them. Ranks bound what any other one mode adds.
+        doubled = displacement_modulations(configs.site_displacements(configs.zone_mode(7)))
+        ti = _element(doubled, "Ti")
+        self.assertTrue(ti["verdict"]["cellDoubling"]["answer"])
+        self.assertEqual(ti["verdict"]["diffuseOrder"]["answer"], False)
+        self.assertLess(ti["diffuse"]["sigma"], 2)
+        wave = displacement_modulations(_load_text(wave_config_text()))
+        ti = _element(wave, "Ti")
+        self.assertTrue(ti["verdict"]["generalOrder"]["answer"])
+        self.assertEqual(ti["verdict"]["diffuseOrder"]["answer"], False)
+        self.assertEqual(ti["diffuse"]["modes"], _element(wave, "O")["diffuse"]["modes"] - 1)
+
+    def test_the_statistic_reads_ranks(self):
+        # Under independent cells the power at every compared mode is
+        # identically distributed: the ranks are exchangeable, so the
+        # statistic is the same for any increasing function of the power, and
+        # one mode a million times stronger moves it no further than the top rank.
+        rng = np.random.default_rng(4)
+        q = np.array([(h / 8, k / 8, l / 8) for h in range(8) for k in range(-3, 5) for l in range(-3, 5)][:150], dtype=float)
+        power = rng.exponential(1.0, q.shape[0])
+        base = diffuse_order(power, q, 3)
+        self.assertAlmostEqual(diffuse_order(np.log(power) + 10.0, q, 3)["chiSquare"], base["chiSquare"], places=9)
+        spiked = power.copy()
+        spiked[int(np.argmax(power))] = 1e6
+        self.assertAlmostEqual(diffuse_order(spiked, q, 3)["chiSquare"], base["chiSquare"], places=9)
+
+    def test_too_few_modes(self):
+        # A 4 x 4 x 4 grid leaves 15 compared modes outside the long waves and
+        # zone-boundary points: fewer than two per term of the regression.
+        result = displacement_modulations(_load("independent", supercell=(4, 4, 4)))
+        for entry in result["elements"]:
+            self.assertEqual(entry["diffuse"]["modes"], 15)
+            self.assertEqual(entry["verdict"]["diffuseOrder"], {"answer": None, "because": "too_few_modes", "evidence": []})
 
 
 if __name__ == "__main__":

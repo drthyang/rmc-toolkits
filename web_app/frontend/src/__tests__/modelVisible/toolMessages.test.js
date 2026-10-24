@@ -348,7 +348,13 @@ describe('the Workbench\'s notes on the Demo run', () => {
         const { run, rmc6fText } = await loadDemoAssistantRun();
         const tools = [
             ...buildRunTools(run, { cards: [] }),
-            ...buildCopilotTools({ request: inProcessEngine(rmc6fText), structure: run.structure, elements: Object.keys(run.structure.elementCounts || {}).sort() }),
+            ...buildCopilotTools({
+                request: inProcessEngine(rmc6fText),
+                structure: run.structure,
+                elements: Object.keys(run.structure.elementCounts || {}).sort(),
+                plotFiles: run.plotFiles,
+                runSettings: run.runSettings
+            }),
             buildAskUserTool()
         ];
         const context = buildRunContext(run);

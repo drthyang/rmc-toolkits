@@ -11,11 +11,10 @@ export { default as WatchdogBadge } from './components/WatchdogBadge';
 // that report a space group (copilotTools.js detect_symmetry).
 export { describePointGroup, pointGroupFacts } from './context/pointGroups';
 // The run's one shell reading (context/shells.js): when two coordination
-// numbers agree, and compute_bond_angles' counts rule for a window that cuts
-// a shell, with its thresholds (copilotTools.js).
-export {
-    cnMatches, countsCut, MODAL_COORDINATION_SHARE, shellCatalogue, UNBONDED_APEX_FRACTION
-} from './context/shells';
+// numbers agree, the run's shell catalogue, and the one rule for a window
+// that cuts a shell, which the Workbench asks on and compute_bond_angles
+// refuses on (copilotTools.js).
+export { cnMatches, shellCatalogue, windowCut } from './context/shells';
 // A check whose text holds method advice (copilot/method.js): the turn sends
 // it without the advice under method 'off', the validation's arm C
 // (copilotTools.js).
