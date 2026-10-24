@@ -433,6 +433,7 @@ describe('where a finding stands, and validation batch 1', () => {
             '2026-10-24-ft-error-propagation',
             ...INTERVIEW_RECORDS.filter((id) => id > '2026-10-24-fit-assessment-interview'),
             '2026-10-24-polyhedral-distortion',
+            '2026-10-24-refused-not-evidence',
             '2026-10-24-sonnet-request-policy'
         ]);
         expect(existsSync(join(FRONTEND, 'validation/findings/decisions.jsonl'))).toBe(false);
@@ -637,6 +638,26 @@ describe('where a finding stands, and validation batch 1', () => {
         expect(interview.commit).toMatch(/^[0-9a-f]{40}$/);
         expect(interview.tests.length).toBeGreaterThan(0);
         interview.tests.forEach((test) => {
+            const [path, title] = test.split(' › ');
+            expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+        });
+    });
+
+    it('decisions: a refused analysis backs no claim (A5, option 2), approved by the user directly and implemented with its known-answer tests', () => {
+        const refused = decisions()['2026-10-24-refused-not-evidence'];
+        expect(refused).toMatchObject({
+            case: 'dev-jahn-teller', kind: 'orchestration', needs_user_approval: true, status: 'implemented',
+            approval: { by: 'user', date: '2026-10-24', batch: 3 }
+        });
+        expect(refused.commit).toMatch(/^[0-9a-f]{40}$/);
+        expect(refused.evidence).toContain('"A5: option 2. A refused analysis doesn\'t count: the gate sends the claim back, and the model re-runs on '
+            + 'the whole shell or asks me to confirm the window. Land it before the B/C runs."');
+        for (const field of ['evidence', 'proposed_fix']) {
+            expect(refused[field], field).toMatch(/Approved by the user, 2026-10-24\.$/);
+            expect(refused[field], field).not.toMatch(/on the user's delegation/i);
+        }
+        expect(refused.tests.length).toBeGreaterThan(0);
+        refused.tests.forEach((test) => {
             const [path, title] = test.split(' › ');
             expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
         });

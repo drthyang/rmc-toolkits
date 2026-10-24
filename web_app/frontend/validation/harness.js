@@ -249,6 +249,16 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // says it (+56 tokens on the worst turns). The run module attaches the
 // ribbon's payload to an xPDF plot (dev-fit-unconverged's has no .dat: "No
 // σ(r)"). Arms A and A+ on dev are unchanged (they do not call compare_fit).
+// 2026-10-24.5: a refused analysis backs no claim (the user's decision A5,
+// approved by the user, 2026-10-24) — the evidence gate counts only a call
+// that answered: a refused one (the tool's own fail check, e.g.
+// compute_bond_angles refusing a window that cuts the shell) is still an
+// analysis but backs no claim under anyOf, firstOffered and allOf alike, and
+// the send-back says it refused (arm B: the tool, and for a window cut both
+// fixes — the whole shell, or the user's window through ask_user and
+// window_confirmed; arm C: no tool, window or remedy); the finding and the
+// Outcome's reason name the refusal. The system prompt and the tools are
+// unchanged. Arms A, A+ and D on dev are unchanged (no model, no gate).
 // 2026-10-24.6: the request policy for Claude Sonnet 5.5 (the user's
 // decisions, 2026-10-24: "Fix both first", "Raise to $20") — it takes only
 // its default sampling, so its requests carry no temperature key, the warmer

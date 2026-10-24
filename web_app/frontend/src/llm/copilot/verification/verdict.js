@@ -10,7 +10,7 @@
 // In order, the first that holds:
 //   not verified — a check on the answer contradicts it (facts.js), a
 //     reference names no value the turn has (references.js), or the answer
-//     concludes something whose analysis did not run (claims.js);
+//     concludes something whose analysis did not run, or refused (claims.js);
 //   not achieved — analyses ran and none of them succeeded;
 //   partial — the analyses were cut short (an ending STOPPED_BY marks
 //     cutShort, turnPolicy.js: the round budget or the turn's time, or rounds
@@ -35,8 +35,8 @@ export const VERDICT_STATUSES = ['achieved', 'partial', 'not verified', 'not ach
  * Whether a recorded step is an analysis: it ran (`executed`: not skipped by
  * the budget, not an unknown tool, not a refused question) and it is not a
  * question to the user (`interactive`), a skill read (`reading`) or a view
- * tool (`view`). A failed analysis is one too; the evidence gate also needs
- * it to have no error.
+ * tool (`view`). A failed analysis is one too, and a refused one; the
+ * evidence gate also needs it to have answered (no error, not refused).
  */
 export const isAnalysis = (step) => Boolean(step?.executed) && !step.interactive && !step.reading && !step.view;
 
@@ -45,10 +45,13 @@ const findingReason = (findings) => {
     const evidence = findings.filter((finding) => finding.rule === 'evidence');
     const references = findings.filter((finding) => finding.rule === 'reference');
     const checks = findings.length - evidence.length - references.length;
+    // A refused call backs no claim (claims.js): named as refused, beside what did not run.
+    const refused = evidence.some((finding) => finding.refused?.length);
+    const named = evidence.flatMap((finding) => (finding.refused?.length ? [...finding.unrun, ...finding.refused] : finding.missing));
     return [
         checks ? `${checks === 1 ? 'a check below contradicts' : `${checks} checks below contradict`} the answer` : null,
         references.length ? 'a number it cites by reference names no value the analyses returned' : null,
-        evidence.length ? `the analysis a conclusion needs did not run (${evidence.map((finding) => finding.missing).flat().join(', ')})` : null
+        evidence.length ? `the analysis a conclusion needs did not run${refused ? ' or refused' : ''} (${named.join(', ')})` : null
     ].filter(Boolean).join('; ');
 };
 
