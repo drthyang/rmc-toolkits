@@ -4,7 +4,7 @@
 
 From the tightest tolerance to the loosest: P1, Cm, Cmm2, P-42₁m, F-43m. The sampling noise floor
 of the site means is 0.031 Å, and every rung below F-43m lies under it: the average structure is
-F-43m (No. 216, point group -43m, 96 operations in the conventional cell).
+consistent with F-43m (No. 216, point group -43m, 96 operations in the conventional cell).
 
 | Group | No. | Point group | Inversion | Sohncke (chiral allowed) | Polar |
 |---|---|---|---|---|---|

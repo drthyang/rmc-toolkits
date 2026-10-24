@@ -28,6 +28,10 @@
   configuration. On the answer corpus they raise one finding, on the README GIF's GaSe₄ answer
   (judged right), and no false alarm. Scripted replays on the Demo pin the user's answers 1, 2, 5 and
   6 wherever a check can catch the wrong answer.
+- The skill lint binds the interviewed rmc-fit-assessment skill's four lines this code builds — the
+  every-term convergence rule (with a probe), the 5 % gate to `CONSTRAINT_LIMIT_FRACTION`, and the
+  two firm rules to the `long-wave` and `single-configuration` checks (with probes) — so their
+  allow-list entries ("awaits the fit-assessment code PR") leave.
 - What the model reads: the system prompt +226 characters; `assess_convergence`'s description 274 →
   575 characters and its Demo result 435 → 1,111; the Demo context +486 characters, with the context
   budget raised from 6,000 to 6,500 characters so its second g(r) peaks stay. Arms A, A+ and D on dev

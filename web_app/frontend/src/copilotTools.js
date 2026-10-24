@@ -902,11 +902,14 @@ export const CLUSTER_RESULT_BUDGET = 4500;
  * interview, 2026-10-24, answer 7: a distortion index there). `polyhedra`:
  * the run offers polyhedral_distortion, which the advice then names.
  */
+// (A constant: written inline before a ternary's colon, the tool name read as
+// a result field to the skill lint's key scan.)
+const POLYHEDRA_ADVICE = ': use polyhedral_distortion';
 export const clusterMethod = ({ polyhedra = false } = {}) => [
     { after: 'in the average structure', text: ' (take the window from find_gr_peaks: first_shell.window_A of that element pair)' },
     'Use it for finite clusters (dimers, trimers, M4 tetrahedra, isolated polyhedra): their distortion, Jahn–Teller, '
         + 'dimerization or trimerization; single-site displacement directions cannot show these. Corner-sharing polyhedra '
-        + `or another extended network have no finite clusters for its null${polyhedra ? ': use polyhedral_distortion' : ''}.`
+        + `or another extended network have no finite clusters for its null${polyhedra ? POLYHEDRA_ADVICE : ''}.`
 ];
 
 // One statistic against its null: change = obs/null − 1, when both are finite.
