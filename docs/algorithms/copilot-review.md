@@ -59,8 +59,8 @@ regression pin on the demo run.
 
 ### Implemented in validation batch 1 (approved by the user on 2026-10-14; 2026-10-17)
 
-Every tool proposal above (the skill proposals below go in a PR of their own, which waits for the
-user's review), each recorded as a finding in
+Every proposal above and in the skills table below (the skill changes in a PR of their own, which
+waits for the user's review), each recorded as a finding in
 `web_app/frontend/validation/findings/batch-1.jsonl` with its commit and tests:
 
 | Item | Change | Commit |
@@ -70,6 +70,7 @@ user's review), each recorded as a finding in
 | L3 | `facts.direction.significant` from the peak test; `anisotropic` from the map test | b867260 |
 | L4 | `measure_symmetry_lowering` (`symmetryShift.js`); `analyze_modulations` tests general wavevectors | 56cd672 |
 | L5 | coordination facts from `compute_bond_angles` and `find_gr_peaks`; cluster and coordination answer checks | 4481a86 |
+| Skills | coordination-shells 1764bb3, displacement-anisotropy fe18ad6, local-symmetry f353aa5, rmc-fit-assessment 72fcd32, the new local-order 508e8be (all still drafts) | — |
 
 Two consequences the proposals did not spell out: the per-cluster breathing fit takes out a share
 β_m of each member's own radial noise, which the shape null puts back (without it independent atoms
@@ -80,7 +81,7 @@ own two positions hold.
 ## Skills
 
 All four are drafts awaiting the user's interview. Changes to them need the user's approval; these
-are proposals; batch 1 implements them in a separate PR, with the missing local-order skill as a fifth draft.
+were proposals, implemented in batch 1 (above), with the missing local-order skill as a fifth draft.
 
 | Skill | Every decision tied to a tool output? | Criteria explicit and physical? | Contradictions and gaps |
 | --- | --- | --- | --- |

@@ -28,7 +28,7 @@ tools: 16, in the order sent (each definition in full: dock/tools.json)
   16. read_skill
 
 ## messages[0] · system
-(the system prompt, variant "tools-view-ask-skills": system-prompt/tools-view-ask-skills.txt, 11884 characters, sha256 a492306c530bb598)
+(the system prompt, variant "tools-view-ask-skills": system-prompt/tools-view-ask-skills.txt, 12356 characters, sha256 c8ec29ad02cfec2c)
 
 ## messages[1] · user
 Context for this RMC modeling run:

@@ -299,7 +299,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "enum": ["coordination-shells", "displacement-anisotropy", "local-symmetry", "rmc-fit-assessment"],
+            "enum": ["coordination-shells", "displacement-anisotropy", "local-order", "local-symmetry", "rmc-fit-assessment"],
             "description": "The skill."
           },
           "reference": {

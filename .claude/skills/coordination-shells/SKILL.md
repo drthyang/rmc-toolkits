@@ -13,8 +13,9 @@ description: >-
 
 **Status: Draft: awaiting the user's interview.** Written from the 2026-10-10 spot check (the
 Se–Ta–Se question that went wrong), the review that followed, the Bond Geometry algorithm notes
-and the tools' checks. A step marked "(to confirm with the user)" is not yet the user's own
-practice: say in the answer which choice you made.
+and the tools' checks; the split-shell rule of step 2 was added in validation batch 1 (the
+2026-10-14 tool review's L1, approved by the user that day). A step marked "(to confirm with the
+user)" is not yet the user's own practice: say in the answer which choice you made.
 
 A "bond" here is a distance window and nothing else: the engine reports geometry, not chemistry.
 Every angle, coordination number and cluster shape depends on the window, so the window is the
@@ -30,7 +31,12 @@ analysis.
    the g peak), `cn` both ways, `cn_if_cut_0p2A_earlier_later`, `trough_g_fraction`. A shell
    with two peaks is ONE split shell, e.g. two bond lengths of one distorted polyhedron: the
    TaSe₆ shell has Ta–Se peaks at 2.52 and 2.74 Å; the first-peak window 2.33–2.71 Å holds
-   3.9 Se per Ta, the whole shell 6.
+   3.9 Se per Ta, the whole shell 6. When the two bond lengths are well resolved, the trough
+   between them is deep; `find_gr_peaks` then joins a later peak within 0.5 Å of the first whose
+   summed CN is an ideal polyhedral count (4, 6, 8, 12), and reports the first peak alone as
+   `first_shell.first_peak_only` with its own CN. A Jahn–Teller CuF₆ (4 × 1.93 + 2 × 2.25 Å) holds
+   4 F in the first peak and 6 in `first_shell.window_A`: one octahedron with short and long
+   bonds, never a four-coordinate Cu. `first_shell.window_A` is always the whole polyhedron.
 3. **Check the count.** Compare the shell's CN with the ideal. Short means the window cuts the
    shell. A shallow trough (the "not separated" warning) means the CN depends on the cut: quote
    the range for a cut 0.2 Å earlier or later, and ask whether the crystal has A–B distances in
@@ -38,7 +44,8 @@ analysis.
 4. **Choose the window.** Use `first_shell.window_A` unless the user asked for something else.
    When the data offer two defensible windows (a split shell, a shell not separated from the
    next) and the question does not say which, ask with `ask_user`, offering each window with its
-   CN and your default (the whole shell).
+   CN and your default (the whole shell). The Workbench asks by itself before an analysis runs in
+   a window that cuts the shell (the first peak alone of a joined split shell included).
 5. **Compute** `compute_bond_angles` (or `analyze_clusters`) in that window. The app refuses a
    window that cuts the shell: the angles of a cut shell are not the polyhedron's. Pass
    `window_confirmed: true` only when the user chose or typed that window.
@@ -58,6 +65,8 @@ analysis.
   range) (to confirm with the user).
 - Whether a split first shell is reported as one polyhedron or as short and long bonds (to
   confirm with the user).
+- The split-shell rule's reach (a second peak within 0.5 Å of the first) and its ideal counts
+  (4, 6, 8, 12, within half an atom) (batch 1; to confirm with the user).
 - The 60 % modal-coordination threshold the app uses to call a window cut (to confirm with the
   user).
 
@@ -65,6 +74,8 @@ analysis.
 
 - [ ] The window comes from `find_gr_peaks`' first shell (or the user's choice), stated in Å.
 - [ ] The CN in that window is quoted and compared with the ideal polyhedron.
+- [ ] A split shell whose summed CN is a polyhedron is one polyhedron with two bond lengths, not a
+      lower coordination (the first peak alone only when the user chose it).
 - [ ] No angle, CN or cluster number from a window that cuts the shell.
 - [ ] Angles read with the sin θ effect in mind; trans angles not called missing.
 - [ ] Bond lengths and spreads quoted from the tool (`bond_ab.mean_A`, `sd_A`), never invented.
@@ -82,8 +93,14 @@ analysis.
   150–170° in raw counts. The tool now returns the sin θ-corrected histogram too.
 - **"± 0.02 Å" invented** for GaSe₄ (review): the tool now gives the measured spread (sd 0.095 Å).
 - **"Peak shifted to 2.93 Å: distorted"** (review): the Ta–Ta g(r) peak sits below the shell
-  mean (3.00 Å from r²g); the cluster analysis found the Ta₄ clusters 23 % *less* distorted than
-  independent atoms.
+  mean (3.00 Å from r²g); the cluster analysis found the Ta₄ clusters 20 % *less* distorted than
+  independent atoms at their own size.
+- **A Jahn–Teller octahedron read as four-coordinate** (tool review, 2026-10-14, L1): the deep
+  trough between 4 × 1.93 and 2 × 2.25 Å closed the shell at 2.10 Å (CN 4), and the long bonds
+  looked like "the next shell". *Firm rule in the app:* `find_gr_peaks` joins the split shell
+  (CN 6) and offers the first peak alone as `first_peak_only`, the Workbench asks before an
+  analysis runs in it, and an answer that gives an element a coordination number its whole first
+  shell contradicts gets a warning under it.
 
 ## Report
 
