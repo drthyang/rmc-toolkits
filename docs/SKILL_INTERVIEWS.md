@@ -112,8 +112,9 @@ not apply as an entry marked "awaits the coordination code PR".
 
 Also answered (the user's answer 7): corner-sharing or extended networks (outside the 0.5–4.5
 own-kind rule) use angle spreads plus a standard polyhedral distortion index such as Baur's, never
-the cluster null. No Workbench tool computes the index yet, and the skill says so. **Landed:** the
-skill (step 7).
+the cluster null. No Workbench tool computed the index then; `polyhedral_distortion` does since
+2026-10-24 (its own PR: Baur's DI and Robinson's indices, for the configuration and the average
+structure). **Landed:** the skill (step 7, which names the tool) and code (the tool).
 
 ## 3. Local symmetry (`local-symmetry`, interviewed 2026-10-24)
 

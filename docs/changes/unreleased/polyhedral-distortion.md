@@ -27,10 +27,15 @@
   network, the static/local reading) goes to the dock and arm B. On the Demo the TaSe6 octahedra
   carry a static 3 + 3 distortion (average structure DI 0.0415, configuration 0.0469), while the GaSe4
   tetrahedra are regular on average (0.0010 against 0.0278).
+- A fact sync of the interviewed skills, the tool being on main: coordination-shells step 7 names
+  `polyhedral_distortion` and what it returns (it said no Workbench tool computes a distortion
+  index), local-order step 4 says what it returns (it said "where the Workbench offers it"), and the
+  skill lint, which now finds the tool among those the Copilot offers, drops its allow-list entry
+  ("awaits the polyhedral_distortion PR").
 - What the model sees: the tool's definition (+1,745 characters in the dock, +1,741 in arm B, +1,246
-  in arm C), the first request's tool lists, and a new tool-results sample. The 32k budget pins move
-  by +698 (dock) and +693 (arm B) tokens; at the live runs' 48k the dock keeps 7,041 tokens and arm B
-  9,776, with the batch-1 skill drafts. Arms A and A+ do not read the tool, and their dev records are
-  unchanged. Approved by the
-  manager on the user's delegation, 2026-10-24 (the user's interview answer 7 for coordination-shells;
-  `validation/findings/decisions/2026-10-24-polyhedral-distortion.json`).
+  in arm C), the first request's tool lists, a new tool-results sample, and read_skill's
+  coordination-shells text (+160 characters). The 32k budget pins move by +812 (dock) and +808
+  (arm B) tokens; at the live runs' 48k the dock keeps 4,873 tokens and arm B 7,607, with the
+  interviewed skills. Arms A and A+ do not read the tool, and their dev records are unchanged.
+  Approved by the manager on the user's delegation, 2026-10-24 (the user's interview answer 7 for
+  coordination-shells; `validation/findings/decisions/2026-10-24-polyhedral-distortion.json`).
