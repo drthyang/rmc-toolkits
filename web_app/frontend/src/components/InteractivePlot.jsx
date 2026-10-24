@@ -55,6 +55,11 @@ const isExperimental = (label) => /exp/i.test(label);
 //                       a short card gives that height to the plot. While the
 //                       prop is present but null (the slot not mounted yet)
 //                       the actions render nowhere, never inline.
+//   ribbon              { series, sigma, label }: a ±σ band around the series
+//                       labelled `series` (sigma[i] at its x[i]; a non-finite
+//                       σ or y is a gap), drawn under it in its colour and
+//                       inside the y range, a legend entry `label` (a click
+//                       hides it), and the readout gives that value ± σ.
 
 const MARKER_RADIUS = 2.8;
 
@@ -162,7 +167,34 @@ const AxisLabel = ({ label: rawLabel, x, y, textAnchor = 'middle', rotate = fals
     );
 };
 
-const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, actionsTarget, marks = null }) => {
+// The band of a ribbon as closed SVG subpaths (upper edge left to right, the
+// lower edge back), one per run of points with finite x, y and σ inside the x
+// range; `sx`/`sy` map data to the view.
+const ribbonPath = (series, sigma, xDomain, sx, sy) => {
+    const runs = [];
+    let run = null;
+    series.x.forEach((x, index) => {
+        const y = series.y[index];
+        const s = sigma[index];
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(s) || x < xDomain[0] || x > xDomain[1]) {
+            run = null;
+            return;
+        }
+        if (!run) {
+            run = [];
+            runs.push(run);
+        }
+        run.push([sx(x), sy(y + s), sy(y - s)]);
+    });
+    const fmt = (value) => value.toFixed(2);
+    return runs.filter((points) => points.length > 1).map((points) => {
+        const upper = points.map(([px, top], index) => `${index ? 'L' : 'M'} ${fmt(px)} ${fmt(top)}`).join(' ');
+        const lower = [...points].reverse().map(([px, , bottom]) => `L ${fmt(px)} ${fmt(bottom)}`).join(' ');
+        return `${upper} ${lower} Z`;
+    }).join(' ');
+};
+
+const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, actionsTarget, marks = null, ribbon = null }) => {
     const wide = variant === 'wide';
     // 'fit' takes its viewBox from the rendered box instead of a fixed aspect,
     // so the drawing fills the card rather than letterboxing inside it. Opt-in:
@@ -295,6 +327,15 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
         return orderedSeries.filter((series) => !hidden.has(series.label));
     }, [orderedSeries, hidden]);
 
+    // The ±σ band (the `ribbon` prop) around a visible series, unless its
+    // legend entry hid it or its σ does not line up with the series' points.
+    const ribbonSeries = useMemo(() => {
+        if (!ribbon || !(Array.isArray(ribbon.sigma) || ArrayBuffer.isView(ribbon.sigma))) return null;
+        const series = visibleSeries.find((entry) => entry.label === ribbon.series && !entry.guide);
+        if (!series || hidden.has(ribbon.label) || ribbon.sigma.length !== series.x.length) return null;
+        return { series, sigma: ribbon.sigma, label: ribbon.label };
+    }, [ribbon, visibleSeries, hidden]);
+
     const domains = useMemo(() => {
         const fixedX = finitePair(effectivePlot?.xDomain) ? effectivePlot.xDomain : null;
         const baseX = fixedX || niceDomain(visibleSeries.flatMap((series) => series.x));
@@ -302,6 +343,16 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
         const allY = visibleSeries.flatMap((series) =>
             series.y.filter((_, index) => series.x[index] >= currentX[0] && series.x[index] <= currentX[1])
         );
+        // The band stays inside the y range, never clipped flat.
+        if (ribbonSeries) {
+            const { series, sigma } = ribbonSeries;
+            series.x.forEach((x, index) => {
+                const y = series.y[index];
+                if (x >= currentX[0] && x <= currentX[1] && Number.isFinite(y) && Number.isFinite(sigma[index])) {
+                    allY.push(y + sigma[index], y - sigma[index]);
+                }
+            });
+        }
         let baseY = niceDomain(allY.length ? allY : visibleSeries.flatMap((series) => series.y));
         const yMin = effectivePlot?.yMin;
         if (Number.isFinite(yMin)) baseY = [yMin, Math.max(baseY[1], yMin + 1e-9)];
@@ -310,7 +361,7 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
         // double-click toggles the full data extent.
         const initialY = fullExtent ? null : effectivePlot?.initialYDomain;
         return { x: currentX, y: yDomain || initialY || baseY, baseX, baseY };
-    }, [visibleSeries, xDomain, yDomain, effectivePlot, fullExtent]);
+    }, [visibleSeries, ribbonSeries, xDomain, yDomain, effectivePlot, fullExtent]);
 
     // New Copilot marks zoom x to them (y follows the visible range); when they
     // are cleared, that zoom goes too, unless the user has zoomed since.
@@ -477,6 +528,14 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
         });
     }, [visibleSeries, domains, view.left, view.top, plotWidth, plotHeight]);
 
+    const ribbonShape = useMemo(() => {
+        if (!ribbonSeries) return null;
+        const sx = (x) => view.left + ((x - domains.x[0]) / (domains.x[1] - domains.x[0] || 1)) * plotWidth;
+        const sy = (y) => view.top + plotHeight - ((y - domains.y[0]) / (domains.y[1] - domains.y[0] || 1)) * plotHeight;
+        const d = ribbonPath(ribbonSeries.series, ribbonSeries.sigma, domains.x, sx, sy);
+        return d ? { d, color: ribbonSeries.series.color } : null;
+    }, [ribbonSeries, domains, view.left, view.top, plotWidth, plotHeight]);
+
     const pointerToView = (event) => {
         const svg = svgRef.current;
         if (!svg) return { x: view.left, y: view.top };
@@ -504,11 +563,13 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
         const values = hoverSeries.map((series) => {
             const best = nearestFiniteIndex(series.x, series.y, dataX);
             if (best < 0) return null;
+            const sigma = ribbonSeries && ribbonSeries.series.label === series.label ? ribbonSeries.sigma[best] : null;
             return {
                 label: series.label,
                 color: series.color,
                 x: series.x[best],
                 y: series.y[best],
+                sigma: Number.isFinite(sigma) ? sigma : null,
                 cx: xScale(series.x[best]),
                 cy: yScale(series.y[best])
             };
@@ -681,6 +742,26 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
                                 {series.label}
                             </button>
                         ))}
+                        {legend && ribbon && orderedSeries.some((series) => series.label === ribbon.series) && (
+                            <button
+                                type="button"
+                                className={hidden.has(ribbon.label) ? 'muted' : ''}
+                                onClick={() => {
+                                    setHidden((current) => {
+                                        const next = new Set(current);
+                                        if (next.has(ribbon.label)) next.delete(ribbon.label);
+                                        else next.add(ribbon.label);
+                                        return next;
+                                    });
+                                }}
+                            >
+                                <span
+                                    className="swatch-band"
+                                    style={{ background: orderedSeries.find((series) => series.label === ribbon.series).color }}
+                                />
+                                {ribbon.label}
+                            </button>
+                        )}
                     </div>
                     {!actionsElsewhere && actions}
                 </div>
@@ -754,6 +835,9 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
                         />
                     ))}
                     <g clipPath={`url(#${clipId})`}>
+                        {ribbonShape && (
+                            <path className="series-ribbon" d={ribbonShape.d} fill={ribbonShape.color} aria-label={ribbon.label} />
+                        )}
                         {seriesShapes.filter((series) => series.area).map((series) => (
                             <path key={`area-${series.label}`} className="series-area" d={series.area} fill={series.color} />
                         ))}
@@ -830,7 +914,7 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
                             <span key={value.label}>
                                 <i style={{ background: value.color }} />
                                 {value.label}
-                                <em>{formatNumber(value.y)}</em>
+                                <em>{formatNumber(value.y)}{value.sigma !== null && value.sigma !== undefined ? ` ± ${formatNumber(value.sigma)}` : ''}</em>
                             </span>
                         ))}
                     </div>

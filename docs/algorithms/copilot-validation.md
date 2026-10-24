@@ -11,7 +11,7 @@ that went with it is [copilot-review.md](copilot-review.md).
 | Arm | What answers | Code |
 | --- | --- | --- |
 | **A** | The default Workbench, no agent: the Detected SG card (0.2 Å), the PCA Ellipsoid table, the Displacement Directions page at its own defaults (the engine's resolution, its readouts from the raw histogram, since protocol 2026-10-19.17; [below](#the-displacement-directions-page-at-its-defaults)) and the partial g(r), read by fixed rules (`ARM_A_RULES`). The cluster and superstructure engines have no page, so A cannot use them | `armA.js` `runArmA` |
-| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules; no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19), a modulation claim with the engine's polarisation as its direction (since protocol 2026-10-19.12). Where the app has a rule, A+ calls the app's function (`SWEEP_RULES`, since 2026-10-19: the split site, the cluster elements, the lower group's tolerance), and a Jahn–Teller claim's long − short is the shell catalogue's split of a joined shell (since protocol 2026-10-19.15), and a split site's direction is the direction map's peak only where the peak cell resolves it, else PC1 (`directionResolved`, 15°; since protocol 2026-10-19.17). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
+| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules; no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19), a modulation claim with the engine's polarisation as its direction (since protocol 2026-10-19.12). Where the app has a rule, A+ calls the app's function (`SWEEP_RULES`, since 2026-10-19: the split site, the cluster elements, the lower group's tolerance), and a Jahn–Teller claim's long − short is the shell catalogue's split of a joined shell (since protocol 2026-10-19.15), and a split site's direction is the direction map's peak only where the peak cell resolves it, else PC1 (`directionResolved`, 15°; since protocol 2026-10-19.17), and only where the tool calls the peak a finding (`directionTier`: ≥ 3σ, ≥ 1.2× isotropic, held at the neighbouring resolution; since protocol 2026-10-24.2); a diffuse verdict in antiphase is order between cells, a modulation claim with no q (`SWEEP_RULES.diffuseOrder`; in phase is correlated motion, never claimed; since protocol 2026-10-24.2). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
 | **B** | The Copilot as the app assembles it: tools, skills, guardrails (refusals, the Workbench's window questions, answer checks) | `harness.js` |
 | **C** | B without the method ([below](#arm-c-the-copilot-without-the-method)): no skills (no `read_skill`, no skills index), no method rules in the prompt, no method advice in a tool's description or check; the tools, refusals, the Workbench's questions, the evidence gate and the answer checks still run. The ablation | `harness.js` |
 | **D** | The planted truth, scored as a verdict; it must score 1 (a test checks this) | `verdict.js` `truthVerdict` |
@@ -77,7 +77,13 @@ centres lie 31.7° from every cube axis; at ν = 2 a cell is 19.3–20.9°, stil
 direction tolerance. Arm A takes a significant peak whatever its radius, as a user reading the
 page. A+ applies the tool's bound (`SWEEP_RULES.directionResolved`: `LOW_INDEX_CONE_DEG`, 15°)
 and takes PC1 where the peak cell is wider, since a cell cannot localise a direction more finely
-than its own size. The page's map opens unsmoothed, which no reading or score depends on.
+than its own size. Since protocol 2026-10-24.2 A+ also follows the tool's tiers
+(`SWEEP_RULES.directionTier`, the displacement-anisotropy interview): a candidate (≥ 3σ, ≥ 1.2×
+isotropic) is read again at the neighbouring resolution (ν − 1, ν + 1 at ν = 1), and the peak names
+the claim only as a finding, held there at ≥ 3σ on the same axis; a hint or nothing takes PC1. The
+reading records the tier, the neighbouring resolution and its σ. On dev it moves no verdict or
+score: every split site's peak is a finding, and every one's cell is wider than 15° (PC1 already).
+Arm A reads the page as before. The page's map opens unsmoothed, which no reading or score depends on.
 The moved dev records are re-recorded in `arm-a-dev.json` (the others as recorded) and pinned in
 `arms.test.js`; the tables under [Arm A results](#arm-a-results-no-model-2026-10-14-commit-b4fe09f)
 were recorded under the earlier default, and the test set's records move at its next scoring.
@@ -141,12 +147,21 @@ snapshot files pass unchanged).
   crystal has A–B distances there", `compute_bond_angles`' octahedron note "Read the shape from
   histogram_10deg_sin_corrected (1 = random directions), not from the raw modes", and
   `detect_symmetry`'s point-group note "Take inversion, chirality and polarity from this, not from
-  memory".
+  memory". Two `analyze_modulations` notes say what a pattern is evidence of, an inference that arm
+  C drops as it drops the domain rules' (decided by the manager on the user's delegation,
+  2026-10-19; protocol 2026-10-19.19): the long-wave note loses "(common in RMC)" and the in-phase
+  diffuse note "; as RMC's long waves and acoustic-like thermal motion give" (until protocol
+  2026-10-24.2 "(as RMC's long waves …)"). Their facts and limits ("not a crystallographic
+  superstructure"; the in-phase note's "(correlated motion), not order", until 2026-10-24.2 "not a
+  superstructure") stay.
 - **The evidence gate** runs and checks the same rules (decided by the manager on the user's
   delegation, 2026-10-19), but its send-back names no analysis and no tool: "… Your answer concludes
   "no order beyond thermal motion", but this conclusion needs its evidence from an analysis run in
   this question. Answer from the analysis's result (quote its numbers by reference). If none can
-  run, say so in the answer instead of concluding." (arm B's names the analyses missing). The record
+  run, say so in the answer instead of concluding." (arm B's names the analyses missing); where an
+  analysis that would back it refused (protocol 2026-10-24.5), "… but an analysis that refused is no
+  evidence: this conclusion needs its evidence from an analysis that answered in this question. …"
+  (arm B's names the refusal and, for a window cut, both fixes). The record
   keeps the rule and the missing analyses for the reviewer (`gates`), and the end-of-turn finding
   names them too; the model reads neither (`harness/gate-send-back.arm-B.txt`, `.arm-C.txt`).
 
@@ -309,8 +324,10 @@ ambiguous or wrong, so a model that reads the tools with judgment has room to ad
   only where the situation says, so each measures its own situation. The situation's own failure
   held on every seed tried (the octahedral case's under the cluster window before protocol
   2026-10-19.8). The side failures seen are reported with the PR as findings for the engines. The
-  weak-order pair shares one amplitude, set so the expected significance is 3σ. Its seeds come from
-  an outcome-neutral rule: one realised on each side of the bar (`judgmentCases.js`).
+  weak-order pair shares one amplitude, set so the expected significance is 3σ: since protocol
+  2026-10-19.19, the median realised σ against the modulation engine's independent-cell null, by the
+  spec's formula and checked with the engine on fresh configurations. Its seeds come from an
+  outcome-neutral rule: one realised on each side of the bar (`judgmentCases.js`).
 - **Scoring is unchanged.** Three things to read with it:
   - the verdict has no confidence field, so an honest "marginal" shows in the prose, the answer
     checks and the computed verdict, not in the score;
@@ -567,7 +584,8 @@ beside the dock's own assembly, and the two had drifted apart. Both now run the 
    context as the model was shown it (trimmed to its budget, the turn's `start.shown`), no longer
    the whole context: a value the trim removed was never shown. No case's context is over the
    budget at the default view (the largest is ~4,500 of 6,000 characters, ~5,600 for the Demo with
-   the PCA table), so no default record moves.
+   the PCA table), so no default record moves. (Since protocol 2026-10-24.1 the budget is 6,500
+   characters and the convergence block carries `last_10pct`: the fit case ~4,200, the Demo ~6,100.)
 4. **Every request as sent.** The record keeps `requests` (below).
 
 Changes 1 and 2 change what a run sends, so the protocol moves. Live runs under an earlier
@@ -937,6 +955,7 @@ item 4.4).** What `analyze_modulations` returns changes for every arm that calls
 - **The marginal situation.** Both dev weak orders are now far above the 3σ bar, so the dev pair
   no longer straddles it; their amplitude was set from the null before F1. Re-setting it (and its
   held-out match's, set by the same rule) is the user's call; the case definitions are unchanged.
+  (The dev pair was re-set at protocol 2026-10-19.19, below.)
 - **Arm A+** reads cellDoubling, generalOrder and longWave as before; the diffuse finding is not
   among its readings (the verdict has no feature kind for it, and adding one changes the scoring).
 
@@ -994,6 +1013,167 @@ changes for every arm:
 **Arms A, A+ and D on dev** (`arm-a --split dev`, before and after): none of the 45 records moves
 (A+ reads no bond-angle window); `arm-a-dev.json` stays as recorded. The test set was not run.
 Approved by the user, 2026-10-19 (`validation/findings/decisions/2026-10-19-shell-cut-rule.json`).
+
+**Protocol 2026-10-19.19 (the marginal situation re-set for the independent-cell null).** The
+calibrated null of protocol 2026-10-19.16 gives an isotropic site three components where the
+earlier null took one. The dev weak-order pair's amplitude had been set from that one-component
+bound to an expected 3σ, so against the calibrated null both of its seeds sat far above the bar:
+the situation was no longer marginal.
+- **The knob** ([`judgment-spec.md`](../../web_app/frontend/validation/judgment-spec.md), the
+  held-out author's only description of it). The B power at q is a scaled noncentral χ² of three
+  degrees of freedom. The null is three weighted χ²₁ terms whose weights come from the site's own
+  cell covariance. σ is Šidák-corrected over every zone-boundary point of every element. The
+  expected significance is the median realised σ, which is the σ of the median power. The spec says
+  how to evaluate it and how to check it with the engine on fresh configurations, and its scan
+  (`judgment.test.js`) still finds no dev value. `judgment.test.js` evaluates the formula with the
+  engine's own functions (the noncentral χ² median against scipy's).
+- **The dev pair.** The pair's amplitude is re-set by that formula to an expected 3σ. Over 5,000
+  fresh configurations the engine clears the bar on about half. The seeds are re-taken by the
+  pair's rule, fixed before any σ was read at the new amplitude: the same sequence, the first
+  realised in [3, 4] and the first in [2.5, 3). Every other parameter is kept. The values are in
+  the decision record and the PR, not here, since the held-out author may read this document.
+- **Arm C.** `analyze_modulations`' long-wave and in-phase notes lose their causal parentheticals
+  ([Arm C](#arm-c-the-copilot-without-the-method)). Arm B and the dock read them byte for byte as
+  before. Arm C's samples are `tool-results/analyze_modulations.method-off.json` and
+  `analyze_modulations.element.method-off.json`. On the dev set three cases carry a long-wave note
+  and none an in-phase note.
+
+**Arms A, A+ and D on dev** (`arm-a --split dev` before at f0979a7, after at c9fea9c): the six
+records of the two re-set cases move, with their configurations and truths. One A+ record claims
+the weak order as before. The other no longer does, since its order is below the bar, so A+ misses
+there as the situation intends; its score falls. Every other record is identical apart from
+protocol and commit, and so is every arm A and D score. The six are re-recorded in
+`arm-a-dev.json`. The test set was not run; its two marginal matches are to be re-set from the spec
+by their author, in a separate change. What the model is sent is unchanged for arm B and the dock
+(every model-visible snapshot). The scripted record `judgment.edge-above` moves with its case (the
+tool's rows and check, the truth, and each request's length and hash); `judgment.edge-below` keeps
+its configuration and does not change. Approved by the manager on the user's delegation,
+2026-10-19; the user may reverse it before the freeze
+(`validation/findings/decisions/2026-10-19-marginal-reset-dev.json`).
+
+**Protocol 2026-10-19.20 (the held-out marginal pair re-set).** The marginal situation was re-set
+after F1's corrected null raised the test's power, 2026-10-19. A fresh author, who had seen no dev
+value, re-chose the two held-out marginal matches' amplitude afresh from the updated
+[`judgment-spec.md`](../../web_app/frontend/validation/judgment-spec.md), with new seeds; every other
+parameter is kept. The values are sealed with the other test cases (see `TEST_SET_SHA256`).
+- **What the author was given:** the spec, the generator code (`validation/cases.js`), the sealed
+  module it edits and its loader, and the modulation engines to measure its cases. Nothing else:
+  no dev judgment parameter or record, no arm pin, no decision record, no doc, no git history.
+- **How:** the amplitude from the spec's formula alone, checked with the engine on many fresh
+  configurations (about half clear the bar), and each seed by a rule written down before any σ was
+  read: the first of a fixed sequence realised in [3, 4] for the match above the bar, in [2.5, 3)
+  for the one below.
+- **Blindness, checked from the author's tool log by the lead:** every file it opened is in the list
+  above, and no dev value reached it. One disclosure: the sealed module's comment on protocol
+  2026-10-19.11 named the two test values that had coincided with dev values; the author read it.
+  Those concern two other judgment cases, not this pair, and the comment no longer names them.
+- **The holdout scan** no longer counts the digits that end an identifier as a number: the new
+  seed matched inside `TEST_SET_SHA256` beside the word "seed" on this page.
+- **Arms A and A+ on test** are re-recorded with `--final` from a clean tree in the sealed folder.
+  Approved by the manager on the user's delegation, 2026-10-19; the user may reverse it before the
+  freeze. `TEST_SET_SHA256` changes: results on the earlier test set are not comparable with this
+  one.
+
+**Protocol 2026-10-24.1 (the fit-assessment interview's code half).** The user's answers in the
+rmc-fit-assessment interview, 2026-10-24, change what the model is sent on a case with fit files
+(`dev-fit-unconverged`; the Demo) and what the checks on the answer read, never a case, the question,
+the scoring or the verdict schema:
+- **Convergence on every χ² term and the total.** `assess_convergence`'s description and result,
+  the context's `convergence` section (`last_10pct` per term and for the total, in place of
+  `change_over_last_10pct` and `recent_slope_per_step`) and the system prompt's `watchdog_status`
+  sentence read one verdict: converged only when no χ² term of the .log and not their total still
+  falls beyond 3 × its noise over the last tenth (ai-assistant.md, Step 14). On the fit case the
+  status stays `improving` (both terms and the total fall); its truth is unchanged. The context
+  budget is 6,500 characters (6,000 before).
+- **The constraint-limited rule:** `find_gr_peaks` calls a peak constraint-limited above 5 % of the
+  peak at the cut; no dev case has a constraint, so no dev record reads it.
+- **Two checks on the answer,** `long-wave` (order claimed at a box-scale wavevector) and
+  `single-configuration` (a distribution's numbers quoted without saying they come from one
+  configuration): any finding lowers a run's computed Outcome to "not verified", so arms B and C
+  records under an earlier protocol are not comparable on the Outcome. `audit_eval` still maps a
+  spurious modulation claim to the `superstructure` rule only, so a `long-wave` finding on one shows
+  among `unmatched_findings`.
+- **Arms A, A+ and D on dev, before (8edf8c0) and after:** all 45 records identical; the baseline is
+  not re-recorded. Approved by the user, 2026-10-24
+  (`validation/findings/decisions/2026-10-24-fit-assessment-interview.json`).
+
+**Protocol 2026-10-24.2 (the interview answer checks of four skills).** The user's answers in the
+coordination-shells, local-symmetry, displacement-anisotropy and local-order interviews, 2026-10-24,
+change what the model is sent and what the checks on the answer and the evidence gate read, never a
+case, the question, the scoring or the verdict schema:
+- **What the model reads.** `EVIDENCE_RULES` names `polyhedral_distortion` for distorted polyhedra;
+  `analyze_clusters`' method keeps it to finite clusters (arm B; arm C reads no method);
+  `find_gr_peaks`' description and result give the average structure's first shell for the pair
+  (`first_shell.average_structure_d_A`, with a warning past the first peak's FWHM);
+  `analyze_displacement_directions`' description and result label the peak a finding, a hint or
+  nothing (`peak.tier`, the `neighbour` block for a candidate); `analyze_modulations` says in-phase
+  correlation as "neighbouring cells moving together (correlated motion), not order". The symmetry
+  tools' results are unchanged.
+- **Checks on the answer:** `window`, `subgroup`, `cell-doubling`, `disorder`, `no-order`,
+  `correlated-motion` and `no-correlation` are new; `coordination` reads "n A per B" as B's count
+  and a clause stating the whole shell's window as a claim, and `direction` needs a finding of the
+  tiers (ai-assistant.md, *Checks on the answer*). Any finding lowers a run's computed Outcome to
+  "not verified", so arms B and C records under an earlier protocol are not comparable on the
+  Outcome. `audit_eval` still maps a spurious modulation claim to the `superstructure` rule only, so
+  a finding of the new modulation checks on one shows among `unmatched_findings`.
+- **The evidence gate:** distorted polyhedra are met by `polyhedral_distortion` where the turn offers
+  it, else `analyze_clusters` (an `anyOf` row asks for the first analysis the turn offers); a split
+  or flat-topped site called disordered goes back for `analyze_modulations`; "no order" also needs
+  `polyhedral_distortion` on each centre of polyhedra no finite cluster holds, where offered (no dev
+  run offers it yet).
+- **Arm A+** follows the tool's direction tiers and reads the diffuse verdict (antiphase: a
+  modulation claim with no q; in phase: read, never claimed). **Arms A, A+ and D on dev, before
+  (afa45e1, the branch's base) and after each of the four changes:** no verdict or score moves. Four A+
+  records' readings add the tier (dev-offcentre, dev-jahn-teller, dev-jt-off-centre,
+  dev-octahedral-clusters: every split site's peak is a finding), and every A+ record's
+  `analyze_modulations` reading adds the diffuse verdict (no dev case passes it). The baseline is not
+  re-recorded: its verdicts and scores stand. Approved by the user, 2026-10-24
+  (`validation/findings/decisions/2026-10-24-coordination-shells-interview.json`,
+  `2026-10-24-local-symmetry-interview.json`, `2026-10-24-displacement-anisotropy-interview.json`,
+  `2026-10-24-local-order-interview.json`).
+
+**Protocol 2026-10-24.3 (a new tool, `polyhedral_distortion`).** The user's interview answer 7 for
+the coordination-shells skill: corner-sharing or extended networks of polyhedra are judged by angle
+spreads plus a standard polyhedral distortion index, never by the cluster null. Arms B and C are now
+offered `polyhedral_distortion` (Baur's DI, Robinson's quadratic elongation and bond-angle variance
+of a centre's coordination polyhedra, over the configuration and the average structure;
+[ai-assistant.md](ai-assistant.md), Step 21). It refuses a window that cuts the shell by
+`compute_bond_angles`' rule, and arm C reads its description without the method advice. Arms A and
+A+ do not read it: their 45 dev records are identical apart from protocol and commit, and the
+baseline is not re-recorded. The test set was not run. What the model is sent changes by the tool's
+definition (arm B +1,741 characters, arm C +1,246) and the first request's tool list. The scripted
+records add the tool to `tools_offered`, and each request's length and hash move. Approved by the
+manager on the user's delegation, 2026-10-24
+(`validation/findings/decisions/2026-10-24-polyhedral-distortion.json`).
+
+**The freeze (2026-10-24).** The validation is frozen at commit 226f6f2 (protocol 2026-10-24.4;
+`TEST_SET_SHA256` as pinned in `split.test.js`), recorded in `validation/baseline/freeze.json`. Arms
+A, A+ and D were re-recorded with `--final` from a clean tree at that commit (`arm-a --split dev
+--final`, `arm-a --split test --final`): on dev A 0.814, A+ 0.952 and D 1.000 over 15 cases; on test
+A 0.800, A+ 0.948 and D 1.000 over 14. No score differs from the baselines before it; the records
+gain only the readings later changes added (the direction tier, the diffuse reading). No tag: tags
+are the user's. Re-frozen the same day at commit bf72b11 (protocol 2026-10-24.6), after the
+refused-analysis rule (2026-10-24.5) and Claude Sonnet 5.5's request policy (2026-10-24.6): the same
+commands give the same scores on both splits, and `TEST_SET_SHA256` is unchanged. The live arms B and
+C run at this protocol (the user's go, 2026-10-24).
+
+**Protocol 2026-10-24.5 (a refused analysis backs no claim, the user's decision A5).** The user's
+words: "A5: option 2. A refused analysis doesn't count: the gate sends the claim back, and the model
+re-runs on the whole shell or asks me to confirm the window. Land it before the B/C runs." The
+evidence gate counts only a call that answered: a `refused` one (the tool's own `fail` check, such as
+`compute_bond_angles` refusing a window that cuts the shell) backs no claim, under `anyOf`,
+`firstOffered` and `allOf` alike; until now it ran and backed its claim. It is still an analysis (the
+dock's footer, each record step's `analysis`, `refused_calls`) and the Outcome still reads it as a
+failure. The send-back for a claim a refusal would have backed says it refused: arm B's names the
+tool and, for a window cut (a refusal whose data carry `refused`), both fixes — the whole shell, or
+the user's own window through `ask_user` and `window_confirmed` —, any other refusal only "Run it so
+that it answers"; arm C's names no tool, window or remedy. The end-of-turn finding and the Outcome's
+reason name the refusal ("did not run or refused"). The system prompt, the tools and every
+model-visible snapshot are unchanged (the 48k headroom stays 4,241 tokens for the dock's worst turn
+and 7,044 for arm B's). Arms A, A+ and D run no model and no gate: on dev their 45 records are
+identical apart from protocol and commit. The test set was not run; one re-freeze follows the next
+change. Approved by the user, 2026-10-24
+(`validation/findings/decisions/2026-10-24-refused-not-evidence.json`).
 
 ### The report beside the case score (plan item 1.6, part i)
 
@@ -1101,7 +1281,9 @@ followed, `'full'` in arm B and `'off'` in arm C):
   (after an empty or looping reply), `gate` (an answer the evidence gate sent back), `final` (the
   analysis budget used: `tool_choice` 'none') or `no_tools` (the retry of a model that refuses
   tools); `sent` is the request as the port prepared it (`providerModel`: base URL, model id,
-  temperature, messages, tools, tool choice and, since 2026-10-19.7, `plan`, the context guard's
+  temperature (no key at all for a model that takes none, since 2026-10-24.6), the reply cap
+  `maxTokens` where the model sets one (since 2026-10-24.6), messages, tools, tool choice and,
+  since 2026-10-19.7, `plan`, the context guard's
   decision: `server`, and on Ollama `numCtx`, `numPredict`, `estimate`, `needed`,
   `loadedContext`, `maxContext`, on LM Studio `estimate`, `needed`, `loadedContext`, with the tool
   choice's form `toolChoice`: `body`, `omitted` or `tools_withheld`; never the API key). On an
@@ -1162,8 +1344,8 @@ and the regression `tests` that pin it. An approved or implemented finding that 
 records it; an implemented one names its commit, and an implemented code change names its tests.
 Batch 1 (`validation/findings/batch-1.jsonl`) holds every tool change of the
 [review](copilot-review.md), approved by the user on 2026-10-14 and implemented on 2026-10-17:
-L1–L5 (L4 is two analyses), six findings; the five skill proposals are added by the skills PR,
-which waits for the user's review. `split.test.js` validates the file.
+L1–L5 (L4 is two analyses) and the five skill proposals, eleven findings (the skill ones came with
+the skills PR, which waits for the user's review). `split.test.js` validates the file.
 Decisions on the validation itself take the same form, one JSON file per record in
 `validation/findings/decisions/`, named by the record's id (the date and a slug,
 `2026-10-19-list-sites-split.json`), so that parallel changes never edit the same file.
@@ -1240,14 +1422,14 @@ policies side by side.
 | Field | What it states |
 | --- | --- |
 | `server` | The kind the context guard detects (`detectServer`: `lmstudio`, `ollama`, or `openai` for any other server, the cloud providers among them), Ollama's version, and the kind the model expects (`models.js` `server`) |
-| `temperature` | The model's (0.2), and the floor of a request asked again after a looping reply (0.6) |
+| `temperature` | The model's (0.2), and the floor of a request asked again after a looping reply (0.6). Claude Sonnet 5.5 takes none (since protocol 2026-10-24.6): `{ base: null, warmer_retry_min: null, sent: false }`, no temperature key in any of its requests, the retry included |
 | `limits` | The turn's budgets as the run used them (`runPolicy.js` `TURN_LIMITS`: the agent loop's `DEFAULT_LIMITS` and the verification's send-backs, `maxEvidenceGates`): 6 rounds of at most 4 calls, 10 minutes, 3,000 characters a result and 12,000 a turn, 2 questions, 2 gate send-backs, the stall and no-progress guards |
 | `context` | The minimum window for the server kind; how the window is sized; the window read before the run (and after it, on LM Studio); the model's maximum (Ollama); every `num_ctx` an Ollama request was sent (`num_ctx_used`; each request in `requests` keeps its own) |
-| `reply_cap` | Ollama: `num_predict`, the num_ctx minus the prompt estimate. LM Studio: none sent (the guard needs 4,096 tokens of room). Cloud: none sent |
+| `reply_cap` | Ollama: `num_predict`, the num_ctx minus the prompt estimate. LM Studio: none sent (the guard needs 4,096 tokens of room). Cloud: none sent, unless the model carries a cap: Claude Sonnet 5.5 sends `max_tokens` 8192 in every request (since protocol 2026-10-24.6; `{ sent: 'max_tokens', max_tokens: 8192 }`) |
 | `context_guard` | The guard's decisions: a request that would not fit is refused, never cut; 2.5 characters a token, 1.4 for tool JSON, 8 tokens a message; 8,192 tokens reserved for the reply; 4,096 of room on LM Studio; contexts in steps of 8,192, at least 16,384; the 0.4 read-share backstop |
 | `final_round` | What the last request sends for `tool_choice: 'none'` ([below](#the-final-rounds-tool_choice)) |
 | `history` | One fresh question; earlier reasoning is never re-sent |
-| `spend` | An API model's cap, and the reply each request is priced at |
+| `spend` | An API model's cap ($20 for Claude Sonnet 5.5), and the reply each request is priced at (8,192 tokens, the cap it is sent with) |
 | `warnings` | A window that changed during the run |
 
 **The decision (2026-10-19, the manager on the user's delegation).** The context guard, its
@@ -1285,6 +1467,17 @@ reloaded. The message says what was found, what is needed and how to reload:
 After the run the window is read again. If it changed (the model reloaded, or loaded again by a
 request at LM Studio's default), the record, the transcript and the report carry a warning.
 
+**Claude Sonnet 5.5's requests (protocol 2026-10-24.6; the user's decisions, 2026-10-24: "Fix
+both first").** Sonnet 5.5 takes only its default sampling: a request carrying a temperature is
+refused (HTTP 400), so no run could have started. Its `models.js` entry sets `temperature: null`
+(as the sibling project NEBULA does) and `maxTokens: MAX_REPLY_TOKENS` (8,192). The model port
+(`providerModel`) then sends no temperature key in any request, the warmer retry included (the
+retry is still asked, unchanged), and `max_tokens: 8192` in every body, so a reply, hidden thinking
+included, stops where the spend tracker's worst case already priced it. Both are settings, never
+read from the model's name: the dock passes neither and its requests are as before, and the local
+models' requests are byte for byte as before (`runPolicy.test.js`). `max_tokens` is never sent by
+default (OpenAI's newer models refuse it).
+
 **The dock at 32k.** The decision fixes the validation, not the dock. A user who loads
 qwen3.8-27b in LM Studio at 32k can have the worst two-skill turn refused. The budget test pins the
 dock's worst turn 1,836 tokens over by LM Studio's rule (5,932 by `planContext`'s), and arm B's
@@ -1321,7 +1514,9 @@ round's form, the temperature, the limits and the policy warnings. It says wheth
 temperature and the context guard are the same in every run, and lists what no policy sets. Today
 a comparison across the four models also compares:
 - **the context sizing:** Ollama gets a sized `num_ctx` and a `num_predict`; LM Studio a loaded
-  window of 48k or more and no reply cap; the API model its own window and no reply cap;
+  window of 48k or more and no reply cap; the API model its own window and `max_tokens` 8192;
+- **the temperature:** 0.2 for the local models (0.6 or more on the warmer retry); none sent to
+  the API model, which takes only its default sampling;
 - **the final round:** `tool_choice: 'none'` on the OpenAI-compatible servers, honoured where the
   server honours it, and no tools on Ollama, which is enforced;
 - **what no policy sets:** sampling beyond the temperature (top_p, top_k, min_p, the repetition
@@ -1337,14 +1532,19 @@ side, each under its run policy:
 - meta/muse-glimmer (LM Studio, 28B, tool use, up to 128k; loaded with 48k or more);
 - Claude Sonnet 5.5 (API).
 
-The API model (`claude-sonnet-5-5`) runs the test set only, arm B, 3 runs per case, under RMC's
-$12 share of the cycle's $40 cap. The spend tracker prices each request before sending it (prompt
-estimate + the largest reply) and refuses one that could cross the cap (`spend.js`
+The API model (`claude-sonnet-5-5`) runs the test set only, arm B, 3 runs per case, under a $20
+cap, RMC's share of the cycle's $40 total, which may be up to $28 (the user's decision,
+2026-10-24: "Raise to $20"; $12 before). The spend tracker prices each request before sending it (prompt
+estimate + 8,192 tokens of reply, the `max_tokens` each request is sent with since protocol
+2026-10-24.6, so that worst case is enforced) and refuses one that could cross the cap (`spend.js`
 `meteredModel`, a decorator over the model port: it reserves when the request is prepared, so a
 refused request is never sent); a JSON-lines ledger keeps the total across restarts. The client sees no usage report, so the charge is an upper bound: the
 Copilot's conservative token estimate (2.5 characters per token of text), with every prompt token
-at the dearest prompt rate. Prices (USD per million tokens, 2026-10-14): input $2, output $10,
-cache hits $0.10, cache writes $2.50, so prompts are charged at $2.50. `RMC_EVAL_SONNET_MODEL`,
+at the dearest prompt rate. Prices (USD per million tokens, 2026-10-14; checked against the pricing
+page on 2026-10-24): input $2, output $10, cache hits $0.10, cache writes $2.50, so prompts are charged
+at $2.50. The charge counts what streamed back, so thinking billed as output but returned with
+no text (Sonnet 5.5 thinks adaptively by default) is not in it: each request's reservation is
+bounded by `max_tokens`, the ledger's charge for it is not. `RMC_EVAL_SONNET_MODEL`,
 `RMC_EVAL_PRICE_IN` and `RMC_EVAL_PRICE_OUT` override the defaults; `ANTHROPIC_API_KEY` is required.
 
 ## Arm A results (no model; 2026-10-14, commit b4fe09f)
@@ -1447,7 +1647,8 @@ folder, with no model and no network:
   `ask_user` answer, a `read_skill` and a window that cuts the Ta–Se shell, as the `tool` message
   the agent loop appends (budget applied, checks, `ref`, note); `*.method-off.json`: the Demo's
   results whose checks carry method advice (`find_gr_peaks` on Ta–Se and Ta–Ta, `compute_bond_angles`
-  on the whole shell and in the refused cut window, `detect_symmetry`), as arm C reads them;
+  on the whole shell and in the refused cut window, `detect_symmetry`, `analyze_modulations` with
+  and without an element named), as arm C reads them;
 - `tool-messages/<path>.txt`: every tool message no other file covers, as the raw string the model
   reads, byte for byte and in order: a call that did not run (an unknown tool, a fifth call), the
   questions (refused, malformed, unasked, skipped with and without a default, typed), arguments
@@ -1506,7 +1707,7 @@ npx vite-node validation/run.js -- live --arm B --model qwen3.8-27b --split dev 
 npx vite-node validation/run.js -- live --arm C --model qwen3.8-27b --split dev --runs 3
 # held-out test: from a clean committed tree
 npx vite-node validation/run.js -- live --arm B --model qwen3.8-27b --split test --runs 3 --final
-# Claude Sonnet 5.5: test set, arm B, $12 cap
+# Claude Sonnet 5.5: test set, arm B, $20 cap
 ANTHROPIC_API_KEY=… npx vite-node validation/run.js -- live --arm B --model claude-sonnet-5.5 --split test --runs 3 --final
 # dev check only: the same with the PCA table in the context (own folder, own report column)
 npx vite-node validation/run.js -- live --arm B --model qwen3.8-27b --split dev --runs 1 --pca-table
@@ -1542,4 +1743,4 @@ sends an answer back:
 
 **Tokens and cost.** For Sonnet, about 70–90k prompt tokens and 3–6k reply tokens per run, so the
 27 test runs of arm B come to about 2.4M prompt + 0.15M reply tokens. That is about $6.30 at list
-prices ($4.80 prompt + $1.50 reply), less with cache hits. The tracker's upper bound is $7.50, inside the $12 cap.
+prices ($4.80 prompt + $1.50 reply), less with cache hits. The tracker's upper bound is $7.50, inside the $20 cap.

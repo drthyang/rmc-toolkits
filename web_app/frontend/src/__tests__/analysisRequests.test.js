@@ -27,11 +27,13 @@ vi.mock('axios', () => ({ default: { get: axiosGet } }));
 const { requestAnalysis } = await import('../useSiteCloud');
 const { default: API_BASE_URL } = await import('../api');
 const { ANALYSIS_ROUTES } = await import('../workers/requestGuards');
-const { handlePcaMessage, inProcessEngine, MAX_CLUSTER_WINDOW } = await import('../workers/pcaKdeWorker');
+const { handlePcaMessage, inProcessEngine, MAX_CLUSTER_WINDOW, MAX_DISTORTION_WINDOW } = await import('../workers/pcaKdeWorker');
 const { buildCopilotTools } = await import('../copilotTools');
 const { default: useCopilotRun } = await import('../useCopilotRun');
 
-const ANALYSIS_TOOLS = ['list_sites', 'analyze_displacement_directions', 'compute_bond_angles', 'analyze_clusters', 'analyze_modulations'];
+const ANALYSIS_TOOLS = [
+    'list_sites', 'analyze_displacement_directions', 'compute_bond_angles', 'polyhedral_distortion', 'analyze_clusters', 'analyze_modulations'
+];
 // The kept differences between the adapters, by kind: accepted on one and
 // refused on the other (or accepted with other values), refused on both under
 // another name, and read by one adapter only. A new one shows here in review.
@@ -202,6 +204,8 @@ describe('the fixture', () => {
     it('the worker\'s copy of a cap equals the contract\'s', () => {
         const rMax = fixture.limits.find((limit) => limit.kind === 'clusters' && limit.param === 'rMax');
         expect(MAX_CLUSTER_WINDOW).toBe(rMax.le);
+        const distortion = fixture.limits.find((limit) => limit.kind === 'distortion' && limit.param === 'rMax');
+        expect(MAX_DISTORTION_WINDOW).toBe(distortion.le);
     });
 });
 

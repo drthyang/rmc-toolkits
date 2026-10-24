@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
+import { fileSigmaColumn, FT_FILE_RE } from './ftUncertainty.js';
 import { isAtomsMarker, LINE_BREAK, parseFortranNumber, parseRmc6fAtoms, readRmc6fCellVectors, rmc6fParseWarning } from './rmc6f.js';
 
 const SUPPORTED_NAMES = new Set(['scale_ft.gr', 'scale_ft.sq', 'scale_ft_rmc.fq', 'stog_input.dat']);
@@ -279,7 +280,7 @@ const transpose = (rows) => rows[0].map((_, index) => rows.map((row) => row[inde
 // so trailing-comma rows parse. Every cell must be a number (E/D exponents) or an
 // explicit non-finite token (NaN, Inf, ****), kept as NaN — a masked region;
 // anything else throws, naming the true file line. Mirrors read_rmc_csv().
-const readRmcCsv = (text, name) => {
+export const readRmcCsv = (text, name) => {
     const lines = text.split(LINE_BREAK)
         .map((line, index) => ({ line, number: index + 1 }))
         .filter(({ line }) => line.trim());
@@ -332,6 +333,18 @@ const readExafsCsv = (text, name) => {
     return { labels, data: transpose(rows) };
 };
 
+// The chi^2 terms of a log row: the columns after the clock time and the two
+// move counters (`Time moves_acc moves_gen`), one per fitted dataset or
+// constraint (line 2's WEIGHT PARAMETERS gives one weight to each). Only a log
+// whose line 1 names them, four columns or more, has terms. Mirrors
+// CHI_TERMS_START in parsers.py.
+export const CHI_TERMS_START = 3;
+
+const chiValue = (token) => {
+    const value = parseFortranNumber(token);
+    return value === null ? NaN : value;
+};
+
 // The chi^2 history of one RMCProfile `-NN.log`: the LAST column of every
 // complete data row. Line 1 names the columns (`Time moves_acc moves_gen F(Q)_1
 // … X_ray_(R)1`) and fixes the token count a data row must have (when it names
@@ -340,8 +353,10 @@ const readExafsCsv = (text, name) => {
 // log while RMCProfile appends, and a half-written row would otherwise become
 // the "final" chi^2. Rows are never dropped for their VALUE: a non-finite chi^2
 // (NaN, Inf, Fortran ****) stays as NaN so a blown-up run shows as one.
-// Returns { values, column, skippedRows }; column is the last header name.
-// Mirrors read_chi_log() in parsers.py.
+// Returns { values, column, skippedRows, terms }; column is the last header
+// name; terms is { names, values } — every chi^2 term's header name and its
+// value per accepted row (CHI_TERMS_START) — or null for a log whose line 1
+// names fewer than four columns. Mirrors read_chi_log() in parsers.py.
 export const readChi = (text) => {
     const lines = text.split(LINE_BREAK);
     // Every complete line ends with a break: the last element is '' for a
@@ -351,6 +366,8 @@ export const readChi = (text) => {
     const header = lines.length ? lines[0].trim().split(/\s+/).filter(Boolean) : [];
     let expected = header.length >= 2 ? header.length : null;
     const column = expected !== null ? header[header.length - 1] : null;
+    const termNames = header.length > CHI_TERMS_START ? header.slice(CHI_TERMS_START) : null;
+    const termValues = termNames ? termNames.map(() => []) : null;
     const values = [];
     lines.slice(2).forEach((line) => {
         const parts = line.trim().split(/\s+/).filter(Boolean);
@@ -360,10 +377,34 @@ export const readChi = (text) => {
             skippedRows += 1;
             return;
         }
-        const value = parseFortranNumber(parts[parts.length - 1]);
-        values.push(value === null ? NaN : value);
+        values.push(chiValue(parts[parts.length - 1]));
+        if (termValues) parts.slice(CHI_TERMS_START).forEach((token, k) => termValues[k].push(chiValue(token)));
     });
-    return { values, column, skippedRows };
+    return { values, column, skippedRows, terms: termNames ? { names: termNames, values: termValues } : null };
+};
+
+// ln(max(χ², 1e-12)) per row, a non-finite χ² staying NaN (a gap): the
+// chart's transform (plots.chi_history_ln).
+const chiHistoryLn = (values) => values.map((value) => (Number.isFinite(value) ? Math.log(Math.max(value, 1e-12)) : NaN));
+
+/**
+ * Every chi^2 term of a log and their total, in the chart's ln transform, for
+ * the Copilot and the watchdog (the chart draws the last column only):
+ * { names, series, total, segments } — the terms' header names, one ln χ²
+ * series per term, the ln of each row's sum of terms (NaN where a term is
+ * non-finite) and the rows per log ([n] for one log). Null without terms.
+ * Mirrors chi_terms_payload() in plots.py.
+ */
+export const chiTermsPlotData = (terms) => {
+    if (!terms?.names?.length) return null;
+    const rows = terms.values[0].length;
+    const total = Array.from({ length: rows }, (_, row) => terms.values.reduce((sum, series) => sum + series[row], 0));
+    return {
+        names: [...terms.names],
+        series: terms.values.map(chiHistoryLn),
+        total: chiHistoryLn(total),
+        segments: [rows]
+    };
 };
 
 // A classic stog output: lines 1-2 (title, count) skipped; a row is kept when it
@@ -542,13 +583,16 @@ export const plotDataFromText = (file) => {
     if (!kind) return null;
 
     if (kind === 'r_value') {
-        const { values: yValues, column } = readChi(file.text);
+        const { values: yValues, column, terms } = readChi(file.text);
         if (!yValues.length) throw new Error(`${file.name} ${NO_CHI_VALUES}`);
         const { title, label } = chiHistoryLabels(column);
         return {
             kind,
             title,
             chiColumn: column,
+            // Every χ² term and their total, for the Copilot and the watchdog
+            // (the chart draws `series` only); null for a log without terms.
+            chiTerms: chiTermsPlotData(terms),
             metrics: { final_chi_r: yValues[yValues.length - 1] },
             xLabel: 'Time steps',
             yLabel: CHI_HISTORY_Y_LABEL,
@@ -556,7 +600,7 @@ export const plotDataFromText = (file) => {
                 label,
                 x: yValues.map((_, index) => index),
                 // Same clamp as plots.chi_history_ln; a non-finite chi^2 stays NaN (a gap).
-                y: yValues.map((value) => (Number.isFinite(value) ? Math.log(Math.max(value, 1e-12)) : NaN))
+                y: chiHistoryLn(yValues)
             }]
         };
     }
@@ -586,6 +630,10 @@ export const plotDataFromText = (file) => {
     }
     if (kind === 'npdf') metrics.pdf_index = pdfIndex(file.name);
 
+    // An xPDF file's own σ column (a header naming an uncertainty) is the
+    // experimental series' error bar, not a curve (xpdfSigma ⟷ app._xpdf_sigma).
+    const fileSigma = kind === 'xpdf' ? xpdfSigma(csv) : null;
+
     // One label source with Flask and the PNGs (seriesTitles ⟷ plots.series_titles).
     const [title, yLabel] = seriesTitles(kind, file.name, csv.labels);
     let xLabel = csv.labels[0] || 'x';
@@ -605,12 +653,31 @@ export const plotDataFromText = (file) => {
         metrics,
         xLabel,
         yLabel,
-        series: csv.labels.slice(1).map((label, index) => ({
-            label: label.trim() || `Series ${index + 1}`,
-            x: csv.data[0],
-            y: csv.data[index + 1]
-        })).filter((series) => series.y)
+        series: csv.labels.slice(1).map((label, index) => {
+            const column = index + 1;
+            if (fileSigma && column === fileSigma.column) return null;
+            const entry = { label: label.trim() || `Series ${index + 1}`, x: csv.data[0], y: csv.data[column] };
+            return fileSigma && column === fileSigma.series ? { ...entry, sigma: fileSigma.values } : entry;
+        }).filter((series) => series && series.y)
     };
+};
+
+// The σ column of an xPDF CSV, for its experimental series: { column, series,
+// values }, or null without one. Only a clean column counts (usable_sigma's
+// rule: σ finite and > 0 wherever r and G are), and never a column the fit's
+// roles read as the model or the data. Mirrors _xpdf_sigma() in app.py.
+const xpdfSigma = (csv) => {
+    const column = fileSigmaColumn(csv.labels);
+    const roles = rwpColumns(csv.labels, csv.data.length);
+    if (column === null || !roles || roles.includes(column) || !csv.data[column]) return null;
+    const [, experimental] = roles;
+    const x = csv.data[0];
+    const y = csv.data[experimental];
+    const values = csv.data[column];
+    for (let i = 0; i < values.length; i += 1) {
+        if (Number.isFinite(x[i]) && Number.isFinite(y[i]) && !(Number.isFinite(values[i]) && values[i] > 0)) return null;
+    }
+    return { column, series: experimental, values };
 };
 
 // Run-history counters from the .rmc6f header (everything before "Atoms:"):
@@ -843,6 +910,30 @@ export const compareDashboardPlotFiles = (a, b) => {
 /** Every plot file the Dashboard lists (hidden ones included), in its order: a new array. */
 export const dashboardPlotFiles = (files) => files.filter(isDashboardPlotFile).sort(compareDashboardPlotFiles);
 
+const fileVersion = (file) => `${file?.modified ?? ''}:${file?.size ?? ''}`;
+
+/**
+ * The version a plot file's data is asked for (InteractivePlot's refreshKey,
+ * plotDataCache's key): its own "modified:size", and for an xPDF transform
+ * (<stem>_FT_XFQ<n>.csv) also the files beside it its error ribbon reads that
+ * a folder listing shows — <stem>.dat, <stem>_XFQ<n>.csv, <stem>_FQ<n>.csv and
+ * <stem>_PDFpartials.csv — so a Live Data round that rewrites one of them asks
+ * for the ribbon again. (RMCProfile reads its input data file once, at the
+ * start of a run, so that file never changes under a running job.)
+ */
+export const plotDataVersion = (file, files = []) => {
+    const own = fileVersion(file);
+    const match = file?.plotKind === 'xpdf' ? FT_FILE_RE.exec(file.name || '') : null;
+    if (!match) return own;
+    const [, stem, number] = match;
+    const dir = dirname(file.path || '');
+    const byPath = new Map((files || []).map((entry) => [entry.path, entry]));
+    const companions = [`${stem}.dat`, `${stem}_XFQ${number}.csv`, `${stem}_FQ${number}.csv`, `${stem}_PDFpartials.csv`]
+        .map((name) => byPath.get(dir ? `${dir}/${name}` : name))
+        .map((entry) => (entry ? fileVersion(entry) : '-'));
+    return [own, ...companions].join('|');
+};
+
 /** One plot file as the Dashboard holds it once read: with its plotData, or its parseError. */
 export const parseDashboardPlotFile = async (file) => {
     try {
@@ -905,6 +996,27 @@ export const chooseRValueGroup = (rValueFiles, structurePath = null) => {
 // run parsed, as parsers.read_chi_log does.
 const NO_CHI_VALUES = 'does not contain chi values';
 
+/**
+ * The chi^2 terms of one run's logs end to end (chiTermsPlotData each): the
+ * total and the segments always; the names and the per-term series only when
+ * every log names the same terms in the same order (a restart that changed
+ * the fitted data or the constraints makes them different series: null, as
+ * chiColumn). Null when a log has no terms. Mirrors read_chi_log's
+ * concatenation in parsers.py.
+ */
+export const combineChiTerms = (parts) => {
+    if (!parts.length || parts.some((part) => !part)) return null;
+    const names = parts[0].names;
+    const same = parts.every((part) => Array.isArray(part.names) && Array.isArray(names)
+        && part.names.length === names.length && part.names.every((name, k) => name === names[k]));
+    return {
+        names: same ? [...names] : null,
+        series: same ? names.map((_, k) => parts.flatMap((part) => part.series[k])) : null,
+        total: parts.flatMap((part) => part.total),
+        segments: parts.flatMap((part) => part.segments)
+    };
+};
+
 export const combineRValueFiles = (rValueFiles, structurePath = null) => {
     const { group, others } = chooseRValueGroup(rValueFiles, structurePath);
     if (!group.length) return null;
@@ -932,6 +1044,7 @@ export const combineRValueFiles = (rValueFiles, structurePath = null) => {
     }
 
     const yValues = parsedFiles.flatMap((file) => file.plotData.series[0].y);
+    const chiTerms = combineChiTerms(parsedFiles.map((file) => file.plotData.chiTerms));
     const lastParsed = parsedFiles[parsedFiles.length - 1];
     const failedLogs = group
         .filter((file) => file.parseError && !file.parseError.endsWith(NO_CHI_VALUES));
@@ -952,6 +1065,7 @@ export const combineRValueFiles = (rValueFiles, structurePath = null) => {
             kind: 'r_value',
             title,
             chiColumn: columns.length === 1 ? columns[0] : null,
+            chiTerms,
             metrics: { final_chi_r: lastParsed.plotData.metrics?.final_chi_r },
             xLabel: 'Time steps',
             yLabel: CHI_HISTORY_Y_LABEL,
@@ -1007,6 +1121,17 @@ export const makeRunFromEntries = async (entries) => {
     return {
         name: directoryRoot || 'Local files',
         files,
+        // Every picked file, supported or not: the G(r) error ribbon reads the
+        // run's .dat and the input data file it names, whatever its extension
+        // (ftUncertaintyRun.js).
+        allFiles: entries.map(({ path, file }) => ({
+            name: basename(path),
+            path,
+            type: 'file',
+            sourceFile: file,
+            size: file.size,
+            modified: file.lastModified
+        })),
         structure: null,
         structureFile: rmc6f || null,
         settingsFile: settingsEntry

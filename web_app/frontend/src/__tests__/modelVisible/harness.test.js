@@ -88,14 +88,19 @@ describe(`the harness's first request (${CASE})`, () => {
             : []);
         const texts = (request) => [...request.messages.map((message) => message.content), ...descriptions(request.tools)];
         const sent = texts(c).join('\n');
+        // Step headings that are plain domain terms the tool descriptions use
+        // for what a tool computes, not a method stage: the local-order
+        // draft's "Average structure" step (#71) is analyze_clusters',
+        // analyze_modulations' and detect_symmetry's own words.
+        const DOMAIN_TERMS = ['average structure'];
         const disk = loadSkills();
         const skills = parseSkillFiles(disk.files, { available: disk.references });
         // The skills' names, and each skill's step headings of more than one
         // word ("Find the shell", "Read the significances"); the one-word ones
         // ("Convergence", "Directions") are words any tool may need.
         const stages = skills.flatMap((skill) => [...(/^## Steps\s*\n([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(skill.body)?.[1] || '')
-            .matchAll(/^\d+\.\s+\*\*([^*]+?)[.:]?\*\*/gm)].map((match) => match[1].trim()).filter((stage) => stage.split(/\s+/).length > 1));
-        expect(skills.map((skill) => skill.name)).toEqual(['coordination-shells', 'displacement-anisotropy', 'local-symmetry', 'rmc-fit-assessment']);
+            .matchAll(/^\d+\.\s+\*\*([^*]+?)[.:]?\*\*/gm)].map((match) => match[1].trim()).filter((stage) => stage.split(/\s+/).length > 1 && !DOMAIN_TERMS.includes(stage.toLowerCase())));
+        expect(skills.map((skill) => skill.name)).toEqual(['coordination-shells', 'displacement-anisotropy', 'local-order', 'local-symmetry', 'rmc-fit-assessment']);
         expect(stages.length).toBeGreaterThan(15);
         for (const name of skills.map((skill) => skill.name)) expect(sent).not.toContain(name);
         for (const stage of stages) expect(sent.toLowerCase()).not.toContain(stage.toLowerCase());
@@ -113,9 +118,9 @@ describe(`the harness's first request (${CASE})`, () => {
         const run = await loadRun(buildCase(DEV_CASES.find((item) => item.id === CASE)));
         const advice = [...buildRunTools(run.props, { cards: [] }), ...run.tools]
             .flatMap((tool) => [].concat(tool.method ?? []).map((part) => (typeof part === 'string' ? part : part.text).trim()));
-        // find_gr_peaks, list_sites, compute_bond_angles, analyze_clusters (2),
-        // analyze_modulations, detect_symmetry, measure_symmetry_lowering.
-        expect(advice).toHaveLength(8);
+        // find_gr_peaks, list_sites, compute_bond_angles, polyhedral_distortion (2),
+        // analyze_clusters (2), analyze_modulations, detect_symmetry, measure_symmetry_lowering.
+        expect(advice).toHaveLength(10);
         const armB = descriptions(b.tools).join('\n');
         for (const piece of advice) {
             expect(armB).toContain(piece);

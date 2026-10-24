@@ -13,13 +13,16 @@ import { labelledMinimumDistances } from './shells';
 import { partialWeights } from './scatteringWeights';
 // A cycle (heuristics imports seriesStats from here), safe because neither
 // module calls the other while it is being evaluated.
-import { classifyConvergence } from '../watchdog/heuristics';
+import { judgeRun } from '../watchdog/heuristics';
 import { describePointGroup } from './pointGroups';
 
-// Rough character budget for the serialized context: ~6k chars (~1.8k tokens) leaves even a
+// Rough character budget for the serialized context: ~6.5k chars (~2.6k tokens) leaves even a
 // small local model plenty of room for the system prompt, the question, and
 // its answer, while fitting the symmetry/site and pair-correlation evidence.
-export const CONTEXT_CHAR_BUDGET = 6000;
+// 6000 until 2026-10-24, when the convergence section gained the last-tenth
+// verdict of every chi^2 term and their total (+486 characters on the Demo,
+// which the old budget would have taken from its second g(r) peaks).
+export const CONTEXT_CHAR_BUDGET = 6500;
 
 const HISTORY_POINTS = 48;
 const MAX_SITES = 12;
@@ -369,37 +372,55 @@ const partialWeightsContext = (structure, runSettings, plotFiles) => {
     return block;
 };
 
+// One series' last-tenth verdict as the context gives it (heuristics.js
+// seriesTrend): the fitted ln(chi^2) change, the scatter about the fit and
+// the trend.
+const trendContext = (entry) => ({
+    change: roundSig(entry.change, 2) ?? null,
+    noise_sd: roundSig(entry.noiseSd, 2) ?? null,
+    trend: entry.trend
+});
+
 const convergenceContext = (rValueFile, historyPoints) => {
     const history = rValueFile?.plotData?.series?.[0]?.y;
     const stats = seriesStats(history);
     if (!stats) return null;
-    // The series is the LAST column of the RMCProfile .log — the chi^2 of one
-    // fit term, named by its header (e.g. X_ray_(R)1: the X-ray real-space
-    // fit), not a total over datasets and constraints. Say which, or the model
-    // will describe one term as the run's overall fit.
+    // The history is the LAST column of the RMCProfile .log — the chi^2 of
+    // one fit term, named by its header (e.g. X_ray_(R)1: the X-ray
+    // real-space fit), the one the dashboard charts. Say which, or the model
+    // will describe one term as the run's overall fit. The watchdog's verdict
+    // judges every term and their total (heuristics.js judgeRun).
     const column = rValueFile?.plotData?.chiColumn || null;
+    const judgement = judgeRun(rValueFile.plotData);
+    const named = column ? ` '${column}'` : '';
     const convergence = {
         // The dashboard stores ln(chi^2), not raw chi^2 (browserData.js applies
         // Math.log when parsing the .log files) — say so, or the model will
         // misread the magnitudes.
-        quantity: `ln of the chi^2 in the last .log column${column ? ` '${column}'` : ''} `
-            + '(natural log; lower is better) — one fit term of the run, not a total',
+        quantity: judgement.total
+            ? `ln chi^2 per .log row (natural log; lower is better). history, first, last, min, max: the last .log column${named}, `
+                + 'one fit term (the dashboard\'s chart); last_10pct: every chi^2 term and their total'
+            : `ln of the chi^2 in the last .log column${named} (natural log; lower is better) — one fit term of the run, not a total`,
         n_steps: stats.nSteps,
         first: roundSig(stats.first),
         last: roundSig(stats.last),
         min: roundSig(stats.min),
         max: roundSig(stats.max),
-        // The dashboard watchdog's verdict on the same series (the source of
-        // truth for "converged"), and what the recent window changed: a
-        // model eyeballing 48 points reads a slow decline as a plateau.
-        watchdog_status: classifyConvergence(history),
-        recent_slope_per_step: roundSig(stats.recentSlopePerStep, 2),
+        // The dashboard watchdog's verdict on every term and their total (the
+        // source of truth for "converged"), and each one's change over the
+        // last tenth: a model eyeballing 48 points reads a slow decline as a
+        // plateau.
+        watchdog_status: judgement.status,
         history: downsampleSeries(history, historyPoints)
     };
-    const finite = history.filter(Number.isFinite);
-    if (finite.length >= 10) {
-        const tenth = Math.max(1, Math.round(finite.length * 0.1));
-        convergence.change_over_last_10pct = roundSig(finite[finite.length - 1] - finite[finite.length - 1 - tenth], 2);
+    if (judgement.windowRows) {
+        convergence.last_10pct = {
+            rows: judgement.windowRows,
+            ...(judgement.total ? { total: trendContext(judgement.total) } : {}),
+            terms: Object.fromEntries(judgement.terms.map((term) => [term.name, trendContext(term)]))
+        };
+        // Constraints not in use: chi^2 0 in every row.
+        if (judgement.zeroTerms.length) convergence.last_10pct.zero_terms = judgement.zeroTerms.length;
     }
     // Non-finite rows serialize as null; say how many and what they mean, or
     // the model reads a blown-up run's null tail as missing data.

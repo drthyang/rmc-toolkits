@@ -184,6 +184,10 @@ const SWEEP = {
         const end = elements.find((element) => element !== apex) || apex;
         return { end1: end, apex, end2: end, r12_min: 1.5, r12_max: 3.2 };
     }),
+    polyhedral_distortion: (tool) => enumOf(tool, 'centre').map((centre, index, elements) => {
+        const ligand = elements.find((element) => element !== centre) || centre;
+        return { centre, ligand, r_min: 1.5, r_max: 3.2 };
+    }),
     analyze_clusters: (tool) => enumOf(tool, 'element').map((element) => ({ element, r_min: 2, r_max: 4 })),
     analyze_modulations: () => [{}],
     detect_symmetry: () => [{ tolerance_A: 0.05 }],

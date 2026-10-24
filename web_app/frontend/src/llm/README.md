@@ -77,8 +77,8 @@ The loop has four stages: **plan → act → observe → assess**. The assessmen
 A model that cannot call tools still works: the Copilot falls back to plain answers from the run
 summary. The old Assistant behaved the same way.
 
-The **convergence watchdog** badge on the Dashboard's χ² chart is part of the same module and is
-unchanged.
+The **convergence watchdog** badge on the Dashboard's χ² chart is part of the same module. Since
+2026-10-24 it judges every χ² term of the .log and their total, as `assess_convergence` does.
 
 ## Privacy
 
@@ -113,11 +113,12 @@ inputs on its page, stays the *user's* action.
    - run settings from the `.dat` file, saying when one measurement is fitted in both spaces;
    - per-dataset Rwp, a Fourier-transform file marked as the same measurement;
    - the Faber–Ziman weight of every partial in each fitted radiation (`scatteringWeights.js`);
-   - the ln(χ²) history, downsampled to ≤ 48 points with statistics computed on the full series, the
-     watchdog's verdict and the change over the last tenth of the run.
+   - the ln(χ²) history of the charted last column, downsampled to ≤ 48 points with statistics
+     computed on the full series, the watchdog's verdict on every χ² term and their total, and each
+     one's fitted change over the last tenth of the run with its noise and trend (`last_10pct`).
 
    `contextToJson()` serializes it compactly (arrays and small objects on one line), enforces a
-   ~6,000-character budget and records each trim with an `*_omitted` count. The context travels with
+   ~6,500-character budget and records each trim with an `*_omitted` count. The context travels with
    every question, so simple questions need no tool.
 2. **`prompts/system.js` + `prompts/copilot.js`**
    - `SYSTEM_PROMPT` (`systemPrompt(method)`) holds the domain rules, each part of each ground-rule
@@ -205,7 +206,9 @@ inputs on its page, stays the *user's* action.
      (Anthropic rejects empty text blocks).
 7. **`copilot/runTools.js`** holds the tools over data the module already receives:
    - `read_run_data(section)`: one context section as built, before the budget trim;
-   - `assess_convergence`: the watchdog heuristics plus tail slopes;
+   - `assess_convergence`: the watchdog's verdict on every χ² term of the .log and their total, each
+     with its fitted change over the last tenth, its noise and its trend (converged only when none
+     still falls beyond 3 × its noise: the user's rule, 2026-10-24);
    - `find_gr_peaks(pair)`: partial-g(r) peaks below `r_max` (a display) and the first
      coordination shell as the run reads it (`context/shells.js`, the one shell reading the
      context, the Workbench's questions, the evidence gate, the answer checks and
@@ -233,8 +236,9 @@ inputs on its page, stays the *user's* action.
    stopped), `note` and `choice`; `questionReply(step)` reads a question's state from them
    (waiting, stopped, not asked, skipped, answered), the one wording of the card and the screen
    reader's line.
-9. **`watchdog/`**: slope heuristics over the ln(χ²) history are the **source of truth** for the
-   badge. The LLM only writes the tooltip note, and only when the status flips or enough new data
+9. **`watchdog/`**: the convergence rule over every ln(χ²) term of the .log and their total
+   (`seriesTrend`, `judgeConvergence`) is the **source of truth** for the badge, `assess_convergence`
+   and the context's `watchdog_status`. The LLM only writes the tooltip note, and only when the status flips or enough new data
    arrived.
 10. **`useAssistant.js`, `useCopilot.js` and `components/`**
     - `useAssistant()` holds the settings, the connection probe (with auto-connect) and the run
@@ -355,7 +359,12 @@ port, none in the turn or the loop.
   probed), puts the tool choice in that server's form, and asks the context guard for its plan
   (`planCopilotChat`). It returns the request exactly as it goes out:
   `{ baseUrl, model, temperature, messages, tools, toolChoice, plan }`. A `'warmer'` retry runs at
-  `ANTI_REPEAT_TEMPERATURE` = 0.6 or above. The plan is plain JSON:
+  `ANTI_REPEAT_TEMPERATURE` = 0.6 or above. Two settings change what goes out, only when given
+  (the dock gives neither): `temperature: null` sends no temperature key at all, the warmer retry
+  included (a model that takes only its default sampling, as Claude Sonnet 5.5 in the validation),
+  and `maxTokens`, a positive integer, caps every reply (`sent.maxTokens`; `max_tokens` in an
+  OpenAI-compatible body, thinking within it; on Ollama a ceiling on the plan's `numPredict`).
+  `max_tokens` is never sent by default. The plan is plain JSON:
   - Ollama: `{ server: 'ollama', version, estimate, needed, numCtx, numPredict, loadedContext,
     maxContext }`;
   - LM Studio: `{ server: 'lmstudio', estimate, needed, loadedContext }` (`loadedContext` null:
@@ -586,11 +595,11 @@ the model's own `ask_user` still works beside it.
   (whether the answer keeps the user's own window: the clarifier choice's flag, true for "Keep …",
   never read from the label).
 - **Before an analysis runs** (`beforeCall`, for tools that declare `shellWindows(args)`:
-  `compute_bond_angles`, `analyze_clusters`): a window that overlaps a first shell but holds less
-  of it by the same margin is put to the user — the whole first shell (default) or the window as
-  asked — and the analysis runs in the one chosen, its tool message saying so. It is the one cut
-  rule (`context/shells.js` `windowCut`): `compute_bond_angles` refuses exactly such a window
-  unless the user chose it. The spot check's
+  `compute_bond_angles`, `polyhedral_distortion`, `analyze_clusters`): a window that overlaps a
+  first shell but holds less of it by the same margin is put to the user — the whole first shell
+  (default) or the window as asked — and the analysis runs in the one chosen, its tool message
+  saying so. It is the one cut rule (`context/shells.js` `windowCut`): `compute_bond_angles` and
+  `polyhedral_distortion` refuse exactly such a window unless the user chose it. The spot check's
   2.3–2.7 Å Se–Ta–Se window: "it holds 3.8 Se per Ta of the shell's 6". Once per question: the
   choice is remembered by (centre, partner, window), and a later call with that window runs in the
   chosen one unasked (a model that repeats its cut window every round is asked once); a call
@@ -609,9 +618,12 @@ the model's own `ask_user` still works beside it.
 The reviews found answers that contradicted what the tools had just computed. The tools now
 return `facts` beside their data (not sent to the model): `assess_convergence` its status,
 `detect_symmetry` its group with the point group's facts, `analyze_displacement_directions`
-whether a direction is significant (its peak ≥ 3σ), `analyze_modulations` the ordered points,
-`analyze_clusters` what its clusters showed, `find_gr_peaks` and `compute_bond_angles` the
-coordination they counted, `measure_symmetry_lowering` its shifts (no check reads them yet); the
+its peak's tier (a finding, a hint or nothing), `list_sites` its split and flat-topped sites,
+`analyze_modulations` the ordered points and
+the long-wave bound with its long waves, `analyze_clusters` what its clusters showed, `find_gr_peaks`
+and `compute_bond_angles` the coordination they counted, `compute_bond_angles`,
+`analyze_displacement_directions` and `analyze_clusters` the distribution they read from the one
+configuration, `measure_symmetry_lowering` its shifts (no check reads them yet); the
 run context adds the watchdog's status and the tolerance ladder's groups. When the model answers,
 the verification's checks (one row per facts key, the facts catalogue FACTS,
 `copilot/verification/facts.js`) read the answer, sentence by sentence and clause by clause, for a
@@ -619,15 +631,22 @@ clear positive claim they contradict:
 
 | Check | Fires on |
 |---|---|
-| convergence | "converged", "reached convergence", "a plateau" while the history is still improving or diverging |
+| convergence | "converged", "reached convergence", "a plateau" while the watchdog's verdict on every χ² term and their total is improving or diverging |
 | chirality | a group called chiral whose point group is not a Sohncke group (it has mirrors, glides or rotoinversions) |
 | centrosymmetry | a group called centrosymmetric whose point group has no inversion centre |
 | inversion lost | an inversion centre "lost" or "broken" when no group it could be lost from has one: neither the groups the answer names nor the parent (the context's average group, or the ladder's top) |
 | polar | a group called polar whose point group is not polar |
-| direction | a "preferred direction" when no directions analysis of the question found a peak at ≥ 3σ (the whole-map test alone is anisotropy, which thermal ellipsoids show too: review L3) |
+| subgroup | a group–subgroup relation that does not hold ("H is a (t-/k-, maximal) subgroup of G", a lowering from G to H): against the ladder's own groups where the run knows both (nested rungs; the index \|G\|/\|H\| in the cell; t when the translations per cell stay, k when the point group stays, else neither — the Demo's P-42₁m in F-43m is index 12, neither), by the point groups alone otherwise (H's must be a subgroup of G's) (the user's rule, 2026-10-24) |
+| direction | a "preferred direction" when no directions analysis of the question found one — a finding of the user's tiers: ≥ 3σ, ≥ 1.2× isotropic and held at the neighbouring resolution (2026-10-24; before, any peak at ≥ 3σ); a clause that calls it a hint passes (the whole-map test alone is anisotropy, which thermal ellipsoids show too: review L3) |
+| disorder | a split or flat-topped site (`list_sites`' facts; by number, else by element) called disorder(ed) when no `analyze_modulations` of the question tested its element: ordered antiphase displacements give the same split cloud (the user's rule, 2026-10-24); a ranking ("the most disordered site") and thermal disorder are left |
 | superstructure | a cell doubling or zone-boundary order when no `analyze_modulations` of the question found an ordered zone-boundary point; a superstructure or incommensurate order when none found order at a zone-boundary point or a general wavevector |
+| cell-doubling | a cell doubling the box cannot hold — odd along an axis it doubles, or along every axis when none is named — in a sentence about the run, unless the answer says the box cannot hold it; or, once `analyze_modulations` found ordered zone-boundary points, a doubling along axes none of them doubles (the user's rule, 2026-10-24) |
+| long-wave | order claimed at a box-scale wavevector — a q with every \|q_i\| ≤ the modulation engine's 0.25, or a long or box-scale wave in words — once an `analyze_modulations` ran: a long wave is a correlation the finite box can't represent, so it says nothing about order at its own q (the user's rule, 2026-10-24); a clause that denies order is left |
+| no-order, correlated-motion, no-correlation | the diffuse verdict as the user reads it (2026-10-24: only antiphase or general-q order past its bar is order; in phase is neighbouring cells moving together, correlated motion, which never supports "no correlation"): "no order" when an `analyze_modulations` of the question found order (an ordered point or general mode, diffuse antiphase), unless the sentence names order between cells or antiphase; order between cells ("short-range order", "order between cells") when none was found (in phase only: correlated motion, not order); no correlation of displacements or cells when any correlation passed, in phase included |
 | cluster | clusters of an element called distorted, breathing or rigid when every `analyze_clusters` of that element (or of every element, for "the clusters") found otherwise: distorted needs a shape distortion, a pattern (axis family, trigonality), split sites or a distorted average cluster; a polyhedron word naming neither the element nor "cluster" is left alone (review L5) |
-| coordination | a coordination number for an element ("four-coordinated", "CN 4", "square-planar coordination") that every whole-shell count of it contradicts by more than half an atom (`find_gr_peaks`' first shell, `compute_bond_angles` in a whole shell), unless a window the user chose gave it; a clause about part of the shell (the first peak, the short bonds, a window in Å) is not a claim about the whole (review L5) |
+| coordination | a coordination number for an element ("four-coordinated", "CN 4", "square-planar coordination", "4 F per Cu" — B's count of A) that every whole-shell count of it contradicts by more than half an atom (`find_gr_peaks`' first shell, `compute_bond_angles` in a whole shell), unless a window the user chose gave it; a clause about part of the shell (the first peak, the short bonds, a window in Å other than the whole shell's) is not a claim about the whole (review L5; a clause stating the whole shell's window is checked since 2026-10-24) |
+| window | a coordination number or a bond angle quoted without its window in Å — none in its sentence, nor in another sentence that names no element or every element the quoting one names — once `find_gr_peaks` or `compute_bond_angles` counted a shell: every CN or angle carries its window (the user's rule, 2026-10-24) |
+| single-configuration | a distribution's numbers (bond angles, coordination counts, displacement directions, cluster shapes: a mean, sd, mode, share or histogram bin) quoted without saying they come from one configuration, once such an analysis ran: every analysis reads the run's one configuration (the user's rule, 2026-10-24) |
 
 A negated claim ("has not converged", "achiral", "no preferred direction"), a question, a
 hypothetical or conditional mention ("to check whether it has converged", "until χ² plateaus", "I
@@ -666,7 +685,7 @@ isAnalysis(step)           // the one definition of an analysis
   `args`, `error`, `checks`, `facts`, …) with the tool's `name` and kind (`interactive`,
   `reading`, `view`); a step with no known `resultStatus` is a TypeError. The verification reads
   the step's severity (`severityOf`) and whether it ran (`ran`: not an unknown tool or a skipped
-  call) from it; a `refused` step ran. `show(ref)` builds the tool message, once and
+  call) from it; a `refused` step ran, but backs no claim (below). `show(ref)` builds the tool message, once and
   synchronously, and the ref then resolves to exactly the data it returns (a callback: the ref is
   written into the message before the data is fitted to the budget). Refs are r1, r2, … in record
   order; a step with an error takes none, and its facts are dropped. `analysis` (`isAnalysis`:
@@ -691,26 +710,40 @@ isAnalysis(step)           // the one definition of an analysis
   the missing consumer shows), over one reading of the text (`reading.js`, `phrasings.js`).
   `EVIDENCE_RULES` stays written by hand in `prompts/copilot.js`; `verificationCatalogue.test.js`
   binds it to CLAIMS: `evidenceSentence` renders it from the rows byte for byte, each row's prompt
-  names its first analysis, and `promptGaps` pins what the sentence does not say (coordination
-  also takes `compute_bond_angles`; a lowering falls back to `detect_symmetry`; "no order" needs a
-  per-site map and each finite cluster, and neither `find_gr_peaks` nor
-  `measure_symmetry_lowering`). Generating the sentence from the catalogue is the user's call.
+  names its first analysis, and `promptGaps` pins what the sentence does not say (distorted
+  polyhedra also take `analyze_clusters`; coordination also takes `compute_bond_angles`; a lowering
+  falls back to `detect_symmetry`; "no order" needs a per-site map, each finite cluster and, where
+  offered, `polyhedral_distortion` on each centre of polyhedra no finite cluster holds, and neither
+  `find_gr_peaks` nor `measure_symmetry_lowering`). Generating the
+  sentence from the catalogue is the user's call.
 - **The evidence gate** (CLAIMS). An answer that concludes something needs, in
   this turn, the analysis that gives the evidence for it: order between cells, or a split site
-  called random disorder, needs `analyze_modulations` (ordered antiphase displacements give a site
-  the same cloud); a preferred direction `analyze_displacement_directions`; distorted, breathing or
-  rigid clusters `analyze_clusters`; a coordination number, a split shell or a Jahn–Teller
-  distortion `find_gr_peaks` or `compute_bond_angles` (`anyOf`); a lowering of the average structure
+  called random disorder (or, since 2026-10-24, a split or flat-topped site called disordered),
+  needs `analyze_modulations` (ordered antiphase displacements give a site the same cloud); a
+  preferred direction `analyze_displacement_directions`; distorted, breathing or
+  rigid clusters `analyze_clusters`; distorted coordination polyhedra (octahedra, tetrahedra)
+  `polyhedral_distortion` where the run offers it, else `analyze_clusters` (`anyOf`; the
+  coordination-shells interview, 2026-10-24: an extended network takes a distortion index, never
+  the cluster null); a coordination number, a split shell or a Jahn–Teller distortion
+  `find_gr_peaks` or `compute_bond_angles` (`anyOf`, asking for the first the turn offers); a lowering of the average structure
   `measure_symmetry_lowering`, `detect_symmetry` where it is not offered (`firstOffered`); and "no
-  order beyond thermal motion" every one of them (`allOf`) — `analyze_modulations`, a per-site
-  directions map, and `analyze_clusters` for every element whose own first shell holds at most 4.5
-  neighbours (`context/shells.js` `clusterElementsOf`, `CLUSTER_CN_MAX`: a dimer 1, a trimer 2, a
-  tetrahedron 3, an octahedron 4 per member). A model cannot be forced to call a tool (not every
+  order beyond thermal motion" every one of them (`allOf`) — `analyze_modulations` (its diffuse
+  verdict included), a per-site directions map, `analyze_clusters` for every element whose own first
+  shell holds at most 4.5 neighbours (`context/shells.js` `clusterElementsOf`, `CLUSTER_CN_MAX`: a
+  dimer 1, a trimer 2, a tetrahedron 3, an octahedron 4 per member), and, where the turn offers it,
+  `polyhedral_distortion` on every centre of octahedra or tetrahedra no finite cluster holds
+  (`networkCentresOf`: the Demo's Ga, a perovskite's B site; the local-order interview, 2026-10-24).
+  A model cannot be forced to call a tool (not every
   model takes `tool_choice`), so the check runs after the answer: the agent loop withdraws it and
   sends it back once per claim, at most twice a turn (`DEFAULT_MAX_SEND_BACKS`), with what to run (a
   **gate** event; the footer says so), never on the final round or once the turn's time is spent.
   An answer that still lacks its evidence stands, with an `evidence` finding under it (with tools
-  off too), and a withdrawn answer is kept if the model then writes nothing. Claims are read as the answer checks read them (`asserts`: not
+  off too), and a withdrawn answer is kept if the model then writes nothing. Only a call that
+  answered is evidence: a `refused` one (the tool's own `fail` check) backs no claim, under every
+  combinator (the user's decision A5, 2026-10-24), and the send-back says it refused — for a window
+  cut (a refusal whose data carry `refused`: `compute_bond_angles`, `polyhedral_distortion`) with
+  both fixes, the whole shell or the user's own window confirmed (`ask_user`, `window_confirmed`),
+  for any other refusal only to run it so that it answers. Claims are read as the answer checks read them (`asserts`: not
   negated, hypothetical or asked), and only in a sentence about this run: one that names an
   element of the run (Ti, Mo₃, TaSe₆) or the run itself (this structure, the clusters, site 3) — a
   definition ("A superstructure is order that enlarges the cell") needs no analysis; "no order" is
@@ -718,7 +751,8 @@ isAnalysis(step)           // the one definition of an analysis
   method `'off'` (the validation's arm C, *The turn*) it checks the same claims, but its send-back
   names no analysis and no tool, since which analysis a conclusion needs is the method: "Your answer
   concludes … , but this conclusion needs its evidence from an analysis run in this question. …"
-  (`OFF_NUDGE`). The gate event's notice and the end-of-turn finding, which the model never reads,
+  (`OFF_NUDGE`; where the backing refused, "… an analysis that refused is no evidence: …",
+  `OFF_REFUSED_NUDGE`). The gate event's notice and the end-of-turn finding, which the model never reads,
   still name the missing analyses. The app's own phrasings read prose; a caller adds its own
   through `phrasings` (`{ [claim id]: { asserted, literal } }`): the validation harness adds the
   verdict schema's words (`validation/verdict.js` `VERDICT_PHRASINGS`: `off_centre`, the cluster
@@ -767,9 +801,10 @@ from the spot check and the review:
 | `coordination-shells` | bond windows from the partial g(r), coordination against the ideal polyhedron, reading angle distributions | `compute_bond_angles` **refuses** a window that cuts the shell — by the one cut rule the Workbench's window question asks on (`context/shells.js` `windowCut`, approved by the user 2026-10-19): a window that meets its shell and holds fewer partner atoms than the whole shell by ≥ max(0.5, 15 % of its CN); the coordination counts (fewer than 60 % with the most common count, or most with none) decide only where the run reads no shell to compare — and returns the counts and the shell reading that show the cut (`shell_ab.cn_in_window` of `shell_ab.cn`), not the angles, unless `window_confirmed`, which the Workbench's window question sets when the user keeps their window; the polyhedron reading. The skill still states the counts rule (skill-lint allow-list, until the skill fact-sync PR) |
 | `local-symmetry` | the tolerance ladder, what breaks between rungs, the noise floor, point-group facts | the point-group facts and the chirality / centrosymmetry / polar / inversion checks |
 | `displacement-anisotropy` | ellipsoids, kurtosis, preferred directions and their σ, effect sizes | the preferred-direction check; the Workbench's one-site-or-pooled question |
+| `local-order` (validation batch 1) | when to say "no order": every analysis that could show one came back empty | the superstructure, cluster and direction checks |
 
 - **Progressive disclosure** (`copilot/skills.js`). The system prompt lists only each skill's name
-  and description (`skillIndex`, 2,150 characters for the four); the agent reads a skill
+  and description (`skillIndex`, 2,622 characters for the five); the agent reads a skill
   (4,700–5,500 characters each) with `read_skill(name)` and a reference file beside it with
   `read_skill(name, reference)`. `read_skill` has its own result budget (`resultBudget` 9,000) and
   is never compacted later in the question (`keep: true` in the tool contract), so the agent can
@@ -860,7 +895,7 @@ pieces the agent loop uses so a turn always ends with an answer or a reason:
 | --- | --- | --- |
 | No token for minutes (server busy, stopped) | Cancels the request; the error says the server may be busy | `stallMs` 180 s |
 | A reply that never ends | Cancels it; the error suggests a narrower question or a faster model | `requestMaxMs` 600 s |
-| Reasoning (or text) repeating a passage | Stops it when caught (`repeatsItself`: its last 200 characters 4 times in the last 8,000), asks again once warmer (`retry: 'warmer'`: the model port sends it at temperature ≥ 0.6, `ANTI_REPEAT_TEMPERATURE`; in the dock and the harness alike) | one reminder |
+| Reasoning (or text) repeating a passage | Stops it when caught (`repeatsItself`: its last 200 characters 4 times in the last 8,000), asks again once warmer (`retry: 'warmer'`: the model port sends it at temperature ≥ 0.6, `ANTI_REPEAT_TEMPERATURE`, or with no temperature for a model set to take none; in the dock and the harness alike) | one reminder |
 | Reasoning only, no answer, no call | One reminder, then `done` with `stoppedBy: 'empty'` and a `reason` the footer shows | one reminder |
 | A call written as JSON text | Run as a call (`textToolCalls`: the whole reply must be the call, naming a known tool); the text is retracted | |
 | Calls that repeat earlier ones or fail | Two such rounds in a row end the analyses: the next request asks for the answer (`stoppedBy: 'no_progress'`) | `maxNoProgressRounds` 2 |
@@ -921,7 +956,9 @@ tool with either name is refused, and the dock says so in its error line.
     refusal still refuses. In this repository: `compute_bond_angles`' cut-window refusal,
     no-angles failure and octahedron note, the pooled-directions note, `analyze_clusters`' window
     failures and split-site note, `find_gr_peaks`' split-shell notes and unseparated-shell warning,
-    `detect_symmetry`'s point-group note.
+    `detect_symmetry`'s point-group note, and `analyze_modulations`' long-wave and in-phase notes,
+    whose causal parentheticals (what the pattern is evidence of) are inference, as in the domain
+    rules: arm C reads their facts and limits without them.
 - `signal` aborts on Stop or timeout. Stop the work if you can.
 - `focus` is the dock's card-focus controller, for view tools: `await focus.show(ids, { marks })`,
   `focus.onClear(undo)` (runs when the highlight ends), `focus.state()`.
@@ -966,7 +1003,7 @@ toolMessage(result, { budget, ref }) → { content, data } · compactToolMessage
 | `resultStatus` | When | The model reads |
 | --- | --- | --- |
 | `ok` | the tool answered | the ref, the note, the checks, the data |
-| `refused` | the tool answered with a `fail` check (its own refusal: a cut window) | the same; it ran, is an analysis and backs its claim |
+| `refused` | the tool answered with a `fail` check (its own refusal: a cut window) | the same; it ran and is an analysis, but backs no claim (the user's decision A5, 2026-10-24) |
 | `error` | arguments that are not JSON or that the schema refuses, a throw, the time limit | the error (and the dropped-key notes) |
 | `unknown_tool` | no tool has that name | the error, with the names offered |
 | `skipped` | the loop did not run it: past the calls per round, a second question in a round, past the questions per request | the error, saying why |
@@ -1050,10 +1087,11 @@ In this repository the host tools live in `src/copilotTools.js`:
 | Tool | What it runs |
 |---|---|
 | `list_sites` | the per-site PCA table, through the worker or `/api/pca/sites`: per-axis kurtosis on resolved axes, PC1 as `[u v w]`, and a split site's static displacement with its sampling error (`delta_A`, `delta_se_A`) |
-| `analyze_displacement_directions` | the orientation engine with calibrated significances and `[u v w]` (Show in Displacement Directions selects the site and resolution) |
+| `analyze_displacement_directions` | the orientation engine with calibrated significances and `[u v w]`; the peak labelled a finding (≥ 3σ, ≥ 1.2× isotropic, held at the neighbouring resolution, which the tool reads too), a hint or nothing (Show in Displacement Directions selects the site and resolution) |
 | `compute_bond_angles` | the triplets engine (Show in Bond Geometry fills the triplet and windows, then computes); the sin θ-corrected histogram, and a whole shell of ~6 or ~4 neighbours read against an ideal octahedron or tetrahedron |
+| `polyhedral_distortion` | the polyhedral-distortion engine (`workers/distortion.js`, `/api/distortion`): a centre element's coordination polyhedra of the most common count, by Baur's bond-length distortion index and, for octahedra and tetrahedra, Robinson's quadratic elongation and bond-angle variance, over the configuration's polyhedra (mean, sd, percentiles) and the average structure's, so a static distortion separates from thermal spread — for polyhedra isolated or in an extended network, where `analyze_clusters`' null does not apply. A window that cuts the shell is refused by `compute_bond_angles`' rule (`windowCut`, its `shellWindows`) unless `window_confirmed`; no facts |
 | `analyze_clusters` | the cluster engine (`workers/clusters.js`, `/api/clusters`): the shape of an element's finite clusters (M₄ tetrahedra, dimers, trimers) against a shuffle null of independent atoms, and the average cluster's own distortion. The engine returns its own verdict (distorted, breathing, rigid, split member sites, …); the tool shapes the data and says each finding (`CLUSTER_SENTENCES`), and its `facts` are the verdict's answers |
-| `analyze_modulations` | the modulation engine (`workers/modulations.js`, `/api/modulations`): each element's displacement power at the zone-boundary points and its strongest modes against the configuration's diffuse background — order that enlarges the cell, which the folded average cannot show, and correlation between cells at a general wavevector (incommensurate or short-range). The engine returns each point's calibrated σ against independent cells, each cell's own correlations kept (corrected over every element's points, whichever the call names), each point's polarisation (the direction the atoms move in that mode, with its share of the power) and each element's verdict (cell doubling, general order, long wave, and diffuse order between cells: correlation between neighbouring cells spread over many q); the tool renders them (`MODULATION_SENTENCES`), the polarisation of ordered points only, a `diffuse` row per element, antiphase correlation as short-range order and in-phase correlation as neighbouring cells moving together, and never prints a ratio, σ or correlation below its bar rounded onto it |
+| `analyze_modulations` | the modulation engine (`workers/modulations.js`, `/api/modulations`): each element's displacement power at the zone-boundary points and its strongest modes against the configuration's diffuse background — order that enlarges the cell, which the folded average cannot show, and correlation between cells at a general wavevector (incommensurate or short-range). The engine returns each point's calibrated σ against independent cells, each cell's own correlations kept (corrected over every element's points, whichever the call names), each point's polarisation (the direction the atoms move in that mode, with its share of the power) and each element's verdict (cell doubling, general order, long wave, and diffuse order between cells: correlation between neighbouring cells spread over many q); the tool renders them (`MODULATION_SENTENCES`), the polarisation of ordered points only, a `diffuse` row per element, antiphase correlation as short-range order and in-phase correlation as neighbouring cells moving together (correlated motion), not order (the local-order interview, 2026-10-24), and never prints a ratio, σ or correlation below its bar rounded onto it |
 | `detect_symmetry` | the symmetry finder at any tolerance, without changing the card, with the point group's facts (inversion, Sohncke, polar); offered when the run's structure has an average-structure basis (a browser-loaded run, or a server folder through `/api/structure`, which above the finder's 2000-site cap sends only its size; not a coords-only file). Above the cap it answers "not analysed", in both runtimes |
 | `measure_symmetry_lowering` | the size and direction of the coherent shift of a symmetry lowering: each average site's distance from the position a parent group puts it at, against the noise floor; offered as `detect_symmetry` is |
 | `orient_3d_view` (view) | turns a 3D view (`src/copilotViewTools.js`): look down `[u v w]` / a, b, c / PC1–3 (c up, or b looking down c), centre or ring sites, select a site, reset |
@@ -1265,7 +1303,10 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   fetch): `prepare` per server (the plan, the tool choice's form, a cloud never probed, the key
   never in `sent`), Ollama's final request without tools and its estimate without their schemas,
   the refusal in `prepare` with nothing sent; `stream` under the plan (Ollama's `num_ctx` and
-  `num_predict`; LM Studio and the cloud with the body as before); `ToolsUnsupportedError` from
+  `num_predict`; LM Studio and the cloud with the body as before); a reply cap (`maxTokens`: in
+  `sent`, Ollama's `num_predict` capped, a cap that is not a positive integer refused) and a model
+  that takes no temperature (no key in `sent` or the body, the warmer retry included);
+  `ToolsUnsupportedError` from
   Ollama's and OpenAI's shapes and the fallback text, and never from a schema 400, a 5xx, a request
   without tools, a failure mid-reply or an abort; the loop over the port (an Ollama turn whose
   final reply is the answer; a model without tools asked again without them). In `turn.test.js`,

@@ -79,7 +79,7 @@ vi.mock('../llm', async (importOriginal) => ({ ...(await importOriginal()), Watc
 
 const { default: Dashboard } = await import('../components/Dashboard');
 const {
-    CHI_HISTORY_Y_LABEL, chiHistoryLabels, detectPlotKind, plotDataFromText, structureFromRmc6f, WATCH_INTERVAL_MS
+    CHI_HISTORY_Y_LABEL, chiHistoryLabels, combineChiTerms, detectPlotKind, plotDataFromText, structureFromRmc6f, WATCH_INTERVAL_MS
 } = await import('../browserData');
 const { readRunFolder } = await import('../openRunFolder');
 const { copilotRun, DEFAULT_VIEW } = await import('../copilotRun');
@@ -136,7 +136,9 @@ const fixturePayload = ({ name, text, expected }) => {
 };
 
 // A log's /api/plot/data payload: the history of every log of its run, in
-// sequence (related_r_value_logs + read_chi_log), as app.py's plot_data sends it.
+// sequence (related_r_value_logs + read_chi_log), as app.py's plot_data sends it,
+// with every χ² term and their total (chi_terms_payload; its values pinned by
+// test_parsers_demo_run.py's test_log_data_carries_every_chi_term_and_their_total).
 // test_parsers_demo_run.py's log_last_column: the last token of each row below the two header lines.
 const lastColumn = (text) => text.split(/\r\n|\r|\n/).slice(2).filter((line) => line.trim()).map((line) => Number(line.trim().split(/\s+/).pop()));
 const logPayload = () => {
@@ -151,6 +153,7 @@ const logPayload = () => {
         xLabel: 'Time steps',
         yLabel: CHI_HISTORY_Y_LABEL,
         chiColumn: column,
+        chiTerms: combineChiTerms(parsed.map((plot) => plot.chiTerms)),
         series: [{ label, x: y.map((_, index) => index), y }],
     });
 };
@@ -309,7 +312,7 @@ describe('Flask mode: the Copilot gets the run a picked folder gives it', () => 
         const names = flask.tools.map((tool) => tool.name);
         expect(names).toEqual(browser.tools.map((tool) => tool.name));
         expect(names).toEqual(expect.arrayContaining(['assess_convergence', 'find_gr_peaks', 'compare_fit', 'read_run_data']));
-        expect(names).toHaveLength(11);
+        expect(names).toHaveLength(12);
         expect(definitions(flask.tools)).toEqual(definitions(browser.tools));
         expect(flask.cards).toEqual(browser.cards);
 
@@ -340,6 +343,10 @@ describe('Flask mode: the Copilot gets the run a picked folder gives it', () => 
             );
         });
         expect(flask.context.convergence).toMatchObject({ n_steps: logPayload().series[0].y.length, column: 'X_ray_(R)1' });
+        // Every χ² term and their total, as the browser reads the three logs (null → NaN).
+        const terms = flaskRun().props.rValueFile.plotData.chiTerms;
+        expect(terms).toEqual(browserRun().props.rValueFile.plotData.chiTerms);
+        expect(terms.segments).toEqual([1320, 510, 432]);
     });
 
     it('one request per file and version, shared with the charts; none before the Copilot opens', async () => {

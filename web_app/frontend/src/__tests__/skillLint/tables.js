@@ -12,7 +12,13 @@
 //   RULES       a rule a skill states in words → the rule the app and arm A+
 //               apply (candidate 8: the split site, the cluster elements, the
 //               lower group's tolerance), and a probe that the code applies it;
-//   ALLOW_LIST  today's violations, each with why and what clears it.
+//   ALLOW_LIST  today's violations, each with why and what clears it: a FACT
+//               (the skill states a number or a rule the tool decides
+//               otherwise; the skill fact-sync PR clears it), a JUDGMENT (a
+//               method, an order or a judgment call: it stays for the user's
+//               interviews, docs/SKILL_INTERVIEWS.md) or AWAITS CODE (an
+//               interviewed skill states the user's rule, which the named
+//               code PR still has to build).
 //
 // When a skill's text changes (the user's review of a draft), its entries here
 // change in the same PR: a binding or a firm rule whose sentence moved is
@@ -22,18 +28,27 @@
 
 import assert from 'node:assert/strict';
 import {
-    LOW_INDEX_CONE_DEG, SIGNIFICANCE_SIGMA, summarizeBondAngles, summarizeOrientation, summarizeSymmetry
+    DIRECTION_FINDING_ENHANCEMENT, DIRECTION_HINT_SIGMA, directionHolds, directionResolved, directionTier, isCorrelatedMotion, isDiffuseOrder,
+    LOW_INDEX_CONE_DEG, neighbourFrequency, SIGNIFICANCE_SIGMA, summarizeBondAngles, summarizeOrientation, summarizeSymmetry
 } from '../../copilotTools';
 import { buildClarifier } from '../../llm/copilot/clarify';
 import { buildRunTools } from '../../llm/copilot/runTools';
 import { toolResult } from '../../llm/copilot/tools';
-import { createVerification } from '../../llm/copilot/verification';
+import { createVerification, FACTS } from '../../llm/copilot/verification';
 import { buildRunContext, lowerGroupTolerance, NOISE_FLOOR_MARGIN } from '../../llm/context/runContext';
-import { CLUSTER_CN_MAX, CN_CHANGE_ABS, CN_CHANGE_REL, clusterElementsOf, cnMarginCut } from '../../llm/context/shells';
+import {
+    CLUSTER_CN_MAX, CN_CHANGE_ABS, CN_CHANGE_REL, CN_MATCH_TOLERANCE, clusterElementsOf, cnMarginCut, cnMatches, CONSTRAINT_LIMIT_FRACTION,
+    IDEAL_COORDINATION, isIdealCoordination, MODAL_COORDINATION_SHARE, networkCentresOf, SEPARATION_G_FRACTION, shellCatalogue,
+    SPLIT_SHELL_REACH_A, UNBONDED_APEX_FRACTION
+} from '../../llm/context/shells';
+import {
+    classifyConvergence, MIN_TOTAL_DROP, TREND_MIN_ROWS, TREND_NOISE_FACTOR, TREND_WINDOW_FRACTION
+} from '../../llm/watchdog/heuristics';
 import { SWEEP_RULES } from '../../../validation/armA';
 import {
     AXIS_CONE_DEG, AXIS_ENHANCEMENT, CLUSTER_EFFECT, CLUSTER_Z, SPLIT_SITE_KURTOSIS, SPLIT_SITE_SE, TRIGONALITY_EFFECT, isSplitSite
 } from '../../workers/clusters';
+import { isLongWave, LONG_WAVE_Q, MODULATION_RATIO, MODULATION_RULES, MODULATION_SIGMA } from '../../workers/modulations';
 import { ASYMMETRY_FLAG_SIGMA, MAP_TEST_MIN_PAIRS } from '../../workers/orientation';
 import { AXIS_RESOLUTION_SIGMAS } from '../../workers/pcaKde';
 import { coordinationSummaryOf } from '../../workers/triplets';
@@ -42,6 +57,8 @@ const ANISOTROPY = 'displacement-anisotropy/SKILL.md';
 const SIGNIFICANCE = 'displacement-anisotropy/significance-reading.md';
 const SHELLS = 'coordination-shells/SKILL.md';
 const SHELL_TABLE = 'coordination-shells/lacunar-spinel-shells.md';
+const LOCAL_ORDER = 'local-order/SKILL.md';
+const ORDER_SIGNATURES = 'local-order/order-signatures.md';
 const SYMMETRY = 'local-symmetry/SKILL.md';
 const FIT = 'rmc-fit-assessment/SKILL.md';
 const RUN_NUMBERS = 'rmc-fit-assessment/run-numbers.md';
@@ -49,12 +66,37 @@ const RUN_NUMBERS = 'rmc-fit-assessment/run-numbers.md';
 const constant = (name, value, module) => ({ name, value, module });
 const SIGMA = constant('SIGNIFICANCE_SIGMA', SIGNIFICANCE_SIGMA, 'copilotTools.js');
 const ASYMMETRY_SIGMA = constant('ASYMMETRY_FLAG_SIGMA', ASYMMETRY_FLAG_SIGMA, 'workers/orientation.js');
-// compute_bond_angles' cut rule: the CN margin, the Workbench's (shells.js
-// windowCut → cnMarginCut; approved by the user, 2026-10-19), bound by its
-// relative part, the one a percentage states. The counts (countsCut) decide
-// only where the run reads no shell to compare a window with, so the skill's
-// counts thresholds no longer state the app's gate.
+const CLUSTER_SIGMA = constant('CLUSTER_Z', CLUSTER_Z, 'workers/clusters.js');
+// compute_bond_angles' cut rule, the one rule the user chose on 2026-10-19
+// (shells.js windowCut): the CN margin (cnMarginCut) wherever a window meets
+// its shell, bound by both its parts; the coordination counts (countsCut) only
+// where the run reads no shell to compare, the skill's fallback clause, whose
+// thresholds keep their own constants.
 const CN_MARGIN = constant('CN_CHANGE_REL', CN_CHANGE_REL, 'llm/context/shells.js, cnMarginCut via windowCut');
+const CN_MARGIN_ABS = constant('CN_CHANGE_ABS', CN_CHANGE_ABS, 'llm/context/shells.js, cnMarginCut via windowCut');
+const MODAL_SHARE = constant('MODAL_COORDINATION_SHARE', MODAL_COORDINATION_SHARE, 'llm/context/shells.js, countsCut (the fallback with no shell to compare)');
+const UNBONDED_SHARE = constant('UNBONDED_APEX_FRACTION', UNBONDED_APEX_FRACTION, 'llm/context/shells.js, countsCut (the fallback with no shell to compare)');
+// The split-site rule (workers/clusters.js isSplitSite: list_sites' delta_A, the clusters' split member sites).
+const SPLIT_KAPPA = constant('SPLIT_SITE_KURTOSIS', SPLIT_SITE_KURTOSIS, 'workers/clusters.js, isSplitSite (list_sites; the cluster verdict\'s split member sites)');
+const SPLIT_ERRORS = constant('SPLIT_SITE_SE', SPLIT_SITE_SE, 'workers/clusters.js, isSplitSite');
+const PC1_RULE = { pattern: /\bPC1\b/, says: `the PC1 excess kurtosis on a resolved axis, at least ${SPLIT_SITE_SE} sampling errors below zero` };
+// The order rule analyze_modulations renders (the engine decides it: each
+// tested point's `ordered`, its rules in the payload's MODULATION_RULES).
+const ORDER_SIGMA = constant('MODULATION_SIGMA', MODULATION_SIGMA, 'workers/modulations.js, the order rule');
+const ORDER_RATIO = constant('MODULATION_RATIO', MODULATION_RATIO, 'workers/modulations.js, the order rule');
+const LONG_WAVE = constant('LONG_WAVE_Q', LONG_WAVE_Q, 'workers/modulations.js, isLongWave');
+// find_gr_peaks' join of a split shell (shells.js readShell).
+const SPLIT_REACH = constant('SPLIT_SHELL_REACH_A', SPLIT_SHELL_REACH_A, 'llm/context/shells.js, readShell (find_gr_peaks\' join)');
+const IDEAL_COUNTS = constant('IDEAL_COORDINATION', [...IDEAL_COORDINATION], 'llm/context/shells.js, isIdealCoordination');
+const CN_MATCH = constant('CN_MATCH_TOLERANCE', CN_MATCH_TOLERANCE, 'llm/context/shells.js, cnMatches');
+const FLOOR_MARGIN = constant('NOISE_FLOOR_MARGIN', NOISE_FLOOR_MARGIN, 'llm/context/runContext.js, lowerGroupTolerance and the Workbench\'s tolerance question');
+const LOW_INDEX_CONE = constant('LOW_INDEX_CONE_DEG', LOW_INDEX_CONE_DEG, 'copilotTools.js, measure_symmetry_lowering and analyze_modulations\' polarisation');
+const AXIS_CONE = constant('AXIS_CONE_DEG', AXIS_CONE_DEG, 'workers/clusters.js, analyze_clusters\' axis families');
+// Both cones are inclusive: nearestLowIndex skips a direction only when it is
+// more than the cone off; the axis families count |cos| ≥ cos 15°.
+const INCLUSIVE_CONE = { pattern: /\bwithin\b|≤|\bat most\b/, says: 'an inclusive cone, a family named at 15° or less (nearestLowIndex: off > toleranceDeg is left out; clusters: |cos| ≥ cos 15°)' };
+const PEAK_TEST = { pattern: /\bpeak\b/, says: 'the peak test only (analyze_displacement_directions facts.direction.significant; the map test is anisotropy)' };
+// The CN margin's sentences name the CN they compare (#113).
 const CN_MARGIN_STATISTIC = {
     pattern: /\bCN\b|coordination number|partner atoms/,
     says: 'the window\'s CN against the whole shell\'s (fewer by at least max(0.5, 15 % of its CN))'
@@ -63,12 +105,17 @@ const CN_MARGIN_STATISTIC = {
 // --- probes: the code applies a constant, or enforces a firm rule, as stated ----------
 
 // An analyze_displacement_directions engine payload (no unit cell: no [u v w]).
-const orientationPayload = ({ peak, map }) => ({
-    referenceNumber: 1, element: 'Ta', frequency: 6, cellCount: 362, usedPoints: 4000, rejectedPoints: 0,
+const orientationPayload = ({ peak, map, frequency = 6, direction = null }) => ({
+    referenceNumber: 1, element: 'Ta', frequency, cellCount: 362, usedPoints: 4000, rejectedPoints: 0,
     vmin: 0.8, vmax: 1.3, peakEnhancement: 1.3, peakCount: 20, peakExpected: 11, peakSignificance: peak,
-    peakDirection: null, mapSignificance: map, antipodalAsymmetry: 0, antipodalAsymmetryZ: 0,
+    peakDirection: direction, peakCellRadiusDeg: 6.5, mapSignificance: map, antipodalAsymmetry: 0, antipodalAsymmetryZ: 0,
     antipodalAsymmetrySignificant: false, orientationEigenvalues: [0.4, 0.3, 0.3], orientationAnisotropy: 0.1,
     orientationAnisotropySignificance: 1, recommendedFrequency: 6
+});
+// A finding of the user's tiers (2026-10-24): ≥ 3σ, ≥ 1.2× isotropic, and it
+// holds at the neighbouring resolution (ν − 1: the same axis, ≥ 3σ there).
+const directionFinding = (peak) => summarizeOrientation(orientationPayload({ peak, map: 0.5, direction: [0, 0, 1] }), null, {
+    neighbour: orientationPayload({ peak: 3.5, map: 0.5, frequency: 5, direction: [0, 0.1, 0.99] })
 });
 
 // A compute_bond_angles engine payload with the coordination counts given
@@ -118,6 +165,104 @@ const demoSymmetry = {
     ]
 };
 
+// A run whose Cu–F partial g(r) is a CuF6-type split shell: 4 F at 1.93 Å and
+// `second` F at `r2` (σ 0.05 Å), 200 Cu and 1200 F in a 20 Å cube — the
+// Jahn–Teller octahedron of the coordination-shells skill (as in
+// llm/__tests__/runTools.test.js). The trough between the peaks is deep, so
+// only the join makes the shell whole.
+const splitShellRun = ({ r2 = 2.25, second = 2 } = {}) => {
+    const L = 20;
+    const elementCounts = { Cu: 200, F: 1200 };
+    const rhoF = elementCounts.F / L ** 3;
+    const x = Array.from({ length: 600 }, (_, i) => i * 0.005);
+    const normal = (r, r0) => Math.exp(-((r - r0) ** 2) / (2 * 0.05 ** 2)) / (0.05 * Math.sqrt(2 * Math.PI));
+    const y = x.map((r) => (r > 0 ? (4 * normal(r, 1.93) + second * normal(r, r2)) / (4 * Math.PI * rhoF * r * r) : 0));
+    return {
+        structure: { latticeVectors: [[L, 0, 0], [0, L, 0], [0, 0, L]], elementCounts },
+        plotFiles: [{ name: 'cuf.csv', plotKind: 'pdf_partials', plotData: { series: [{ label: 'Cu-F', x, y }] } }]
+    };
+};
+const cuF = (options) => shellCatalogue(splitShellRun(options)).shell('Cu', 'F');
+// An analysis with one A–B window (compute_bond_angles' shellWindows, in brief).
+const windowedAnalysis = {
+    shellWindows: (args) => [{ centre: 'Cu', partner: 'F', window: [args.lo, args.hi], apply: ([lo, hi]) => ({ ...args, lo, hi }) }]
+};
+
+// A Ga–Se peak at 2.42 Å (σ 0.1 Å, height 8) cut at its closest-approach
+// constraint `limit`: g is 0 below it, and just above it the share of the
+// first peak the cut's position sets (2.13 Å: 3 %; 2.18 Å: 9 %).
+const constrainedGaSe = (limit) => {
+    const x = Array.from({ length: 1000 }, (_, i) => Number((i * 0.01).toFixed(6)));
+    const y = x.map((r) => (r <= limit ? 0 : 8 * Math.exp(-((r - 2.42) ** 2) / (2 * 0.1 ** 2))));
+    return {
+        plotFiles: [{ name: 'gase.csv', plotKind: 'pdf_partials', plotData: { series: [{ label: 'Ga-Se', x, y }] } }],
+        runSettings: { atoms: ['Ga', 'Se'], minimumDistancesA: [3.0, limit, 3.0] }
+    };
+};
+// The constraint-limited test (shells.js, the user's 5 %): 3 % of the peak at the
+// cut is not limited (it was under the separation's 2 %), 9 % is, and
+// find_gr_peaks says so with the user's advice.
+const verifyConstraintLimit = async () => {
+    const reading = (limit) => shellCatalogue(constrainedGaSe(limit)).shell('Ga', 'Se').constraint;
+    const low = reading(2.13);
+    assert.ok(low.gFraction > SEPARATION_G_FRACTION && low.gFraction < CONSTRAINT_LIMIT_FRACTION, `3 %: g_fraction ${low.gFraction}`);
+    assert.equal(low.limited, false, '3 % of the peak at the cut was called constraint-limited');
+    const high = reading(2.18);
+    assert.ok(high.gFraction > CONSTRAINT_LIMIT_FRACTION, `9 %: g_fraction ${high.gFraction}`);
+    assert.equal(high.limited, true, '9 % of the peak at the cut was not called constraint-limited');
+    const tool = buildRunTools(constrainedGaSe(2.18)).find((item) => item.name === 'find_gr_peaks');
+    const { checks } = await tool.run({ pair: 'Ga-Se' });
+    assert.ok(checks.some((check) => check.level === 'warn'
+        && /constraint-limited: interpret nothing on its low-r side; consider rerunning with the constraint loosened/.test(check.text)),
+    'find_gr_peaks does not say constraint-limited with the user\'s advice');
+};
+
+// A run whose small F(Q)_1 term still falls (0.01 → 0.006 in χ² over the run)
+// while a large flat constraint term, charted last, holds the total flat
+// within its noise: the convergence rule on every term and the total.
+const termStillFalling = () => {
+    let seed = 17;
+    const uniform = () => {
+        seed = (seed * 16807) % 2147483647;
+        return seed / 2147483647;
+    };
+    const noise = () => Math.sqrt(-2 * Math.log(uniform())) * Math.cos(2 * Math.PI * uniform());
+    const n = 400;
+    const small = Array.from({ length: n }, (_, t) => 0.01 * Math.exp(-t / 800) * Math.exp(0.002 * noise()));
+    const large = Array.from({ length: n }, (_, t) => (t < 60 ? 20 - 0.15 * t : 11) * Math.exp(0.01 * noise()));
+    const ln = (values) => values.map((value) => Math.log(value));
+    return {
+        name: 'run-00.log',
+        plotData: {
+            chiColumn: 'Curvature',
+            series: [{ y: ln(large) }],
+            chiTerms: { names: ['F(Q)_1', 'Curvature'], series: [ln(small), ln(large)], total: ln(small.map((value, t) => value + large[t])), segments: [n] }
+        }
+    };
+};
+
+// The user's tiers for a direction (interview 2026-10-24, answers 3 and 4):
+// analyze_displacement_directions' directionTier, its facts and the answer
+// check "direction" (the interview answer checks, 2026-10-24).
+const FINDING_ENHANCEMENT = constant('DIRECTION_FINDING_ENHANCEMENT', DIRECTION_FINDING_ENHANCEMENT, 'copilotTools.js, directionTier');
+const HINT_SIGMA = constant('DIRECTION_HINT_SIGMA', DIRECTION_HINT_SIGMA, 'copilotTools.js, directionTier');
+const tierPayload = (peak, enhancement, frequency = 6, direction = [0, 0, 1]) => ({
+    ...orientationPayload({ peak, map: 0.5, frequency, direction }), peakEnhancement: enhancement
+});
+const verifyDirectionTiers = () => {
+    const held = tierPayload(3.4, 1.3, 5, [0, 0.1, 0.99]);
+    assert.deepEqual(directionTier(tierPayload(SIGNIFICANCE_SIGMA, DIRECTION_FINDING_ENHANCEMENT), held), { tier: 'finding', because: 'holds' });
+    assert.deepEqual(directionTier(tierPayload(SIGNIFICANCE_SIGMA, DIRECTION_FINDING_ENHANCEMENT - 0.01), held), { tier: 'hint', because: 'small_enhancement' });
+    assert.deepEqual(directionTier(tierPayload(SIGNIFICANCE_SIGMA - 1e-9, 2), held), { tier: 'hint', because: 'below_sigma' });
+    assert.deepEqual(directionTier(tierPayload(DIRECTION_HINT_SIGMA, 2), held), { tier: 'hint', because: 'below_sigma' });
+    assert.deepEqual(directionTier(tierPayload(DIRECTION_HINT_SIGMA - 1e-9, 2), held), { tier: 'none', because: 'below_hint_sigma' });
+    // The tool says the tier and the answer check reads it: a hint backs no preferred direction.
+    const hint = summarizeOrientation(tierPayload(4, 1.1), null);
+    assert.equal(hint.facts.direction.tier, 'hint');
+    assert.ok(hint.checks.some((check) => /^A hint of a direction, not a finding/.test(check.text)));
+    findsRule('Site 1 has a preferred displacement direction along [0 0 1].', { facts: [hint.facts] }, 'direction');
+};
+
 // --- BINDINGS -------------------------------------------------------------------------
 
 // `find` locates the sentence (in the text with its line breaks collapsed);
@@ -136,7 +281,7 @@ export const BINDINGS = [
     {
         file: ANISOTROPY,
         gate: 'a preferred direction',
-        find: '"Preferred direction" only with a',
+        find: '"Preferred direction" only for a finding (step 4:',
         number: /significance ≥ (?<n>\d+(?:\.\d+)?)σ/,
         constants: [SIGMA],
         statistic: { pattern: /\bpeak\b/, says: 'the peak test only (analyze_displacement_directions facts.direction.significant; the map test is anisotropy)' },
@@ -152,23 +297,67 @@ export const BINDINGS = [
         gate: 'the low-index family cone',
         find: 'Name the nearest low-index family (<100>, <110>, <111>) only when the angle to it is',
         number: /only when the angle to it is (?:under|within|below|less than|≤|<) ?(?<n>\d+(?:\.\d+)?) ?°/,
-        constants: [
-            constant('LOW_INDEX_CONE_DEG', LOW_INDEX_CONE_DEG, 'copilotTools.js, measure_symmetry_lowering'),
-            constant('AXIS_CONE_DEG', AXIS_CONE_DEG, 'workers/clusters.js, analyze_clusters\' axis families')
-        ]
+        constants: [LOW_INDEX_CONE, AXIS_CONE],
+        statistic: INCLUSIVE_CONE
+    },
+    {
+        file: ANISOTROPY,
+        gate: 'a resolved peak direction',
+        find: 'and the cell is no wider (`peak.radius_deg`',
+        number: /`peak\.radius_deg` ≤ (?<n>\d+(?:\.\d+)?)°/,
+        constants: [constant('LOW_INDEX_CONE_DEG', LOW_INDEX_CONE_DEG, 'copilotTools.js, directionResolved (the peak cell\'s radius)')],
+        verify: () => {
+            assert.equal(directionResolved(LOW_INDEX_CONE_DEG), true, 'a 15° cell did not resolve the direction');
+            assert.equal(directionResolved(LOW_INDEX_CONE_DEG + 0.1), false, 'a cell wider than 15° resolved the direction');
+        }
+    },
+    {
+        file: ANISOTROPY,
+        gate: 'the low-index family cone (checklist)',
+        find: 'the low-index family named only within',
+        number: /named only within (?<n>\d+(?:\.\d+)?) ?°/,
+        constants: [LOW_INDEX_CONE, AXIS_CONE]
     },
     {
         file: ANISOTROPY,
         gate: 'a split site',
-        find: 'flat or split, e.g. two wells',
-        before: 12,
-        number: /< ?(?<n>[−–-]?\d+(?:\.\d+)?) flat or split/,
-        constants: [constant('SPLIT_SITE_KURTOSIS', SPLIT_SITE_KURTOSIS, 'workers/clusters.js, isSplitSite (list_sites; the cluster verdict\'s split member sites)')],
-        statistic: { pattern: /\bPC1\b|per-axis/, says: `the PC1 excess kurtosis on a resolved axis, at least ${SPLIT_SITE_SE} sampling errors below zero` },
+        find: 'A site is split (two wells) only by the app\'s rule',
+        after: 160,
+        number: /whose excess kurtosis is ≤ (?<n>[−–-]?\d+(?:\.\d+)?) and/,
+        constants: [SPLIT_KAPPA],
+        statistic: PC1_RULE,
         verify: () => {
             const site = (kappa) => ({ referenceNumber: 1, count: 4000, axisResolved: [true, true, true], excessKurtosis: [kappa, 0, 0] });
             assert.equal(isSplitSite(site(SPLIT_SITE_KURTOSIS - 0.01)), true);
             assert.equal(isSplitSite(site(SPLIT_SITE_KURTOSIS + 0.01)), false, 'a kurtosis above the bound counted as split');
+        }
+    },
+    {
+        file: ANISOTROPY,
+        gate: 'a split site\'s sampling errors',
+        find: 'A site is split (two wells) only by the app\'s rule',
+        after: 160,
+        number: /and at least (?<n>\d+) sampling errors below zero/,
+        constants: [SPLIT_ERRORS],
+        verify: () => {
+            // κ₁ −0.93 at 216 copies is 2.8 errors below zero: not split; at 4000 copies it is.
+            const site = (count) => ({ referenceNumber: 1, count, axisResolved: [true, true, true], excessKurtosis: [-0.93, 0, 0] });
+            assert.equal(isSplitSite(site(216)), false, '2.8 sampling errors made a site split');
+            assert.equal(isSplitSite(site(4000)), true);
+        }
+    },
+    {
+        file: ANISOTROPY,
+        gate: 'a preferred direction (step 3)',
+        find: 'A preferred direction needs the peak test:',
+        number: /`peak\.significance_sigma` ≥ (?<n>\d+(?:\.\d+)?)σ, unrounded/,
+        constants: [SIGMA],
+        statistic: PEAK_TEST,
+        verify: () => {
+            // On the unrounded value: 2.996σ prints as 3 at three digits, yet it is no preferred direction.
+            const below = summarizeOrientation(orientationPayload({ peak: SIGNIFICANCE_SIGMA - 0.004, map: 0.5 }), null).facts.direction;
+            assert.equal(below.significant, false, 'a peak just below 3σ made a direction preferred');
+            assert.equal(below.peak_sigma, SIGNIFICANCE_SIGMA, 'the rounded σ no longer shows the case this guards');
         }
     },
     {
@@ -178,12 +367,73 @@ export const BINDINGS = [
         number: /found none at ≥ (?<n>\d+(?:\.\d+)?)σ/,
         constants: [SIGMA]
     },
+    // The user's three tiers (interview 2026-10-24, answer 3): the σ of each
+    // is the peak test's; the 1.2× and 2.5σ lines are directionTier's (the
+    // interview answer checks, 2026-10-24).
     {
         file: ANISOTROPY,
-        gate: 'the reported direction',
-        find: 'the strongest direction with its enhancement and σ',
-        number: /"none at ≥ (?<n>\d+(?:\.\d+)?)σ"/,
+        gate: 'a finding (step 4)',
+        find: '**a finding** (a preferred direction):',
+        number: /\(a preferred direction\): ≥ (?<n>\d+(?:\.\d+)?)σ and/,
         constants: [SIGMA]
+    },
+    {
+        file: ANISOTROPY,
+        gate: 'a finding\'s enhancement (step 4)',
+        find: '**a finding** (a preferred direction):',
+        number: /σ and ≥ (?<n>\d+(?:\.\d+)?)× isotropic/,
+        constants: [FINDING_ENHANCEMENT],
+        verify: () => verifyDirectionTiers()
+    },
+    {
+        file: ANISOTROPY,
+        gate: 'a hint (step 4)',
+        find: '**a hint**:',
+        number: /\*\*a hint\*\*: ≥ (?<n>\d+(?:\.\d+)?)σ under/,
+        constants: [SIGMA]
+    },
+    {
+        file: ANISOTROPY,
+        gate: 'a hint\'s enhancement (step 4)',
+        find: '**a hint**:',
+        number: /σ under (?<n>\d+(?:\.\d+)?)× isotropic/,
+        constants: [FINDING_ENHANCEMENT]
+    },
+    {
+        file: ANISOTROPY,
+        gate: 'nothing to report (step 4)',
+        find: '**nothing to report**',
+        number: /\*\*nothing to report\*\* below (?<n>\d+(?:\.\d+)?)σ/,
+        constants: [HINT_SIGMA],
+        verify: () => verifyDirectionTiers()
+    },
+    {
+        file: ANISOTROPY,
+        gate: 'nothing to report (report)',
+        find: '"nothing to report" (below',
+        number: /\(below (?<n>\d+(?:\.\d+)?)σ\)/,
+        constants: [HINT_SIGMA]
+    },
+    {
+        file: ANISOTROPY,
+        gate: 'a finding\'s enhancement (checklist)',
+        find: '"Preferred direction" only for a finding (step 4:',
+        number: /unrounded, and ≥ (?<n>\d+(?:\.\d+)?)× isotropic/,
+        constants: [FINDING_ENHANCEMENT]
+    },
+    {
+        file: ANISOTROPY,
+        gate: 'a cluster distortion\'s z (step 7)',
+        find: 'gyration-axis families against the shuffle null, with effect size and z, at',
+        number: /, at z ≥ (?<n>\d+(?:\.\d+)?) with the same sign/,
+        constants: [CLUSTER_SIGMA]
+    },
+    {
+        file: ANISOTROPY,
+        gate: 'a cluster distortion\'s z (checklist)',
+        find: 'Cluster-level claims rest on `analyze_clusters` (effect size and',
+        number: /effect size and z ≥ (?<n>\d+(?:\.\d+)?),/,
+        constants: [CLUSTER_SIGMA]
     },
     {
         file: SIGNIFICANCE,
@@ -191,7 +441,23 @@ export const BINDINGS = [
         find: 'counts as significant',
         before: 14,
         number: /≥ (?<n>\d+(?:\.\d+)?)σ counts as significant/,
-        constants: [SIGMA, ASYMMETRY_SIGMA, constant('CLUSTER_Z', CLUSTER_Z, 'workers/clusters.js')]
+        // The direction tool's σ; the cluster tool's z is bound in its own paragraph.
+        constants: [SIGMA, ASYMMETRY_SIGMA]
+    },
+    {
+        file: SIGNIFICANCE,
+        gate: 'a split site',
+        find: 'A site is split (two positions) only by the app\'s rule on its PC1',
+        number: /its excess kurtosis ≤ (?<n>[−–-]?\d+(?:\.\d+)?) and/,
+        constants: [SPLIT_KAPPA],
+        statistic: PC1_RULE
+    },
+    {
+        file: SIGNIFICANCE,
+        gate: 'a split site\'s sampling errors',
+        find: 'A site is split (two positions) only by the app\'s rule on its PC1',
+        number: /and at least (?<n>\d+) sampling errors below zero/,
+        constants: [SPLIT_ERRORS]
     },
     {
         file: SIGNIFICANCE,
@@ -239,47 +505,292 @@ export const BINDINGS = [
     },
     {
         file: SHELLS,
-        gate: 'a cut window (judgment call)',
-        find: 'modal-coordination threshold the app uses to call a window cut',
-        before: 12,
-        number: /The (?<n>\d+(?:\.\d+)?) % modal-coordination/,
-        unit: '%',
-        constants: [CN_MARGIN],
-        statistic: CN_MARGIN_STATISTIC
-    },
-    {
-        file: SHELLS,
-        gate: 'a cut window (firm rule)',
-        find: 'of the central atoms share the most common bond count',
-        before: 24,
-        number: /fewer than (?<n>\d+(?:\.\d+)?) % of the central atoms/,
-        unit: '%',
-        constants: [CN_MARGIN],
+        gate: 'a cut window: the CN margin\'s absolute part (firm rule)',
+        find: 'holds fewer partner atoms than the whole first shell by at least max(',
+        number: /by at least max\((?<n>\d+(?:\.\d+)?), \d+ % of the shell's CN\)/,
+        constants: [CN_MARGIN_ABS],
         statistic: CN_MARGIN_STATISTIC,
         verify: () => {
-            // A window that meets its shell is refused at the CN margin, whatever
-            // its counts: 15 % of a 6-atom shell is 0.9 atoms.
-            const margin = Math.max(CN_CHANGE_ABS, CN_CHANGE_REL * 6);
+            // Half an atom of a 2-atom shell (15 % of it is less), in the shell module and in compute_bond_angles.
+            const shell = { window: [2.2, 3.2], cn: 2 };
+            assert.equal(cnMarginCut(2 - CN_CHANGE_ABS - 0.01, shell, [2.3, 2.7]), true, 'a window 0.51 atoms short of a 2-atom shell was not cut');
+            assert.equal(cnMarginCut(2 - CN_CHANGE_ABS + 0.01, shell, [2.3, 2.7]), false, 'a window 0.49 atoms short of a 2-atom shell was cut');
             const uniform = bondAnglePayload([0, 0, 0, 0, 0, 100]);
-            const spread = bondAnglePayload([0, 0, 0, 0, 41, 0, 59]);
-            assert.ok(refused(summarizeBondAngles(uniform, { shells: [shellReading(6 - margin - 0.01)] })), 'a window 0.91 atoms short of a 6-atom shell was not refused');
-            assert.ok(!refused(summarizeBondAngles(spread, { shells: [shellReading(6 - margin + 0.01)] })), 'a window 0.89 atoms short of a 6-atom shell was refused on its counts');
-            // Its absolute part: half an atom of a 2-atom shell.
             assert.ok(refused(summarizeBondAngles(uniform, { shells: [shellReading(2 - CN_CHANGE_ABS - 0.01, 2)] })), 'a window 0.51 atoms short of a 2-atom shell was not refused');
             assert.ok(!refused(summarizeBondAngles(uniform, { shells: [shellReading(2 - CN_CHANGE_ABS + 0.01, 2)] })), 'a window 0.49 atoms short of a 2-atom shell was refused');
         }
     },
     {
         file: SHELLS,
-        gate: 'a window that misses the shell (firm rule)',
-        find: 'or most have none',
-        number: /or (?<n>most) have none/,
+        gate: 'a cut window: the CN margin\'s relative part (firm rule)',
+        find: 'holds fewer partner atoms than the whole first shell by at least max(',
+        number: /by at least max\(\d+(?:\.\d+)?, (?<n>\d+) % of the shell's CN\)/,
+        unit: '%',
         constants: [CN_MARGIN],
         statistic: CN_MARGIN_STATISTIC,
         verify: () => {
-            // A window that misses most of its shell holds fewer atoms than it by the margin: refused.
+            // 15 % of a 6-atom shell is 0.9 atoms; a window apart from the shell is not cut on the margin.
+            const shell = { window: [2.2, 3.2], cn: 6 };
+            const margin = Math.max(CN_CHANGE_ABS, CN_CHANGE_REL * 6);
+            assert.equal(cnMarginCut(6 - margin - 0.01, shell, [2.3, 2.7]), true, 'a window 0.91 atoms short of a 6-atom shell was not cut');
+            assert.equal(cnMarginCut(6 - margin + 0.01, shell, [2.3, 2.7]), false, 'a window 0.89 atoms short of a 6-atom shell was cut');
+            assert.equal(cnMarginCut(0, shell, [3.3, 3.8]), false, 'a window apart from the shell was cut on the margin');
+            // compute_bond_angles refuses on the margin wherever a shell is given, whatever its counts.
+            const uniform = bondAnglePayload([0, 0, 0, 0, 0, 100]);
+            const spread = bondAnglePayload([0, 0, 0, 0, 41, 0, 59]);
+            assert.ok(refused(summarizeBondAngles(uniform, { shells: [shellReading(6 - margin - 0.01)] })), 'a window 0.91 atoms short of a 6-atom shell was not refused');
+            assert.ok(!refused(summarizeBondAngles(spread, { shells: [shellReading(6 - margin + 0.01)] })), 'a window 0.89 atoms short of a 6-atom shell was refused on its counts');
             assert.ok(refused(summarizeBondAngles(bondAnglePayload([40, 0, 60]), { shells: [shellReading(1.2)] })), 'a window holding 1.2 of 6 was not refused');
         }
+    },
+    {
+        file: SHELLS,
+        gate: 'a cut window with no shell to compare (firm rule)',
+        find: 'of the central atoms share the most common bond count',
+        before: 24,
+        number: /fewer than (?<n>\d+(?:\.\d+)?) % of the central atoms/,
+        unit: '%',
+        constants: [MODAL_SHARE],
+        verify: () => {
+            // With no shell given, the counts decide: 59 of 100 central atoms share the modal count: refused; 61: kept.
+            assert.ok(refused(summarizeBondAngles(bondAnglePayload([0, 0, 0, 0, 41, 0, 59]))), 'a 59 % modal share was not refused');
+            assert.ok(!refused(summarizeBondAngles(bondAnglePayload([0, 0, 0, 0, 39, 0, 61]))), 'a 61 % modal share was refused');
+        }
+    },
+    {
+        file: SHELLS,
+        gate: 'a window that misses the shell, with no shell to compare (firm rule)',
+        find: 'or most have none',
+        number: /or (?<n>most) have none/,
+        constants: [UNBONDED_SHARE],
+        verify: () => {
+            // With no shell given, "most" is more than half: 51 of 100 central atoms with no bond → refused.
+            assert.ok(refused(summarizeBondAngles(bondAnglePayload([51, 0, 49]))), 'a window that misses 51 % was not refused');
+        }
+    },
+    {
+        file: SHELLS,
+        gate: 'a distortion\'s z (step 7)',
+        find: 'A distortion needs `analyze_clusters`\' effect size at',
+        number: /effect size at z ≥ (?<n>\d+(?:\.\d+)?)/,
+        constants: [CLUSTER_SIGMA]
+    },
+    {
+        file: SHELLS,
+        gate: 'a distortion\'s z (checklist)',
+        find: 'A distortion claim rests on the cluster effect size at',
+        number: /effect size at z ≥ (?<n>\d+(?:\.\d+)?)/,
+        constants: [CLUSTER_SIGMA]
+    },
+    {
+        file: SHELLS,
+        gate: 'the cluster elements: the fewest neighbours (step 7)',
+        find: 'own first shell is a finite cluster\'s (',
+        number: /a finite cluster's \((?<n>\d+(?:\.\d+)?)–\d+(?:\.\d+)? neighbours/,
+        constants: [CN_MATCH]
+    },
+    {
+        file: SHELLS,
+        gate: 'the cluster elements: the most neighbours (step 7)',
+        find: 'own first shell is a finite cluster\'s (',
+        number: /a finite cluster's \(\d+(?:\.\d+)?–(?<n>\d+(?:\.\d+)?) neighbours/,
+        constants: [constant('CLUSTER_CN_MAX', CLUSTER_CN_MAX, 'llm/context/shells.js, clusterElementsOf')],
+        verify: () => verifyClusterRule()
+    },
+    {
+        file: SHELLS,
+        gate: 'the split-shell join\'s reach (step 2)',
+        find: 'then joins a later peak within',
+        number: /joins a later peak within (?<n>\d+(?:\.\d+)?) Å of the first/,
+        constants: [SPLIT_REACH],
+        verify: () => {
+            // A second peak 0.45 Å out joins the shell (CN 6); 0.55 Å out it is the next shell's.
+            const near = cuF({ r2: 1.93 + SPLIT_SHELL_REACH_A - 0.05 });
+            assert.equal(near.joined, true, 'a second peak 0.45 Å from the first was not joined');
+            assert.ok(cnMatches(near.cn, 6), `the joined shell holds ${near.cn} F per Cu, not 6`);
+            assert.equal(cuF({ r2: 1.93 + SPLIT_SHELL_REACH_A + 0.05 }).joined, false, 'a second peak 0.55 Å from the first was joined');
+        }
+    },
+    {
+        file: SHELLS,
+        gate: 'the split-shell join\'s ideal counts (step 2)',
+        find: 'whose summed CN is an ideal polyhedral count',
+        number: /an ideal polyhedral count \((?<n>\d+(?:, \d+)*)\)/,
+        constants: [IDEAL_COUNTS],
+        verify: () => {
+            // 4 + 2 makes an octahedron: joined; 4 + 1 makes no ideal count either way: not joined.
+            assert.equal(cuF().joined, true, '4 + 2 F per Cu was not joined');
+            assert.equal(cuF({ second: 1 }).joined, false, '4 + 1 F per Cu (no ideal count) was joined');
+            assert.deepEqual(IDEAL_COORDINATION.filter((count) => isIdealCoordination(count)), [...IDEAL_COORDINATION]);
+        }
+    },
+    {
+        file: LOCAL_ORDER,
+        gate: 'a split site',
+        find: 'Note the split sites (two positions, by the app\'s rule',
+        number: /whose excess kurtosis is ≤ (?<n>[−–-]?\d+(?:\.\d+)?) and/,
+        constants: [SPLIT_KAPPA],
+        statistic: PC1_RULE
+    },
+    {
+        file: LOCAL_ORDER,
+        gate: 'a split site\'s sampling errors',
+        find: 'Note the split sites (two positions, by the app\'s rule',
+        number: /and at least (?<n>\d+) sampling errors below zero/,
+        constants: [SPLIT_ERRORS]
+    },
+    {
+        file: LOCAL_ORDER,
+        gate: 'the cluster elements: the fewest neighbours',
+        find: 'own first shell is closed and holds',
+        number: /closed and holds (?<n>\d+(?:\.\d+)?)–\d+(?:\.\d+)? neighbours/,
+        constants: [CN_MATCH]
+    },
+    {
+        file: LOCAL_ORDER,
+        gate: 'the cluster elements: the most neighbours',
+        find: 'own first shell is closed and holds',
+        number: /closed and holds \d+(?:\.\d+)?–(?<n>\d+(?:\.\d+)?) neighbours/,
+        constants: [constant('CLUSTER_CN_MAX', CLUSTER_CN_MAX, 'llm/context/shells.js, clusterElementsOf')]
+    },
+    {
+        file: LOCAL_ORDER,
+        gate: 'the lower group\'s margin above the noise floor',
+        find: 'lowest rung clearly above the noise floor (from',
+        number: /\(from (?<n>\d+(?:\.\d+)?) × `noise_floor_A`\)/,
+        constants: [FLOOR_MARGIN]
+    },
+    {
+        file: SYMMETRY,
+        gate: 'the lower group\'s margin above the noise floor (step 4)',
+        find: 'A rung below `noise_floor_A` is within the noise of the site means. A',
+        number: /rung at or above (?<n>\d+(?:\.\d+)?) × `noise_floor_A` \(the app's margin\)/,
+        constants: [FLOOR_MARGIN]
+    },
+    {
+        file: SYMMETRY,
+        gate: 'the limit of the sampling (step 4)',
+        find: 'A rung between the floor and',
+        number: /between the floor and (?<n>\d+(?:\.\d+)?) × it/,
+        constants: [FLOOR_MARGIN],
+        verify: () => verifyToleranceRule()
+    },
+    {
+        file: SYMMETRY,
+        gate: 'a lower-symmetry CIF (step 7)',
+        find: '(the Detected SG card\'s export) only for a rung at or above',
+        number: /only for a rung at or above (?<n>\d+(?:\.\d+)?) ×/,
+        constants: [FLOOR_MARGIN]
+    },
+    {
+        file: LOCAL_ORDER,
+        gate: 'an empty directions analysis',
+        find: 'Empty means no peak at',
+        number: /no peak at ≥ (?<n>\d+(?:\.\d+)?)σ/,
+        constants: [SIGMA],
+        statistic: PEAK_TEST
+    },
+    {
+        file: LOCAL_ORDER,
+        gate: 'a long wave',
+        find: 'A long wave (every |q_i|',
+        number: /every \|q_i\| ≤ (?<n>\d+(?:\.\d+)?)\)/,
+        constants: [LONG_WAVE],
+        verify: () => {
+            assert.equal(isLongWave([LONG_WAVE_Q, -LONG_WAVE_Q, 0]), true, '|q_i| = 0.25 is no long wave');
+            assert.equal(isLongWave([0.3, 0, 0]), false, '|q_i| = 0.3 is a long wave');
+            assert.equal(isLongWave([0.5, 0, 0]), false, 'a zone-boundary point is a long wave');
+        }
+    },
+    {
+        file: LOCAL_ORDER,
+        gate: 'the reported order',
+        find: 'the order found, or "none at',
+        number: /"none at ≥ (?<n>\d+(?:\.\d+)?)σ"/,
+        constants: [SIGMA, ORDER_SIGMA, CLUSTER_SIGMA]
+    },
+    {
+        file: ORDER_SIGNATURES,
+        gate: 'an ordered zone-boundary point: the ratio',
+        find: '`analyze_modulations`: the zone-boundary point,',
+        number: /the zone-boundary point, ratio ≥ (?<n>\d+(?:\.\d+)?) and/,
+        constants: [ORDER_RATIO]
+    },
+    {
+        file: ORDER_SIGNATURES,
+        gate: 'an ordered zone-boundary point: the significance',
+        find: '`analyze_modulations`: the zone-boundary point,',
+        number: /the zone-boundary point, ratio ≥ \d+(?:\.\d+)? and ≥ (?<n>\d+(?:\.\d+)?)σ/,
+        constants: [ORDER_SIGMA]
+    },
+    {
+        file: ORDER_SIGNATURES,
+        gate: 'order at a general wavevector: the ratio',
+        find: 'neither zone boundary nor long wave,',
+        number: /nor long wave, ratio ≥ (?<n>\d+(?:\.\d+)?) and/,
+        constants: [ORDER_RATIO]
+    },
+    {
+        file: ORDER_SIGNATURES,
+        gate: 'order at a general wavevector: the significance',
+        find: 'neither zone boundary nor long wave,',
+        number: /nor long wave, ratio ≥ \d+(?:\.\d+)? and ≥ (?<n>\d+(?:\.\d+)?)σ/,
+        constants: [ORDER_SIGMA]
+    },
+    {
+        file: SYMMETRY,
+        gate: 'the lower group\'s margin above the noise floor',
+        find: '"The" group is the lowest rung at or above',
+        number: /lowest rung at or above (?<n>\d+(?:\.\d+)?) × `noise_floor_A`/,
+        constants: [FLOOR_MARGIN],
+        verify: () => verifyToleranceRule()
+    },
+    {
+        file: FIT,
+        gate: 'a long wave (step 7)',
+        find: 'A long wave has every |q_i|',
+        number: /every \|q_i\| ≤ (?<n>\d+(?:\.\d+)?) of the cell/,
+        constants: [LONG_WAVE]
+    },
+    {
+        file: FIT,
+        gate: 'the order rule\'s ratio',
+        find: 'The test, as `analyze_modulations` applies it:',
+        number: /it: ratio ≥ (?<n>\d+(?:\.\d+)?) and/,
+        constants: [ORDER_RATIO],
+        verify: () => assert.deepEqual([MODULATION_RULES.ratio, MODULATION_RULES.sigma], [MODULATION_RATIO, MODULATION_SIGMA])
+    },
+    {
+        file: FIT,
+        gate: 'the order rule\'s significance',
+        find: 'The test, as `analyze_modulations` applies it:',
+        number: /and ≥ (?<n>\d+(?:\.\d+)?)σ against independent cells/,
+        constants: [ORDER_SIGMA]
+    },
+    {
+        file: FIT,
+        gate: 'a long wave (checklist)',
+        find: 'No order is claimed at a box-scale wavevector',
+        number: /every \|q_i\| ≤ (?<n>\d+(?:\.\d+)?)\)/,
+        constants: [LONG_WAVE]
+    },
+    {
+        file: FIT,
+        gate: 'a long wave (firm rule)',
+        find: 'an answer that claims order at a box-scale wavevector',
+        number: /every \|q_i\| ≤ (?<n>\d+(?:\.\d+)?)\)/,
+        constants: [LONG_WAVE]
+    },
+    {
+        // The user's line (interview 2026-10-24): 5 %, the shell module's own constant since the
+        // fit-assessment code PR (the shell separation keeps SEPARATION_G_FRACTION, 2 %).
+        file: FIT,
+        gate: 'a constraint-limited peak (step 4)',
+        find: 'When g(r) just above the cut is above',
+        number: /is above (?<n>\d+(?:\.\d+)?) % of the peak/,
+        unit: '%',
+        constants: [constant('CONSTRAINT_LIMIT_FRACTION', CONSTRAINT_LIMIT_FRACTION, 'llm/context/shells.js, the constraint-limited test (find_gr_peaks\' warning and g_at_constraint_fraction, the context\'s cut_at_min_distance)')],
+        verify: () => verifyConstraintLimit()
     }
 ];
 
@@ -288,8 +799,35 @@ export const BINDINGS = [
 // A number after a comparator that no module decides with: `find` holds it.
 export const NOT_GATES = [
     { file: ANISOTROPY, find: '> 0 heavy-tailed or peaked', why: 'the sign convention of Mardia\'s kurtosis (0 for a Gaussian); the app decides nothing at it' },
-    { file: ANISOTROPY, find: 'under 1.2× isotropic', why: 'a judgment call (to confirm with the user); no module applies an enhancement threshold to a direction' },
+    { file: ANISOTROPY, find: '< 0 flat-topped', why: 'the sign convention of Mardia\'s kurtosis; a split site is the app\'s PC1 rule, bound below' },
+    {
+        file: ANISOTROPY,
+        find: 'the same sign in at least 3 independent runs (the',
+        why: 'the user\'s bar for a cluster distortion (interview 2026-10-24, answer 5; the coordination-shells skill\'s bar): every tool reads one run, no module decides it'
+    },
+    { file: ANISOTROPY, find: 'the same sign in at least 3 independent runs).', why: 'the user\'s bar for a cluster distortion (interview 2026-10-24, answer 5), in the checklist: no module decides it' },
+    {
+        file: ANISOTROPY,
+        find: 'finds the order at (0, 0, ½) at > 8σ',
+        why: 'measured on the zone-boundary dev case, written as analyze_modulations writes a σ above 8 ("> 8σ"): a value, not a threshold'
+    },
     { file: SHELLS, find: 'a broad shoulder below 180°', why: 'geometry (the trans angle), not a threshold' },
+    { file: SHELLS, find: 'the same sign in at least 3 independent runs, and', why: 'the user\'s bar for a distortion (interview 2026-10-24): every tool reads one run, no module decides it' },
+    { file: SHELLS, find: 'the same sign in at least 3 independent runs and', why: 'the user\'s bar for a distortion (interview 2026-10-24), in the checklist: no module decides it' },
+    { file: ORDER_SIGNATURES, find: '9.1× isotropic', why: 'the two-site dev case\'s measured peak enhancement, not a threshold' },
+    { file: ORDER_SIGNATURES, find: '498× the median, > 8σ', why: 'measured on the ordered-antiphase dev case (a σ above 8 as analyze_modulations writes it): not a threshold' },
+    { file: ORDER_SIGNATURES, find: 'every kurtosis within ±0.15', why: 'the range of the thermal-only dev case\'s measured kurtoses, not a gate' },
+    {
+        file: FIT,
+        find: 'at least 3 independent runs or configurations and at least 10 accepted moves per atom',
+        why: 'the user\'s sampling bar (interview 2026-10-24): no module decides the 3 runs or the 10 moves; the answer check "single-configuration" flags a distribution quoted without saying it is one configuration\'s'
+    },
+    { file: FIT, find: 'a partial under 5 % of the signal', why: 'the user\'s line for a weakly weighted partial (interview 2026-10-24): the context gives the weights, no module decides at 5 %' },
+    {
+        file: LOCAL_ORDER,
+        find: 'A partial under 5 % of the signal is',
+        why: 'the user\'s line for a weakly weighted partial (interview 2026-10-24, answer 3; rmc-fit-assessment\'s too): the context gives the weights, no module decides at 5 %'
+    },
     { file: 'rmc-fit-assessment/run-numbers.md', find: 'with a doubled cell below 29 K', why: 'a published transition temperature' }
 ];
 
@@ -305,16 +843,61 @@ export const FIRM_RULES = [
         probe: () => {
             const { facts } = summarizeOrientation(orientationPayload({ peak: 1.2, map: 0.5 }), null);
             findsRule('Site 1 has a preferred displacement direction along [1 1 1].', { facts: [facts] }, 'direction');
-            const significant = summarizeOrientation(orientationPayload({ peak: 4, map: 0.5 }), null).facts;
-            assert.deepEqual(judgeAnswer('Site 1 has a preferred displacement direction along [1 1 1].', { facts: [significant] }).audit, []);
+            // A finding passes (the user's tiers, 2026-10-24); a 4σ peak that is only a hint does not.
+            const finding = directionFinding(4).facts;
+            assert.equal(finding.direction.tier, 'finding');
+            assert.deepEqual(judgeAnswer('Site 1 has a preferred displacement direction along [1 1 1].', { facts: [finding] }).audit, []);
+            const unchecked = summarizeOrientation(orientationPayload({ peak: 4, map: 0.5 }), null).facts;
+            findsRule('Site 1 has a preferred displacement direction along [1 1 1].', { facts: [unchecked] }, 'direction');
             lowersOutcome('Site 1 has a preferred displacement direction.', { facts: [facts] });
         }
     },
     {
+        file: ANISOTROPY,
+        find: 'only the peak test makes a direction significant; the map test is reported as anisotropy',
+        enforcedBy: 'analyze_displacement_directions\' facts.direction (summarizeOrientation: significant on the peak test, anisotropic on the map test) and its checks',
+        probe: () => {
+            // The thermal-only O of the skill: map 7.2σ, peak 2.3σ.
+            const thermal = summarizeOrientation(orientationPayload({ peak: 2.3, map: 7.2 }), null);
+            assert.equal(thermal.facts.direction.significant, false, 'a map test alone made a direction significant');
+            assert.equal(thermal.facts.direction.anisotropic, true, 'the map test is not reported as anisotropy');
+            assert.ok(thermal.checks.some((check) => /anisotropic/.test(check.text) && /not a preferred direction/.test(check.text)),
+                'the checks do not call a map test alone anisotropy, not a preferred direction');
+            assert.ok(!thermal.checks.some((check) => /^Preferred direction/.test(check.text)), 'a map test alone named a preferred direction');
+            assert.equal(summarizeOrientation(orientationPayload({ peak: SIGNIFICANCE_SIGMA, map: 0.5 }), null).facts.direction.significant, true,
+                'the peak test at 3σ did not make a direction significant');
+        }
+    },
+    {
         file: SHELLS,
-        find: '`compute_bond_angles` refuses a window in which fewer than',
-        enforcedBy: 'compute_bond_angles\' refusal (summarizeBondAngles, by the one cut rule: shells.js windowCut, the Workbench\'s) and its window_confirmed parameter',
-        probe: async ({ tools, bondAngles } = {}) => {
+        find: '`find_gr_peaks` joins the split shell (CN 6) and offers the first peak alone as `first_peak_only`',
+        enforcedBy: 'find_gr_peaks\' join (shells.js readShell: SPLIT_SHELL_REACH_A, IDEAL_COORDINATION), the Workbench\'s window question '
+            + '(clarify.js beforeCall, on the CN margin) and the answer check "coordination" (the verification\'s FACTS)',
+        probe: async () => {
+            const run = splitShellRun();
+            const tool = buildRunTools(run).find((item) => item.name === 'find_gr_peaks');
+            assert.ok(tool, 'no find_gr_peaks for a run with partials');
+            const { data, facts } = await tool.run({ pair: 'Cu-F' });
+            assert.ok(cnMatches(data.first_shell?.cn?.F_per_Cu, 6), 'find_gr_peaks did not join the CuF6 shell (CN 6)');
+            const alone = data.first_shell.first_peak_only;
+            assert.ok(alone && cnMatches(alone.cn?.F_per_Cu, 4), 'find_gr_peaks does not offer the first peak alone (CN 4)');
+            // The Workbench asks before an analysis runs in the first peak alone; the whole shell runs unasked.
+            const clarifier = buildClarifier(run);
+            assert.equal(clarifier.beforeCall(windowedAnalysis, { lo: alone.window_A[0], hi: alone.window_A[1] })?.kind, 'cut',
+                'the Workbench did not ask before an analysis in the first peak alone');
+            assert.equal(clarifier.beforeCall(windowedAnalysis, { lo: data.first_shell.window_A[0], hi: data.first_shell.window_A[1] }), null,
+                'the Workbench asked about the whole shell');
+            // An answer that makes Cu four-coordinate gets a warning under it.
+            findsRule('Cu is four-coordinate.', { facts: [facts] }, 'coordination');
+            lowersOutcome('Cu is four-coordinate.', { facts: [facts] });
+        }
+    },
+    {
+        file: SHELLS,
+        find: '`compute_bond_angles` refuses, unless `window_confirmed` is set, a window that holds fewer partner atoms than the whole first shell',
+        enforcedBy: 'compute_bond_angles\' refusal (summarizeBondAngles, by the one cut rule, shells.js windowCut: the CN margin, cnMarginCut, where '
+            + 'a window meets its shell; the coordination counts, countsCut, where there is no shell to compare) and its window_confirmed parameter',
+        probe: async ({ tools, bondAngles, catalogue } = {}) => {
             // A window that cuts its shell (4 of 6), its counts uniform: refused,
             // with the counts and the shell reading that show the cut.
             const cut = bondAnglePayload([0, 0, 0, 0, 100]);
@@ -328,11 +911,17 @@ export const FIRM_RULES = [
             assert.ok(refused(summarizeBondAngles(bondAnglePayload([0, 2, 30, 40, 20, 8, 0]))), 'with no shell, a 40 % modal share returned its angles');
             const tool = tools?.get('compute_bond_angles');
             if (tools) assert.ok(tool?.parameters?.properties?.window_confirmed, 'compute_bond_angles has no window_confirmed parameter');
-            // On the Demo, as the app runs it: the Ta–Se first peak (3.25 of 6) is refused.
-            if (bondAngles) {
-                const firstPeak = await bondAngles({ end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.21, r12_max: 2.65 });
-                assert.equal(typeof firstPeak.refused, 'string', 'the Demo\'s Ta–Se first peak returned its angles');
-            }
+            if (!tool || !bondAngles || !catalogue) return;
+            // On the Demo, as the app runs it: the Ta–Se first peak (3.25 of 6) and the spot check's
+            // 2.3–2.7 Å window are cut on the CN margin and refused; the user's window is kept; the
+            // whole shell runs.
+            assert.equal(typeof (await bondAngles({ ...SE_TA_SE, r12_min: 2.21, r12_max: 2.65 })).refused, 'string', 'the Demo\'s Ta–Se first peak returned its angles');
+            assert.equal(catalogue.window('Ta', 'Se', [2.3, 2.7])?.cnMargin.cut, true, 'the 2.3–2.7 Å Ta–Se window is not cut on the CN margin');
+            assert.equal(typeof (await bondAngles({ ...SE_TA_SE, r12_min: 2.3, r12_max: 2.7 })).refused, 'string', 'the Demo\'s 2.3–2.7 Å window returned its angles');
+            const kept = (await tool.run({ ...SE_TA_SE, r12_min: 2.3, r12_max: 2.7, window_confirmed: true })).data;
+            assert.ok(!kept.refused && 'mean_deg' in kept, 'window_confirmed did not keep the user\'s window on the Demo');
+            const [lo, hi] = catalogue.shell('Ta', 'Se').window;
+            assert.ok(!(await bondAngles({ ...SE_TA_SE, r12_min: lo, r12_max: hi })).refused, 'the whole Ta–Se shell was refused');
         }
     },
     {
@@ -368,6 +957,168 @@ export const FIRM_RULES = [
             assert.equal(context.convergence?.watchdog_status, 'improving', 'the context\'s watchdog_status is not improving');
             findsRule('The run has converged.', { context }, 'convergence');
             lowersOutcome('The run has converged.', { context });
+        }
+    },
+    {
+        file: FIT,
+        find: 'an answer that claims order at a box-scale wavevector',
+        enforcedBy: 'the answer check "long-wave" (the verification\'s FACTS, the modulation row), from analyze_modulations\' facts.modulation.long_wave_q (the engine\'s LONG_WAVE_Q, isLongWave)',
+        probe: async ({ tools } = {}) => {
+            // The facts as analyze_modulations returns them: the engine's bound, a long wave among the strongest modes.
+            const q = [0.1, 0.2, -0.1];
+            assert.equal(isLongWave(q), true);
+            const facts = { modulation: { elements: ['Se'], ordered: [], general: [], long_wave_q: MODULATION_RULES.longWaveQ, long_waves: [{ element: 'Se', q }] } };
+            findsRule('Se is ordered at q = (0.1, 0.2, -0.1).', { facts: [facts] }, 'long-wave');
+            findsRule('The Se displacements show a long-wavelength modulation.', { facts: [facts] }, 'long-wave');
+            lowersOutcome('Se is ordered at q = (0.1, 0.2, -0.1).', { facts: [facts] });
+            // The user's own wording, and a point that passed its own test at another q, raise no finding.
+            const said = judgeAnswer('Se\'s strongest mode, q = (0.1, 0.2, -0.1), is a long wave: a correlation the finite box can\'t represent, so it says nothing about order at its own q.', { facts: [facts] });
+            assert.deepEqual(said.audit, []);
+            const ordered = { modulation: { ...facts.modulation, ordered: [{ element: 'Se', q: [0, 0, 0.5] }] } };
+            assert.deepEqual(judgeAnswer('Se is ordered at q = (0, 0, ½).', { facts: [ordered] }).audit, []);
+            // On the Demo: the tool's facts carry the engine's bound.
+            const modulations = tools?.get('analyze_modulations');
+            if (modulations) {
+                const result = await modulations.run({});
+                assert.equal(result.facts.modulation.long_wave_q, LONG_WAVE_Q, 'analyze_modulations\' facts do not carry the long-wave bound');
+                assert.ok(result.facts.modulation.long_waves.every((wave) => isLongWave(wave.q)));
+            }
+        }
+    },
+    {
+        file: FIT,
+        find: 'an answer that quotes a distribution from a single configuration without saying so',
+        enforcedBy: 'the answer check "single-configuration" (the verification\'s FACTS, the distribution row), from compute_bond_angles\', analyze_displacement_directions\' and analyze_clusters\' facts.distribution',
+        probe: async ({ tools } = {}) => {
+            // A bond-angle distribution the tool returned (the counts uniform: not refused).
+            const { facts } = summarizeBondAngles(bondAnglePayload([0, 0, 0, 0, 0, 0, 1000]));
+            assert.equal(facts.distribution?.configurations, 1, 'compute_bond_angles returns no distribution fact');
+            findsRule('Se–Ta–Se angles: mean 100°, sd 20°.', { facts: [facts] }, 'single-configuration');
+            lowersOutcome('Se–Ta–Se angles: mean 100°, sd 20°.', { facts: [facts] });
+            // Its window stated (the coordination-shells interview's window check, 2026-10-24).
+            assert.deepEqual(judgeAnswer('In this one configuration the Se–Ta–Se angles in 2.3–2.7 Å have mean 100°, sd 20°.', { facts: [facts] }).audit, []);
+            const directions = summarizeOrientation(orientationPayload({ peak: 1.2, map: 0.5 }), null).facts;
+            assert.equal(directions.distribution?.kind, 'directions', 'analyze_displacement_directions returns no distribution fact');
+            // On the Demo: the whole GaSe4 shell's angles.
+            const angles = tools?.get('compute_bond_angles');
+            if (angles) {
+                const result = await angles.run({ end1: 'Se', apex: 'Ga', end2: 'Se', r12_min: 2.18, r12_max: 2.79 });
+                findsRule('Se–Ga–Se angles: mean 109.4°, sd 4.1°.', { facts: [result.facts] }, 'single-configuration');
+            }
+        }
+    },
+    {
+        file: FIT,
+        find: 'the Outcome is computed from the checks; the model\'s line only explains it',
+        enforcedBy: 'the computed verdict (verification/verdict.js computeOutcome; the model\'s Outcome line is read by outcome.js as `claimed` only)',
+        probe: () => {
+            // A check contradicts the answer: not verified, whatever grade the model's line gives.
+            const { facts } = summarizeOrientation(orientationPayload({ peak: 1.2, map: 0.5 }), null);
+            const contradicted = judgeAnswer('Site 1 has a preferred displacement direction.\n\nOutcome: achieved — the direction is clear.', { facts: [facts] });
+            assert.equal(contradicted.outcome.status, 'not verified', 'the model\'s "achieved" set the Outcome');
+            assert.equal(contradicted.outcome.claimed, 'achieved');
+            assert.equal(contradicted.outcome.computed, true);
+            // Nothing contradicts it: the computed Outcome, which the model's line may lower but never raise.
+            assert.equal(judgeAnswer('The run is still improving.\n\nOutcome: partial — more steps would help.').outcome.status, 'partial');
+        }
+    },
+    {
+        file: LOCAL_ORDER,
+        find: 'an answer that claims a superstructure, a cluster distortion, breathing, rigidity or a preferred direction',
+        enforcedBy: 'the answer checks "superstructure", "cluster" and "direction" (the verification\'s FACTS) and the evidence gate\'s "no order" row '
+            + '(claims.js: analyze_modulations, analyze_displacement_directions with site_ref, analyze_clusters for each element clusterElementsOf names; THY-18)',
+        probe: () => {
+            findsRule('This structure has a superstructure: a cell doubling.', { facts: [{ modulation: { elements: ['Ti'], ordered: [], general: [] } }] }, 'superstructure');
+            const cluster = {
+                cluster: { element: 'Mo', members: 3, window: [2.5, 2.9], distorted: false, static: false, breathing: false, rigid: false, split: false, families: [] }
+            };
+            findsRule('The Mo3 clusters are distorted.', { facts: [cluster] }, 'cluster');
+            findsRule('The Mo3 clusters breathe.', { facts: [cluster] }, 'cluster');
+            findsRule('The Mo3 clusters are rigid.', { facts: [cluster] }, 'cluster');
+            findsRule('Site 1 has a preferred displacement direction.', { facts: [summarizeOrientation(orientationPayload({ peak: 1.2, map: 0.5 }), null).facts] }, 'direction');
+            // "No order" before its analyses ran is sent back to run them.
+            const catalog = { elements: ['Mo', 'O'], shell: (a, b) => (a === b ? { cn: a === 'Mo' ? 2 : 8 } : null) };
+            const judged = createVerification({ catalog }).judge('There is no local order beyond thermal motion.', { canSendBack: true });
+            assert.ok(judged?.sendBack, 'a "no order" answer before its analyses was not sent back');
+            assert.equal(judged.sendBack.id, 'no-order');
+            assert.deepEqual(judged.sendBack.missing.map((item) => item.split(' ')[0]), ['analyze_modulations', 'analyze_displacement_directions', 'analyze_clusters']);
+            assert.ok(judged.sendBack.missing[2].startsWith('analyze_clusters for Mo'), 'the gate does not ask for the finite-cluster element');
+        }
+    },
+    // The interviewed skills' firm rules (2026-10-24), built by the interview answer checks.
+    {
+        file: SHELLS,
+        find: 'every CN or angle in an answer carries its window in Å',
+        enforcedBy: 'the answer check "window" (the verification\'s FACTS, the coordination row), from find_gr_peaks\' and compute_bond_angles\' facts.coordination',
+        probe: () => {
+            const counted = { coordination: { centre: 'Ta', partner: 'Se', window: [2.21, 3.23], cn: 6, whole_shell: true, confirmed: false } };
+            findsRule('Each Ta is 6-coordinated by Se.', { facts: [counted] }, 'window');
+            findsRule('The Se–Ta–Se angles split into cis near 89° and trans near 159°.', { facts: [counted] }, 'window');
+            lowersOutcome('Each Ta is 6-coordinated by Se.', { facts: [counted] });
+            assert.deepEqual(judgeAnswer('In the whole Ta–Se first shell, 2.21–3.23 Å, each Ta has 6 Se.', { facts: [counted] }).audit, []);
+        }
+    },
+    {
+        file: SYMMETRY,
+        find: 'an answer that claims a group–subgroup relation that',
+        enforcedBy: 'the answer check "subgroup" (the verification\'s FACTS, the groups row), from the context\'s ladder (operations in the cell, rank) and detect_symmetry\'s facts, else the point groups (pointGroups.js isPointSubgroup)',
+        probe: () => {
+            const context = buildRunContext({ symmetry: demoSymmetry });
+            findsRule('P-42₁m is a t-subgroup of F-43m.', { context }, 'subgroup');
+            findsRule('F-43m lowers to P4/mmm.', { context }, 'subgroup');
+            lowersOutcome('P-42₁m is a t-subgroup of F-43m.', { context });
+            assert.deepEqual(judgeAnswer('P-42₁m is a subgroup of F-43m of index 12.', { context }).audit, []);
+        }
+    },
+    {
+        file: SYMMETRY,
+        find: 'an answer that claims a cell doubling the box\'s average',
+        enforcedBy: 'the answer check "cell-doubling" (the verification\'s FACTS, the modulation row), from the context\'s box (structure.supercell) and analyze_modulations\' ordered points',
+        probe: () => {
+            const odd = { structure: { supercell: [5, 5, 5], elements: { Ti: 125, O: 375 } } };
+            findsRule('The Ti displacements double the cell along c.', { context: odd }, 'cell-doubling');
+            lowersOutcome('The Ti displacements double the cell along c.', { context: odd });
+            assert.deepEqual(judgeAnswer('This box (5 × 5 × 5) cannot hold a doubled cell, so it can neither confirm nor rule out the doubling.',
+                { context: odd }).audit, []);
+            const ordered = [{ modulation: { elements: ['Ti'], ordered: [{ element: 'Ti', q: [0.5, 0, 0] }], general: [], long_wave_q: 0.25, long_waves: [] } }];
+            findsRule('The Ti order doubles the cell along c.', { facts: ordered, context: { structure: { supercell: [8, 8, 8], elements: { Ti: 512 } } } }, 'cell-doubling');
+        }
+    },
+    {
+        file: ANISOTROPY,
+        find: 'an answer that calls a split or flat-topped site "disorder"',
+        enforcedBy: 'the answer check "disorder" (the verification\'s FACTS, the sites row), from list_sites\' facts.sites and analyze_modulations\' tested elements; the evidence gate\'s split-site row (claims.js) reads a flat-topped site called disordered too',
+        probe: () => {
+            const sites = { sites: [{ ref: 3, element: 'Ti', elements: ['Ti'], split: true, flat: false }, { ref: 5, element: 'O', elements: ['O'], split: false, flat: true }] };
+            findsRule('Site 3 is disordered.', { facts: [sites] }, 'disorder');
+            findsRule('Site 5 (O) is statically disordered.', { facts: [sites] }, 'disorder');
+            lowersOutcome('Site 3 is disordered.', { facts: [sites] });
+            const tested = { modulation: { elements: ['Ti', 'O'], ordered: [], general: [], long_wave_q: 0.25, long_waves: [] } };
+            assert.deepEqual(judgeAnswer('Site 3 is disordered.', { facts: [sites, tested] }).audit, []);
+            const gate = createVerification().judge('The flat-topped O site is disordered.', { canSendBack: true });
+            assert.equal(gate?.sendBack?.id, 'split-site', 'the gate does not send a flat-topped site called disordered back');
+        }
+    },
+    {
+        file: LOCAL_ORDER,
+        find: 'an answer that concludes "no order" is refused until every',
+        enforcedBy: 'the evidence gate\'s "no order" row (claims.js): analyze_modulations (its diffuse verdict included), a per-site directions map, '
+            + 'analyze_clusters for each element clusterElementsOf names, and polyhedral_distortion for each centre networkCentresOf names, where the turn offers it',
+        probe: () => {
+            // A perovskite's shells: Ti centres TiO₆ (Ti–Ti six: no finite cluster).
+            const shells = {
+                'Ti-O': { window: [1.66, 2.3], cn: 6 }, 'Ti-Ti': { window: [3.6, 4.2], cn: 6 }, 'O-Ti': { window: [1.66, 2.3], cn: 2 },
+                'O-O': { window: [2.5, 3.1], cn: 8 }
+            };
+            const catalog = { elements: ['O', 'Ti'], shell: (a, b) => shells[`${a}-${b}`] ?? null };
+            assert.deepEqual(networkCentresOf(catalog), ['Ti']);
+            const answer = 'There is no local order beyond thermal motion.';
+            const missing = (offered) => createVerification({ catalog, offered }).judge(answer).done.audit[0]?.missing ?? [];
+            assert.deepEqual(missing(null), ['analyze_modulations', 'analyze_displacement_directions on each kind of site (site_ref)',
+                'polyhedral_distortion for Ti (centre Ti: its polyhedra form no finite cluster)']);
+            // Not offered: never asked; the rest of the list stands.
+            assert.deepEqual(missing(['analyze_modulations', 'analyze_displacement_directions', 'analyze_clusters']),
+                ['analyze_modulations', 'analyze_displacement_directions on each kind of site (site_ref)']);
         }
     }
 ];
@@ -608,7 +1359,22 @@ export const VALUES = [
 // entry repeats them), and `verify` checks the app and A+ apply `app`.
 const SPLIT_RULE = `PC1 resolved, its excess kurtosis ≤ ${String(SPLIT_SITE_KURTOSIS).replace('-', '−')} and ≥ ${SPLIT_SITE_SE} sampling errors below 0 (isSplitSite)`;
 const CLUSTER_RULE = `analyze_clusters for each element whose own first shell holds 0.5–${CLUSTER_CN_MAX} neighbours (clusterElementsOf, CLUSTER_CN_MAX)`;
+const CONVERGENCE_RULE = `every χ² term of the .log and their total, none still falling beyond ${TREND_NOISE_FACTOR} × its noise (the scatter about `
+    + `its least-squares line) over the last tenth (≥ ${TREND_MIN_ROWS} rows, from the last restart): assess_convergence, the watchdog and the `
+    + 'context\'s watchdog_status (watchdog/heuristics.js judgeConvergence)';
 const TOLERANCE_RULE = `a group counts where it holds to ${NOISE_FLOOR_MARGIN} × the noise floor (lowerGroupTolerance, NOISE_FLOOR_MARGIN)`;
+// analyze_displacement_directions since the interview answer checks
+// (2026-10-24): three tiers, a finding at two resolutions.
+const DIRECTION_TIERS_RULE = `a finding at a peak σ ≥ ${SIGNIFICANCE_SIGMA} (unrounded) and ≥ ${DIRECTION_FINDING_ENHANCEMENT}× isotropic that holds at a `
+    + `neighbouring resolution; a hint at ≥ ${SIGNIFICANCE_SIGMA}σ under ${DIRECTION_FINDING_ENHANCEMENT}×, at ${DIRECTION_HINT_SIGMA}–${SIGNIFICANCE_SIGMA}σ `
+    + `or not held; nothing below ${DIRECTION_HINT_SIGMA}σ (directionTier; the answer check "direction" takes a finding only)`;
+const DIRECTION_RESOLUTION_RULE = 'a finding holds at the Auto ν and at ν ± 1 — the tool reads ν − 1 (ν + 1 at ν = 1) for a candidate, and a call at '
+    + 'ν ± 1 the Auto ν — passing its own peak test on the same axis within the two cells\' radii; one resolution alone is a hint '
+    + '(directionHolds, neighbourFrequency)';
+// Order between cells as the answer checks and arm A+ read the diffuse verdict
+// (the interview answer checks, 2026-10-24): antiphase only.
+const BETWEEN_CELLS_RULE = 'the diffuse verdict in antiphase past its bar is order between cells (short-range order), read by the answer checks '
+    + '(facts.modulation.diffuse) and arm A+ (SWEEP_RULES.diffuseOrder); in phase it is correlated motion, not order (isDiffuseOrder)';
 
 const verifySplitRule = () => {
     assert.equal(SWEEP_RULES.splitSite, isSplitSite, 'arm A+ does not read the app\'s split rule');
@@ -642,21 +1408,81 @@ const verifyToleranceRule = () => {
 
 export const RULES = [
     {
+        // The user's convergence rule (interview 2026-10-24, answer 1), the fit-assessment code PR's.
+        file: FIT,
+        rule: 'convergence',
+        find: 'Judge every fit term and the total',
+        after: 160,
+        states: /every fit term and the total[\s\S]*\bstill falling beyond its noise over the\s+last tenth\b/,
+        skill: 'every fit term and the total, none still falling beyond its noise over the last tenth',
+        app: CONVERGENCE_RULE,
+        verify: async () => {
+            // The window is the last tenth (≥ 10 rows), "beyond its noise" 3 × the residual sd.
+            assert.deepEqual([TREND_WINDOW_FRACTION, TREND_MIN_ROWS, TREND_NOISE_FACTOR, MIN_TOTAL_DROP], [0.1, 10, 3, 0.1]);
+            // One term still falling keeps the run improving, though the charted column alone reads converged.
+            const rValueFile = termStillFalling();
+            assert.equal(classifyConvergence(rValueFile.plotData.series[0].y), 'converged', 'the probe\'s charted column no longer reads flat');
+            const tool = buildRunTools({ rValueFile }).find((item) => item.name === 'assess_convergence');
+            const { data, facts } = await tool.run({});
+            assert.equal(data.status, 'improving', 'assess_convergence judges the charted column only');
+            assert.deepEqual(data.terms.map((term) => [term.term, term.trend]), [['F(Q)_1', 'falling'], ['Curvature', 'flat']]);
+            assert.equal(data.total.trend, 'flat');
+            assert.equal(facts.convergence, 'improving');
+            const context = buildRunContext({ rValueFile });
+            assert.equal(context.convergence.watchdog_status, 'improving', 'the context\'s watchdog_status judges the charted column only');
+            assert.equal(context.convergence.last_10pct.terms['F(Q)_1'].trend, 'falling');
+            findsRule('The run has converged.', { context }, 'convergence');
+        }
+    },
+    {
         file: ANISOTROPY,
         rule: 'a split site',
-        find: '< 0 flat or split, e.g. two wells',
-        before: 70,
+        find: 'A site is split (two wells) only by the app\'s rule',
+        after: 90,
         states: /\bPC1\b/,
         skill: 'a negative Mardia kurtosis',
         app: SPLIT_RULE,
         verify: verifySplitRule
     },
+    // The user's tiers and two resolutions (interview 2026-10-24, answers 3 and
+    // 4), built by the interview answer checks (2026-10-24).
+    {
+        file: ANISOTROPY,
+        rule: 'a direction\'s tiers',
+        find: 'Three tiers for a direction',
+        after: 260,
+        states: /≥ 1\.2× isotropic[\s\S]*under 1\.2× isotropic, or 2\.5–3σ/,
+        skill: 'a finding at ≥ 3σ (unrounded) and ≥ 1.2× isotropic; a hint at ≥ 3σ under 1.2×, or 2.5–3σ; nothing below 2.5σ (the user, 2026-10-24)',
+        app: DIRECTION_TIERS_RULE,
+        verify: () => verifyDirectionTiers()
+    },
+    {
+        file: ANISOTROPY,
+        rule: 'a finding at two resolutions',
+        find: 'Two resolutions for a finding.',
+        after: 360,
+        states: /holds at the Auto ν and at a neighbouring ν/,
+        skill: 'a finding holds at the Auto ν and at a neighbouring ν (ν ± 1); one at the Auto ν alone is a hint (the user, 2026-10-24)',
+        app: DIRECTION_RESOLUTION_RULE,
+        verify: () => {
+            assert.deepEqual([neighbourFrequency(6), neighbourFrequency(2), neighbourFrequency(1)], [5, 1, 2]);
+            // The same axis within the two cells' radii (either sense), and ≥ 3σ at the second resolution.
+            const first = tierPayload(4, 1.5);
+            assert.equal(directionHolds(first, tierPayload(3.2, 1.3, 5, [0, 0.1, -0.99])).holds, true);
+            assert.equal(directionHolds(first, tierPayload(2.9, 1.3, 5, [0, 0.1, 0.99])).holds, false, 'a second resolution below 3σ held');
+            assert.equal(directionHolds(first, tierPayload(3.2, 1.3, 5, [1, 0, 0])).holds, false, 'a peak on another axis held');
+            // One resolution alone is a hint, and backs no preferred direction.
+            const { facts } = summarizeOrientation(tierPayload(SIGNIFICANCE_SIGMA + 1, 1.5), null);
+            assert.deepEqual([facts.direction.tier, facts.direction.because], ['hint', 'unchecked']);
+            findsRule('Site 1 has a preferred displacement direction along [0 0 1].', { facts: [facts] }, 'direction');
+            const held = summarizeOrientation(tierPayload(SIGNIFICANCE_SIGMA + 1, 1.5), null, { neighbour: tierPayload(3.5, 1.3, 5, [0, 0.1, 0.99]) });
+            assert.deepEqual(judgeAnswer('Site 1 has a preferred displacement direction along [0 0 1].', { facts: [held.facts] }).audit, []);
+        }
+    },
     {
         file: SIGNIFICANCE,
         rule: 'a split site',
-        find: 'negative for a flat or split site',
-        before: 80,
-        after: 0,
+        find: 'A site is split (two positions) only by the app\'s rule on its PC1',
         states: /\bPC1\b/,
         skill: 'a negative Mardia kurtosis',
         app: SPLIT_RULE,
@@ -666,6 +1492,7 @@ export const RULES = [
         file: SHELLS,
         rule: 'the cluster elements',
         find: 'For a cluster or polyhedron distortion (Jahn–Teller, dimers, trimers), run `analyze_clusters`',
+        after: 160,
         states: /own first shell|finite cluster|\b4\.5\b/,
         skill: 'analyze_clusters for any cluster or polyhedron distortion (Jahn–Teller, dimers, trimers)',
         app: CLUSTER_RULE,
@@ -674,7 +1501,7 @@ export const RULES = [
     {
         file: SYMMETRY,
         rule: 'the lower group\'s tolerance',
-        find: 'A rung above it is a distortion of the average structure',
+        find: 'the app\'s margin) is a distortion of the average structure',
         before: 60,
         states: /1\.25|clearly above/,
         skill: 'a rung above noise_floor_A is a distortion',
@@ -684,10 +1511,72 @@ export const RULES = [
     {
         file: SYMMETRY,
         rule: 'the lower group\'s tolerance',
-        find: 'Whether a rung just above the noise floor is reported as a distortion',
+        find: 'A rung between the floor and',
         after: 60,
+        states: /1\.25/,
+        skill: 'a rung between the floor and 1.25 × it: "at the limit of the sampling", never a lowering (the user, 2026-10-24)',
+        app: TOLERANCE_RULE,
+        verify: verifyToleranceRule
+    },
+    // The user's interview of local-order (2026-10-24, answer 6): the diffuse
+    // verdict's short-range order — neighbouring cells in antiphase
+    // (order-signatures.md) — counts as order between cells; in phase is
+    // correlated motion (the interview answer checks, 2026-10-24).
+    {
+        file: LOCAL_ORDER,
+        rule: 'order between cells',
+        find: 'no diffuse short-range order: the diffuse verdict',
+        after: 80,
+        states: /diffuse short-range order/,
+        skill: 'the diffuse verdict past its calibrated bar counts as order between cells, read by arm A+ and the answer checks (the user, 2026-10-24)',
+        app: BETWEEN_CELLS_RULE,
+        verify: () => {
+            assert.equal(SWEEP_RULES.diffuseOrder, isDiffuseOrder, 'arm A+ does not read the tool\'s diffuse rule');
+            assert.deepEqual([isDiffuseOrder({ because: 'correlated_antiphase' }), isDiffuseOrder({ because: 'correlated_in_phase' })], [true, false]);
+            assert.equal(isCorrelatedMotion({ because: 'correlated_in_phase' }), true);
+            const modulation = FACTS.find((fact) => fact.key === 'modulation');
+            assert.ok('diffuse?' in modulation.shape, 'the modulation fact holds no diffuse verdict');
+            // Antiphase is order ("no order" flagged), in phase correlated motion (short-range order flagged, "no order" not).
+            const facts = (phase) => [{
+                modulation: {
+                    elements: ['Nb'], ordered: [], general: [], long_wave_q: 0.25, long_waves: [],
+                    diffuse: [{ element: 'Nb', phase, lag: [1, 0, 0], correlation: phase === 'antiphase' ? -0.3 : 0.3, sigma: 4 }]
+                }
+            }];
+            findsRule('There is no local order beyond thermal motion.', { facts: facts('antiphase') }, 'no-order');
+            assert.deepEqual(judgeAnswer('There is no local order beyond thermal motion.', { facts: facts('in_phase') }).audit, []);
+            findsRule('Nb shows short-range order between cells.', { facts: facts('in_phase') }, 'correlated-motion');
+            findsRule('The Nb displacements are uncorrelated between cells.', { facts: facts('in_phase') }, 'no-correlation');
+        }
+    },
+    // local-order (batch 1) states the same three rules for "no order".
+    {
+        file: LOCAL_ORDER,
+        rule: 'a split site',
+        find: 'Note the split sites (two positions, by the app\'s rule',
+        after: 60,
+        states: /\bPC1\b/,
+        skill: 'a negative Mardia kurtosis (flat or split: two positions)',
+        app: SPLIT_RULE,
+        verify: verifySplitRule
+    },
+    {
+        file: LOCAL_ORDER,
+        rule: 'the cluster elements',
+        find: 'for every element whose own first shell is closed and holds',
+        after: 40,
+        // "own first shell" alone was in the draft: the app's rule is its count.
+        states: /0\.5–4\.5|\b4\.5\b/,
+        skill: 'analyze_clusters for every element whose own first shell is short and closed (dimers, trimers, tetrahedra)',
+        app: CLUSTER_RULE,
+        verify: verifyClusterRule
+    },
+    {
+        file: LOCAL_ORDER,
+        rule: 'the lower group\'s tolerance',
+        find: 'Empty means the group of the lowest rung clearly above the noise floor',
         states: /1\.25|clearly above/,
-        skill: 'left to the user: a rung just above the noise floor reported as a distortion or as "at the limit of the sampling"',
+        skill: 'the group of the lowest rung above the noise floor',
         app: TOLERANCE_RULE,
         verify: verifyToleranceRule
     }
@@ -699,145 +1588,23 @@ export const RULES = [
 // characters) is skill text at the violation; an entry that no finding needs
 // fails the test, so a fix removes its entry. Phase 5's items 5.2–5.4 empty it.
 // A value entry also names the skill's line, its value and the tool's, and a
-// gate entry may (the skill's number as written, the constant the app decides
-// with): the test fails when any of the three moves.
-const FIRST_PEAK_WHY = 'the first-peak window moved from r ± FWHM, which reached into the second Ta–Se peak, to the inter-peak minimum '
-    + '(shells.js; approved by the manager on the user\'s delegation, 2026-10-19: validation/findings/decisions/2026-10-19-shell-catalogue.json). '
-    + 'The skill text is the user\'s and is not edited: awaiting the user\'s skill review, a precondition for the freeze';
-// Candidate 8: arm A+ reads the app's rules; the skills that state them otherwise wait for the user.
-const APP_RULES_WHY = 'arm A+ reads the app\'s rule since candidate 8 (approved by the manager on the user\'s delegation, 2026-10-19: '
-    + 'validation/findings/decisions/2026-10-19-aplus-app-rules.json), so the skill, the app and A+ must say one rule. The skill text is the '
-    + 'user\'s and is not edited: awaiting the user\'s skill review (plan 5.3)';
-// The one cut rule: the skill still states the counts rule the tool refused on before.
-const CUT_RULE_WHY = 'compute_bond_angles refuses a window that meets its shell on the CN margin, the Workbench\'s rule (fewer partner atoms '
-    + 'than the whole shell by at least max(0.5, 15 % of its CN): shells.js windowCut; approved by the user, 2026-10-19: '
-    + 'validation/findings/decisions/2026-10-19-shell-cut-rule.json); the counts decide only where the run reads no shell to compare. '
-    + 'The skill text is the user\'s and is not edited: awaits the skill fact-sync PR';
-export const ALLOW_LIST = [
-    {
-        check: 'gate',
-        file: SHELLS,
-        fragment: 'The 60 % modal-coordination',
-        line: 61,
-        skill: '60 %',
-        tool: 'CN_CHANGE_REL = 0.15',
-        why: `the judgment call on the threshold the app calls a window cut by: ${CUT_RULE_WHY}`
-    },
-    {
-        check: 'gate',
-        file: SHELLS,
-        fragment: 'fewer than 60 % of the central atoms',
-        line: 78,
-        skill: '60 %',
-        tool: 'CN_CHANGE_REL = 0.15',
-        why: `the firm rule's modal-share clause: ${CUT_RULE_WHY}`
-    },
-    {
-        check: 'gate',
-        file: SHELLS,
-        fragment: 'or most have none',
-        line: 79,
-        skill: 'most',
-        tool: 'CN_CHANGE_REL = 0.15',
-        why: `the firm rule's unbonded clause: ${CUT_RULE_WHY}`
-    },
-    {
-        check: 'value',
-        file: SHELLS,
-        fragment: 'the first-peak window 2.33–2.71 Å',
-        line: 32,
-        skill: '2.33–2.71',
-        tool: '2.21–2.65',
-        why: `step 2: ${FIRST_PEAK_WHY}`
-    },
-    {
-        check: 'value',
-        file: SHELLS,
-        fragment: 'holds 3.9 Se per Ta, the whole shell',
-        line: 33,
-        skill: '3.9',
-        tool: '3.25',
-        why: `step 2, the first peak's CN (≈ 3, the three short Ta–Se bonds of TaSe₆): ${FIRST_PEAK_WHY}`
-    },
-    {
-        check: 'value',
-        file: SHELL_TABLE,
-        fragment: 'first-peak window 2.33–2.71 Å',
-        line: 17,
-        skill: '2.33–2.71',
-        tool: '2.21–2.65',
-        why: `the TaSe₆ row of the Demo table: ${FIRST_PEAK_WHY}`
-    },
-    {
-        check: 'value',
-        file: SHELL_TABLE,
-        fragment: 'Å holds only 3.9:',
-        line: 17,
-        skill: '3.9',
-        tool: '3.25',
-        why: `the TaSe₆ row of the Demo table, the first peak's CN (≈ 3): ${FIRST_PEAK_WHY}`
-    },
-    {
-        check: 'gate',
-        file: ANISOTROPY,
-        fragment: 'only when the angle to it is small',
-        why: 'no number; the app names a family within 15° (LOW_INDEX_CONE_DEG, AXIS_CONE_DEG). PR #71\'s draft says "under 15°" — waiting for the user (plan 5.2)'
-    },
-    {
-        check: 'gate',
-        file: ANISOTROPY,
-        fragment: '"Preferred direction" only with a significance ≥ 3σ',
-        why: 'any significance counts here; the tool calls a direction preferred on its peak test only since batch 1 L3. PR #71\'s draft says "a peak significance" — waiting for the user (plan 5.2)'
-    },
-    {
-        check: 'gate',
-        file: ANISOTROPY,
-        fragment: '< 0 flat or split',
-        why: 'the skill\'s split site is a negative Mardia kurtosis; the tools\' and arm A+\'s (since candidate 8) is a PC1 kurtosis ≤ −0.5, 3 errors below zero. Left after PR #71: plan 5.3 (the rule entry below holds the same sentence)'
-    },
-    {
-        check: 'rule',
-        file: ANISOTROPY,
-        fragment: '< 0 flat or split, e.g. two wells',
-        line: 27,
-        skill: 'a negative Mardia kurtosis',
-        app: SPLIT_RULE,
-        why: `step 1 calls a negative Mardia kurtosis "flat or split"; a negative kurtosis is also a flat-topped thermal cloud, and at 100–216 copies arm A's prolate rule called 3.6–14 % of prolate Gaussian sites split where isSplitSite called none: ${APP_RULES_WHY}`
-    },
-    {
-        check: 'rule',
-        file: SIGNIFICANCE,
-        fragment: 'negative for a flat or split site',
-        line: 17,
-        skill: 'a negative Mardia kurtosis',
-        app: SPLIT_RULE,
-        why: `the Mardia kurtosis paragraph reads a negative value as a flat or split site; the app calls a site split on its PC1 kurtosis only: ${APP_RULES_WHY}`
-    },
-    {
-        check: 'rule',
-        file: SHELLS,
-        fragment: 'For a cluster or polyhedron distortion (Jahn–Teller, dimers',
-        line: 51,
-        skill: 'analyze_clusters for any cluster or polyhedron distortion (Jahn–Teller, dimers, trimers)',
-        app: CLUSTER_RULE,
-        why: `step 7 sends any polyhedron distortion to analyze_clusters; the app tries clusters of an element only where its own first shell is a finite cluster's (a corner-sharing octahedron's ligands, perovskite O–O at CN 8, are an extended network the engine refuses). Dimers and trimers agree: ${APP_RULES_WHY}`
-    },
-    {
-        check: 'rule',
-        file: SYMMETRY,
-        fragment: 'A rung above it is a distortion of the average structure',
-        line: 38,
-        skill: 'a rung above noise_floor_A is a distortion',
-        app: TOLERANCE_RULE,
-        why: `step 4 takes the noise floor itself as the line; the app reads the lower group at 1.25 × the floor (measure_symmetry_lowering's default) and the Workbench offers a group only where it holds to 1.25 × the floor: ${APP_RULES_WHY}`
-    },
-    {
-        check: 'rule',
-        file: SYMMETRY,
-        fragment: 'Whether a rung just above the noise floor is reported as a',
-        line: 59,
-        skill: 'left to the user: a rung just above the noise floor reported as a distortion or as "at the limit of the sampling"',
-        app: TOLERANCE_RULE,
-        why: `a judgment call the skill leaves to the user, which the app decides (a rung holding only to 1–1.25 × the floor is not read as a group): ${APP_RULES_WHY}`
-    }
-];
+// rule entry the line, the skill's rule and the app's, and a gate entry may (the
+// skill's number as written, the constant the app decides with): the test
+// fails when any of the three moves. Each `why` opens with its kind. FACT: the
+// skill states a number or a rule the tool decides otherwise — the user
+// decided on 2026-10-19 that the skills' facts are fixed now, the interviews
+// after v1, so none is left (the skill fact-sync PR cleared them). JUDGMENT: a
+// method, an order or a judgment call the skill leaves to the user — it stays,
+// listed for the interviews (docs/SKILL_INTERVIEWS.md); none is left since the
+// user's interviews of 2026-10-24. AWAITS CODE: an interviewed skill states the
+// user's rule, which a code PR still has to build (each names its PR); the
+// entry leaves when that code lands.
+// The user's interview of rmc-fit-assessment (2026-10-24): its four entries (the every-term
+// convergence rule, the 5 % constraint and two firm rules) left with the fit-assessment code PR,
+// which bound them above (RULES, BINDINGS, FIRM_RULES).
+// The interviews of coordination-shells, local-symmetry, displacement-anisotropy and local-order
+// (2026-10-24): their nine entries (five firm rules, two gates, three rules but one) left with the
+// interview answer checks, which bound them above (FIRM_RULES, BINDINGS, RULES). The extended
+// networks' tool, polyhedral_distortion, landed in its own PR (2026-10-24): the tool check finds it
+// among the tools the Copilot offers (buildCopilotTools), so it needs no entry.
+export const ALLOW_LIST = [];

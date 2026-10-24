@@ -21,7 +21,9 @@
 //                 ladder's groups) and the gate its elements;
 //   catalog       the run's shell catalogue (context/shells.js); its finite
 //                 clusters (clusterElementsOf) need analyze_clusters before
-//                 "no order";
+//                 "no order", and the centres of polyhedra no finite cluster
+//                 holds (networkCentresOf) polyhedral_distortion where the
+//                 turn offers it;
 //   offered       the tool names the turn offers, tools on or off; null: every
 //                 tool; []: no claim row, so no gate, while references are
 //                 still filled and the checks and the Outcome computed;
@@ -43,7 +45,12 @@
 // r1, r2, … in record order, a step with an error taking none; its facts are
 // dropped. A 'refused' step (the tool's own fail check, no error) ran: it is
 // an analysis, takes a ref and keeps its facts. `analysis` is
-// isAnalysis(step); the gate also needs the step to have no error.
+// isAnalysis(step); the gate counts only an analysis that answered — no
+// error, and not refused: a refused step backs no claim (the user's decision
+// A5, 2026-10-24), and its claim's send-back says it refused. A refusal whose
+// data say what it withheld (`refused`, the window-cut refusal of
+// compute_bond_angles and polyhedral_distortion, their dataShape's
+// `refused?`) is a window cut, whose send-back offers both fixes.
 //
 // judge(text, …), in a fixed order (the order is the point: a check on the
 // unfilled text missed what the filled one says):
@@ -68,7 +75,7 @@
 // Pure, no React.
 
 import { contextToJson } from '../../context/runContext';
-import { clusterElementsOf } from '../../context/shells';
+import { clusterElementsOf, networkCentresOf } from '../../context/shells';
 import { createReferenceStore, fillReferences } from '../references';
 import { TURN_METHODS } from '../method';
 import { RESULT_STATUSES, ran as toolRan, severityOf } from '../tools';
@@ -130,7 +137,7 @@ export const createVerification = ({
     if (!TURN_METHODS.includes(method)) invalid(`method must be one of ${TURN_METHODS.join(', ')}`);
     const extra = readPhrasings(phrasings);
     const elements = Object.keys(context?.structure?.elements || {});
-    const reader = claimsOf({ offered, extra, elements, values: { clusterElement: clusterElementsOf(catalog) } });
+    const reader = claimsOf({ offered, extra, elements, values: { clusterElement: clusterElementsOf(catalog), networkCentre: networkCentresOf(catalog) } });
     const references = createReferenceStore({ context: shownContext(context) });
     const auditContext = contextAuditFacts(context);
     // The turn so far: its recorded steps, its tools' facts, the claims sent
@@ -145,8 +152,10 @@ export const createVerification = ({
     const open = (operation) => {
         if (judged) throw new Error(`verification.${operation}: this turn's answer is judged; one verification serves one turn`);
     };
-    // The calls the gate counts: analyses that ran without an error.
-    const ran = () => steps.filter((step) => isAnalysis(step) && !step.error).map((step) => ({ name: step.name, args: step.args }));
+    // The calls the gate reads: analyses that ran without an error, a refused
+    // one marked (it backs no claim; claims.js), with whether it was a window cut.
+    const ran = () => steps.filter((step) => isAnalysis(step) && !step.error)
+        .map((step) => ({ name: step.name, args: step.args, refused: step.refused, windowCut: step.windowCut }));
     const checks = (answer) => {
         if (!answer.trim()) return [];
         const reading = { text: answer, sentences: sentencesOf(answer) };
@@ -205,10 +214,12 @@ export const createVerification = ({
             if (ref) references.put(ref, shown.data);
             // A failed step's facts are dropped; facts that are no object are no facts.
             if (!step.error && step.facts && typeof step.facts === 'object') facts.push(step.facts);
+            const refused = step.resultStatus === 'refused';
             const entry = {
                 name: step.name, args: step.args, status: severityOf(step), error: step.error || null,
                 interactive: Boolean(step.interactive), reading: Boolean(step.reading), view: Boolean(step.view),
-                executed: toolRan(step), ref
+                executed: toolRan(step), ref,
+                refused, windowCut: refused && typeof step.data?.refused === 'string'
             };
             steps.push(entry);
             return { ref, analysis: isAnalysis(entry), ...shown };

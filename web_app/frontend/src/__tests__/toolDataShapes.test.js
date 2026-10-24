@@ -55,12 +55,21 @@ const NOT_REACHED = {
         'convergence.non_finite_note': 'the χ² histories here (the Demo\'s, dev-fit-unconverged\'s) are finite'
     },
     find_gr_peaks: {},
-    compare_fit: {},
+    // A G(r) with σ(r): no run here has an F(Q) with an error column (the
+    // Demo's input file is not committed, dev-fit-unconverged has no .dat),
+    // so each reads { sigma: null, why }; runTools.test.js runs the σ form.
+    compare_fit: Object.fromEntries([
+        'largest_residuals[].above_noise', 'largest_residuals[].relative_to_sigma', 'noise.above_noise_at',
+        'noise.correlation', 'noise.correlation.effective_points', 'noise.correlation.neighbour', 'noise.correlation.points',
+        'noise.from', 'noise.reproduction', 'noise.reproduction.residual', 'noise.reproduction.tolerance',
+        'noise.rms_residual_over_sigma'
+    ].map((key) => [key, 'no run here carries σ(r): no F(Q) with an error column'])),
     list_sites: {
         'sites[].zero_spread': 'no zero-spread site'
     },
     analyze_displacement_directions: {},
     compute_bond_angles: {},
+    polyhedral_distortion: {},
     analyze_clusters: {
         'clusters.other_sizes': 'no window here gives clusters of two sizes',
         'clusters.other_sizes[].count': 'no window here gives clusters of two sizes',
@@ -147,6 +156,19 @@ const exercise = async (tools, structure) => {
         await call('compute_bond_angles', { ...triplet, r12_min: lo, r12_max: half });
         await call('compute_bond_angles', { ...triplet, r12_min: lo, r12_max: half, window_confirmed: true });
         await call('compute_bond_angles', { ...triplet, r12_min: 0.1, r12_max: 0.2 });
+    }
+
+    // The polyhedra of the same pairs (their whole first shell, within the
+    // tool's 8 Å), and the first pair's half shell, refused and then confirmed.
+    const polyhedral = mixed.filter(({ window }) => window[1] <= 8);
+    for (const { apex, end, window } of polyhedral) {
+        await call('polyhedral_distortion', { centre: apex, ligand: end, r_min: window[0], r_max: window[1] });
+    }
+    if (polyhedral.length) {
+        const { apex, end, window: [lo, hi] } = polyhedral[0];
+        const half = Number(((lo + hi) / 2).toFixed(3));
+        await call('polyhedral_distortion', { centre: apex, ligand: end, r_min: lo, r_max: half });
+        await call('polyhedral_distortion', { centre: apex, ligand: end, r_min: lo, r_max: half, window_confirmed: true });
     }
 
     // Clusters of each element whose own first shell closes.

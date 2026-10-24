@@ -17,8 +17,12 @@
 // Method advice is text that tells the model which analysis answers which
 // question, where to take an analysis's parameter from (a window from
 // find_gr_peaks), which window is the right one, or what to run next: what
-// the skills teach. A description keeps what the tool does and returns; a
-// check keeps its fact and its verdict, and a refusal still refuses.
+// the skills teach. An inference in a check — what a pattern is evidence of,
+// as the domain rules' inference parts (prompts/system.js GROUND_RULES) —
+// is method too (decided 2026-10-19: analyze_modulations' long-wave and
+// in-phase notes). A description keeps what the tool does and returns; a
+// check keeps its fact, its verdict and its limits, and a refusal still
+// refuses.
 //
 // A tool spec carries its advice apart from its description, in an optional
 // `method` field: a string, sent after the description and a space, or a

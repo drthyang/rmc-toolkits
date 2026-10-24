@@ -118,6 +118,22 @@ describe('streamChat', () => {
         expect(options.headers['anthropic-dangerous-direct-browser-access']).toBeUndefined();
     });
 
+    it('leaves a null temperature out of the body and adds max_tokens only when a cap is given', async () => {
+        const fetchMock = vi.fn(async () => streamResponse(['data: [DONE]\n']));
+        vi.stubGlobal('fetch', fetchMock);
+        const messages = [{ role: 'user', content: 'hi' }];
+        await collect(streamChat({ baseUrl: 'https://api.anthropic.com/v1', model: 'claude-sonnet-5-5', messages, temperature: null, maxTokens: 8192 }));
+        await collect(streamChat({ baseUrl: 'http://x/v1', model: 'm', messages }));
+        await collect(streamChat({ baseUrl: 'http://x/v1', model: 'm', messages, temperature: 0, maxTokens: undefined }));
+        const [capped, plain, zero] = fetchMock.mock.calls.map(([, options]) => options.body);
+        // The bytes: no temperature key at all (not null), the cap as max_tokens.
+        expect(capped).toBe(JSON.stringify({ model: 'claude-sonnet-5-5', messages, stream: true, max_tokens: 8192 }));
+        expect(capped).not.toContain('temperature');
+        // Without a cap nothing is added; an absent temperature is the default 0.2, a zero is sent.
+        expect(JSON.parse(plain)).toEqual({ model: 'm', messages, temperature: 0.2, stream: true });
+        expect(JSON.parse(zero)).toEqual({ model: 'm', messages, temperature: 0, stream: true });
+    });
+
     it('adds Anthropic browser-access and version headers for api.anthropic.com', async () => {
         const fetchMock = vi.fn(async () => streamResponse(['data: [DONE]\n']));
         vi.stubGlobal('fetch', fetchMock);

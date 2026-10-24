@@ -14,6 +14,7 @@ import { buildRunTools, MISFIT_CONCENTRATION } from '../../src/llm/copilot/runTo
 import { toolResult } from '../../src/llm/copilot/tools';
 import { createVerification } from '../../src/llm/copilot/verification';
 import { buildRunContext } from '../../src/llm/context/runContext';
+import { shellCatalogue } from '../../src/llm/context/shells';
 import { buildCase, DEV_CASES } from '../cases';
 import { CONTEXT_SECTIONS, runLiveCase } from '../harness';
 import { loadSkills } from '../run';
@@ -87,8 +88,17 @@ describe('dev-fit-unconverged: a run with fit data (plan item 4.6)', () => {
         expect(sections).toEqual(['structure', 'configuration_optimization', 'symmetry', 'pair_correlations', 'datasets', 'partial_weights', 'convergence']);
         expect(context.convergence).toMatchObject({ watchdog_status: 'improving', column: 'X_ray_(R)1', n_steps: ITEM.params.fit.rows });
         // Still falling over the last tenth, though the plot's end looks flat.
-        expect(context.convergence.change_over_last_10pct).toBeLessThan(-0.02);
-        expect(context.convergence.change_over_last_10pct).toBeGreaterThan(-0.1);
+        // Both χ² terms and their total still fall over the last tenth, each
+        // by more than 3 × its noise (the rule of 2026-10-24).
+        const { last_10pct: tenth } = context.convergence;
+        expect(tenth.rows).toBe(40);
+        expect(Object.keys(tenth.terms)).toEqual(['F(Q)_1', 'X_ray_(R)1']);
+        [...Object.values(tenth.terms), tenth.total].forEach((entry) => {
+            expect(entry.trend).toBe('falling');
+            expect(entry.change).toBeLessThan(-0.02);
+            expect(entry.change).toBeGreaterThan(-0.1);
+            expect(-entry.change).toBeGreaterThan(3 * entry.noise_sd);
+        });
         expect(context.convergence.last - context.convergence.first).toBeLessThan(-3);
         expect(context.datasets.map((entry) => entry.kind)).toEqual(['xray_sq', 'xpdf', 'pdf_partials']);
         expect(context.datasets[1]).toMatchObject({ same_measurement_as: 'XFQ1 (its Fourier transform)' });
@@ -97,10 +107,12 @@ describe('dev-fit-unconverged: a run with fit data (plan item 4.6)', () => {
         expect(context.configuration_optimization.accepted_moves_per_atom).toBe(built.truth.fit.accepted_moves_per_atom);
     });
 
-    it('assess_convergence: improving, still falling over every recent window, and its fact for the answer check', async () => {
+    it('assess_convergence: improving, every χ² term and the total still falling over the last tenth, and its fact for the answer check', async () => {
         const result = await tools.assess_convergence.run({});
-        expect(result.data).toMatchObject({ column: 'X_ray_(R)1', status: built.truth.fit.convergence });
-        Object.values(result.data.slope_per_step).forEach((slope) => expect(slope).toBeLessThan(0));
+        expect(result.data).toMatchObject({ chart_column: 'X_ray_(R)1', status: built.truth.fit.convergence, window_rows: 40 });
+        // Every term and the total still fall over the last tenth.
+        expect([...result.data.terms.map((term) => [term.term, term.trend]), ['total', result.data.total.trend]])
+            .toEqual([['F(Q)_1', 'falling'], ['X_ray_(R)1', 'falling'], ['total', 'falling']]);
         expect(result.facts).toEqual({ convergence: 'improving' });
     });
 
@@ -145,10 +157,16 @@ describe('dev-fit-unconverged: a run with fit data (plan item 4.6)', () => {
             + '\n\nVERDICT {"features": [], "space_group": "Fm-3m", "chiral": false, "centrosymmetric": true, "polar": false}';
         const record = await runLiveCase({
             built, arm: 'B', model: MODEL, skills: loadSkills(),
-            // The fit tools, then the analyses a "no order" answer needs (the evidence gate).
+            // The fit tools, then the analyses a "no order" answer needs (the evidence gate): the
+            // modulations, the directions and, its polyhedra forming no finite cluster, polyhedral_distortion
+            // on each centre in its whole first shell.
             port: scripted([
                 { calls: [['assess_convergence', {}], ['compare_fit', { dataset: 'xpdf' }]] },
                 { calls: [['analyze_modulations', {}], ['analyze_displacement_directions', { site_ref: 1 }], ['analyze_displacement_directions', { site_ref: 5 }]] },
+                { calls: [['Mg', 'O'], ['O', 'Mg']].map(([centre, ligand]) => {
+                    const [lo, hi] = shellCatalogue(run.props).shell(centre, ligand).window;
+                    return ['polyhedral_distortion', { centre, ligand, r_min: lo, r_max: hi }];
+                }) },
                 { text: answer }
             ])
         });
@@ -158,7 +176,8 @@ describe('dev-fit-unconverged: a run with fit data (plan item 4.6)', () => {
         expect(record.context.sections).toEqual(['structure', 'configuration_optimization', 'symmetry', 'pair_correlations', 'datasets', 'partial_weights', 'convergence']);
         expect(record.context.absent).toEqual(['run_settings', 'pca_displacements']);
         expect(record.steps.map((step) => step.name)).toEqual([
-            'assess_convergence', 'compare_fit', 'analyze_modulations', 'analyze_displacement_directions', 'analyze_displacement_directions'
+            'assess_convergence', 'compare_fit', 'analyze_modulations', 'analyze_displacement_directions', 'analyze_displacement_directions',
+            'polyhedral_distortion', 'polyhedral_distortion'
         ]);
         expect(record.steps.every((step) => step.status === 'ok')).toBe(true);
         expect(record.gates).toEqual([]);

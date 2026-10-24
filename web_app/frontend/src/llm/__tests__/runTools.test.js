@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { checkText, toolDescription } from '../copilot/method';
-import { buildRunTools } from '../copilot/runTools';
+import { ABOVE_NOISE_SIGMA, buildRunTools } from '../copilot/runTools';
 
 const grid = (n, step) => Array.from({ length: n }, (_, i) => i * step);
 const gaussian = (r, center, sigma, height) => height * Math.exp(-((r - center) ** 2) / (2 * sigma ** 2));
@@ -42,29 +42,58 @@ describe('buildRunTools', () => {
         });
     });
 
-    it('classifies convergence and names the fit term', async () => {
+    it('classifies convergence on the charted column alone when the log names no χ² terms', async () => {
         const y = Array.from({ length: 200 }, (_, i) => (i < 140 ? 3 - i * (2 / 140) : 1));
         const { assess_convergence: tool } = toolMap({
             rValueFile: { plotData: { chiColumn: 'X_ray_(R)1', series: [{ y }] } }
         });
         expect(tool.page).toBe('dashboard');
-        const { data, checks } = await tool.run({});
-        expect(data).toMatchObject({ column: 'X_ray_(R)1', status: 'converged', n_steps: 200, first: 3, last: 1 });
-        expect(data.total_drop).toBeCloseTo(2, 6);
-        expect(data.slope_per_step.last_10pct).toBe(0);
-        expect(data.slope_per_step.last_50pct).toBeLessThan(0);
-        expect(checks[0].text).toMatch(/X_ray_\(R\)1 term only/);
-        expect(checks.some((check) => check.level === 'ok')).toBe(true);
+        const { data, checks, facts } = await tool.run({});
+        expect(data).toMatchObject({ chart_column: 'X_ray_(R)1', status: 'converged', n_steps: 200, window_rows: 20 });
+        expect(data).not.toHaveProperty('total');
+        expect(data.terms).toEqual([{ term: 'X_ray_(R)1', last: 1, change_last_10pct: 0, noise_sd: 0, trend: 'flat' }]);
+        expect(checks[0].text).toMatch(/X_ray_\(R\)1 term only: the log names no chi\^2 columns/);
+        expect(checks[1]).toEqual({ level: 'ok', text: 'Flat: no term falls or rises beyond 3 × the noise over the last tenth, after X_ray_(R)1 dropped by 2 in ln(chi^2).' });
+        expect(facts).toEqual({ convergence: 'converged' });
+    });
+
+    it('judges every χ² term and their total: one term still falling keeps the run improving', async () => {
+        // F(Q)_1 still falls (−0.018 over the last tenth, noise-free), and the
+        // total with it; the charted X_ray_(R)1 has levelled off; a curvature
+        // constraint is zero throughout.
+        const n = 100;
+        const fq = Array.from({ length: n }, (_, t) => -4 - 0.002 * t);
+        const xray = Array.from({ length: n }, (_, t) => (t < 50 ? 1 - 0.1 * t : -4));
+        const zero = Array(n).fill(Math.log(1e-12));
+        const total = xray.map((value, t) => Math.log(Math.exp(value) + Math.exp(fq[t])));
+        const plotData = {
+            chiColumn: 'X_ray_(R)1',
+            series: [{ y: xray }],
+            chiTerms: { names: ['F(Q)_1', 'Curvature', 'X_ray_(R)1'], series: [fq, zero, xray], total, segments: [n] }
+        };
+        const { data, checks, facts } = await toolMap({ rValueFile: { plotData } }).assess_convergence.run({});
+        expect(data.status).toBe('improving');
+        expect(data.terms.map((term) => [term.term, term.trend])).toEqual([['F(Q)_1', 'falling'], ['X_ray_(R)1', 'flat']]);
+        expect(data.terms[0].change_last_10pct).toBeCloseTo(-0.018, 6);
+        expect(data.total.trend).toBe('falling');
+        expect(data.zero_terms).toEqual(['Curvature']);
+        expect(checks.map((check) => check.text)).toEqual([
+            'Judged on every chi^2 term of the .log (2 non-zero, 1 zero throughout) and their total, over the last tenth of the run (10 rows): converged only when none falls beyond 3 × the noise.',
+            'Still improving: F(Q)_1 and the total fall by more than 3 × their noise over the last tenth.'
+        ]);
+        expect(facts).toEqual({ convergence: 'improving' });
     });
 
     it('warns on a diverging run with non-finite rows', async () => {
-        const y = [2, 1.9, 1.8, null, 1.7, 1.75, 1.9, 2.4];
+        // A drop, then a rise through the last tenth; one row non-finite.
+        const y = Array.from({ length: 100 }, (_, t) => (t < 85 ? 2 - 0.01 * t : 1.15 + 0.02 * (t - 85)));
+        y[40] = null;
         const { assess_convergence: tool } = toolMap({ rValueFile: { plotData: { series: [{ y }] } } });
         const { data, checks } = await tool.run({});
         expect(data.status).toBe('diverging');
         expect(data.non_finite_steps).toBe(1);
         expect(checks.filter((check) => check.level === 'warn').map((check) => check.text)).toEqual([
-            'Heuristic status: diverging.',
+            'Diverging: last .log column rises by more than 3 × its noise over the last tenth while nothing falls.',
             '1 log rows are non-finite (NaN/Inf).'
         ]);
     });
@@ -288,6 +317,28 @@ describe('buildRunTools', () => {
         expect(checks.find((check) => check.level === 'warn').text).toMatch(/2\.2 Å closest-approach constraint cuts this distribution/);
     });
 
+    it('constraint-limited above 5 % of the peak at the cut: 9 % warns and advises, 3 % does not (the user\'s rule, 2026-10-24)', async () => {
+        // Ga–Se at 2.42 Å (σ 0.1 Å), g 0 below the constraint: cut at 2.18 Å,
+        // g just above is 9 % of the peak (the Demo's Ga–Se: 8.7 %); at 2.13 Å, 3 %.
+        const x = grid(500, 0.01);
+        const gr = (limit) => toolMap({
+            runSettings: { atoms: ['Ga', 'Se'], minimumDistancesA: [3.0, limit, 3.0] },
+            plotFiles: [{ plotKind: 'pdf_partials', plotData: { series: [{ label: 'Ga-Se', x, y: x.map((r) => (r <= limit ? 0 : gaussian(r, 2.42, 0.1, 8))) }] } }]
+        }).find_gr_peaks.run({ pair: 'Ga-Se' });
+        const limited = await gr(2.18);
+        expect(limited.data.g_at_constraint_fraction).toBe(0.09);
+        const warning = limited.checks.find((check) => check.level === 'warn');
+        expect(warning.text).toBe('The 2.18 Å closest-approach constraint cuts this distribution: g(r) just above it is 9 % of the first '
+            + 'peak (above 5 %), so Ga–Se pairs pile up against the constraint and the constraint, not the data, shapes the low-r side '
+            + 'of the peak — constraint-limited: interpret nothing on its low-r side; consider rerunning with the constraint loosened.');
+        // What to do about it is method: arm C's method 'off' reads the reading alone.
+        expect(checkText(warning, 'off')).toMatch(/shapes the low-r side of the peak — constraint-limited\.$/);
+        const clear = await gr(2.13);
+        expect(clear.data.min_distance_constraint_A).toBe(2.13);
+        expect(clear.data.g_at_constraint_fraction).toBeUndefined();
+        expect(clear.checks.map((check) => check.level)).toEqual(['ok']);
+    });
+
     it('no longer calls a distribution cut because its half maximum lies within 0.05 Å of the constraint (the FWHM clause, dropped)', async () => {
         // A sharp peak on a 0.005 Å grid, 0.07 Å above a 2.43 Å constraint: g
         // just above the constraint is ~1 % of the peak, so nothing piles up.
@@ -328,6 +379,66 @@ describe('buildRunTools', () => {
         expect(checks[0].text).toMatch(/^Rw [\d.]+ over r = 1–20\.98 Å; the misfit is concentrated in r = 1–4\.33 Å/);
     });
 
+    it('compare_fit: a residual feature is above noise only against σ(r), with the correlation and the reproduction noted', async () => {
+        // The same bump (0.3 at 3.5 Å) over σ(r) = 0.02: 15 σ, above noise; a
+        // 0.04 wiggle at 12 Å is 2 σ, not.
+        const x = grid(1000, 0.02).map((r) => r + 1);
+        const exp = x.map((r) => Math.sin(3 * r) * Math.exp(-r / 15));
+        const calc = exp.map((value, i) => value + gaussian(x[i], 3.5, 0.05, 0.3) + gaussian(x[i], 12, 0.05, 0.04));
+        const uncertainty = {
+            status: 'propagated',
+            reason: null,
+            sigma: x.map(() => 0.02),
+            reproduction: { tolerance: 1e-6, gr: { residual: 1.5e-14, rms: 1.8e-14, pass: true, offset: 2.7e-4 }, fq: null },
+            correlation: { points: 1000, gridStep: 0.02, nyquistStep: 0.116, neighbour: 0.9749, nyquist: -0.758, effectivePoints: 62.4, nyquistPoints: 151.7 },
+            sources: { transform: 'run_FT_XFQ1.csv', fq: 'run_XFQ1.csv', settings: 'run.dat', input: 'scale_ft_rmc.fq' }
+        };
+        const fit = (plotData) => toolMap({ plotFiles: [{ name: 'run_FT_XFQ1.csv', plotKind: 'xpdf', plotData }] }).compare_fit;
+        const series = [{ label: 'X_ray-calc', x, y: calc }, { label: 'X_ray_exp_renorm', x, y: exp }];
+        const { data, checks } = await fit({ series, uncertainty }).run({ dataset: 'xpdf' });
+        const bump = data.largest_residuals.find((entry) => Math.abs(entry.r - 3.5) < 0.05);
+        expect(bump.above_noise).toBe(true);
+        expect(bump.relative_to_sigma).toBeGreaterThan(10);
+        const wiggle = data.largest_residuals.find((entry) => Math.abs(entry.r - 12) < 0.05);
+        expect(wiggle.above_noise).toBe(false);
+        expect(wiggle.relative_to_sigma).toBeLessThan(ABOVE_NOISE_SIGMA);
+        expect(data.noise).toEqual({
+            sigma: 'propagated',
+            from: 'scale_ft_rmc.fq',
+            rms_residual_over_sigma: data.noise.rms_residual_over_sigma,
+            above_noise_at: 3,
+            reproduction: { residual: 1.5e-14, tolerance: 1e-6 },
+            correlation: { neighbour: 0.97, effective_points: 62, points: 1000 }
+        });
+        expect(data.noise.rms_residual_over_sigma).toBeGreaterThan(1);
+        const note = checks.find((check) => check.text.startsWith('Against σ(r)'));
+        expect(note.level).toBe('note');
+        expect(note.text).toContain('propagated from scale_ft_rmc.fq\'s σ (RMCProfile\'s transform reproduces this G(r) to 1.5e-14 of its maximum, tolerance 0.000001)');
+        expect(note.text).toMatch(/: 1 of the \d largest residual features is above noise \(≥ 3 σ: r = 3\.5\d* Å\)/);
+        expect(note.text).toContain('The r points are correlated (ρ = 0.97 between neighbours, ≈ 62 independent of 1000): adjacent points beyond σ are one feature, not several.');
+
+        // The file's own σ wins; no reproduction or correlation to quote.
+        const own = await fit({ series: [series[0], { ...series[1], sigma: x.map(() => 0.5) }], uncertainty }).run({ dataset: 'xpdf' });
+        expect(own.data.noise).toMatchObject({ sigma: 'file', from: 'run_FT_XFQ1.csv', above_noise_at: 3 });
+        expect(own.data.noise.reproduction).toBeUndefined();
+        expect(own.data.largest_residuals.every((entry) => entry.above_noise === false)).toBe(true);
+        expect(own.checks.at(-1).text).toMatch(/^Against the G\(r\) file's own σ: 0 of the \d largest residual features are above noise \(≥ 3 σ\)/);
+
+        // No σ: said, and nothing is called above noise.
+        const none = await fit({ series, uncertainty: { status: 'unavailable', reason: 'F(Q) carries no uncertainties: scale_ft_rmc.fq has no error column', sigma: null } })
+            .run({ dataset: 'xpdf' });
+        expect(none.data.noise).toEqual({ sigma: null, why: 'F(Q) carries no uncertainties: scale_ft_rmc.fq has no error column' });
+        expect(none.data.largest_residuals.every((entry) => !('above_noise' in entry) && !('relative_to_sigma' in entry))).toBe(true);
+        expect(none.checks.at(-1)).toEqual({
+            level: 'note',
+            text: 'No σ(r) for this G(r) (F(Q) carries no uncertainties: scale_ft_rmc.fq has no error column): whether a residual feature is above noise is not judged.'
+        });
+        // An F(Q) dataset, or a G(r) with no word on σ, reads as before.
+        const plain = await fit({ series }).run({ dataset: 'xpdf' });
+        expect(plain.data.noise).toBeUndefined();
+        expect(plain.checks).toHaveLength(1);
+    });
+
     it('compare_fit: reads the roles from the labels, keys repeated kinds, and flags a poor weak-signal range', async () => {
         // Columns given (data, model): the labels decide. The high-Q third is weak and badly fitted.
         const x = grid(900, 0.03).map((q) => q + 0.5);
@@ -345,6 +456,42 @@ describe('buildRunTools', () => {
         expect(data.data_series).toBe('S(Q)_Expt');
         expect(data.by_range.at(-1).rw).toBeGreaterThan(0.5);
         expect(checks.some((check) => /poorest at Q = /.test(check.text))).toBe(true);
+    });
+
+    it('cross-checks the window against the average structure\'s bond lengths: a 4 + 1 pyramid\'s fifth bond past the shell is flagged (the user\'s rule, 2026-10-24)', async () => {
+        // 200 Cu and 1000 F in a 20 Å box: four F at 1.93 Å and a fifth at 2.40 Å (σ 0.05 Å). Five is no
+        // ideal count, so the shell closes at the deep minimum before the fifth; the average structure (one
+        // CuF5 pyramid in a 10 Å conventional cell) has both bond lengths.
+        const L = 20;
+        const rhoF = 1000 / L ** 3;
+        const normal = (r, r0) => Math.exp(-((r - r0) ** 2) / (2 * 0.05 ** 2)) / (0.05 * Math.sqrt(2 * Math.PI));
+        const x = grid(600, 0.005);
+        const partials = (fifth) => [{
+            plotKind: 'pdf_partials',
+            plotData: { series: [{ label: 'Cu-F', x, y: x.map((r) => (r > 0 ? (4 * normal(r, 1.93) + normal(r, fifth)) / (4 * Math.PI * rhoF * r * r) : 0)) }] }
+        }];
+        const at = (el, p) => ({ el, frac: p.map((value) => value / 10) });
+        const structureWith = (apex) => ({
+            latticeVectors: [[L, 0, 0], [0, L, 0], [0, 0, L]], supercell: [2, 2, 2], elementCounts: { Cu: 200, F: 1000 },
+            basis: [at('Cu', [5, 5, 5]), at('F', [6.93, 5, 5]), at('F', [3.07, 5, 5]), at('F', [5, 6.93, 5]), at('F', [5, 3.07, 5]), at('F', [5, 5, 5 + apex])]
+        });
+        const { find_gr_peaks: tool } = toolMap({ plotFiles: partials(2.4), structure: structureWith(2.4) });
+        const { data, checks } = await tool.run({ pair: 'Cu-F' });
+        expect(data.first_shell.window_A[1]).toBeLessThan(2.25);
+        expect(data.first_shell.average_structure_d_A).toEqual([1.93, 2.4]);
+        const warning = checks.find((check) => /average structure/.test(check.text));
+        expect(warning.level).toBe('warn');
+        expect(warning.text).toMatch(/^The average structure's Cu–F bonds \(1\.93–2\.4 Å between the site means, first_shell\.average_structure_d_A\) lie up to 0\.\d+ Å outside first_shell\.window_A \(1\.\d+–2\.\d+ Å\), more than the shell's width \(its first peak's FWHM, 0\.1\d* Å\): the configuration's first shell and the average structure's disagree; check the window before using it\.$/);
+        // Arm C reads the reading without the advice.
+        expect(checkText(warning, 'off')).toMatch(/the average structure's disagree\.$/);
+        // A regular square (no fifth bond in the average structure): inside the window, no warning.
+        const square = toolMap({ plotFiles: partials(2.4), structure: { ...structureWith(2.4), basis: structureWith(2.4).basis.slice(0, 5) } }).find_gr_peaks;
+        const agreed = await square.run({ pair: 'Cu-F' });
+        expect(agreed.data.first_shell.average_structure_d_A).toEqual([1.93, 1.93]);
+        expect(agreed.checks.some((check) => /average structure/.test(check.text))).toBe(false);
+        // Without a basis, no cross-check.
+        const bare = await toolMap({ plotFiles: partials(2.4), structure: { ...structureWith(2.4), basis: undefined } }).find_gr_peaks.run({ pair: 'Cu-F' });
+        expect(bare.data.first_shell).not.toHaveProperty('average_structure_d_A');
     });
 
     it('reads the run\'s first shell whatever r_max is, and fails only when the run has none', async () => {
@@ -428,7 +575,7 @@ describe('the run tools\' method advice: arm C reads them without it', () => {
         expect(toolDescription(fit, 'full')).toBe(`${fit.description} Use it for "where does the fit fail" and "is the misfit at short or long range"; `
             + 'run it once per dataset (a G(r) and its F(Q) are separate entries).');
         expect(toolDescription(fit, 'off')).toBe(fit.description);
-        expect(fit.description).toMatch(/^Where the model misses the measured data, for one fitted dataset: .* size relative to the data's rms\)\.$/);
+        expect(fit.description).toMatch(/^Where the model misses the measured data, for one fitted dataset: .* size relative to the data's rms\)\. For an X-ray G\(r\) with σ\(r\) \(propagated from F\(Q\)'s σ\), each feature's size in σ and whether it is above noise; its r points are correlated\.$/);
     });
 
     it('find_gr_peaks: a split shell\'s note keeps its reading; "use first_shell.window_A" is advice', async () => {

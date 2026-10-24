@@ -145,6 +145,24 @@ describe('prepare: the request as it goes out, with the guard\'s plan', () => {
         expect(PortContextLimitError).toBe(ContextLimitError);
     });
 
+    it('a reply cap (maxTokens): in the request as sent; on Ollama a ceiling on the plan\'s numPredict; none by default', async () => {
+        fakeServer('ollama');
+        const capped = providerModel({ baseUrl: URLS.ollama, model: 'm', temperature: 0.2, maxTokens: 4096 }, { session: {} });
+        const sent = await capped.prepare(intent('auto'));
+        expect(sent.maxTokens).toBe(4096);
+        expect(sent.plan.numPredict).toBe(Math.min(4096, sent.plan.numCtx - sent.plan.estimate));
+        expect(sent.plan.numPredict).toBe(4096);
+        forgetServers();
+        fakeServer('ollama');
+        const plain = await portOn('ollama').prepare(intent('auto'));
+        expect('maxTokens' in plain).toBe(false);
+        expect(plain.plan.numPredict).toBe(plain.plan.numCtx - plain.plan.estimate);
+        // A cap that is not a positive integer is refused when the port is made, never dropped.
+        for (const bad of [0, -1, 8192.5, '8192', Number.NaN]) {
+            expect(() => providerModel({ baseUrl: URLS.cloud, model: 'm', maxTokens: bad })).toThrow(RangeError);
+        }
+    });
+
     it('the forms, by server kind', () => {
         expect(['openai', 'lmstudio', 'ollama'].map((kind) => [toolChoiceForm(kind, 'auto'), toolChoiceForm(kind, 'none')])).toEqual([
             ['body', 'body'], ['body', 'body'], ['omitted', 'tools_withheld']
@@ -166,6 +184,34 @@ describe('stream: sends the plan', () => {
         expect('tool_choice' in chat.body).toBe(false);
         expect(chat.body.options).toMatchObject({ num_ctx: sent.plan.numCtx, num_predict: sent.plan.numPredict });
         expect(session).toEqual({ 'http://localhost:11434/v1|m': sent.plan.numCtx });
+    });
+
+    it('Ollama with a reply cap: the capped num_predict is what the body carries', async () => {
+        const { chats } = fakeServer('ollama');
+        const port = providerModel({ baseUrl: URLS.ollama, model: 'm', temperature: 0.2, maxTokens: 4096 }, { session: {} });
+        const sent = await port.prepare(intent('auto'));
+        await collect(port.stream(sent));
+        expect(chats()[0].body.options).toEqual({ temperature: 0.2, num_ctx: sent.plan.numCtx, num_predict: 4096 });
+        expect('max_tokens' in chats()[0].body).toBe(false);
+    });
+
+    it('a model that takes no temperature (null): none in the request as sent or the body, a warmer retry included', async () => {
+        for (const kind of ['cloud', 'lmstudio']) {
+            forgetServers();
+            const { chats } = fakeServer(kind);
+            const port = providerModel({ baseUrl: URLS[kind], model: 'm', temperature: null, apiKey: 'test-key' }, { session: {} });
+            for (const retry of [null, 'warmer']) {
+                const sent = await port.prepare(intent('auto', { retry }));
+                expect('temperature' in sent).toBe(false);
+                await collect(port.stream(sent));
+            }
+            expect(chats().map((chat) => chat.body)).toEqual([0, 1].map(() => ({ model: 'm', messages: MESSAGES, stream: true, tools: TOOLS, tool_choice: 'auto' })));
+        }
+        forgetServers();
+        const { chats } = fakeServer('ollama');
+        const port = providerModel({ baseUrl: URLS.ollama, model: 'm', temperature: null }, { session: {} });
+        await collect(port.stream(await port.prepare(intent('auto', { retry: 'warmer' }))));
+        expect('temperature' in chats()[0].body.options).toBe(false);
     });
 
     it('LM Studio and the cloud: the body as before, tool_choice "none" beside the tools', async () => {

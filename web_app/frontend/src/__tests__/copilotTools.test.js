@@ -14,6 +14,7 @@ import { displacementModulations } from '../workers/modulations';
 import { siteDisplacementsFromRmc6f } from '../workers/pcaKde';
 import modulationsFixture from './fixtures/modulations_fixture.json';
 import clustersFixture from './fixtures/clusters_fixture.json';
+import distortionFixture from './fixtures/distortion_fixture.json';
 import { CLUSTER_BECAUSE, clusterDistortion } from '../workers/clusters';
 import { MODULATION_BECAUSE, SIGMA_MAX } from '../workers/modulations';
 import { coordinationSummaryOf } from '../workers/triplets';
@@ -32,7 +33,11 @@ import {
     MODULATION_SENTENCES,
     buildCopilotTools,
     cartesianToUvw,
+    clusterMethod,
+    isCorrelatedMotion,
+    isDiffuseOrder,
     summarizeBondAngles,
+    summarizePolyhedra,
     tenDegreeBins,
     summarizeClusters,
     summarizeModulations,
@@ -60,10 +65,26 @@ const toolsWithoutPartials = Object.fromEntries(
     buildCopilotTools({ request, structure, elements }).map((tool) => [tool.name, tool])
 );
 
+
+// facts.modulation without the long-wave check's two keys, which are checked
+// here: the engine's bound and long waves only (every |q_i| within it); and
+// without the diffuse verdicts (the local-order interview, 2026-10-24),
+// checked to be passing ones with their phase, and pinned where they matter.
+const withoutLongWaves = (modulation) => {
+    const { long_wave_q: bound, long_waves: waves, diffuse, ...rest } = modulation;
+    expect(bound).toBe(0.25);
+    waves.forEach(({ q }) => expect(q.every((value) => Math.abs(value) <= bound)).toBe(true));
+    diffuse.forEach((item) => {
+        expect(['antiphase', 'in_phase']).toContain(item.phase);
+        expect(item.sigma).toBeGreaterThanOrEqual(3);
+        expect(Math.abs(item.correlation)).toBeGreaterThanOrEqual(0.1);
+    });
+    return rest;
+};
 describe('Copilot tools on the demo run', () => {
     it('offers the engine tools with the run\'s elements', () => {
         expect(Object.keys(tools)).toEqual([
-            'list_sites', 'analyze_displacement_directions', 'compute_bond_angles', 'analyze_clusters',
+            'list_sites', 'analyze_displacement_directions', 'compute_bond_angles', 'polyhedral_distortion', 'analyze_clusters',
             'analyze_modulations', 'detect_symmetry', 'measure_symmetry_lowering'
         ]);
         expect(tools.compute_bond_angles.parameters.properties.apex.enum).toEqual(['Ga', 'Se', 'Ta']);
@@ -285,8 +306,11 @@ describe('Copilot tools on the demo run', () => {
     it('detect_symmetry: below the noise floor, P-42₁m — achiral and without inversion, like F-43m', async () => {
         const result = await tools.detect_symmetry.run({ tolerance_A: 0.02 });
         expect(result.data).toMatchObject({ space_group: 'P-42_1m', point_group: '-42m' });
+        // With its operations in the cell and its tolerance, for the group–subgroup check (2026-10-24).
         expect(result.facts).toEqual({
-            groups: [{ symbol: 'P-42_1m', point_group: '-42m', centrosymmetric: false, sohncke: false, polar: false, crystal_system: 'tetragonal' }]
+            groups: [{
+                symbol: 'P-42_1m', point_group: '-42m', centrosymmetric: false, sohncke: false, polar: false, crystal_system: 'tetragonal', n_ops: 8, tolerance_A: 0.02
+            }]
         });
     });
 });
@@ -409,6 +433,173 @@ describe('compute_bond_angles: one cut rule with the Workbench, the CN margin (a
     }, 120000);
 });
 
+describe('polyhedral_distortion (approved by the manager on the user\'s delegation, 2026-10-24)', () => {
+    // The tools as the run module builds them, on the Demo and dev-jahn-teller
+    // (validation/runFolder.js, as the harness builds a run).
+    const runs = {};
+    const toolOf = (id, name) => runs[id].tools.find((tool) => tool.name === name);
+    const polyhedra = (id, centre, ligand, [lo, hi], extra = {}) => toolOf(id, 'polyhedral_distortion').run({
+        centre, ligand, r_min: lo, r_max: hi, ...extra
+    });
+    const refused = (result) => typeof result.data.refused === 'string';
+    const catalogueShell = (id, centre, ligand) => shellCatalogue(runs[id].props).shell(centre, ligand);
+
+    beforeAll(async () => {
+        runs.demo = (await loadDemoAssistantRun()).copilot;
+        runs['dev-jahn-teller'] = await loadRun(buildCase(DEV_CASES.find((item) => item.id === 'dev-jahn-teller')), { ladder: false });
+    }, 120000);
+
+    it('the Demo\'s TaSe6 octahedra: a static 3 + 3 distortion the average octahedron carries, the configuration a little more', async () => {
+        const { data, checks, facts } = await polyhedra('demo', 'Ta', 'Se', [2.21, 3.23]);
+        expect(facts).toBeUndefined();
+        expect(data.measured).toEqual({ coordination: 6, shape: 'octahedron', centres: 16000, polyhedra: 15932, skipped: 68 });
+        expect(data.shell).toMatchObject({ window_A: [2.21, 3.23], cn: 6, cn_in_window: 6, holds: 'whole' });
+        expect(data.configuration.distortion_index).toEqual({ mean: 0.0469, sd: 0.017, p10: 0.0261, median: 0.0459, p90: 0.0683 });
+        expect(data.configuration.quadratic_elongation.mean).toBe(1.0405);
+        expect(data.configuration.angle_variance_deg2.mean).toBe(127);
+        expect(data.configuration.trans_angle_deg).toEqual({ mean: 158.8, sd: 3.7 });
+        expect(data.average_structure).toMatchObject({
+            polyhedra: 16,
+            bond_ladder_A: [2.523, 2.525, 2.527, 2.74, 2.744, 2.747],
+            distortion_index: { mean: 0.0415, sd: 0.0013 },
+            quadratic_elongation: { mean: 1.0341, sd: 0.0011 },
+            angle_variance_deg2: { mean: 111, sd: 3.1 }
+        });
+        expect(checks).toEqual([{
+            level: 'ok',
+            text: '15932 of 16000 Ta atoms have 6 Se within 2.21–3.23 Å (octahedron): measured; the 68 with another count are left out.'
+        }]);
+    });
+
+    it('the Demo\'s GaSe4 tetrahedra: regular on average, distorted by thermal motion only', async () => {
+        const { data } = await polyhedra('demo', 'Ga', 'Se', [2.0, 2.8]);
+        expect(data.measured.shape).toBe('tetrahedron');
+        expect(data.configuration).not.toHaveProperty('trans_angle_deg');
+        expect(data.configuration.distortion_index.mean).toBe(0.0278);
+        expect(data.configuration.angle_variance_deg2.mean).toBe(19.8);
+        expect(data.average_structure.distortion_index.mean).toBe(0.00101);
+        expect(data.average_structure.angle_variance_deg2.mean).toBe(0.0303);
+        expect(data.average_structure.quadratic_elongation.mean).toBe(1);
+    });
+
+    it('dev-jahn-teller: every CuF6 is 4 + 2 while the average octahedron is regular (local, not static)', async () => {
+        const { data } = await polyhedra('dev-jahn-teller', 'Cu', 'F', catalogueShell('dev-jahn-teller', 'Cu', 'F').window);
+        expect(data.measured).toMatchObject({ coordination: 6, shape: 'octahedron', polyhedra: 216, skipped: 0 });
+        // 0.0698 for 1.93 / 2.25 Å, raised a little by 0.05 Å of thermal motion.
+        expect(data.configuration.distortion_index.mean).toBeGreaterThan(0.0698);
+        expect(data.configuration.distortion_index.mean).toBeLessThan(0.085);
+        // The long axis is drawn per cell, so each F site is long in about a
+        // third of the 216 cells: its mean sits within ~0.01 Å of the regular
+        // position, and the average octahedron's DI is a tenth of the configuration's.
+        expect(data.average_structure.polyhedra).toBe(1);
+        expect(data.average_structure.distortion_index.mean).toBeLessThan(0.1 * data.configuration.distortion_index.mean);
+        // Six bonds at the mean distance to within a tenth of the 0.32 Å split.
+        data.average_structure.bond_ladder_A.forEach((length) => expect(Math.abs(length - (2.25 + 2 * 1.93) / 3)).toBeLessThan(0.032));
+    });
+
+    it('a window that cuts the shell is refused unless the user chose it, by compute_bond_angles\' rule (the Workbench\'s)', async () => {
+        const cut = await polyhedra('demo', 'Ta', 'Se', [2.3, 2.7]);
+        expect(refused(cut)).toBe(true);
+        expect(cut.data).not.toHaveProperty('measured');
+        expect(cut.data).not.toHaveProperty('configuration');
+        expect(cut.data.shell).toMatchObject({ cn: 6, cn_in_window: 3.75, holds: 'part' });
+        expect(cut.checks.map((check) => check.level)).toEqual(['fail']);
+        expect(checkText(cut.checks[0], 'off')).toBe('Refused: The window cuts the first Ta–Se shell: it holds 3.75 Se per Ta (shell.cn_in_window) of the shell\'s 6 '
+            + '(shell.cn, in shell.window_A), fewer by at least max(0.5, 15 % of the shell\'s CN). If the user wants this window, ask them (ask_user) '
+            + 'and call again with window_confirmed: true.');
+        expect(cut.checks[0].text).toContain('Use the whole shell (find_gr_peaks\' first_shell.window_A).');
+        const chosen = await polyhedra('demo', 'Ta', 'Se', [2.3, 2.7], { window_confirmed: true });
+        expect(refused(chosen)).toBe(false);
+        expect(chosen.checks[0]).toMatchObject({ level: 'warn' });
+        expect(chosen.checks[0].text).toMatch(/Kept: the user chose this window; say that its polyhedra are of a partial shell\.$/);
+        expect(chosen.data.measured.coordination).toBe(3);
+        expect(chosen.checks.at(-1).text).toBe('3 Se per Ta: no ideal polyhedron, so DI alone (⟨λ⟩ and σ²θ are defined for octahedra and tetrahedra).');
+        expect(chosen.data.configuration).not.toHaveProperty('quadratic_elongation');
+    });
+
+    it('refuses exactly where compute_bond_angles refuses and the Workbench asks: every natural window of the Demo', async () => {
+        const catalogue = shellCatalogue(runs.demo.props);
+        const clarifier = buildClarifier(runs.demo.props);
+        const tool = toolOf('demo', 'polyhedral_distortion');
+        const bondAngles = toolOf('demo', 'compute_bond_angles');
+        const windows = naturalTriplets(catalogue, runs.demo.props.structure.elementCounts).flatMap(({ apex, end, shell }) => [
+            shell.window, ...(shell.firstPeak ? [shell.firstPeak.window] : []), shell.cut.earlier.window, shell.cut.later.window
+        ].filter(([lo, hi]) => hi > lo).map((window) => [apex, end, window]));
+        windows.push(['Ta', 'Se', [2.3, 2.7]], ['Ta', 'Se', [3.5, 4.5]], ['Ga', 'Se', [2.9, 3.6]]);
+        const verdicts = [];
+        const engineRefusals = [];
+        for (const [centre, ligand, [lo, hi]] of windows) {
+            const args = { centre, ligand, r_min: lo, r_max: hi };
+            const label = `${centre}–${ligand} ${lo}–${hi}`;
+            const asks = clarifier.beforeCall(tool, args, { questionText: '' })?.kind === 'cut';
+            const angles = await bondAngles.run({ end1: ligand, apex: centre, end2: ligand, r12_min: lo, r12_max: hi });
+            let refuses;
+            try {
+                refuses = refused(await tool.run(args));
+            } catch (error) {
+                // The engine's own refusal: no polyhedra to measure.
+                expect(error.message).toMatch(/^no polyhedra: /);
+                engineRefusals.push(label);
+                refuses = true;
+            }
+            verdicts.push({ window: label, asks, refuses, bondAnglesRefuse: typeof angles.data.refused === 'string' });
+        }
+        expect(verdicts.filter((verdict) => verdict.refuses !== verdict.bondAnglesRefuse)).toEqual([]);
+        // The Workbench asks only where the run reads a shell; a window apart from it is the counts' (both tools).
+        expect(verdicts.filter((verdict) => verdict.asks && !verdict.refuses)).toEqual([]);
+        expect(verdicts.filter((verdict) => verdict.refuses).map((verdict) => verdict.window)).toEqual([
+            'Ta–Se 2.21–2.65', 'Se–Se 3.02–3.5', 'Ta–Se 2.3–2.7', 'Ta–Se 3.5–4.5', 'Ga–Se 2.9–3.6'
+        ]);
+        // The gap after the GaSe4 shell holds one Se at most per Ga: the
+        // engine finds no polyhedra before any window is judged.
+        expect(engineRefusals).toEqual(['Ga–Se 2.9–3.6']);
+    }, 120000);
+
+    it('without the run\'s partials no shell is compared: the engine\'s counts decide, as for compute_bond_angles', async () => {
+        const cut = await toolsWithoutPartials.polyhedral_distortion.run({ centre: 'Ta', ligand: 'Se', r_min: 2.3, r_max: 2.7 });
+        expect(cut.data).not.toHaveProperty('shell');
+        expect(cut.checks[0].text).toMatch(/^Refused: Only 47 % of the Ta atoms have the most common count \(3 Se\); the counts spread from 1 to 6\. The window cuts through a coordination shell\. Use the whole shell/);
+        expect(cut.data.coordination.modal_share).toBeLessThan(MODAL_COORDINATION_SHARE);
+        const whole = await toolsWithoutPartials.polyhedral_distortion.run({ centre: 'Ta', ligand: 'Se', r_min: 2.21, r_max: 3.23 });
+        expect(whole.checks[0].level).toBe('ok');
+    });
+
+    it('the engine\'s refusals reach the model as errors, and a bad window is refused before any request', async () => {
+        await expect(tools.polyhedral_distortion.run({ centre: 'Ta', ligand: 'Se', r_min: 0.5, r_max: 1 }))
+            .rejects.toThrow('no polyhedra: no Ta atom has a Se neighbour within [0.5, 1] A');
+        await expect(tools.polyhedral_distortion.run({ centre: 'Ta', ligand: 'Se', r_min: 3, r_max: 2 }))
+            .rejects.toThrow('r_min must be below r_max');
+    });
+});
+
+describe('polyhedral_distortion: the summary of every engine path (distortion_fixture.json)', () => {
+    const payload = (name, index) => distortionFixture.cases.find((entry) => entry.name === name).expected[index];
+
+    it('says why the average structure has no polyhedron of the measured count', () => {
+        const noBasis = summarizePolyhedra(payload('coords-only', 0));
+        expect(noBasis.data.average_structure).toEqual({
+            polyhedra: 0, note: 'no average structure: the configuration has no reference sites (coordinates-only lines)'
+        });
+        const noSite = summarizePolyhedra(payload('mixed-site', 1));
+        expect(noSite.data.average_structure.note).toBe('no average-structure site holds mostly Zr: there is no average Zr polyhedron');
+        const differs = summarizePolyhedra(payload('jahn-teller', 1), { windowConfirmed: true });
+        expect(differs.data.average_structure.note).toBe('the average structure\'s Cu sites have 6 F in this window, not 4: no average polyhedron of the measured count');
+    });
+
+    it('a flat polyhedron has no ⟨λ⟩, and the check says how many', () => {
+        const square = payload('random-triclinic', 0);
+        const flat = { ...square, configuration: { ...square.configuration, quadraticElongation: { ...square.configuration.quadraticElongation, count: 4 } } };
+        const { checks } = summarizePolyhedra(flat, { windowConfirmed: true });
+        expect(checks.map((check) => check.text)).toContain('2 of the 6 polyhedra are flat (zero volume): they have no ⟨λ⟩.');
+    });
+
+    it('fails loudly without the engine\'s coordinationSummary', () => {
+        const { coordinationSummary, ...rest } = payload('perovskite-thermal', 0);
+        expect(coordinationSummary).toBeTruthy();
+        expect(() => summarizePolyhedra(rest)).toThrow(/no coordinationSummary/);
+    });
+});
+
 describe('Copilot summarizers', () => {
     it('cartesianToUvw keeps the sign and scales the largest component to 1', () => {
         const hexagonal = [[3, 0, 0], [-1.5, 1.5 * Math.sqrt(3), 0], [0, 0, 5]];
@@ -426,7 +617,8 @@ describe('Copilot summarizers', () => {
             parseWarning: '2 lines skipped'
         }, null);
         expect(checks.map((check) => check.level)).toEqual(['warn', 'warn', 'note', 'note', 'note']);
-        expect(checks[2].text).toBe('No significant peak direction (1.2σ < 3σ).');
+        // Below 2.5σ: nothing to report (the user's tiers, 2026-10-24).
+        expect(checks[2].text).toBe('No preferred direction: the peak is 1.2σ, below 2.5σ: nothing to report.');
     });
 
     it('bond-angle checks with no shell to compare (the counts fallback): a window that misses most central atoms is refused', () => {
@@ -615,7 +807,11 @@ describe('Copilot summarizers', () => {
         // Ratios to two significant digits (204 reads 200), σ past SIGMA_MAX as '>8'.
         expect(data.elements[0].zone_boundary).toEqual([['(0, 0, ½)', 200, 99.5, '>8'], ['(½, 0, 0)', 0.9, 40, -2.4]]);
         expect(data.elements[0].strongest.map((row) => row[3])).toEqual([null, null]);
-        expect(facts.modulation).toEqual({ elements: ['Nb'], ordered: [{ element: 'Nb', q: [0, 0, 0.5] }], general: [] });
+        // The long-wave check's facts (the user's rule, 2026-10-24): the bound and the strongest modes that are long waves.
+        expect(facts.modulation).toEqual({
+            elements: ['Nb'], ordered: [{ element: 'Nb', q: [0, 0, 0.5] }], general: [], long_wave_q: 0.25, long_waves: [{ element: 'Nb', q: [0.1, 0, 0] }],
+            diffuse: []
+        });
         const odd = summarizeModulations({
             supercell: [3, 4, 4], wavevectors: 47, untestable: [[1, 0, 0]], family: { zoneBoundaryPoints: 0, comparedModes: 0 },
             rules: { ratio: 3, sigma: 3, longWaveRatio: 5, longWaveQ: 0.25, sigmaMax: SIGMA_MAX },
@@ -665,9 +861,9 @@ describe('Copilot summarizers', () => {
         verification.record({ name: 'analyze_displacement_directions', ...toolResult({ args: { site_ref: 3 }, facts }) }, () => ({ data: null }));
         const [finding] = verification.judge('Site 3 has a preferred displacement direction along [1 0 0].').done.audit;
         expect(finding.rule).toBe('direction');
-        expect(finding.text).toMatch(/found a peak at ≥ 3σ \(site 3: peak 2\.\d+σ, map 7\.\d+σ\)\. A significant map test is anisotropy/);
-        // A significant peak still counts, with or without the map.
-        expect(summarizeOrientation({ ...payload, peakSignificance: 4.1 }, null).facts.direction.significant).toBe(true);
+        expect(finding.text).toMatch(/found one \(a finding: ≥ 3σ, ≥ 1\.2× isotropic, and held at the neighbouring resolution; site 3: peak 2\.\d+σ at [\d.]+× isotropic, map 7\.\d+σ — nothing to report\)\. A significant map test is anisotropy/);
+        // A significant peak still counts, with or without the map: its tier is then the neighbouring resolution's call.
+        expect(summarizeOrientation({ ...payload, peakSignificance: 4.1 }, null).facts.direction).toMatchObject({ significant: true, tier: 'hint', because: 'unchecked' });
     });
 
     it('cluster summary: "LESS distorted" does not deny a distortion the axis families show (Jahn–Teller octahedra)', () => {
@@ -787,7 +983,7 @@ describe('Copilot summarizers', () => {
         // The decoy long wave and the other elements carry no polarisation row: none is ordered.
         expect(data.elements.filter((entry) => entry.polarisation).map((entry) => entry.element)).toEqual(['Ti']);
         // facts.modulation keeps its shape.
-        expect(facts.modulation).toEqual({ elements: ['O', 'Sr', 'Ti'], ordered: [{ element: 'Ti', q: [0, 0, 0.5] }], general: [] });
+        expect(withoutLongWaves(facts.modulation)).toEqual({ elements: ['O', 'Sr', 'Ti'], ordered: [{ element: 'Ti', q: [0, 0, 0.5] }], general: [] });
         // Its own result budget holds it whole, with room for a fourth element.
         expect(devTools('dev-zone-boundary').analyze_modulations.resultBudget).toBe(MODULATION_RESULT_BUDGET);
         expect(JSON.stringify({ ref: 'r1', checks, data }).length).toBeLessThan(MODULATION_RESULT_BUDGET - 1000);
@@ -797,8 +993,9 @@ describe('Copilot summarizers', () => {
         // The modulations fixture's weak doubling: Nb at (0, 0, ½), 2.99σ over
         // the 21 zone-boundary points against the independent-cell null (F1).
         // Its usual rounding (3.0 in the row, "3σ" in the sentence) would read
-        // the bar. (Until F1 the known answer was dev-weak-order-b at 2.96σ:
-        // the calibrated null reads that order at 5.6σ.)
+        // the bar. (Until F1 the known answer was dev-weak-order-b at 2.96σ,
+        // which the calibrated null read at 5.6σ until the pair was re-set at
+        // protocol 2026-10-19.19.)
         const weak = modulationsFixture.cases.find((entry) => entry.name.startsWith('weak doubling'));
         const synthetic = summarizeModulations(displacementModulations(siteDisplacementsFromRmc6f(weak.text)));
         expect(synthetic.checks[0].text).toBe('No order that doubles the cell: no zone-boundary point stands out of the diffuse background '
@@ -830,14 +1027,22 @@ describe('Copilot summarizers', () => {
         expect(anti.data.elements.find((entry) => entry.element === 'Nb').diffuse).toEqual(['[1 0 0]', -0.29, 3.7]);
         expect(anti.data.note).toMatch(/ diffuse is \[lag, correlation, sigma\]: /);
         // No single mode is ordered: the per-mode tests say no order, the facts hold none.
-        expect(anti.facts.modulation).toEqual({ elements: ['Ag', 'Nb'], ordered: [], general: [] });
+        expect(withoutLongWaves(anti.facts.modulation)).toEqual({ elements: ['Ag', 'Nb'], ordered: [], general: [] });
+        // The diffuse verdict in the facts (the local-order interview, 2026-10-24): antiphase, order between cells.
+        expect(anti.facts.modulation.diffuse).toEqual([{ element: 'Nb', phase: 'antiphase', lag: [1, 0, 0], correlation: -0.29, sigma: 3.67 }]);
         const inPhase = run('diffuse order in phase');
-        expect(inPhase.checks.find((check) => /correlated in phase/.test(check.text))).toEqual({
-            level: 'note',
-            text: 'Nb displacements are correlated in phase between neighbouring cells (+0.47 between cells [0 0 1] apart, 4.6σ against '
-                + 'independent cells): the power beyond the long waves leans toward the zone centre — neighbouring cells moving together '
-                + '(as RMC\'s long waves and acoustic-like thermal motion give), not a superstructure.'
-        });
+        const together = inPhase.checks.find((check) => /correlated in phase/.test(check.text));
+        expect(together.level).toBe('note');
+        // Correlated motion, not order (the local-order interview, 2026-10-24).
+        expect(together.text).toBe('Nb displacements are correlated in phase between neighbouring cells (+0.47 between cells [0 0 1] apart, 4.6σ against '
+            + 'independent cells): the power beyond the long waves leans toward the zone centre — neighbouring cells moving together '
+            + '(correlated motion; as RMC\'s long waves and acoustic-like thermal motion give), not order.');
+        expect(inPhase.facts.modulation.diffuse).toEqual([{ element: 'Nb', phase: 'in_phase', lag: [0, 0, 1], correlation: 0.47, sigma: 4.6 }]);
+        // The one reading of the verdict: antiphase is order, in phase correlated motion.
+        const verdictOf = (result, element) => result.facts.modulation.diffuse.find((item) => item.element === element);
+        expect(verdictOf(anti, 'Nb').phase).toBe('antiphase');
+        expect([isDiffuseOrder({ because: 'correlated_antiphase' }), isDiffuseOrder({ because: 'correlated_in_phase' }), isDiffuseOrder(null)]).toEqual([true, false, false]);
+        expect([isCorrelatedMotion({ because: 'correlated_in_phase' }), isCorrelatedMotion({ because: 'correlated_antiphase' })]).toEqual([true, false]);
         // Too few compared modes (a 4 × 4 × 4 grid): no row, no word.
         const small = run('doubled (4, 4, 4)');
         expect(small.data.elements.every((entry) => entry.diffuse === undefined)).toBe(true);
@@ -901,13 +1106,17 @@ describe('Copilot summarizers', () => {
         expect(named.data.elements.map((entry) => entry.element)).toEqual(['Nb']);
         expect(named.data.elements[0]).toEqual(every.data.elements.find((entry) => entry.element === 'Nb'));
         expect(named.data.note).toContain('corrected over all 21 zone-boundary points of the configuration\'s 3 elements, whichever the call names');
-        expect(named.facts.modulation).toEqual({ elements: ['Nb'], ordered: [], general: [] });
-        // dev-weak-order-b (F3's case until F1): the same Nb data whether or not the call names it, now ordered.
+        expect(withoutLongWaves(named.facts.modulation)).toEqual({ elements: ['Nb'], ordered: [], general: [] });
+        // dev-weak-order-b (F3's case until F1; below the bar again since its
+        // re-set, protocol 2026-10-19.19): the same Nb data and the same "no
+        // order" whether or not the call names it.
         const tools = devTools('dev-weak-order-b');
         const all = await tools.analyze_modulations.run({});
         const nb = await tools.analyze_modulations.run({ element: 'Nb' });
         expect(nb.data.elements[0]).toEqual(all.data.elements.find((entry) => entry.element === 'Nb'));
-        expect(nb.facts.modulation).toEqual({ elements: ['Nb'], ordered: [{ element: 'Nb', q: [0.5, 0.5, 0] }], general: [] });
+        expect(nb.checks[0].text).toBe(all.checks[0].text);
+        expect(nb.checks[0].text).toMatch(/^No order that doubles the cell: .* \(the strongest, Nb at \(½, ½, 0\), is 7\.7× the median, 2\.6σ after the correction\)\.$/);
+        expect(withoutLongWaves(nb.facts.modulation)).toEqual({ elements: ['Nb'], ordered: [], general: [] });
     });
 
     it('cluster summary: other_sizes never lists the analysed kind, on a tie too (review 2026-10-12 #17)', () => {
@@ -940,7 +1149,10 @@ describe('the engine tools\' method advice: what arm C reads without it', () => 
 
     it('each description keeps what the tool does and returns: no other tool named but site_ref\'s source', () => {
         const advised = Object.values(tools).filter((tool) => tool.method != null).map((tool) => tool.name);
-        expect(advised).toEqual(['list_sites', 'compute_bond_angles', 'analyze_clusters', 'analyze_modulations', 'detect_symmetry', 'measure_symmetry_lowering']);
+        expect(advised).toEqual([
+            'list_sites', 'compute_bond_angles', 'polyhedral_distortion', 'analyze_clusters', 'analyze_modulations', 'detect_symmetry',
+            'measure_symmetry_lowering'
+        ]);
         for (const tool of Object.values(tools)) {
             const off = toolDescription(tool, 'off');
             expect(off).toBe(tool.description);
@@ -953,6 +1165,28 @@ describe('the engine tools\' method advice: what arm C reads without it', () => 
         expect(toolDescription(tools.detect_symmetry, 'full')).toMatch(/Wyckoff orbits\. Compare tolerances to see which symmetry the local distortion breaks\. Does not change the card\.$/);
         // The refusal stays stated in arm C: on window_confirmed.
         expect(tools.compute_bond_angles.parameters.properties.window_confirmed.description).toMatch(/A window that cuts the coordination shell is refused unless it is set\./);
+        // polyhedral_distortion: what it computes alone in arm C; where the
+        // window comes from, which questions need it and how to read it, in B.
+        expect(tools.polyhedral_distortion.parameters.properties.window_confirmed)
+            .toEqual(tools.compute_bond_angles.parameters.properties.window_confirmed);
+        const full = toolDescription(tools.polyhedral_distortion, 'full');
+        expect(full).toContain('within [r_min, r_max] Å (the whole first shell: find_gr_peaks\' first_shell.window_A), for the centres');
+        expect(full).toMatch(/\(the site means\)\. Use it for octahedra or tetrahedra, isolated or sharing corners, edges or faces /);
+        expect(full).toMatch(/one only the configuration's polyhedra show is local \(thermal motion alone raises DI, ⟨λ⟩ and σ²θ\)\.$/);
+        expect(toolDescription(tools.polyhedral_distortion, 'off')).not.toMatch(/Use it|find_gr_peaks|static|local|thermal/);
+    });
+
+    it('analyze_clusters: finite clusters only; an extended network goes to polyhedral_distortion only where the run offers it (the coordination-shells interview, 2026-10-24)', () => {
+        // The tools as built: polyhedral_distortion is offered, so the advice names it.
+        expect(Object.keys(tools)).toContain('polyhedral_distortion');
+        expect(tools.analyze_clusters.method).toEqual(clusterMethod({ polyhedra: true }));
+        expect(toolDescription(tools.analyze_clusters, 'full')).toMatch(/have no finite clusters for its null: use polyhedral_distortion\.$/);
+        // Not offered, the advice names no tool the model lacks.
+        const without = toolDescription({ ...tools.analyze_clusters, method: clusterMethod({ polyhedra: false }) }, 'full');
+        expect(without).toMatch(/ Use it for finite clusters \(dimers, trimers, M4 tetrahedra, isolated polyhedra\): their distortion, Jahn–Teller, dimerization or trimerization; single-site displacement directions cannot show these\. Corner-sharing polyhedra or another extended network have no finite clusters for its null\.$/);
+        expect(without).not.toMatch(/polyhedral_distortion/);
+        // Arm C reads neither.
+        expect(toolDescription({ ...tools.analyze_clusters, method: clusterMethod({ polyhedra: true }) }, 'off')).toBe(tools.analyze_clusters.description);
     });
 
     it('compute_bond_angles: the cut-window refusal still refuses; only which window to use goes', async () => {
@@ -1004,5 +1238,46 @@ describe('the engine tools\' method advice: what arm C reads without it', () => 
         expect(split.text).toMatch(/does not make the clusters regular\. Read the pattern \(axis families, trigonality\), the partial g\(r\) shell \(find_gr_peaks\) and the bond angles\.$/);
         expect(checkText(split, 'off')).toMatch(/^Split sites: 2 of the 3 member sites \(3, 5\) have two positions .* does not make the clusters regular\.$/);
         for (const check of [extended, none, split]) expect(toolNames(checkText(check, 'off'))).toEqual([]);
+    });
+
+    it('analyze_modulations: the long-wave and in-phase notes keep their facts and limits; arm C reads them without what the pattern is evidence of', async () => {
+        // A causal explanation is an inference (as in the domain rules): arm C
+        // drops it, and keeps the definition and the limit. Arm B reads each
+        // note byte for byte as before (the Demo's tool-result snapshots).
+        const { checks } = await tools.analyze_modulations.run({});
+        const longWaves = checks.filter((check) => /strongest mode is a long-wavelength wave/.test(check.text));
+        expect(longWaves.map((check) => check.text)).toEqual([
+            'Ga\'s strongest mode is a long-wavelength wave, q = (0.2, 0, 0) at 13× the median: box-scale displacement correlations '
+                + '(common in RMC), not a crystallographic superstructure.',
+            'Se\'s strongest mode is a long-wavelength wave, q = (0.1, 0.2, -0.1) at 33× the median: box-scale displacement correlations '
+                + '(common in RMC), not a crystallographic superstructure.',
+            'Ta\'s strongest mode is a long-wavelength wave, q = (0.1, 0.2, -0.1) at 13× the median: box-scale displacement correlations '
+                + '(common in RMC), not a crystallographic superstructure.'
+        ]);
+        for (const check of longWaves) {
+            expect(check.level).toBe('note');
+            expect(checkText(check, 'full')).toBe(check.text);
+            expect(checkText(check, 'off')).toBe(check.text.replace(' (common in RMC)', ''));
+            expect(checkText(check, 'off')).toMatch(/× the median: box-scale displacement correlations, not a crystallographic superstructure\.$/);
+        }
+        const together = checks.find((check) => /correlated in phase/.test(check.text));
+        expect(together.level).toBe('note');
+        // Correlated motion, not order (the local-order interview, 2026-10-24): arm C reads the user's words alone.
+        expect(checkText(together, 'full')).toBe('Ga, Se and Ta displacements are correlated in phase between neighbouring cells (the strongest, Se, '
+            + '+0.22 between cells [0 0 1] apart, > 8σ against independent cells): the power beyond the long waves leans toward the zone '
+            + 'centre — neighbouring cells moving together (correlated motion; as RMC\'s long waves and acoustic-like thermal motion give), not order.');
+        expect(checkText(together, 'off')).toBe('Ga, Se and Ta displacements are correlated in phase between neighbouring cells (the strongest, Se, '
+            + '+0.22 between cells [0 0 1] apart, > 8σ against independent cells): the power beyond the long waves leans toward the zone '
+            + 'centre — neighbouring cells moving together (correlated motion), not order.');
+        // The sentences themselves, as any engine payload reaches them: the
+        // same advice, listed apart (methodCheck).
+        expect(MODULATION_SENTENCES.longWave.long_wave_dominates({ element: 'Sr', mode: { q: [0.125, 0, 0], ratio: 100 } }).method)
+            .toEqual([' (common in RMC)']);
+        expect(MODULATION_SENTENCES.diffuseOrder.correlated_in_phase({
+            elements: ['Nb'], strongest: 'Nb', diffuse: { correlation: 0.3, lag: [0, 0, 1], sigma: 5 }
+        }).method).toEqual(['; as RMC\'s long waves and acoustic-like thermal motion give']);
+        // Every other modulation check carries no advice: arm C reads it whole.
+        checks.filter((check) => check !== together && !longWaves.includes(check))
+            .forEach((check) => expect(checkText(check, 'off'), check.text).toBe(check.text));
     });
 });

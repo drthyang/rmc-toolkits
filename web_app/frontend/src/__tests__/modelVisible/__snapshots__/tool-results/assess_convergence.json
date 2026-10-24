@@ -1,33 +1,65 @@
 {
   "tool": "assess_convergence",
   "arguments": {},
-  "content_chars": 435,
+  "content_chars": 1111,
   "content": {
     "ref": "r1",
     "checks": [
       {
         "level": "note",
-        "text": "Judged on the X_ray_(R)1 term only, not the total chi^2."
+        "text": "Judged on every chi^2 term of the .log (4 non-zero, 4 zero throughout) and their total, over the last tenth of the run (227 rows): converged only when none falls beyond 3 × the noise."
       },
       {
         "level": "note",
-        "text": "Still improving over the recent window."
+        "text": "Still improving: F(Q)_1, X_ray_(R)1 and the total fall by more than 3 × their noise over the last tenth."
       }
     ],
     "data": {
-      "column": "X_ray_(R)1",
-      "quantity": "ln(chi^2), natural log; lower is better",
+      "quantity": "ln(chi^2) per .log row, natural log; lower is better",
       "status": "improving",
       "n_steps": 2262,
-      "first": 0.0953,
-      "last": -8.87,
-      "min": -8.87,
-      "total_drop": 8.96,
-      "slope_per_step": {
-        "last_10pct": -0.00052,
-        "last_25pct": -0.00062,
-        "last_50pct": -0.00089
-      }
+      "window_rows": 227,
+      "total": {
+        "first": 0.271,
+        "last": 2.15,
+        "min": -0.639,
+        "drop": -1.88,
+        "change_last_10pct": -0.074,
+        "noise_sd": 0.024,
+        "trend": "falling"
+      },
+      "terms": [
+        {
+          "term": "F(Q)_1",
+          "last": -6.18,
+          "change_last_10pct": -0.016,
+          "noise_sd": 0.0015,
+          "trend": "falling"
+        },
+        {
+          "term": "Curvature #3",
+          "last": 2.11,
+          "change_last_10pct": -0.073,
+          "noise_sd": 0.025,
+          "trend": "flat"
+        },
+        {
+          "term": "Curvature #5",
+          "last": -1.06,
+          "change_last_10pct": -0.098,
+          "noise_sd": 0.05,
+          "trend": "flat"
+        },
+        {
+          "term": "X_ray_(R)1",
+          "last": -8.87,
+          "change_last_10pct": -0.12,
+          "noise_sd": 0.0027,
+          "trend": "falling"
+        }
+      ],
+      "zero_terms": ["Curvature #1", "Curvature #2", "Curvature #4", "Curvature #6"],
+      "chart_column": "X_ray_(R)1"
     }
   }
 }

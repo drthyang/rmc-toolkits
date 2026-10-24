@@ -626,8 +626,9 @@ class NullTests(unittest.TestCase):
     def test_independent_isotropic_sites_are_no_longer_held_to_the_bound(self):
         # One isotropic site has three components: the bound chi2_1 the null
         # took before F1 read a weak doubling (B +-0.018 A along z at
-        # (1/2, 1/2, 0) over 0.06 A of thermal motion, the weak order of the
-        # validation's judgment kind) near 3 sigma; the null reads it above 5.
+        # (1/2, 1/2, 0) over 0.06 A of thermal motion, the weak order the
+        # validation's judgment pair had until protocol 2026-10-19.19 re-set
+        # it) near 3 sigma; the null reads it above 5.
         result = displacement_modulations(configs.site_displacements(configs.zone_mode(3, delta=0.018, q=(0.5, 0.5, 0))))
         ti = _element(result, "Ti")
         point = next(p for p in ti["zoneBoundary"] if p["q"] == [0.5, 0.5, 0.0])

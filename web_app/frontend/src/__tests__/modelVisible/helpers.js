@@ -21,6 +21,7 @@ import {
 } from '../../browserData';
 import { copilotRun, DEFAULT_VIEW } from '../../copilotRun';
 import { copilotSkills } from '../../copilotSkills';
+import { attachFtUncertainty } from '../../ftUncertaintyRun';
 import { parseSkillFiles } from '../../llm/copilot/skills';
 import { copilotSystemPrompt } from '../../llm/prompts/copilot';
 import { inProcessEngine } from '../../workers/pcaKdeWorker';
@@ -113,7 +114,11 @@ export const demoEntries = () => readdirSync(DEMO).sort().map((name) => ({
  * in-thread engine.
  */
 export const dashboardLoadedRun = async (localRun) => {
-    const files = await Promise.all(localRun.files.map((file) => (isDashboardPlotFile(file) ? parseDashboardPlotFile(file) : file)));
+    // Parsed as the Dashboard parses them, each xPDF transform with its error ribbon.
+    const files = await attachFtUncertainty(
+        await Promise.all(localRun.files.map((file) => (isDashboardPlotFile(file) ? parseDashboardPlotFile(file) : file))),
+        localRun.allFiles || localRun.files
+    );
     const structure = await handleStructureMessage({ file: localRun.structureFile, maxPoints: DASHBOARD_MAX_POINTS });
     const settings = localRun.settingsFile ? parseRunSettings(await localRun.settingsFile.sourceFile.text()) : null;
     const rmc6fText = await localRun.structureFile.sourceFile.text();

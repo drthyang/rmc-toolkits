@@ -238,6 +238,34 @@ class DemoRunApiTests(unittest.TestCase):
         self.assertEqual(data["metrics"]["final_chi_r"], expected[-1])
         self.assertEqual(data["title"], "χ² history: X_ray_(R)1")
 
+    def test_log_data_carries_every_chi_term_and_their_total(self):
+        # The eight chi^2 columns after Time, moves_acc and moves_gen, each as an
+        # ln history of the three restarts, and the ln of each row's sum: what
+        # the Copilot and the watchdog judge (flaskCopilotRun.test.jsx builds the
+        # browser's from the same logs).
+        data = self.client.get("/api/plot/data", query_string={"path": f"{DEMO_REL}/GTS_250K-00.log"}).get_json()
+        terms = data["chiTerms"]
+        self.assertEqual(terms["names"], ["F(Q)_1"] + ["Curvature"] * 6 + ["X_ray_(R)1"])
+        rows = [
+            [float(token) for token in line.split()[3:]]
+            for path in LOGS
+            for line in path.read_text(encoding="utf-8").splitlines()[2:]
+            if line.strip()
+        ]
+        self.assertEqual(terms["segments"], [1320, 510, 432])
+        self.assertEqual(len(terms["total"]), len(rows))
+        self.assertAlmostEqual(terms["total"][-1], math.log(sum(rows[-1])), places=12)
+        self.assertAlmostEqual(terms["series"][0][-1], math.log(rows[-1][0]), places=12)
+        np.testing.assert_allclose(terms["series"][-1], data["series"][0]["y"], rtol=0, atol=0)
+        # A term that is zero throughout (a curvature constraint not in use) at the clamp:
+        # one value on every row, ln(1e-12). numpy's log may differ from math.log in the last
+        # ulp (its SIMD path on some CPUs, under the oldest pinned numpy), so the value is
+        # compared to 1e-12 relative, not bit for bit.
+        clamped = terms["series"][1]
+        self.assertEqual(len(clamped), len(rows))
+        self.assertEqual(len(set(clamped)), 1)
+        self.assertTrue(math.isclose(clamped[0], math.log(1e-12), rel_tol=1e-12, abs_tol=0.0))
+
     def test_structure_endpoint_reports_the_header_composition(self):
         response = self.client.get("/api/structure", query_string={"dir": DEMO_REL, "maxPoints": 500})
         self.assertEqual(response.status_code, 200)

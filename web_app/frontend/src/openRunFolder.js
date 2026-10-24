@@ -18,6 +18,7 @@ import {
     DASHBOARD_MAX_POINTS, isDashboardPlotFile, makeRunFromEntries, parseDashboardPlotFile, parseRunSettings
 } from './browserData';
 import { copilotRun, DEFAULT_VIEW, normalizeView } from './copilotRun';
+import { attachFtUncertainty } from './ftUncertaintyRun';
 
 /**
  * A run folder as a LoadedRun ({ name, files, structure, structurePath,
@@ -33,7 +34,12 @@ export const readRunFolder = async (entries) => {
         import('./workers/localStructureWorker')
     ]);
     const run = await makeRunFromEntries(entries);
-    const files = await Promise.all(run.files.map((file) => (isDashboardPlotFile(file) ? parseDashboardPlotFile(file) : file)));
+    // The plots as the Dashboard holds them: parsed, each xPDF transform with
+    // its error ribbon (attachFtUncertainty, from every file of the run).
+    const files = await attachFtUncertainty(
+        await Promise.all(run.files.map((file) => (isDashboardPlotFile(file) ? parseDashboardPlotFile(file) : file))),
+        run.allFiles
+    );
     const structure = run.structureFile
         ? await handleStructureMessage({ file: run.structureFile, maxPoints: DASHBOARD_MAX_POINTS })
         : null;

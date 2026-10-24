@@ -1,0 +1,92 @@
+{
+  "tool": "compare_fit",
+  "arguments": {
+    "dataset": "xpdf"
+  },
+  "content_chars": 1346,
+  "content": {
+    "ref": "r1",
+    "checks": [
+      {
+        "level": "ok",
+        "text": "Rw 0.0119 over r = 2.34–20 Å; the misfit is concentrated in r = 2.34–5.28 Å: 62 % of the squared residual (Rw 0.024 there)."
+      },
+      {
+        "level": "note",
+        "text": "No σ(r) for this G(r) (F(Q) carries no uncertainties: scale_ft_rmc.fq (named in GTS_250K.dat) is not in the run folder): whether a residual feature is above noise is not judged."
+      }
+    ],
+    "data": {
+      "dataset": "xpdf",
+      "kind": "X-ray G(r)",
+      "axis": "r",
+      "model_series": "X_ray-calc",
+      "data_series": "X_ray_exp_renorm",
+      "rw": 0.0119,
+      "range": [2.34, 20],
+      "by_range": [
+        {
+          "r_A": [2.34, 5.28],
+          "rw": 0.024,
+          "share_of_misfit": 0.62
+        },
+        {
+          "r_A": [5.28, 8.23],
+          "rw": 0.0053,
+          "share_of_misfit": 0.065
+        },
+        {
+          "r_A": [8.23, 11.2],
+          "rw": 0.011,
+          "share_of_misfit": 0.12
+        },
+        {
+          "r_A": [11.2, 14.1],
+          "rw": 0.0094,
+          "share_of_misfit": 0.071
+        },
+        {
+          "r_A": [14.1, 17.1],
+          "rw": 0.0069,
+          "share_of_misfit": 0.055
+        },
+        {
+          "r_A": [17.1, 20],
+          "rw": 0.0091,
+          "share_of_misfit": 0.068
+        }
+      ],
+      "largest_residuals": [
+        {
+          "r": 2.53,
+          "model_minus_data": -0.073,
+          "relative_to_data_rms": -0.025
+        },
+        {
+          "r": 3.66,
+          "model_minus_data": -0.096,
+          "relative_to_data_rms": -0.032
+        },
+        {
+          "r": 3.82,
+          "model_minus_data": -0.092,
+          "relative_to_data_rms": -0.031
+        },
+        {
+          "r": 4.9,
+          "model_minus_data": 0.16,
+          "relative_to_data_rms": 0.054
+        },
+        {
+          "r": 8.74,
+          "model_minus_data": -0.064,
+          "relative_to_data_rms": -0.021
+        }
+      ],
+      "noise": {
+        "sigma": null,
+        "why": "F(Q) carries no uncertainties: scale_ft_rmc.fq (named in GTS_250K.dat) is not in the run folder"
+      }
+    }
+  }
+}

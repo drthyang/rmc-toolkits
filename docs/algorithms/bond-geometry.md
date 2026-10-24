@@ -144,6 +144,10 @@ is assumed anywhere.
 
 ### Step 3 — The linked-cell search: cells, reach, and correctness
 
+The same search (`_neighbor_bonds` / `neighborBonds`) also finds the AI Copilot's coordination
+polyhedra (`polyhedral_distortion`: [ai-assistant.md](ai-assistant.md), Step 21) and the cluster
+engine's contacts, so a window holds the same bonds for all three.
+
 `_neighbor_bonds` divides the box into $n_i$ cells per lattice direction. The length scale is
 the **perpendicular width** of the box along each direction (`_perpendicular_widths`):
 

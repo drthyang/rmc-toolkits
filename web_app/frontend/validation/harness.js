@@ -175,8 +175,103 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // shell_ab.cn), and every result adds the shell reading (shell_ab, shell_bc)
 // and the counts' modal, modal_share and unbonded_share. A whole shell is
 // never refused (dev-offcentre's Nb–Nb), a sub-shell first peak always unless
-// the user chose it (the Demo's Ta–Se, dev-jahn-teller's Cu–F).
-export const PROTOCOL_VERSION = '2026-10-19.18';
+// the user chose it (the Demo's Ta–Se, dev-jahn-teller's Cu–F);
+// 2026-10-19.19: the marginal situation re-set for the independent-cell null
+// — the dev weak-order pair's amplitude set so its expected (median)
+// significance at q is 3σ (judgment-spec.md's new formula), its seeds by its
+// rule, one on each side of the bar again — and arm C reads analyze_modulations'
+// long-wave and in-phase notes without what the pattern is evidence of
+// (inference); arm B unchanged.
+// 2026-10-19.20: the held-out marginal pair re-set by a fresh blind author
+// from the updated spec (the marginal situation was re-set after F1's
+// corrected null raised the test's power, 2026-10-19).
+// 2026-10-24.1: the user's fit-assessment interview (approved by the user,
+// 2026-10-24) — convergence judged on every χ² term of the .log and their
+// total, converged only when none still falls beyond 3 × its noise over the
+// last tenth (assess_convergence's description and result, the context's
+// convergence.last_10pct in place of change_over_last_10pct and
+// recent_slope_per_step, the system prompt's watchdog_status sentence; the
+// context budget 6,500 characters); find_gr_peaks calls a peak
+// constraint-limited above 5 % of the peak at the cut, and advises (method)
+// interpreting nothing on its low-r side and rerunning with the constraint
+// loosened; and two checks on the answer, order claimed at a box-scale
+// wavevector (long-wave) and a distribution's numbers quoted without saying
+// they come from one configuration (single-configuration). Arms A and A+ on
+// dev are unchanged.
+// 2026-10-24.2: the user's interview answers for four skills (approved by the
+// user, 2026-10-24), as checks on the answer and on the tools' results —
+// coordination-shells: every CN or bond angle in an answer carries its window
+// in Å (window), the coordination check reads "n A per B" as B's count and a
+// clause stating the whole shell's window as a claim about the shell, and
+// find_gr_peaks cross-checks first_shell.window_A against the average
+// structure's bond lengths for the pair (first_shell.average_structure_d_A;
+// a warning past the first peak's FWHM; its description); the evidence gate
+// backs distorted polyhedra with polyhedral_distortion where the run offers
+// it, else analyze_clusters (EVIDENCE_RULES; an anyOf row asks for the first
+// analysis the turn offers), and analyze_clusters' method keeps it to finite
+// clusters; local-symmetry: a group–subgroup relation that does not hold
+// (subgroup: against the ladder's nested groups — index, t or k — or the
+// point groups alone) and a cell doubling the box cannot hold (cell-doubling:
+// odd along an axis it doubles, or along axes no ordered zone-boundary point
+// doubles); detect_symmetry's facts give its operations and tolerance; the
+// CIF calls itself an average-structure model of an RMC configuration;
+// displacement-anisotropy: analyze_displacement_directions labels its peak a
+// finding (≥ 3σ, ≥ 1.2× isotropic, held at the neighbouring resolution, which
+// it reads for a candidate), a hint (≥ 3σ under 1.2×, 2.5–3σ, not held) or
+// nothing (below 2.5σ), and the direction check and arm A+ take a finding
+// only (A+'s readings record the tier; no dev verdict moves); a split or
+// flat-topped site called disorder when analyze_modulations has not tested
+// its element (disorder, on list_sites' facts), and the gate's split-site
+// row reads a flat-topped site called disordered; local-order: the gate's
+// "no order" also needs polyhedral_distortion on each centre of polyhedra no
+// finite cluster holds (networkCentresOf), where the turn offers it, and the
+// diffuse verdict is read as the user reads it — only antiphase (or
+// general-q) order past its bar is order, in-phase correlation is
+// neighbouring cells moving together (correlated motion), not order, the
+// tool says so, and it never supports "no correlation" (no-order,
+// correlated-motion, no-correlation; arm A+ claims an antiphase verdict as a
+// modulation with no q; no dev verdict moves).
+// 2026-10-24.3: a new tool, polyhedral_distortion (the user's interview
+// answer 7 for coordination-shells, approved by the manager on the user's
+// delegation): Baur's DI, Robinson's quadratic elongation and bond-angle
+// variance of a centre's coordination polyhedra, over the configuration and
+// the average structure, refusing a window that cuts the shell by
+// compute_bond_angles' rule; arms B and C are offered it (arm C its
+// description without the method advice), arms A and A+ do not read it.
+// 2026-10-24.4: the FT error propagation (approved by the manager on the
+// user's delegation, 2026-10-24) — compare_fit reads an X-ray G(r)'s residual
+// features against σ(r), the G(r) file's own σ or the one propagated from the
+// input F(Q)'s σ through RMCProfile's transform (reproduced on the run's own
+// files first): each feature's relative_to_sigma and above_noise (≥ 3 σ), the
+// result's noise block (its source, the residual's rms in σ, the reproduction
+// residual and tolerance, the correlation between r points), and a note; a
+// G(r) without σ(r) says so and calls nothing above noise. Its description
+// says it (+56 tokens on the worst turns). The run module attaches the
+// ribbon's payload to an xPDF plot (dev-fit-unconverged's has no .dat: "No
+// σ(r)"). Arms A and A+ on dev are unchanged (they do not call compare_fit).
+// 2026-10-24.5: a refused analysis backs no claim (the user's decision A5,
+// approved by the user, 2026-10-24) — the evidence gate counts only a call
+// that answered: a refused one (the tool's own fail check, e.g.
+// compute_bond_angles refusing a window that cuts the shell) is still an
+// analysis but backs no claim under anyOf, firstOffered and allOf alike, and
+// the send-back says it refused (arm B: the tool, and for a window cut both
+// fixes — the whole shell, or the user's window through ask_user and
+// window_confirmed; arm C: no tool, window or remedy); the finding and the
+// Outcome's reason name the refusal. The system prompt and the tools are
+// unchanged. Arms A, A+ and D on dev are unchanged (no model, no gate).
+// 2026-10-24.6: the request policy for Claude Sonnet 5.5 (the user's
+// decisions, 2026-10-24: "Fix both first", "Raise to $20") — it takes only
+// its default sampling, so its requests carry no temperature key, the warmer
+// retry included (models.js temperature null; providerModel leaves it out,
+// the retry asked again unchanged), and every reply is capped at the
+// 8,192 tokens the spend tracker prices (max_tokens in the body, thinking
+// within it: models.js maxTokens = spend.js MAX_REPLY_TOKENS), so the
+// tracker's worst case is enforced; its cap is $20 (the cache-read price
+// stays $0.10, the pricing page's for claude-sonnet-5-5). The run policy records both (temperature
+// { base: null, warmer_retry_min: null, sent: false }, reply_cap max_tokens
+// 8192). The local models' requests, the prompt, the tools and the scoring
+// are unchanged; arms A and A+ do not send requests.
+export const PROTOCOL_VERSION = '2026-10-24.6';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one
 // follows the full method.

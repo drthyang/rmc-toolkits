@@ -50,11 +50,17 @@ const SAMPLES = [
     ['assess_convergence', 'assess_convergence', {}],
     ['find_gr_peaks', 'find_gr_peaks', { pair: 'Ta-Se' }],
     ['compare_fit', 'compare_fit', { dataset: 'xray_sq' }],
+    // The Demo's G(r): its F(Q) carries no σ (the input file is not in the
+    // folder), so no residual is called above noise, and the result says why.
+    ['compare_fit.xpdf', 'compare_fit', { dataset: 'xpdf' }],
     ['list_sites', 'list_sites', {}],
     ['analyze_displacement_directions', 'analyze_displacement_directions', { site_ref: 1 }],
     ['compute_bond_angles', 'compute_bond_angles', { end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.21, r12_max: 3.23 }],
     ['compute_bond_angles.cut-window-workbench-asks', 'compute_bond_angles', CUT, { user: { answer: null, source: 'skipped', index: null } }],
     ['compute_bond_angles.cut-window-refused', 'compute_bond_angles', CUT, { workbench: false }],
+    // The TaSe6 octahedra in the whole first shell: the configuration's and
+    // the average structure's indices (2026-10-24).
+    ['polyhedral_distortion', 'polyhedral_distortion', { centre: 'Ta', ligand: 'Se', r_min: 2.21, r_max: 3.23 }],
     ['analyze_clusters', 'analyze_clusters', { element: 'Ta', r_min: 2.65, r_max: 3.33 }],
     ['analyze_modulations', 'analyze_modulations', {}],
     // One element named: the significance is still corrected over every
@@ -77,14 +83,18 @@ const SAMPLES = [
 // plan item 1.8): the Demo's results whose checks carry method advice, each
 // sent without it — the split-shell note keeps its reading, the cut window is
 // still refused, the octahedron counts, the point group's facts and the
-// unseparated Ta–Ta shell keep their facts. With method 'full' the first four
-// are the files above (Ta–Ta has no full-method file).
+// unseparated Ta–Ta shell keep their facts, and the modulations' long-wave and
+// in-phase notes keep their limits without what the pattern is evidence of
+// (protocol 2026-10-19.19). With method 'full' every one but Ta–Ta is a file
+// above.
 const METHOD_OFF_SAMPLES = [
     ['find_gr_peaks.method-off', 'find_gr_peaks', { pair: 'Ta-Se' }, { method: 'off' }],
     ['find_gr_peaks.Ta-Ta.method-off', 'find_gr_peaks', { pair: 'Ta-Ta' }, { method: 'off' }],
     ['compute_bond_angles.method-off', 'compute_bond_angles', { end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.21, r12_max: 3.23 }, { method: 'off' }],
     ['compute_bond_angles.cut-window-refused.method-off', 'compute_bond_angles', CUT, { workbench: false, method: 'off' }],
-    ['detect_symmetry.method-off', 'detect_symmetry', { tolerance_A: 0.2 }, { method: 'off' }]
+    ['detect_symmetry.method-off', 'detect_symmetry', { tolerance_A: 0.2 }, { method: 'off' }],
+    ['analyze_modulations.method-off', 'analyze_modulations', {}, { method: 'off' }],
+    ['analyze_modulations.element.method-off', 'analyze_modulations', { element: 'Ta' }, { method: 'off' }]
 ];
 
 describe('tool results as the model reads them (the Demo run)', () => {

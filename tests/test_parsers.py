@@ -341,6 +341,46 @@ class ReadChiLogTests(unittest.TestCase):
         np.testing.assert_array_equal(log.chi_r, [10.0, 30.0])
         self.assertIsNone(log.column)
         self.assertEqual(log.skipped_rows, 1)
+        # No column names: which columns are chi^2 terms is unknown.
+        self.assertIsNone(log.total)
+        self.assertIsNone(log.term_names)
+
+    def test_every_chi_term_and_their_total(self):
+        # The columns after Time, moves_acc and moves_gen are the chi^2 terms
+        # (one weight each on line 2); the total is each row's sum, NaN where a
+        # term is non-finite. Mirrors chiLog.test.js.
+        header = "Time  moves_acc moves_gen  F(Q)_1  Curvature  X_ray_(R)1\nh/m/s/.th WEIGHT PARAMETERS 0.1E+01 0.1E+01 0.1E+01\n"
+        log = self._read(header + "1.0 10 20 0.3E-02 0.000E+00 0.2E-03\n2.0 20 40 0.117\n3.0 30 60 0.2D-02 NaN 0.1D-03\n")
+        self.assertEqual(log.term_names, ("F(Q)_1", "Curvature", "X_ray_(R)1"))
+        np.testing.assert_allclose(log.terms[0], [0.3e-2, 0.2e-2])
+        np.testing.assert_array_equal(log.terms[1][:1], [0.0])
+        self.assertTrue(np.isnan(log.terms[1][1]))
+        np.testing.assert_allclose(log.terms[2], log.chi_r)
+        self.assertEqual(log.total[0], 0.3e-2 + 0.0 + 0.2e-3)
+        self.assertTrue(np.isnan(log.total[1]))
+        self.assertEqual(log.segments, (2,))
+
+    def test_restarts_concatenate_the_terms_only_when_every_log_names_the_same(self):
+        weights = "h/m/s/.th WEIGHT PARAMETERS 0.1E+01 0.1E+01\n"
+        first = "Time moves_acc moves_gen F(Q)_1 X_ray_(R)1\n" + weights + "1.0 1 2 0.3E-02 0.2E-03\n2.0 2 4 0.2E-02 0.1E-03\n"
+        same = "Time moves_acc moves_gen F(Q)_1 X_ray_(R)1\n" + weights + "3.0 3 6 0.1E-02 0.5E-04\n"
+        changed = "Time moves_acc moves_gen F(Q)_1 X_ray_(R)1_new\n" + weights + "4.0 4 8 0.1E-02 0.4E-04\n"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths = []
+            for index, text in enumerate((first, same, changed)):
+                path = Path(tmpdir) / f"run-{index:02d}.log"
+                path.write_text(text, encoding="utf-8")
+                paths.append(path)
+            agreeing = read_chi_log(paths[:2])
+            mixed = read_chi_log(paths)
+        self.assertEqual(agreeing.term_names, ("F(Q)_1", "X_ray_(R)1"))
+        np.testing.assert_allclose(agreeing.terms[0], [0.3e-2, 0.2e-2, 0.1e-2])
+        self.assertEqual(agreeing.segments, (2, 1))
+        # Different terms: no per-term history, but every row's total.
+        self.assertIsNone(mixed.term_names)
+        self.assertIsNone(mixed.terms)
+        np.testing.assert_allclose(mixed.total, [0.32e-2, 0.21e-2, 0.105e-2, 0.104e-2])
+        self.assertEqual(mixed.segments, (2, 1, 1))
 
 
 # An older (2018-era) `.rmc6f` omits the per-atom bracketed type label, so its atom

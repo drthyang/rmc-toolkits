@@ -39,9 +39,13 @@ class PackageApiTests(unittest.TestCase):
     def test_top_level_exports_the_0_6_0_engine_api(self):
         # Public functions and constants the CLIs, the API and the docs use,
         # re-exported beside the rest of their modules' API.
-        from rmc_toolkits import scaling, transforms, triplets
+        from rmc_toolkits import ft_uncertainty, scaling, transforms, triplets
 
         expected = {
+            ft_uncertainty: (
+                "assess_ft_uncertainty", "ft_uncertainty_for_run", "rmc_ft", "rmc_ft_sigma", "rmc_ft_covariance",
+                "box_convolution", "RMC_FT_TOLERANCE", "CONVOLUTION_CHECK_LIMIT",
+            ),
             scaling: (
                 "auto_enforcement_cutoff", "first_shell_foot", "fz_limit_fit", "alias_limit",
                 "RHO0_PHYSICAL_RANGE", "RHO0_SEED", "FZ_REL_SE_MAX",

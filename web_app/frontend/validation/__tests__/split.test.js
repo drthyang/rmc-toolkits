@@ -40,7 +40,9 @@ const TEST_CASES = HOLDOUT ? await loadTestCases() : [];
 // 2026-10-19 (protocol 2026-10-19.11): five held-out judgment cases join the test set
 // (two values then changed after the lead's coincidence check, before any run).
 // 2026-10-19 (holdout gate): the definitions sealed, unchanged; the hash holds.
-const TEST_SET_SHA256 = '397dd6a2f73e1eea9ff14eca2d8500766743cdeb6daf829e565c1a6ae3d79d50';
+// 2026-10-19 (protocol 2026-10-19.20): the marginal pair's amplitude and seeds re-chosen by a
+// fresh blind author from the updated spec (F1's corrected null raised the test's power).
+const TEST_SET_SHA256 = '1f782a560f65484602e68c6615eb8634883862db66de25efef937c59f7acea19';
 
 // Every file under a folder, never node_modules, dist or the sealed folder
 // (which no scan reads).
@@ -381,6 +383,12 @@ describe('where a finding stands, and validation batch 1', () => {
         for (const label of ['L1', 'L2', 'L3', 'L4', 'L5']) {
             expect(tools.some((finding) => finding.evidence.includes(label)), label).toBe(true);
         }
+        // The five skill proposals (the skills PR, which waits for the user's review).
+        const skills = findings.filter((finding) => finding.kind === 'skill-gap');
+        expect(skills).toHaveLength(5);
+        for (const label of ['coordination-shells', 'displacement-anisotropy', 'local-symmetry', 'rmc-fit-assessment', 'local order']) {
+            expect(skills.some((finding) => finding.evidence.includes(label)), label).toBe(true);
+        }
     });
 
     // Decisions on the validation itself, in the same form, one JSON file per
@@ -389,6 +397,11 @@ describe('where a finding stands, and validation batch 1', () => {
     // decision taken on the user's delegation says so in its evidence and
     // proposed fix.
     const DECISIONS = join(FRONTEND, 'validation/findings/decisions');
+    // The interview answer checks' records (2026-10-24), one per skill.
+    const INTERVIEW_RECORDS = [
+        '2026-10-24-coordination-shells-interview', '2026-10-24-displacement-anisotropy-interview', '2026-10-24-local-order-interview',
+        '2026-10-24-local-symmetry-interview'
+    ];
     const decisions = () => {
         const results = parseFindingFiles(readdirSync(DECISIONS).map((name) => ({ name, text: readFileSync(join(DECISIONS, name), 'utf8') })));
         results.forEach((result) => expect(result.errors, result.file).toEqual([]));
@@ -413,8 +426,15 @@ describe('where a finding stands, and validation batch 1', () => {
         expect(ids.filter((id) => id !== recomposed)).toEqual([
             '2026-10-19-aplus-app-rules', '2026-10-19-asked-before', '2026-10-19-diffuse-order', '2026-10-19-directions-auto-resolution',
             '2026-10-19-engine-verdicts', '2026-10-19-f5-shell-join', '2026-10-19-jt-split', '2026-10-19-judgment-dev-cases',
-            '2026-10-19-list-sites-split', '2026-10-19-mode-polarisation', '2026-10-19-modulation-bar-and-family', '2026-10-19-modulation-null',
-            '2026-10-19-provenance-told', '2026-10-19-shell-catalogue', '2026-10-19-shell-cut-rule'
+            '2026-10-19-list-sites-split', '2026-10-19-marginal-reset-dev', '2026-10-19-mode-polarisation', '2026-10-19-modulation-bar-and-family',
+            '2026-10-19-modulation-null', '2026-10-19-provenance-told', '2026-10-19-shell-catalogue', '2026-10-19-shell-cut-rule',
+            ...INTERVIEW_RECORDS.filter((id) => id < '2026-10-24-fit-assessment-interview'),
+            '2026-10-24-fit-assessment-interview',
+            '2026-10-24-ft-error-propagation',
+            ...INTERVIEW_RECORDS.filter((id) => id > '2026-10-24-fit-assessment-interview'),
+            '2026-10-24-polyhedral-distortion',
+            '2026-10-24-refused-not-evidence',
+            '2026-10-24-sonnet-request-policy'
         ]);
         expect(existsSync(join(FRONTEND, 'validation/findings/decisions.jsonl'))).toBe(false);
         const record = readFileSync(join(DECISIONS, `${recomposed}.json`), 'utf8');
@@ -523,6 +543,20 @@ describe('where a finding stands, and validation batch 1', () => {
         }
     });
 
+    it('decisions: the marginal situation re-set for the calibrated null (dev pair and arm C\'s modulation notes), approved on the user\'s delegation, implemented with its tests', () => {
+        const reset = decisions()['2026-10-19-marginal-reset-dev'];
+        expect(reset).toMatchObject({ case: 'dev-weak-order-b', kind: 'bug' });
+        expect(DEV_CASES.find((item) => item.id === reset.case)).toMatchObject({ judgment: true, situation: 'marginal' });
+        delegated(reset);
+        // The user may still reverse it before the freeze: both fields say so.
+        for (const field of ['evidence', 'proposed_fix']) expect(reset[field], field).toMatch(/the user may reverse it before the freeze\.$/);
+        expect(reset.tests.length).toBeGreaterThan(0);
+        reset.tests.forEach((test) => {
+            const [path, title] = test.split(' › ');
+            expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+        });
+    });
+
     it('decisions: the tool transcript\'s stricter readings (candidate 11, D3 and D6), approved on the user\'s delegation, implemented with their known-answer tests', () => {
         const askedBefore = decisions()['2026-10-19-asked-before'];
         const provenanceTold = decisions()['2026-10-19-provenance-told'];
@@ -565,6 +599,126 @@ describe('where a finding stands, and validation batch 1', () => {
         delegated(catalogue);
         expect(catalogue.tests.length).toBeGreaterThan(0);
         catalogue.tests.forEach((test) => {
+            const [path, title] = test.split(' › ');
+            expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+        });
+    });
+
+    it('decisions: polyhedral_distortion (the user\'s interview answer 7 for coordination-shells), approved on the user\'s delegation, implemented with its known-answer tests', () => {
+        const polyhedra = decisions()['2026-10-24-polyhedral-distortion'];
+        expect(polyhedra).toMatchObject({
+            case: 'dev-jahn-teller', kind: 'missing-tool', status: 'implemented', needs_user_approval: true,
+            approval: { by: 'user', date: '2026-10-24' }
+        });
+        for (const field of ['evidence', 'proposed_fix']) {
+            expect(polyhedra[field], field).toMatch(/Approved by the manager on the user's delegation, 2026-10-24\.$/);
+        }
+        expect(polyhedra.commit).toMatch(/^[0-9a-f]{40}$/);
+        expect(polyhedra.tests.length).toBeGreaterThan(0);
+        polyhedra.tests.forEach((test) => {
+            const [path, title] = test.split(' › ');
+            const source = readFileSync(join(REPO, path), 'utf8');
+            // A Python test is its method; a JS test its quoted title.
+            if (path.endsWith('.py')) expect(source, test).toContain(`def ${title}(`);
+            else expect(source.replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+        });
+    });
+
+    it('decisions: the fit-assessment interview\'s code half (convergence on every χ² term, the 5 % constraint, two checks), approved by the user directly and implemented with its known-answer tests', () => {
+        // Approved by the user in the rmc-fit-assessment interview (batch 3), not on a delegation.
+        const interview = decisions()['2026-10-24-fit-assessment-interview'];
+        expect(interview).toMatchObject({
+            case: 'dev-fit-unconverged', kind: 'orchestration', needs_user_approval: true, status: 'implemented',
+            approval: { by: 'user', date: '2026-10-24', batch: 3 }
+        });
+        for (const field of ['evidence', 'proposed_fix']) {
+            expect(interview[field], field).toMatch(/Approved by the user, 2026-10-24\./);
+            expect(interview[field], field).not.toMatch(/on the user's delegation/i);
+        }
+        expect(interview.commit).toMatch(/^[0-9a-f]{40}$/);
+        expect(interview.tests.length).toBeGreaterThan(0);
+        interview.tests.forEach((test) => {
+            const [path, title] = test.split(' › ');
+            expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+        });
+    });
+
+    it('decisions: a refused analysis backs no claim (A5, option 2), approved by the user directly and implemented with its known-answer tests', () => {
+        const refused = decisions()['2026-10-24-refused-not-evidence'];
+        expect(refused).toMatchObject({
+            case: 'dev-jahn-teller', kind: 'orchestration', needs_user_approval: true, status: 'implemented',
+            approval: { by: 'user', date: '2026-10-24', batch: 3 }
+        });
+        expect(refused.commit).toMatch(/^[0-9a-f]{40}$/);
+        expect(refused.evidence).toContain('"A5: option 2. A refused analysis doesn\'t count: the gate sends the claim back, and the model re-runs on '
+            + 'the whole shell or asks me to confirm the window. Land it before the B/C runs."');
+        for (const field of ['evidence', 'proposed_fix']) {
+            expect(refused[field], field).toMatch(/Approved by the user, 2026-10-24\.$/);
+            expect(refused[field], field).not.toMatch(/on the user's delegation/i);
+        }
+        expect(refused.tests.length).toBeGreaterThan(0);
+        refused.tests.forEach((test) => {
+            const [path, title] = test.split(' › ');
+            expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+        });
+    });
+
+    it('decisions: the FT error propagation (the G(r) ribbon, compare_fit against σ(r)), approved on the user\'s delegation and implemented with its known-answer tests', () => {
+        const ribbon = decisions()['2026-10-24-ft-error-propagation'];
+        expect(ribbon).toMatchObject({
+            case: 'dev-fit-unconverged', kind: 'missing-tool', needs_user_approval: true, status: 'implemented',
+            approval: { by: 'user', date: '2026-10-24', batch: 3 }
+        });
+        for (const field of ['evidence', 'proposed_fix']) {
+            expect(ribbon[field], field).toMatch(/Approved by the manager on the user's delegation, 2026-10-24\./);
+        }
+        expect(ribbon.commit).toMatch(/^[0-9a-f]{40}$/);
+        expect(ribbon.tests.length).toBeGreaterThan(0);
+        ribbon.tests.forEach((test) => {
+            const [path, title] = test.split(' › ');
+            expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+        });
+    });
+
+    // The interview answer checks (2026-10-24): one record per skill, each filed
+    // with its change, so it names no commit (a commit cannot name its own
+    // hash) and stands as approved until the PR merges.
+    it('decisions: the interview answer checks, one record per skill, approved by the user directly and implemented with their known-answer tests', () => {
+        for (const id of INTERVIEW_RECORDS) {
+            const record = decisions()[id];
+            expect(record, id).toMatchObject({
+                kind: 'orchestration', needs_user_approval: true, status: 'implemented', approval: { by: 'user', date: '2026-10-24', batch: 3 }
+            });
+            expect(record.commit, id).toMatch(/^[0-9a-f]{7,40}$/);
+            expect(splitOf(record.case), id).toBe('dev');
+            for (const field of ['evidence', 'proposed_fix']) {
+                expect(record[field], `${id} ${field}`).toMatch(/Approved by the user, 2026-10-24\./);
+                expect(record[field], `${id} ${field}`).not.toMatch(/on the user's delegation/i);
+            }
+            expect(record.tests.length, id).toBeGreaterThan(0);
+            record.tests.forEach((test) => {
+                const [path, title] = test.split(' › ');
+                expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+            });
+        }
+    });
+
+    it('decisions: Claude Sonnet 5.5\'s request policy (no temperature, a reply cap, the $20 cap), approved by the user directly and implemented with its tests', () => {
+        const policy = decisions()['2026-10-24-sonnet-request-policy'];
+        expect(policy).toMatchObject({
+            case: 'dev-offcentre', kind: 'orchestration', needs_user_approval: true, status: 'implemented',
+            approval: { by: 'user', date: '2026-10-24', batch: 3 }
+        });
+        for (const field of ['evidence', 'proposed_fix']) {
+            expect(policy[field], field).toMatch(/Approved by the user, 2026-10-24\./);
+            expect(policy[field], field).not.toMatch(/on the user's delegation/i);
+        }
+        // The decisions, quoted.
+        expect(policy.evidence).toContain('\'Raise to $20\'');
+        expect(policy.evidence).toContain('\'Fix both first\'');
+        expect(policy.commit).toMatch(/^[0-9a-f]{40}$/);
+        expect(policy.tests.length).toBeGreaterThan(0);
+        policy.tests.forEach((test) => {
             const [path, title] = test.split(' › ');
             expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
         });

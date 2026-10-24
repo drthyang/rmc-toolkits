@@ -4,22 +4,28 @@
 import { useEffect, useRef, useState } from 'react';
 import { completeChat } from '../provider/client';
 import { buildWatchdogMessages, parseWatchdogReply } from '../prompts/templates';
-import { classifyConvergence, significantChange, watchdogStats } from './heuristics';
+import { classifyRun, significantChange, watchdogRunStats } from './heuristics';
 
 // Live convergence watchdog. No timers of its own: the existing Live Data poll
 // already rebuilds rValueFile when the log files grow, so this hook just
 // observes that prop. The heuristic classification is the source of truth and
-// updates on every change for free; the LLM is only asked to narrate, and only
-// when the status flips or enough genuinely new data arrived — never on the
-// raw 3-second poll cadence.
+// updates on every change for free: every chi^2 term of the .log and their
+// total, by the rule the Copilot's assess_convergence reads (heuristics.js
+// judgeConvergence; the chart draws the last column only). The LLM is only
+// asked to narrate, and only when the status flips or enough genuinely new
+// data arrived — never on the raw 3-second poll cadence.
 
 const MS_PER_MINUTE = 60000;
 
 export const useWatchdog = ({ rValueFile, settings }) => {
     const enabled = Boolean(settings?.watchdogEnabled);
-    const history = rValueFile?.plotData?.series?.[0]?.y || null;
-    // The .log column the history is (one fit term's chi^2, not the total).
-    const column = rValueFile?.plotData?.chiColumn || null;
+    const plotData = rValueFile?.plotData || null;
+    const history = plotData?.series?.[0]?.y || null;
+    // The .log column the chart draws (one fit term's chi^2, not the total),
+    // and whether the verdict judged every term and their total (a log that
+    // names its chi^2 columns) or that column alone.
+    const column = plotData?.chiColumn || null;
+    const allTerms = Array.isArray(plotData?.chiTerms?.total);
     // Key effects off content (length + last value), not object identity:
     // Live Data produces a fresh rValueFile object every poll even when the
     // underlying log did not change.
@@ -32,12 +38,12 @@ export const useWatchdog = ({ rValueFile, settings }) => {
         note: null,
         lastCheckedAt: null
     });
-    // Latest history by ref (updated every render, before the analysis effect
-    // below runs) so the effect can depend on cheap primitives instead of the
-    // array identity, which Live Data churns every poll.
-    const historyRef = useRef(null);
+    // Latest plot data by ref (updated every render, before the analysis
+    // effect below runs) so the effect can depend on cheap primitives instead
+    // of the array identity, which Live Data churns every poll.
+    const plotDataRef = useRef(null);
     useEffect(() => {
-        historyRef.current = history;
+        plotDataRef.current = plotData;
     });
     const inFlightRef = useRef(false);
     const abortRef = useRef(null);
@@ -50,9 +56,8 @@ export const useWatchdog = ({ rValueFile, settings }) => {
 
     useEffect(() => {
         if (!enabled || nSteps < 2) return;
-        const values = historyRef.current;
-        const status = classifyConvergence(values);
-        const stats = watchdogStats(values);
+        const status = classifyRun(plotDataRef.current);
+        const stats = watchdogRunStats(plotDataRef.current);
 
         setState((current) => (
             current.status === status
@@ -97,7 +102,7 @@ export const useWatchdog = ({ rValueFile, settings }) => {
     }, [enabled, nSteps, lastValue, baseUrl, model, apiKey, watchdogIntervalMin, column]);
 
     if (!enabled || nSteps < 2) {
-        return { status: 'off', source: 'heuristic', note: null, lastCheckedAt: null, column };
+        return { status: 'off', source: 'heuristic', note: null, lastCheckedAt: null, column, allTerms };
     }
-    return { ...state, column };
+    return { ...state, column, allTerms };
 };

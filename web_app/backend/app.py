@@ -25,6 +25,14 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 FRONTEND_DIST = PROJECT_ROOT / "web_app" / "frontend" / "dist"
 
+from rmc_toolkits.ft_uncertainty import (
+    FT_FILE_RE,
+    file_sigma_column,
+    ft_failure,
+    ft_uncertainty_for_run,
+    run_datasets,
+    xray_dataset,
+)
 from rmc_toolkits.kde import UnitCellPositions, load_unit_cell_positions, oriented_kde_slice
 from rmc_toolkits.orientation import site_orientation_histogram
 from rmc_toolkits.pca_kde import (
@@ -35,6 +43,7 @@ from rmc_toolkits.pca_kde import (
 )
 from rmc_toolkits.triplets import APP_MAX_ANGLES, bond_angle_summary_from_file
 from rmc_toolkits.clusters import cluster_distortion
+from rmc_toolkits.distortion import APP_MAX_BONDS, polyhedral_distortion_from_file
 from rmc_toolkits.structure_basis import MAX_BASIS_SITES, basis_site_count, structure_basis
 from rmc_toolkits.modulations import displacement_modulations
 from rmc_toolkits.parsers import (
@@ -52,6 +61,7 @@ from rmc_toolkits.parsers import (
     read_stog_inp,
     read_stog_xy,
     related_r_value_logs,
+    rwp_columns,
     write_frac_from_rmc6f,
 )
 from rmc_toolkits.plots import (
@@ -59,6 +69,7 @@ from rmc_toolkits.plots import (
     bragg_is_tof,
     chi_history_labels,
     chi_history_ln,
+    chi_terms_payload,
     close_plot,
     detect_plot_kind,
     make_plot,
@@ -509,7 +520,75 @@ _POSITIONS_CACHE = _FileCache(16)  # /api/kde/slice: per (file, element)
 _SITES_CACHE = _FileCache(8)  # /api/pca/sites, /api/pca/kde, /api/pca/orientation
 _TRIPLETS_CACHE = _FileCache(16)  # /api/triplets: per (file, every parameter)
 _CLUSTERS_CACHE = _FileCache(16)  # /api/clusters: per (file, element, window)
+_DISTORTION_CACHE = _FileCache(16)  # /api/distortion: per (file, every engine argument)
 _SCALING_CACHE = _FileCache(8)  # /api/scaling/*: per (data file, config, mode, a, b, sigma)
+_FT_UNCERTAINTY_CACHE = _FileCache(8)  # /api/plot/data (xPDF): per (transform file, its companions' signatures)
+
+
+def _companion_signatures(ft_path: Path) -> tuple:
+    """Signatures of the files beside a transform that its error ribbon may read.
+
+    ``<stem>.dat``, the input file it names, ``<stem>_XFQ<n>.csv``,
+    ``<stem>_FQ<n>.csv`` and ``<stem>_PDFpartials.csv`` (None for an absent
+    one): the cache key beside the transform's own signature, so a changed
+    companion is read again.
+    """
+    match = FT_FILE_RE.match(ft_path.name)
+    if not match:
+        return ()
+    stem, number = match.group(1), int(match.group(2))
+    folder = ft_path.parent
+    paths = [folder / f"{stem}.dat", folder / f"{stem}_XFQ{number}.csv", folder / f"{stem}_FQ{number}.csv",
+             folder / f"{stem}_PDFpartials.csv"]
+    try:
+        dataset = xray_dataset(run_datasets(paths[0].read_text(encoding="utf-8-sig", errors="replace")), number)
+    except OSError:
+        dataset = None
+    if dataset and dataset.get("file"):
+        paths.append(folder / dataset["file"].replace("\\", "/"))
+
+    def signature(path: Path):
+        try:
+            return (str(path), _file_signature(_resolve_inside_root(str(path))))
+        except (OSError, ValueError):  # absent, or outside the data roots (PermissionError)
+            return (str(path), None)
+
+    return tuple(signature(path) for path in paths)
+
+
+def _ft_uncertainty(ft_path: Path) -> dict:
+    """The xPDF plot's ``uncertainty``: ft_uncertainty_for_run, cached; a failure is its payload, never a 500.
+
+    The input file the run's ``.dat`` names is read only inside the data roots
+    (``_resolve_inside_root``); a path outside them reads as absent.
+    """
+    def load():
+        return ft_uncertainty_for_run(ft_path, resolve=lambda path: _resolve_inside_root(str(path)))
+
+    try:
+        return _FT_UNCERTAINTY_CACHE.get(ft_path, _companion_signatures(ft_path), load)
+    except Exception as exc:  # an unreadable companion, a torn read: say so on the plot
+        return ft_failure(f"could not compute the error ribbon: {exc}")
+
+
+def _xpdf_sigma(labels: list[str], data: np.ndarray) -> dict | None:
+    """The σ column of an xPDF CSV for its experimental series, or None.
+
+    ``{column, series, values}``: a header naming an uncertainty
+    (``file_sigma_column``), never a column the fit's roles read as the model or
+    the data, and only when clean (``usable_sigma``'s rule: finite and > 0 where
+    r and G are). Mirrors ``xpdfSigma()`` in browserData.js.
+    """
+    column = file_sigma_column(labels)
+    roles = rwp_columns(labels, len(data))
+    if column is None or roles is None or column in roles or column >= len(data):
+        return None
+    experimental = roles[1]
+    usable = np.isfinite(data[0]) & np.isfinite(data[experimental])
+    values = data[column]
+    if not np.all(np.isfinite(values[usable])) or np.any(values[usable] <= 0):
+        return None
+    return {"column": column, "series": experimental, "values": values}
 
 
 @app.route("/api/health", methods=["GET"])
@@ -640,6 +719,9 @@ def plot_data():
                     "xLabel": "Time steps",
                     "yLabel": CHI_HISTORY_Y_LABEL,
                     "chiColumn": log.chi_column,
+                    # Every chi^2 term and their total, for the Copilot and the
+                    # watchdog (the chart draws `series` only); null without terms.
+                    "chiTerms": chi_terms_payload(log),
                     "series": [
                         {
                             "label": series_label,
@@ -664,10 +746,17 @@ def plot_data():
 
         series = read_exafs_csv(path) if kind in ("exafs_q", "exafs_r") else read_rmc_csv(path)
         x_values = series.data[0].tolist()
+        # An xPDF file's own σ column is its experimental series' error bar, not a curve.
+        file_sigma = _xpdf_sigma(series.labels, series.data) if kind == "xpdf" else None
         payload_series = []
         for idx, label in enumerate(series.labels[1:], start=1):
             if idx < len(series.data):
-                payload_series.append({"label": label.strip() or f"Series {idx}", "x": x_values, "y": series.data[idx].tolist()})
+                if file_sigma and idx == file_sigma["column"]:
+                    continue
+                entry = {"label": label.strip() or f"Series {idx}", "x": x_values, "y": series.data[idx].tolist()}
+                if file_sigma and idx == file_sigma["series"]:
+                    entry["sigma"] = file_sigma["values"].tolist()
+                payload_series.append(entry)
 
         # One label source for Flask, the PNGs and (mirrored) the browser:
         # F(Q) for *_FQn.csv, partial g(r) for PDFpartials, from the file's headers.
@@ -684,7 +773,13 @@ def plot_data():
         else:
             x_label = _clean_axis_label(x_label)
 
-        return jsonify({**metadata, "xLabel": x_label, "yLabel": y_label, "series": payload_series})
+        payload = {**metadata, "xLabel": x_label, "yLabel": y_label, "series": payload_series}
+        if kind == "xpdf" and FT_FILE_RE.match(path.name):
+            # The G(r) error ribbon (rmc_toolkits.ft_uncertainty): σ(r) propagated from the
+            # input F(Q)'s σ, or why there is none. The browser computes the same payload
+            # for a picked folder (ftUncertaintyRun.js).
+            payload["uncertainty"] = _ft_uncertainty(path)
+        return jsonify(payload)
     except PermissionError as exc:
         return jsonify({"error": str(exc)}), 403
     except FileNotFoundError as exc:
@@ -1185,6 +1280,61 @@ def clusters_endpoint():
                 rmc6f_path,
                 (element, r_min, r_max),
                 lambda: cluster_distortion(sites, element, (r_min, r_max)),
+            )
+        )
+        result["source"] = str(rmc6f_path)
+        return _strict_result_response(result)
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except SourceChangedError as exc:
+        return jsonify({"error": str(exc)}), 409
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# A polyhedron's bonds are first-shell distances (the browser worker's
+# MAX_DISTORTION_WINDOW), and the bonds one request may hold are the engine's
+# APP_MAX_BONDS, counted before any is stored (the worker's budget too).
+MAX_DISTORTION_WINDOW = 8.0
+DISTORTION_MAX_BONDS = APP_MAX_BONDS
+
+
+@app.route("/api/distortion", methods=["GET"])
+def distortion_endpoint():
+    """Polyhedral distortion of one centre element's coordination polyhedra.
+
+    Params: centre and ligand (elements, case-insensitive), rMin and rMax (the
+    bond window in angstrom, inclusive; rMax <= 8). Payload shape is defined
+    by rmc_toolkits.distortion.polyhedral_distortion (Baur's DI, Robinson's
+    quadratic elongation and bond-angle variance over the configuration's
+    polyhedra and the average structure's) and mirrored by the browser
+    worker's 'distortion' request.
+    """
+    try:
+        target = _resolve_inside_root(request.args.get("dir", "."))
+        rmc6f_path = _find_rmc6f(target)
+        centre = (request.args.get("centre") or "").strip().capitalize()
+        ligand = (request.args.get("ligand") or "").strip().capitalize()
+        r_min = _query_number("rMin", None, ge=0.0)
+        r_max = _query_number("rMax", None, gt=0.0, le=MAX_DISTORTION_WINDOW)
+        missing = [
+            name
+            for name, value in (("centre", centre), ("ligand", ligand), ("rMin", r_min), ("rMax", r_max))
+            if value is None or value == ""
+        ]
+        if missing:
+            raise ValueError(f"{', '.join(missing)} required")
+        # The cache key is the engine's argument list, the work budget included.
+        params = (centre, ligand, r_min, r_max, DISTORTION_MAX_BONDS)
+        result = dict(
+            _DISTORTION_CACHE.get(
+                rmc6f_path,
+                params,
+                lambda: polyhedral_distortion_from_file(str(rmc6f_path), *params),
             )
         )
         result["source"] = str(rmc6f_path)
