@@ -29,7 +29,8 @@
   tetrahedra are regular on average (0.0010 against 0.0278).
 - What the model sees: the tool's definition (+1,745 characters in the dock, +1,741 in arm B, +1,246
   in arm C), the first request's tool lists, and a new tool-results sample. The 32k budget pins move
-  by +698 (dock) and +693 (arm B) tokens; at the live runs' 48k the dock keeps 9,746 tokens and arm B
-  12,480. Arms A and A+ do not read the tool, and their dev records are unchanged. Approved by the
+  by +698 (dock) and +693 (arm B) tokens; at the live runs' 48k the dock keeps 7,041 tokens and arm B
+  9,776, with the batch-1 skill drafts. Arms A and A+ do not read the tool, and their dev records are
+  unchanged. Approved by the
   manager on the user's delegation, 2026-10-24 (the user's interview answer 7 for coordination-shells;
   `validation/findings/decisions/2026-10-24-polyhedral-distortion.json`).
