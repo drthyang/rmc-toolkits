@@ -238,6 +238,22 @@ describe('a live run under the policy (run.js liveRun, fake servers)', () => {
         expect(record.policy.limits).toEqual({ ...TURN_LIMITS, maxTurnMs: 2400000, requestMaxMs: 1200000 });
     });
 
+    it('without --limits a record is as before: what run.js passes ({}) gives the same policy and the same requests, byte for byte', async () => {
+        // The time-dependent fields (when the run started, how long each step took) aside, the record is the same.
+        const strip = (record) => JSON.parse(JSON.stringify(record, (key, value) => (['started_at', 'finished_at', 'wall_ms', 'ms'].includes(key) ? undefined : value)));
+        const runOnce = async (extra) => {
+            fakeServer({ kind: 'lmstudio', loaded: 49152, replies: [{ call: ['list_sites', {}] }, { text: ANSWER }] });
+            const model = qwen();
+            return liveRun({ built: built('dev-offcentre'), arm: 'C', model, runIndex: 0, base: providerModel(model, { session: {} }), ...extra });
+        };
+        const before = await runOnce({});
+        const absent = await runOnce({ limits: {} });
+        expect(JSON.stringify(absent.policy)).toBe(JSON.stringify(before.policy));
+        expect(absent.policy.limits).toEqual(TURN_LIMITS);
+        expect(JSON.stringify(absent.requests)).toBe(JSON.stringify(before.requests));
+        expect(strip(absent)).toEqual(strip(before));
+    });
+
     it('LM Studio at 48k: the record keeps the policy and the window, read before and after; the transcript and the report show it', async () => {
         const { chats } = fakeServer({ kind: 'lmstudio', loaded: 49152, replies: [{ call: ['list_sites', {}] }, { text: ANSWER }] });
         const model = qwen();
