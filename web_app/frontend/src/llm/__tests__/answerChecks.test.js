@@ -434,6 +434,98 @@ describe('the window check: every CN and bond angle with its window in Å (the c
     });
 });
 
+describe('the subgroup check: a group–subgroup relation that does not hold (the local-symmetry interview, 2026-10-24)', () => {
+    // The Demo's ladder: P-42₁m (8 operations of the cell) under F-43m (96).
+    const context = {
+        symmetry: {
+            space_group: 'F-43m (No. 216)', point_group: '-43m', n_ops: 96,
+            ladder: [{ sg: 'P-42_1m', pg: '-42m', holds_A: [0.02, 0.031], n_ops: 8 }, { sg: 'F-43m', pg: '-43m', holds_A: [0.031, 1], n_ops: 96 }]
+        }
+    };
+
+    it('flags a relation the run\'s ladder or the point groups contradict: not a subgroup, the wrong index, t, k or maximal', () => {
+        for (const [text, says] of [
+            ['P-42₁m is a t-subgroup of F-43m.', /it is not translationengleiche: the translations drop from 4 to 1 per cell and the point group from -43m to -42m: a general subgroup, neither t nor k \(index 12 = 3 × 4\)\.$/],
+            ['P-42₁m is a subgroup of F-43m of index 3.', /its index is 96\/8 = 12 operations of the cell, not 3:/],
+            ['P-42₁m is a maximal subgroup of F-43m.', /a subgroup that is neither t nor k is never maximal/],
+            ['F-43m is a subgroup of P-42₁m.', /on the ladder F-43m holds 96 operations of the cell and P-42_1m 8: P-42_1m is the subgroup, not F-43m\.$/],
+            ['P-42₁m has F-43m as a subgroup.', /P-42_1m is the subgroup, not F-43m/],
+            ['The symmetry lowers from F-43m to P4/mmm.', /P4\/mmm's point group, 4\/mmm, is not a subgroup of F-43m's, -43m: no subgroup of F-43m has it\.$/],
+            ['F-43m → I4/mmm: the symmetry is lowered.', /I4\/mmm's point group, 4\/mmm, is not a subgroup of F-43m's/],
+            ['I4/mmm is a t-subgroup of Fm-3m of index 2.', /a translationengleiche subgroup's index is the ratio of the point groups' orders, 48\/16 = 3, not 2\.$/],
+            ['Fm-3m has F-43m as a k-subgroup.', /a klassengleiche subgroup keeps the point group, and F-43m's \(-43m\) is not Fm-3m's \(m-3m\)\.$/]
+        ]) {
+            const found = audit(text, { context });
+            expect({ text, rules: found.map((finding) => finding.rule) }).toEqual({ text, rules: ['subgroup'] });
+            expect(found[0].text, text).toMatch(says);
+        }
+    });
+
+    it('stays quiet on a relation that holds, its right index and type, a negation, a question, and a ladder read upwards', () => {
+        for (const text of [
+            'Going from F-43m to P-42₁m lowers the symmetry.',
+            'P-42₁m is a subgroup of F-43m of index 12, neither t nor k: the F centring and the three-fold axes are lost.',
+            'I-42m is a t-subgroup of F-43m of index 3.',
+            'Fm-3m → I4/mmm (t3) → P4/mmm (k2): the symmetry lowers twice.',
+            'F-43m is a k-subgroup of Fm-3m? No: a t-subgroup of index 2.',
+            'P4/mmm is not a subgroup of F-43m.',
+            'Is P4/mmm a subgroup of F-43m?',
+            'The ladder runs from P1 at 0.001 Å to F-43m at 0.031 Å.',
+            'F-43m is a supergroup of P-42₁m.',
+            'At 0.2 Å the group is F-43m; at 0.02 Å it is P-42₁m.'
+        ]) {
+            expect({ text, rules: rules(text, { context }) }).toEqual({ text, rules: [] });
+        }
+        // detect_symmetry's facts give a group its operations too.
+        const detected = { facts: [{ groups: [{ symbol: 'P-42_1m', ...pointGroupFacts('-42m'), n_ops: 8, tolerance_A: 0.025 }] }], context };
+        expect(rules('P-42₁m is a subgroup of F-43m of index 12.', detected)).toEqual([]);
+        expect(rules('P-42₁m is a subgroup of F-43m of index 4.', detected)).toEqual(['subgroup']);
+    });
+});
+
+describe('the box check: a cell doubling the box cannot hold (the local-symmetry interview, 2026-10-24)', () => {
+    const box = (supercell) => ({ structure: { supercell, elements: { Ga: 4, Ta: 16, Se: 32 } } });
+
+    it('flags a doubling along an axis the box is odd along, or any doubling in a box odd along every axis', () => {
+        for (const [text, says] of [
+            ['The Ta displacements double the cell along c.', /along c, but the box \(5 × 5 × 5 unit cells\) is odd along c: a doubled cell there does not fit in it/],
+            ['This configuration shows a doubled cell.', /^The answer claims a cell doubling, but the box \(5 × 5 × 5 unit cells\) is odd along every axis/],
+            ['In this structure the c axis is doubled.', /along c, but the box/],
+            ['The Ta order is a cell doubling with q = (½, 0, 0).', /along a, but the box/]
+        ]) {
+            const found = audit(text, { context: box([5, 5, 5]) });
+            expect({ text, rules: found.map((finding) => finding.rule) }).toEqual({ text, rules: ['cell-doubling'] });
+            expect(found[0].text, text).toMatch(says);
+        }
+        expect(rules('The Ta displacements double the cell along a and c.', { context: box([4, 4, 5]) })).toEqual(['cell-doubling']);
+    });
+
+    it('stays quiet on a box that holds it, an answer that says the box cannot, a hypothetical, a denial, and a sentence not about the run', () => {
+        for (const [text, supercell] of [
+            ['The Ta displacements double the cell along c.', [10, 10, 10]],
+            ['The Ta displacements double the cell along a.', [4, 5, 5]],
+            ['The published low-temperature phase of GaTa4Se8 doubles the cell along c; this 5 × 5 × 5 box cannot hold it, so it can neither confirm nor rule out the doubling.', [5, 5, 5]],
+            ['A cell doubling would need an even box.', [5, 5, 5]],
+            ['No cell doubling: no zone-boundary point stands out.', [5, 5, 5]],
+            ['A doubled cell is common in such phases.', [5, 5, 5]]
+        ]) {
+            expect({ text, rules: rules(text, { context: box(supercell) }) }).toEqual({ text, rules: [] });
+        }
+    });
+
+    it('flags a doubling along axes no ordered zone-boundary point doubles, once analyze_modulations found one', () => {
+        const at = (q) => ({ facts: [{ modulation: { elements: ['Ti'], ordered: [{ element: 'Ti', q }], general: [] } }], context: box([8, 8, 8]) });
+        expect(rules('Ti doubles the cell along c (q = (0, 0, ½)).', at([0.5, 0, 0]))).toEqual(['cell-doubling']);
+        expect(audit('Ti doubles the cell along c.', at([0.5, 0, 0]))[0].text).toBe('The answer claims a cell doubling along c, but analyze_modulations '
+            + 'found ordered zone-boundary points only at (½, 0, 0): none doubles the cell along c.');
+        expect(rules('Ti doubles the cell along a (q = (½, 0, 0)).', at([0.5, 0, 0]))).toEqual([]);
+        expect(rules('Ti doubles the cell along c.', at([0.5, 0.5, 0.5]))).toEqual([]);
+        // No ordered point at all is the superstructure check's.
+        expect(rules('Ti doubles the cell along c.', { facts: [{ modulation: { elements: ['Ti'], ordered: [], general: [] } }], context: box([8, 8, 8]) }))
+            .toEqual(['superstructure']);
+    });
+});
+
 describe('the order of the checks', () => {
     it('runs in FACTS order, and a lowering\'s shifts have no check yet', () => {
         expect(FACTS.map((row) => row.key)).toEqual(['convergence', 'groups', 'direction', 'modulation', 'cluster', 'coordination', 'distribution', 'lowering']);

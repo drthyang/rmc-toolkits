@@ -209,7 +209,12 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // backs distorted polyhedra with polyhedral_distortion where the run offers
 // it, else analyze_clusters (EVIDENCE_RULES; an anyOf row asks for the first
 // analysis the turn offers), and analyze_clusters' method keeps it to finite
-// clusters.
+// clusters; local-symmetry: a group–subgroup relation that does not hold
+// (subgroup: against the ladder's nested groups — index, t or k — or the
+// point groups alone) and a cell doubling the box cannot hold (cell-doubling:
+// odd along an axis it doubles, or along axes no ordered zone-boundary point
+// doubles); detect_symmetry's facts give its operations and tolerance; the
+// CIF calls itself an average-structure model of an RMC configuration.
 export const PROTOCOL_VERSION = '2026-10-24.2';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one

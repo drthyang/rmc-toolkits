@@ -291,6 +291,36 @@ describe('local-symmetry', () => {
     });
 });
 
+// The user's interview answers of 2026-10-24 (local-symmetry), each where a
+// check in code catches the wrong answer.
+describe('local-symmetry: the user\'s interview answers (2026-10-24)', () => {
+    const ladder = { calls: [{ name: 'detect_symmetry', args: { tolerance_A: 0.2 } }, { name: 'detect_symmetry', args: { tolerance_A: 0.02 } }] };
+    const rulesOf = (done) => done.audit.map((finding) => finding.rule);
+
+    it('answer 4a: a group–subgroup relation is read against the run\'s groups — the Demo\'s P-42₁m in F-43m: index 12, neither t nor k', async () => {
+        const right = await replay([ladder, {
+            text: 'From F-43m at 0.2 Å to P-42₁m at 0.02 Å the symmetry lowers: P-42₁m is a subgroup of F-43m of index 12, neither t nor k '
+                + '(the F centring and the three-fold axes are lost).\nOutcome: achieved — both tolerances run.'
+        }]);
+        expect(right.toolMessages.map((message) => [message.data.space_group, message.data.n_ops])).toEqual([['F-43m', 96], ['P-42_1m', 8]]);
+        expect(rulesOf(right.done)).toEqual([]);
+        const wrong = await replay([ladder, { text: 'P-42₁m is a maximal t-subgroup of F-43m, of index 3.\nOutcome: achieved — x.' }]);
+        expect(rulesOf(wrong.done)).toEqual(['subgroup']);
+        expect(wrong.done.audit[0].text).toMatch(/^The answer has P-42_1m as a subgroup of F-43m, but its index is 96\/8 = 12 operations of the cell, not 3: /);
+        expect(wrong.done.outcome.status).toBe('not verified');
+    });
+
+    it('answer 4b: a cell doubling the box cannot hold — the Demo\'s 10 × 10 × 10 box holds one, so only the superstructure test speaks there', async () => {
+        const demoRun = { rValueFile, plotFiles, structure };
+        expect(buildRunContext(demoRun).structure.supercell).toEqual([10, 10, 10]);
+        const { done } = await replay([
+            { calls: [{ name: 'analyze_modulations', args: {} }] },
+            { text: 'In this configuration the Ta order doubles the cell along c.\nOutcome: achieved — x.' }
+        ], { run: demoRun });
+        expect(rulesOf(done)).toEqual(['superstructure']);
+    });
+});
+
 describe('displacement-anisotropy', () => {
     const ga = { calls: [{ name: 'analyze_displacement_directions', args: { element: 'Ga' } }] };
 

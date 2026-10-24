@@ -13,3 +13,14 @@
   `analyze_clusters` (EVIDENCE_RULES says so), an `anyOf` row now asks for the first analysis the
   turn offers, and `analyze_clusters`' method keeps it to finite clusters. Approved by the user,
   2026-10-24 (`validation/findings/decisions/2026-10-24-coordination-shells-interview.json`).
+- **local-symmetry.** A group–subgroup relation the answer claims that does not hold gets a
+  `subgroup` finding: read against the run's own groups where it knows both (the ladder's rungs are
+  nested; the index is |G|/|H| in the cell; t when the translations per cell stay, k when the point
+  group stays, else a general subgroup, never maximal — the Demo's P-42₁m in F-43m is index 12,
+  neither t nor k), and by the point groups alone for a published phase the run does not hold
+  ("F-43m → P4/mmm" cannot be: 4/mmm has an inversion centre -43m lacks). A cell doubling the box
+  cannot hold — odd along an axis it doubles — gets a `cell-doubling` finding, as does a doubling
+  along axes no ordered zone-boundary point of `analyze_modulations` doubles. The symmetry-averaged
+  CIF calls itself an "average-structure model of an RMC configuration", never a refined structure.
+  Approved by the user, 2026-10-24
+  (`validation/findings/decisions/2026-10-24-local-symmetry-interview.json`).

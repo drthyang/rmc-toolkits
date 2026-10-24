@@ -1517,7 +1517,8 @@ names) or one reference file, with a note when the skill is a draft. The tool co
 FACTS: one row per facts key, its producing tools, its shape and the check that reads it, in the
 order below). A tool may return `facts` beside
 `data` and `checks` (kept by the loop, not sent to the model): `assess_convergence` its status,
-`detect_symmetry` its group with the point-group facts, `analyze_displacement_directions`
+`detect_symmetry` its group with the point-group facts, its operations in the cell and its
+tolerance (`n_ops`, `tolerance_A`, for the subgroup check, 2026-10-24), `analyze_displacement_directions`
 `{subject, significant (peak ≥ 3σ), anisotropic (map ≥ 3σ), peak_sigma, map_sigma}` (until the 2026-10-14 review's L3, `significant` also counted the map test, which any thermal ellipsoid passes), `analyze_modulations`
 `{elements, ordered: [{element, q}], general: [{element, q}], long_wave_q, long_waves: [{element, q}]}`
 (the engine's long-wave bound, `rules.longWaveQ` = 0.25, and the long waves among each element's three
@@ -1527,8 +1528,9 @@ strongest modes; 2026-10-24), `analyze_clusters`
 `{centre, partner, window, cn, whole_shell, confirmed}` (review L5), `compute_bond_angles` (when it
 returns angles), `analyze_displacement_directions` and `analyze_clusters` (finite clusters) a
 `distribution` `{kind: bond_angles | directions | cluster_shape, subject, configurations: 1}`
-(2026-10-24), `measure_symmetry_lowering` `{parent, lower, shifted}` (no check reads it yet). The run context adds the watchdog's status and
-every ladder group (`contextAuditFacts`). When the model answers, the verification's reading
+(2026-10-24), `measure_symmetry_lowering` `{parent, lower, shifted}` (no check reads it yet). The run context adds the watchdog's status,
+every ladder group with its operations in the cell and its rank on the ladder, the box (the supercell)
+and the run's elements (`contextAuditFacts`). When the model answers, the verification's reading
 (`reading.js`) splits it into sentences and clauses (a new clause at `;`, `:` and before
 "but", "while", "whereas", "unlike", "although", "though", "however") and looks for positive
 claims. One does not count in a question; after a negation (not, no, never, neither, nor, none,
@@ -1554,6 +1556,26 @@ has converged" is a claim; "To check whether the run has converged" is not). "Co
   ladder's rung with the most operations, or its two ends without operation counts);
 - *polar:* "polar" (not "non-polar", "nonpolar", "polar plot / coordinates / angle") in a clause
   whose named groups are all non-polar, read as for chirality (the local-symmetry skill's rule);
+- *subgroup* (the user's rule, 2026-10-24, the local-symmetry interview's answer 4a; the groups row,
+  after the point-group checks): a group–subgroup relation the answer asserts — "H is a (maximal)
+  (t- / k-, translationengleiche / klassengleiche) subgroup of G", "G is a supergroup of H", "G has H
+  as a subgroup", or a step of a lowering ("lowers G to H", "from G to H", "G → H", only a connector
+  and at most a lowering verb between the two symbols, in a sentence that says lower, reduce, descend
+  or break down) — that does not hold. Where the run knows both groups (the context's ladder: each
+  rung's point group, operations in the cell and rank tight → loose; `detect_symmetry`'s facts: its
+  point group and operations), H is a subgroup of G when it is tighter on the ladder, with fewer
+  operations of the cell, which G's count divides (the ladder's rungs are nested:
+  `groupsByThreshold` only adds operations as the tolerance grows); the index is $|G|/|H|$ in the
+  cell; the type is t when the translations per cell (operations over the point group's order) stay,
+  k when the point group stays, else neither (a general subgroup, never maximal). The Demo's
+  P-42₁m in F-43m: index 96/8 = 12, the translations 4 → 1 per cell and the point group -43m → -42m
+  (3 × 4): neither t nor k. Where the run knows one group or none (a published phase), only the point
+  groups are read (`pointGroupOfSymbol`, the 32 groups' subgroup diagram, `isPointSubgroup`): H's
+  point group must be one of G's subgroups ("F-43m → P4/mmm" is not: 4/mmm has the inversion -43m
+  lacks), a k-subgroup keeps it, a t-subgroup lowers it by its index ("I-42m, t3 of F-43m" holds). The
+  index and type are read beside the relation (from the first symbol to just past the second; for a
+  chain "G → H (t3) → K (k2)", after each step's subgroup). A negated, hypothetical or asked relation
+  claims nothing;
 - *direction:* "preferred (preferential) direction (orientation, axis)" when the question's
   directions analyses found no peak at ≥ 3σ (a significant map test alone is anisotropy: L3);
 - *superstructure:* "cell doubling", "doubles the cell", "zone-boundary order (modulation, mode,
@@ -1573,6 +1595,18 @@ has converged" is a claim; "To check whether the run has converged" is not). "Co
   says "nothing" before the order word ("says nothing about order"), claims none; a q at a zone
   boundary or a general wavevector is left to the superstructure rule. Only once an
   `analyze_modulations` ran (its facts carry the bound);
+- *cell-doubling* (the user's rule, 2026-10-24, the local-symmetry interview's answer 4b; the modulation
+  row, after the long-wave rule): a clause that asserts a cell doubling (the superstructure rule's words,
+  or "a doubled cell", "doubles c", "the c axis is doubled", "2a × 2a × c") along the axes it names
+  (along a / b / c, a ½ component of a written wavevector or bare tuple, a factor 2 in a cell) when the
+  box (the context's supercell) is odd along one of them, or odd along every axis when it names none:
+  a doubled cell there does not fit in the box (its ½ wavevector is not on the box's grid), so the
+  configuration can neither show nor rule out the doubling — in a sentence about this run (an element of
+  it, or the run itself), unless the answer says the box cannot hold it ("cannot hold / fit /
+  represent", "neither confirm nor rule out"). And, once an `analyze_modulations` found ordered
+  zone-boundary points, a doubling along axes none of them is ½ on ("along c" when the order is at
+  (½, 0, 0)); a doubling with no ordered point at all is the superstructure rule's. The Demo's box is
+  10 × 10 × 10, every dev case's even;
 - *cluster* (review L5): "distorted clusters / tetrahedra / trimers / dimers / triangles /
   octahedra / polyhedra", "… are (adverb) distorted / deformed" (no negation in the adverb slot) or
   "cluster distortion"; "breathe / breathing"; "rigid", "move as (rigid) units / bodies" — checked

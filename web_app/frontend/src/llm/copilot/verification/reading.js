@@ -116,6 +116,37 @@ const SYMBOL_LIKE = /(?<![a-z0-9])[pifcabr](?=[a-z/-]*\d)(?:-?\d(?:_?\d)?|\/?[mn
 /** Whether a text names something written like a space-group symbol. */
 export const namesSymbol = (text) => SYMBOL_LIKE.test(symbolText(text).replace(/[\s{}$\\]/g, (char) => (/\s/.test(char) ? ' ' : '')));
 
+/** A text with its symbols in one spelling, lower case (what symbolTokens' positions index). */
+export const symbolSpelling = (text) => symbolText(text).replace(/[{}$\\]/g, '');
+
+// A symbol written without spaces, known or not (the lattice letter, then
+// axes holding a digit), in symbolSpelling's text.
+const SYMBOL_TOKEN = /(?<![a-z0-9_])([pifcabr])((?:-?\d(?:_\d)?|\/[mnabcde]|[mnabcde])+)(?![a-z0-9_])/g;
+
+/**
+ * The space-group symbols a text names, in order, as `{ at, key, written,
+ * group }` over symbolSpelling(text): each known group (normalized symbol →
+ * group, matched as groupsIn matches it, spaces and marks allowed inside) and
+ * every other symbol written without spaces (`group` null). `written` is the
+ * symbol with its lattice letter in capitals, for pointGroupOfSymbol.
+ */
+export const symbolTokens = (text, groups = new Map()) => {
+    const prepared = symbolSpelling(text);
+    const tokens = [];
+    for (const [key, group] of groups) {
+        const pattern = new RegExp(symbolPattern(key).source, 'g');
+        for (const match of prepared.matchAll(pattern)) {
+            tokens.push({ at: match.index, end: match.index + match[0].length, key, written: group.symbol, group });
+        }
+    }
+    for (const match of prepared.matchAll(SYMBOL_TOKEN)) {
+        const end = match.index + match[0].length;
+        if (!/\d/.test(match[2]) || tokens.some((token) => token.at < end && match.index < token.end)) continue;
+        tokens.push({ at: match.index, end, key: normalizeSymbol(match[0]), written: `${match[1].toUpperCase()}${match[2]}`, group: null });
+    }
+    return tokens.sort((a, b) => a.at - b.at);
+};
+
 // --- wavevectors ----------------------------------------------------------------
 
 const UNICODE_FRACTIONS = { '½': 0.5, '⅓': 1 / 3, '⅔': 2 / 3, '¼': 0.25, '¾': 0.75, '⅕': 0.2, '⅙': 1 / 6, '⅛': 0.125 };

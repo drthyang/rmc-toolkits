@@ -295,8 +295,11 @@ describe('Copilot tools on the demo run', () => {
     it('detect_symmetry: below the noise floor, P-42₁m — achiral and without inversion, like F-43m', async () => {
         const result = await tools.detect_symmetry.run({ tolerance_A: 0.02 });
         expect(result.data).toMatchObject({ space_group: 'P-42_1m', point_group: '-42m' });
+        // With its operations in the cell and its tolerance, for the group–subgroup check (2026-10-24).
         expect(result.facts).toEqual({
-            groups: [{ symbol: 'P-42_1m', point_group: '-42m', centrosymmetric: false, sohncke: false, polar: false, crystal_system: 'tetragonal' }]
+            groups: [{
+                symbol: 'P-42_1m', point_group: '-42m', centrosymmetric: false, sohncke: false, polar: false, crystal_system: 'tetragonal', n_ops: 8, tolerance_A: 0.02
+            }]
         });
     });
 });

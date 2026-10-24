@@ -27,6 +27,45 @@ export const LOST_INVERSION = [
     /\b(inversion|centrosymmetr\w*|cent(?:re|er) of symmetry)\b[^.;]{0,30}\b(is|was|are|were|gets|got)\s+(lost|broken|removed|destroyed)/gi
 ];
 
+// A group–subgroup relation, for the subgroup check (facts.js; the
+// local-symmetry interview, 2026-10-24, answer 4a), read in symbolSpelling's
+// lower-case text: "H is a (maximal) (t-/k-) subgroup of G", "G is a
+// supergroup of H", "G has H as a subgroup", and a lowering from G to H
+// ("lowers G to H", "from G to H", "G → H") in a clause that says lower,
+// reduce, descend or break. The claimed index and type beside it.
+export const SUBGROUP_OF = /(^|\W)(subgroups?\s+of)\b/g;
+export const SUPERGROUP_OF = /(^|\W)(supergroups?\s+of)\b/g;
+export const HAS_AS_SUBGROUP = /(^|[^\w-])(has)\b[^.;]{0,40}?\bas\s+(?:an?\s+|its\s+)?(?:\w+[-\s]+){0,2}subgroups?\b/g;
+export const LOWERING_TO = /(^|[^\w-])(lower(?:s|ed|ing)?|reduc(?:e|es|ed|ing|tion)|descen(?:t|ds|ding)|break(?:s|ing)?\s+down)\b/g;
+// What stands between the two symbols of a lowering step: only the
+// connector, with a lowering verb at most ("F-43m to P-42₁m", "F-43m →
+// P-42₁m", "F-43m lowers to P-42₁m"; a bracket between them, a tolerance,
+// is read as a space).
+export const ARROW = /^\s*(?:(?:is\s+)?(?:lower(?:s|ed)?|reduc(?:es|ed)|descends?|goes|drops|breaks\s+down)\s+)?(?:down\s+)?(?:→|->|⟶|⇒|to|into)\s*$/;
+export const INDEX_CLAIM = /\bindex(?:\s+of)?\s*(?:=|:|is)?\s*(\d+)\b|\b[tk](\d+)\b/;
+export const T_TYPE = /\bt-?\s?subgroups?\b|\btranslationengleiche\b|\btranslation-equivalent\b|\bt\d+\b/;
+export const K_TYPE = /\bk-?\s?subgroups?\b|\bklassengleiche\b|\bclass-equivalent\b|\bk\d+\b|\bisomorphic\s+subgroups?\b/;
+export const MAXIMAL = /\bmaximal\b/;
+
+// A cell doubling, for the box check (facts.js; the local-symmetry
+// interview, 2026-10-24, answer 4b): CELL_DOUBLING, or a doubled cell or axis
+// in other words ("a doubled cell", "doubles c", "the c axis is doubled", "2a
+// × 2a × c"); the axes it names (along a, b, c; a ½ wavevector component; a
+// factor 2 in a cell); and an answer that says the box cannot hold it.
+// An axis named by its letter: "the c axis", "c-axis", b or c alone, and a
+// alone only where no word follows it (not the article in "along a direction").
+const AXIS_WORD = '(?:[abc][- ]?axis|[bc](?![a-z])|a(?=\\s*(?:[,.;:)]|and\\b|$)))';
+export const DOUBLED_CELL = new RegExp('(^|[^\\w-])(doubled\\s+(?:unit\\s+)?cell|cell\\s+(?:is\\s+)?doubled|doubl(?:e|es|ed|ing)\\s+(?:the\\s+)?'
+    + `(?:unit\\s+cell|cell|${AXIS_WORD}|lattice parameter)|doubl(?:es|ing)\\s+along|[abc][- ]?axis\\s+(?:is\\s+)?doubled`
+    + '|2\\s*[abc]\\s*[×x*]\\s*\\d?\\s*[abc]\\s*[×x*]\\s*\\d?\\s*[abc])', 'gi');
+export const ALONG_AXES = new RegExp(`\\balong\\s+(?:the\\s+)?(${AXIS_WORD})(?:\\s*(?:,|and)\\s*(?:the\\s+)?(${AXIS_WORD}))?`
+    + `(?:\\s*(?:,|and)\\s*(?:the\\s+)?(${AXIS_WORD}))?`, 'i');
+export const DOUBLED_AXIS = new RegExp(`\\bdoubl(?:es|ed|ing)\\s+(?:of\\s+)?(?:the\\s+)?(${AXIS_WORD})|\\b([abc])[- ]?axis\\s+(?:is\\s+)?doubled`
+    + '|\\b2\\s*([abc])(?![a-z])', 'gi');
+export const ALL_AXES = /\balong\s+(?:all\s+)?(?:three|every|each)\s+(?:axes|axis)\b|\b2a\s*[×x*]\s*2b\s*[×x*]\s*2c\b/i;
+export const HALF_TUPLE = /\(\s*(½|1\/2|0?\.5|0)\s*[, ]\s*(½|1\/2|0?\.5|0)\s*[, ]\s*(½|1\/2|0?\.5|0)\s*\)/g;
+export const CANNOT_HOLD = /\b(?:can(?:not|'t)|could(?:n't|\s+not)|does(?:n't|\s+not)|do(?:n't|\s+not)|too\s+small\s+to)\b[^.;]{0,40}\b(?:hold|fit|represent|accommodate|contain|show|support)\b|\bneither\s+confirm\s+nor\s+rule\s+out\b|\bcan\s+neither\b/i;
+
 // --- read by both catalogues ------------------------------------------------------
 
 export const PREFERRED = /(^|[^\w-])(preferred|preferential)\s+(?:displacement\s+)?(direction|orientation|axis)\b/gi;

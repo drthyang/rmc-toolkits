@@ -15,7 +15,9 @@
 //   groups        chirality, centrosymmetry, polarity and a lost inversion
 //                 centre that a group's point group contradicts
 //                 (local-symmetry; the spot check called P-42₁m chiral and said
-//                 F-43m lost its centrosymmetry);
+//                 F-43m lost its centrosymmetry); and a group–subgroup relation
+//                 that does not hold — not a subgroup, the wrong index, t or k
+//                 (subgroup; the user's rule, 2026-10-24);
 //   direction     a preferred displacement direction when no directions
 //                 analysis of the question found a peak at ≥ 3σ
 //                 (displacement-anisotropy; a significant whole-map test alone
@@ -27,6 +29,9 @@
 //                 wavevector, a long wave (every |q_i| ≤ the engine's
 //                 long_wave_q), whatever its power (the user's rule,
 //                 2026-10-24: a long wave says nothing about order at its q);
+//                 and a cell doubling the box cannot hold — odd along an axis
+//                 it doubles — or along axes no ordered zone-boundary point
+//                 doubles (cell-doubling; the user's rule, 2026-10-24);
 //   cluster       cluster claims (distorted, breathing, rigid) every
 //                 analyze_clusters of the element contradicts (review L5);
 //   coordination  a coordination number every whole-shell count of the
@@ -52,13 +57,16 @@
 
 import { oneOf } from '../dataShape';
 import { cnMatches } from '../../context/shells';
-import { pointGroupFacts } from '../../context/pointGroups';
-import { clausesOf, elementPattern, groupsIn, namesElement, namesSymbol, normalizeSymbol, positiveMatches, qVectorsIn, windowsIn } from './reading';
+import { isPointSubgroup, pointGroupFacts, pointGroupOfSymbol, pointGroupOrder } from '../../context/pointGroups';
 import {
-    BOND_ANGLE_WORDS, BREATHING, CELL_DOUBLING, CENTROSYMMETRIC, CHIRAL, CN_CLAIMS, CONVERGED, DEGREES, DISTORTED, DISTRIBUTION_NOUN,
-    DISTRIBUTION_STAT, LONG_WAVE_WORDS, LOST_INVERSION, NEIGHBOUR_COUNTS, NOT_A_BOND_ANGLE, ORDER_CLAIM, PARTIAL_SHELL, PER_COUNT, POLAR,
-    POLYHEDRON_CN, PREFERRED, REFERENCE_VALUE, RIGID, SAYS_NOTHING, SINGLE_CONFIGURATION, STILL_MOVING, SUPERSTRUCTURE, WINDOW_CUTOFF, WINDOW_RANGES,
-    WORD_NUMBER
+    clausesOf, elementPattern, groupsIn, namesElement, namesSymbol, normalizeSymbol, positiveMatches, qVectorsIn, symbolSpelling, symbolTokens, windowsIn
+} from './reading';
+import {
+    ALL_AXES, ALONG_AXES, ARROW, BOND_ANGLE_WORDS, BREATHING, CANNOT_HOLD, CELL_DOUBLING, CENTROSYMMETRIC, CHIRAL, CN_CLAIMS, CONVERGED, DEGREES,
+    DISTORTED, DISTRIBUTION_NOUN, DISTRIBUTION_STAT, DOUBLED_AXIS, DOUBLED_CELL, HALF_TUPLE, HAS_AS_SUBGROUP, INDEX_CLAIM, K_TYPE, LONG_WAVE_WORDS,
+    LOST_INVERSION, LOWERING_TO, MAXIMAL, NEIGHBOUR_COUNTS, NOT_A_BOND_ANGLE, ORDER_CLAIM, PARTIAL_SHELL, PER_COUNT, POLAR, POLYHEDRON_CN, PREFERRED,
+    REFERENCE_VALUE, RIGID, RUN_NOUN, SAYS_NOTHING, SINGLE_CONFIGURATION, STILL_MOVING, SUBGROUP_OF, SUPERGROUP_OF, SUPERSTRUCTURE, T_TYPE,
+    WINDOW_CUTOFF, WINDOW_RANGES, WORD_NUMBER
 } from './phrasings';
 
 // --- the run context's own facts ------------------------------------------------------
@@ -73,19 +81,33 @@ export const contextAuditFacts = (context) => {
     if (!context) return null;
     const groups = [];
     const symmetry = context.symmetry;
+    const ladder = symmetry?.ladder || [];
+    // A group's operations in the cell and its place on the ladder (tight →
+    // loose), for the subgroup check.
+    const counted = (rung) => ({
+        ...(Number.isFinite(rung?.n_ops) ? { n_ops: rung.n_ops } : {}),
+        ...(ladder.includes(rung) ? { rank: ladder.indexOf(rung) } : {})
+    });
     if (symmetry?.space_group && symmetry.point_group) {
         const facts = pointGroupFacts(symmetry.point_group);
-        if (facts) groups.push({ symbol: String(symmetry.space_group).replace(/\s*\(No\.\s*\d+\)\s*$/, ''), ...facts, parent: true });
+        const symbol = String(symmetry.space_group).replace(/\s*\(No\.\s*\d+\)\s*$/, '');
+        const rung = ladder.find((item) => item.sg && normalizeSymbol(item.sg) === normalizeSymbol(symbol));
+        if (facts) groups.push({ symbol, ...facts, ...counted(rung ?? symmetry), parent: true });
     }
-    const ladder = symmetry?.ladder || [];
     const most = Math.max(...ladder.map((rung) => (Number.isFinite(rung.n_ops) ? rung.n_ops : -Infinity)));
     ladder.forEach((rung, index) => {
         const facts = rung.pg ? pointGroupFacts(rung.pg) : null;
         // Without operation counts, the ladder's two ends.
         const top = Number.isFinite(most) ? rung.n_ops === most : index === 0 || index === ladder.length - 1;
-        if (facts && rung.sg) groups.push({ symbol: rung.sg, ...facts, ...(top ? { parent: true } : {}) });
+        if (facts && rung.sg) groups.push({ symbol: rung.sg, ...facts, ...counted(rung), ...(top ? { parent: true } : {}) });
     });
-    return { convergence: context.convergence?.watchdog_status ?? null, groups };
+    return {
+        convergence: context.convergence?.watchdog_status ?? null,
+        groups,
+        // The box (unit cells along a, b, c) and the run's elements, for the box check.
+        supercell: Array.isArray(context.structure?.supercell) ? context.structure.supercell : null,
+        elements: Object.keys(context.structure?.elements || {})
+    };
 };
 
 // --- convergence ----------------------------------------------------------------------
@@ -177,6 +199,157 @@ const symmetryRules = (reading, facts, context) => {
     return found;
 };
 
+// --- group–subgroup relations (the local-symmetry interview, 2026-10-24) ----------------
+
+// "An answer that claims a group–subgroup relation that doesn't hold gets a
+// warning under it" (the user, 2026-10-24, answer 4a). A relation the answer
+// asserts — "H is a (maximal) (t-/k-) subgroup of G", "G is a supergroup of
+// H", "G has H as a subgroup", or a lowering from G to H ("lowers G to H",
+// "from G to H", "G → H" in a clause that says lower, reduce, descend or
+// break down) — is read against the run's own groups where it knows both:
+// the ladder's rungs are nested (each holds every operation of the tighter
+// ones, symmetry.js groupsByThreshold), so H is a subgroup of G when it is
+// tighter on the ladder with fewer operations of the cell, which G's count
+// divides; the index is |G|/|H| in the same cell, and the type is t
+// (translationengleiche) when the translations per cell (operations over the
+// point group's order) stay, k (klassengleiche) when the point group stays,
+// else neither (a general subgroup, which is never maximal). A group the run
+// does not know (a published phase) is read by its point group alone (its
+// symbol's, pointGroupOfSymbol): a subgroup's point group is one of the
+// parent's subgroups (isPointSubgroup), a k-subgroup keeps it, a t-subgroup
+// lowers it by its index. A negated, hypothetical or asked relation claims
+// nothing.
+const translationsPerCell = (group) => (Number.isFinite(group.n_ops) && pointGroupOrder(group.point_group) ? group.n_ops / pointGroupOrder(group.point_group) : null);
+
+// The run's groups for the relation: each with its point group, and, where
+// the ladder or detect_symmetry gives them, its operations in the cell and
+// its rank on the ladder (the context's entry and a tool's merged).
+const relationGroups = (facts, context) => {
+    const groups = new Map();
+    const add = (group) => {
+        const key = normalizeSymbol(group.symbol);
+        if (!key || !/^[pifcabr]/.test(key) || !group.point_group) return;
+        const known = groups.get(key) || {};
+        groups.set(key, {
+            ...known,
+            symbol: known.symbol ?? group.symbol,
+            point_group: known.point_group ?? group.point_group,
+            ...(Number.isFinite(group.n_ops) && !Number.isFinite(known.n_ops) ? { n_ops: group.n_ops } : {}),
+            ...(Number.isFinite(group.rank) && !Number.isFinite(known.rank) ? { rank: group.rank } : {})
+        });
+    };
+    for (const group of context?.groups || []) add(group);
+    for (const fact of facts) for (const group of fact.groups || []) add(group);
+    return groups;
+};
+
+// The relations a clause asserts: [{ sub, parent, said }], each group a
+// symbol token (reading.js symbolTokens) with its group or its point group,
+// `said` the words that state its index and type: the stretch from the first
+// of the two symbols to a little past the second ("H is a t-subgroup of G of
+// index 3"), or, for a step of a lowering, what follows the step's subgroup
+// up to the next symbol ("G → H (t3) → K (k2)").
+const SAID_AFTER = 30;
+const relationsIn = (clause, groups, sentence = clause) => {
+    const tokens = symbolTokens(clause, groups);
+    if (tokens.length < 2) return [];
+    const text = symbolSpelling(clause);
+    const before = (at) => [...tokens].reverse().find((token) => token.end <= at) ?? null;
+    const after = (at) => tokens.find((token) => token.at >= at) ?? null;
+    const stretch = (a, b) => (a && b ? text.slice(Math.min(a.at, b.at), Math.max(a.end, b.end) + SAID_AFTER) : '');
+    const pairs = [];
+    positiveMatches(text, SUBGROUP_OF).forEach((match) => {
+        const at = match.index + match[1].length;
+        const [sub, parent] = [before(at), after(at + match[2].length)];
+        pairs.push({ sub, parent, said: stretch(sub, parent) });
+    });
+    positiveMatches(text, SUPERGROUP_OF).forEach((match) => {
+        const at = match.index + match[1].length;
+        const [parent, sub] = [before(at), after(at + match[2].length)];
+        pairs.push({ sub, parent, said: stretch(sub, parent) });
+    });
+    positiveMatches(text, HAS_AS_SUBGROUP).forEach((match) => {
+        const at = match.index + match[1].length;
+        const parent = before(at);
+        const found = after(at + match[2].length);
+        const sub = found && found.at < match.index + match[0].length ? found : null;
+        pairs.push({ sub, parent, said: stretch(sub, parent) });
+    });
+    // A lowering from one symbol to the next, in a sentence that says lower,
+    // reduce, descend or break down: only an arrow or "to" (with a tolerance
+    // or an index in brackets, say) between them.
+    if (clausesOf(symbolSpelling(sentence)).some((part) => positiveMatches(part, LOWERING_TO).length)) {
+        tokens.slice(1).forEach((token, k) => {
+            const between = text.slice(tokens[k].end, token.at).replace(/\([^()]{0,30}\)/g, ' ');
+            if (!ARROW.test(between)) return;
+            const next = tokens[k + 2];
+            pairs.push({ parent: tokens[k], sub: token, said: text.slice(token.end, next ? next.at : token.end + SAID_AFTER) });
+        });
+    }
+    const asGroup = (token) => ({
+        ...(token.group || {}), symbol: token.group?.symbol ?? token.written, point_group: token.group?.point_group ?? pointGroupOfSymbol(token.written)
+    });
+    return pairs.filter((pair) => pair.sub && pair.parent && pair.sub.key !== pair.parent.key)
+        .map(({ sub, parent, said }) => ({ sub: asGroup(sub), parent: asGroup(parent), said }));
+};
+
+const subgroupRule = (reading, facts, context) => {
+    const groups = relationGroups(facts, context);
+    for (const sentence of reading.sentences) {
+        for (const clause of clausesOf(sentence)) {
+            for (const { sub, parent, said } of relationsIn(clause, groups, sentence)) {
+                const claimedIndex = INDEX_CLAIM.exec(said);
+                const index = claimedIndex ? Number(claimedIndex[1] ?? claimedIndex[2]) : null;
+                const claimsT = T_TYPE.test(said);
+                const claimsK = K_TYPE.test(said) && !claimsT;
+                const claimsMaximal = MAXIMAL.test(said);
+                const pgSub = sub.point_group;
+                const pgParent = parent.point_group;
+                const says = `${sub.symbol} as a subgroup of ${parent.symbol}`;
+                const finding = (text2) => [{ rule: 'subgroup', text: `The answer has ${says}, but ${text2}` }];
+                if (Number.isFinite(sub.n_ops) && Number.isFinite(parent.n_ops)) {
+                    // Both the run's: the ladder's nesting, its operations in the cell.
+                    const ladderOrder = Number.isFinite(sub.rank) && Number.isFinite(parent.rank) ? sub.rank < parent.rank : true;
+                    const holds = sub.n_ops < parent.n_ops && parent.n_ops % sub.n_ops === 0 && ladderOrder && isPointSubgroup(pgSub, pgParent) !== false;
+                    if (!holds) {
+                        return finding(`on the ladder ${sub.symbol} holds ${sub.n_ops} operations of the cell and ${parent.symbol} ${parent.n_ops}: `
+                            + `${sub.n_ops >= parent.n_ops ? `${parent.symbol} is the subgroup, not ${sub.symbol}` : `${parent.symbol} does not contain ${sub.symbol}`}.`);
+                    }
+                    const actual = parent.n_ops / sub.n_ops;
+                    const pgRatio = pointGroupOrder(pgParent) / pointGroupOrder(pgSub);
+                    const [tSub, tParent] = [translationsPerCell(sub), translationsPerCell(parent)];
+                    const type = tSub === tParent ? 't' : (pgSub === pgParent ? 'k' : 'general');
+                    const how = type === 't' ? `the translations stay (${tParent} per cell) and the point group lowers from ${pgParent} to ${pgSub}: a t-subgroup`
+                        : type === 'k' ? `the point group stays (${pgParent}) and the translations drop from ${tParent} to ${tSub} per cell: a k-subgroup`
+                            : `the translations drop from ${tParent} to ${tSub} per cell and the point group from ${pgParent} to ${pgSub}: a general `
+                                + `subgroup, neither t nor k (index ${actual} = ${pgRatio} × ${tParent / tSub})`;
+                    if (index != null && index !== actual) return finding(`its index is ${parent.n_ops}/${sub.n_ops} = ${actual} operations of the cell, not ${index}: ${how}.`);
+                    if (claimsT && type !== 't') return finding(`it is not translationengleiche: ${how}.`);
+                    if (claimsK && type !== 'k') return finding(`it is not klassengleiche: ${how}.`);
+                    if (claimsMaximal && type === 'general') return finding(`${how}, and a subgroup that is neither t nor k is never maximal (it lies below an intermediate group).`);
+                    continue;
+                }
+                // A group the run does not know: its point group.
+                const contained = isPointSubgroup(pgSub, pgParent);
+                if (contained === false) {
+                    return finding(`${sub.symbol}'s point group, ${pgSub}, is not a subgroup of ${parent.symbol}'s, ${pgParent}: no subgroup of ${parent.symbol} has it.`);
+                }
+                if (contained && claimsK && pgSub !== pgParent) {
+                    return finding(`a klassengleiche subgroup keeps the point group, and ${sub.symbol}'s (${pgSub}) is not ${parent.symbol}'s (${pgParent}).`);
+                }
+                if (contained && claimsT && pgSub === pgParent) {
+                    return finding(`a translationengleiche subgroup lowers the point group, and ${sub.symbol} keeps ${parent.symbol}'s (${pgParent}).`);
+                }
+                const pgRatio = contained ? pointGroupOrder(pgParent) / pointGroupOrder(pgSub) : null;
+                if (contained && claimsT && index != null && index !== pgRatio) {
+                    return finding(`a translationengleiche subgroup's index is the ratio of the point groups' orders, ${pointGroupOrder(pgParent)}/${pointGroupOrder(pgSub)} = ${pgRatio}, not ${index}.`);
+                }
+            }
+        }
+    }
+    return [];
+};
+
 // --- direction ------------------------------------------------------------------------
 
 const directionRule = (reading, facts) => {
@@ -262,7 +435,83 @@ const longWaveRule = (reading, facts) => {
     return [];
 };
 
-const modulationRules = (reading, facts, context) => [...superstructureRule(reading, facts, context), ...longWaveRule(reading, facts)];
+// --- a cell doubling the box cannot hold (the local-symmetry interview, 2026-10-24) -----
+
+// "An answer that claims a cell doubling the box's average structure can't
+// support gets a warning under it" (the user, 2026-10-24, answer 4b). A
+// clause that asserts a cell doubling (CELL_DOUBLING, DOUBLED_CELL) along
+// some axes — "along a and b", "the c axis is doubled", "2a × 2a × c", a ½
+// component of a wavevector — is flagged when the box (the run's supercell,
+// unit cells along a, b, c) is odd along one of them, or along every axis
+// when the clause names none: a doubled cell does not fit in it (its ½
+// wavevector is not on the box's grid), so the configuration can neither show
+// nor rule out that doubling — in a sentence about this run (an element of
+// it, or the run itself), unless the answer says the box cannot hold it. And,
+// once an analyze_modulations found ordered zone-boundary points, a doubling
+// along axes none of them is ½ on (at that q): the superstructure check
+// flags a doubling with no ordered point at all.
+const AXIS_INDEX = { a: 0, b: 1, c: 2 };
+const isHalf = (value) => Math.abs(Math.abs(value) % 1 - 0.5) < 1e-6;
+const HALF_VALUE = { '½': 0.5, '1/2': 0.5, '.5': 0.5, '0.5': 0.5, 0: 0 };
+const doublingAxes = (clause) => {
+    const axes = new Set();
+    const letter = (word) => (word ? /[abc]/.exec(word.toLowerCase())?.[0] : null);
+    if (ALL_AXES.test(clause)) [0, 1, 2].forEach((k) => axes.add(k));
+    const along = ALONG_AXES.exec(clause);
+    if (along) along.slice(1).map(letter).filter(Boolean).forEach((axis) => axes.add(AXIS_INDEX[axis]));
+    for (const match of clause.matchAll(DOUBLED_AXIS)) [match[1], match[2], match[3]].map(letter).filter(Boolean).forEach((axis) => axes.add(AXIS_INDEX[axis]));
+    for (const q of qVectorsIn(clause)) q.forEach((value, k) => { if (isHalf(value)) axes.add(k); });
+    for (const match of clause.matchAll(HALF_TUPLE)) match.slice(1, 4).forEach((value, k) => { if (HALF_VALUE[value] === 0.5) axes.add(k); });
+    return axes;
+};
+const axisNames = (axes) => [...axes].sort().map((k) => 'abc'[k]).join(', ');
+
+const cellDoublingRule = (reading, facts, context) => {
+    const supercell = context?.supercell;
+    const ordered = facts.map((fact) => fact.modulation).filter(Boolean).flatMap((fact) => fact.ordered || []);
+    if (!Array.isArray(supercell) && !ordered.length) return [];
+    const elements = context?.elements || [];
+    const aboutRun = (sentence) => !elements.length || RUN_NOUN.test(sentence) || elements.some((element) => namesElement(sentence, element));
+    const cannotHold = CANNOT_HOLD.test(reading.text);
+    for (const sentence of reading.sentences) {
+        for (const clause of clausesOf(sentence)) {
+            if (!positiveMatches(clause, CELL_DOUBLING).length && !positiveMatches(clause, DOUBLED_CELL).length) continue;
+            const axes = doublingAxes(clause);
+            if (Array.isArray(supercell) && !cannotHold && aboutRun(sentence)) {
+                const odd = [0, 1, 2].filter((k) => !(supercell[k] % 2 === 0));
+                const box = supercell.join(' × ');
+                if (axes.size && [...axes].some((k) => odd.includes(k))) {
+                    const along = [...axes].filter((k) => odd.includes(k));
+                    return [{
+                        rule: 'cell-doubling',
+                        text: `The answer claims a cell doubling along ${axisNames(axes)}, but the box (${box} unit cells) is odd along `
+                            + `${axisNames(along)}: a doubled cell there does not fit in it (its ½ wavevector is not on the box's grid), so `
+                            + 'the configuration can neither show nor rule out that doubling.'
+                    }];
+                }
+                if (!axes.size && odd.length === 3) {
+                    return [{
+                        rule: 'cell-doubling',
+                        text: `The answer claims a cell doubling, but the box (${box} unit cells) is odd along every axis: no doubled cell `
+                            + 'fits in it, so the configuration can neither show nor rule out a doubling.'
+                    }];
+                }
+            }
+            if (axes.size && ordered.length && !ordered.some(({ q }) => [...axes].every((k) => isHalf(q[k])))) {
+                return [{
+                    rule: 'cell-doubling',
+                    text: `The answer claims a cell doubling along ${axisNames(axes)}, but analyze_modulations found ordered zone-boundary `
+                        + `points only at ${[...new Set(ordered.map(({ q }) => qText(q)))].join(', ')}: none doubles the cell along ${axisNames(axes)}.`
+                }];
+            }
+        }
+    }
+    return [];
+};
+
+const modulationRules = (reading, facts, context) => [
+    ...superstructureRule(reading, facts, context), ...longWaveRule(reading, facts), ...cellDoublingRule(reading, facts, context)
+];
 
 // --- distributions from one configuration (the user's rule, 2026-10-24) -----------------
 
@@ -482,11 +731,20 @@ export const FACTS = Object.freeze([
     Object.freeze({
         key: 'groups',
         from: Object.freeze(['detect_symmetry']),
-        // The group and its point group's facts (context/pointGroups.js); the
-        // run context's ladder adds its groups, the parents flagged.
-        shape: [{ symbol: 'string', point_group: 'string', centrosymmetric: 'boolean', sohncke: 'boolean', polar: 'boolean', crystal_system: 'string' }],
-        reads: Object.freeze([CHIRAL, CENTROSYMMETRIC, POLAR, ...LOST_INVERSION]),
-        contradicts: symmetryRules
+        // The group and its point group's facts (context/pointGroups.js), its
+        // operations in the cell and the tolerance it holds at; the run
+        // context's ladder adds its groups (the parents flagged, each with its
+        // operations and its rank on the ladder).
+        shape: [{
+            symbol: 'string', point_group: 'string', centrosymmetric: 'boolean', sohncke: 'boolean', polar: 'boolean', crystal_system: 'string',
+            'n_ops?': 'number', 'tolerance_A?': 'number'
+        }],
+        reads: Object.freeze([
+            CHIRAL, CENTROSYMMETRIC, POLAR, ...LOST_INVERSION, SUBGROUP_OF, SUPERGROUP_OF, HAS_AS_SUBGROUP, LOWERING_TO, ARROW, INDEX_CLAIM, T_TYPE, K_TYPE,
+            MAXIMAL
+        ]),
+        // The point-group facts, then the group–subgroup relation (the user's, 2026-10-24).
+        contradicts: (reading, facts, context) => [...symmetryRules(reading, facts, context), ...subgroupRule(reading, facts, context)]
     }),
     Object.freeze({
         key: 'direction',
@@ -507,8 +765,11 @@ export const FACTS = Object.freeze([
             long_wave_q: 'number',
             long_waves: [{ element: 'string', q: ['number', 'number', 'number'] }]
         },
-        reads: Object.freeze([CELL_DOUBLING, SUPERSTRUCTURE, ORDER_CLAIM, LONG_WAVE_WORDS, SAYS_NOTHING]),
-        // The superstructure rule, then the long-wave rule (the user's, 2026-10-24).
+        reads: Object.freeze([
+            CELL_DOUBLING, SUPERSTRUCTURE, ORDER_CLAIM, LONG_WAVE_WORDS, SAYS_NOTHING, DOUBLED_CELL, ALONG_AXES, DOUBLED_AXIS, ALL_AXES, HALF_TUPLE,
+            CANNOT_HOLD, RUN_NOUN
+        ]),
+        // The superstructure rule, the long-wave rule and the box rule (the user's, 2026-10-24).
         contradicts: modulationRules
     }),
     Object.freeze({

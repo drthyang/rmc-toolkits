@@ -1524,9 +1524,13 @@ export const summarizeSymmetry = (described, tolerance) => {
     }
     // For the answer check (llm/copilot/verification/facts.js): the group and what its
     // point group implies.
+    // Its operations in the cell and its tolerance, for the group–subgroup
+    // check (the local-symmetry interview, 2026-10-24).
     const result = { data, checks };
     if (facts && !String(described.spaceGroup).startsWith('≥') && described.spaceGroup !== 'undetermined') {
-        result.facts = { groups: [{ symbol: described.spaceGroup, ...facts }] };
+        result.facts = {
+            groups: [{ symbol: described.spaceGroup, ...facts, ...(Number.isFinite(described.nSpace) ? { n_ops: described.nSpace } : {}), tolerance_A: tolerance }]
+        };
     }
     return result;
 };

@@ -135,6 +135,10 @@ describe('writeCif', () => {
     it('records the provenance a reader needs in the header', () => {
         const { model, brick } = exported[exported.length - 1];
         const text = writeCif(model, { tolRange: [brick.from, brick.to] });
+        // The user's label (the local-symmetry interview, 2026-10-24): never a refined structure.
+        expect(text.split('\n')[0]).toBe('# Average-structure model of an RMC configuration (symmetry-averaged), written by rmc-toolkits.');
+        expect(readCif(text).items._audit_creation_method).toBe('rmc-toolkits: average-structure model of an RMC configuration');
+        expect(text).not.toMatch(/refine/i);
         expect(text).toMatch(/# Source: .*\(52000 atoms, 52 reference sites, supercell 10x10x10\)\./);
         expect(text).toMatch(/holds from 0\.031 to 1\.000 A on the tolerance ladder; orbits taken at 0\.031 A\./);
         expect(text).toMatch(/# Origin: x\(CIF\) = inv\(Q\) \(x\(\.rmc6f\) \+ d\)/);
