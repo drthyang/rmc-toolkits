@@ -50,9 +50,12 @@
 //               √ its bonds in the box, the bonds taken as independent); the
 //               counts said in the direction the join decided (`direction`).
 //   separation  a shell is separated from the next when the smoothed g at its
-//               boundary is at most SEPARATION_G_FRACTION (2 %) of its peak;
-//               a closest-approach constraint limits the pair when the raw g
-//               just above it is above the same fraction.
+//               boundary is at most SEPARATION_G_FRACTION (2 %) of its peak.
+//   constraint  a closest-approach constraint limits the pair when the raw g
+//               just above it is above CONSTRAINT_LIMIT_FRACTION (5 %) of the
+//               first peak: the peak is constraint-limited, and nothing is
+//               interpreted on its low-r side (the user's rule, 2026-10-24;
+//               2 %, the separation's fraction, before).
 //   CN match    two counts agree within half an atom (cnMatches).
 //   clusters    an element whose own first shell holds 0.5–4.5 neighbours
 //               may form finite clusters (clusterElementsOf: the evidence
@@ -109,10 +112,16 @@ export const CN_MATCH_TOLERANCE = 0.5;
 // analyze_clusters on it, and arm A+ tries its clusters (clusterElementsOf,
 // one rule since architecture candidate 8).
 export const CLUSTER_CN_MAX = 4.5;
-// g at a shell's boundary (smoothed), or just above a closest-approach
-// constraint (raw), above this fraction of the first peak: the shell runs
-// into the next, or the constraint shapes the peak. One constant for both.
+// g at a shell's boundary (smoothed) above this fraction of the first peak:
+// the shell runs into the next.
 export const SEPARATION_G_FRACTION = 0.02;
+// g just above a closest-approach constraint (raw, its first 2.5 grid steps)
+// above this fraction of the first peak: the pairs pile up against the
+// constraint, which, not the data, shapes the peak's low-r side — the peak is
+// constraint-limited, and nothing on its low-r side is interpreted (the
+// user's rule, 2026-10-24: "g(r) above 5 % of the peak at the cut"; until
+// then the separation's 2 %). The Demo's Ga–Se at its 2.2 Å constraint: 8.7 %.
+export const CONSTRAINT_LIMIT_FRACTION = 0.05;
 // The cut sensitivity: the shell's top moved this far (Å) either way.
 export const CUT_SHIFT_A = 0.2;
 // The CN margin: a window changes the answer when its CN differs from the
@@ -575,7 +584,7 @@ const buildShell = (centre, partner, label, geometry, { partnerDensity, centreDe
                 later: reading([window[0], roundWindowEdge(window[1] + CUT_SHIFT_A)])
             }
             : null,
-        constraint: Number.isFinite(limit) ? { limitA: limit, gFraction, limited: gFraction > SEPARATION_G_FRACTION } : null
+        constraint: Number.isFinite(limit) ? { limitA: limit, gFraction, limited: gFraction > CONSTRAINT_LIMIT_FRACTION } : null
     });
 };
 

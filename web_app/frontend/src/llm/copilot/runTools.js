@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { buildRunContext, seriesStats } from '../context/runContext';
-import { BOUNDARY_REACH_A, PEAK_SEARCH_MAX_A, extractPeaks, shellCatalogue } from '../context/shells';
+import { BOUNDARY_REACH_A, CONSTRAINT_LIMIT_FRACTION, PEAK_SEARCH_MAX_A, extractPeaks, shellCatalogue } from '../context/shells';
 import { MIN_TOTAL_DROP, TREND_MIN_ROWS, TREND_NOISE_FACTOR, chiSeries, judgeConvergence } from '../watchdog/heuristics';
 import { oneOf } from './dataShape';
 import { methodCheck } from './method';
@@ -492,14 +492,19 @@ const grPeaksTool = (run, cardIds) => {
                 data.min_distance_constraint_A = limit;
                 // g just above the constraint (its first 2.5 grid steps),
                 // relative to the first peak: a cut-off tail piles up there.
+                // Above CONSTRAINT_LIMIT_FRACTION (5 %) the peak is
+                // constraint-limited (the user's rule, 2026-10-24). What to do
+                // about it is method (method.js): arm C's method 'off' reads
+                // the reading alone.
                 if (limited) {
                     data.g_at_constraint_fraction = roundSig(gFraction, 2);
-                    checks.push({
-                        level: 'warn',
-                        text: `The ${limit} Å closest-approach constraint cuts this distribution: g(r) just above it is `
-                            + `${Math.round(gFraction * 100)} % of the first peak, so ${a}–${b} pairs pile up against the constraint — `
-                            + 'it is constraint-limited; the constraint, not the data, shapes the low-r side of the peak.'
-                    });
+                    checks.push(methodCheck('warn',
+                        `The ${limit} Å closest-approach constraint cuts this distribution: g(r) just above it is `
+                            + `${Math.round(gFraction * 100)} % of the first peak (above ${Math.round(CONSTRAINT_LIMIT_FRACTION * 100)} %), `
+                            + `so ${a}–${b} pairs pile up against the constraint and the constraint, not the data, shapes the low-r side `
+                            + 'of the peak — constraint-limited',
+                        { method: ': interpret nothing on its low-r side; consider rerunning with the constraint loosened' },
+                        '.'));
                 }
             }
             if (!checks.some((check) => check.level === 'warn')) {

@@ -317,6 +317,28 @@ describe('buildRunTools', () => {
         expect(checks.find((check) => check.level === 'warn').text).toMatch(/2\.2 Å closest-approach constraint cuts this distribution/);
     });
 
+    it('constraint-limited above 5 % of the peak at the cut: 9 % warns and advises, 3 % does not (the user\'s rule, 2026-10-24)', async () => {
+        // Ga–Se at 2.42 Å (σ 0.1 Å), g 0 below the constraint: cut at 2.18 Å,
+        // g just above is 9 % of the peak (the Demo's Ga–Se: 8.7 %); at 2.13 Å, 3 %.
+        const x = grid(500, 0.01);
+        const gr = (limit) => toolMap({
+            runSettings: { atoms: ['Ga', 'Se'], minimumDistancesA: [3.0, limit, 3.0] },
+            plotFiles: [{ plotKind: 'pdf_partials', plotData: { series: [{ label: 'Ga-Se', x, y: x.map((r) => (r <= limit ? 0 : gaussian(r, 2.42, 0.1, 8))) }] } }]
+        }).find_gr_peaks.run({ pair: 'Ga-Se' });
+        const limited = await gr(2.18);
+        expect(limited.data.g_at_constraint_fraction).toBe(0.09);
+        const warning = limited.checks.find((check) => check.level === 'warn');
+        expect(warning.text).toBe('The 2.18 Å closest-approach constraint cuts this distribution: g(r) just above it is 9 % of the first '
+            + 'peak (above 5 %), so Ga–Se pairs pile up against the constraint and the constraint, not the data, shapes the low-r side '
+            + 'of the peak — constraint-limited: interpret nothing on its low-r side; consider rerunning with the constraint loosened.');
+        // What to do about it is method: arm C's method 'off' reads the reading alone.
+        expect(checkText(warning, 'off')).toMatch(/shapes the low-r side of the peak — constraint-limited\.$/);
+        const clear = await gr(2.13);
+        expect(clear.data.min_distance_constraint_A).toBe(2.13);
+        expect(clear.data.g_at_constraint_fraction).toBeUndefined();
+        expect(clear.checks.map((check) => check.level)).toEqual(['ok']);
+    });
+
     it('no longer calls a distribution cut because its half maximum lies within 0.05 Å of the constraint (the FWHM clause, dropped)', async () => {
         // A sharp peak on a 0.005 Å grid, 0.07 Å above a 2.43 Å constraint: g
         // just above the constraint is ~1 % of the peak, so nothing piles up.
