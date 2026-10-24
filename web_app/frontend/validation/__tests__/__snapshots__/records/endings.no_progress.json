@@ -84,6 +84,7 @@
   "list_sites",
   "analyze_displacement_directions",
   "compute_bond_angles",
+  "polyhedral_distortion",
   "analyze_clusters",
   "analyze_modulations",
   "detect_symmetry",
@@ -119,19 +120,19 @@
   {
    "round": 0,
    "why": "first",
-   "sent": "20220 characters, sha256 e82ce357875af9c9",
+   "sent": "21466 characters, sha256 c50b6c2f5714f508",
    "num_ctx": null
   },
   {
    "round": 1,
    "why": "tools",
-   "sent": "20663 characters, sha256 62777dc199caaa36",
+   "sent": "21932 characters, sha256 d74ef17d63a7594a",
    "num_ctx": null
   },
   {
    "round": 2,
    "why": "final",
-   "sent": "21383 characters, sha256 986ebfd8044ca2ba",
+   "sent": "22675 characters, sha256 5b8c17e595514275",
    "num_ctx": null
   }
  ],
@@ -150,7 +151,7 @@
    "status": "failed",
    "checks": [],
    "data": null,
-   "error": "unknown tool \"no_such_tool\"; available: read_run_data, find_gr_peaks, list_sites, analyze_displacement_directions, compute_bond_angles, analyze_clusters, analyze_modulations, detect_symmetry, measure_symmetry_lowering, ask_user",
+   "error": "unknown tool \"no_such_tool\"; available: read_run_data, find_gr_peaks, list_sites, analyze_displacement_directions, compute_bond_angles, polyhedral_distortion, analyze_clusters, analyze_modulations, detect_symmetry, measure_symmetry_lowering, ask_user",
    "ms": "<ms>",
    "cached": false
   },
@@ -168,7 +169,7 @@
    "status": "failed",
    "checks": [],
    "data": null,
-   "error": "unknown tool \"no_such_tool\"; available: read_run_data, find_gr_peaks, list_sites, analyze_displacement_directions, compute_bond_angles, analyze_clusters, analyze_modulations, detect_symmetry, measure_symmetry_lowering, ask_user",
+   "error": "unknown tool \"no_such_tool\"; available: read_run_data, find_gr_peaks, list_sites, analyze_displacement_directions, compute_bond_angles, polyhedral_distortion, analyze_clusters, analyze_modulations, detect_symmetry, measure_symmetry_lowering, ask_user",
    "ms": "<ms>",
    "cached": false
   }

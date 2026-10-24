@@ -59,7 +59,7 @@ describe('the Demo through openRunFolder (the in-process adapter)', () => {
         expect(run.props.structure.source).toBe('Demo/GTS_250K.rmc6f');
         expect(run.elements).toEqual(['Ga', 'Se', 'Ta']);
         expect(run.tools.map((tool) => tool.name)).toEqual([
-            'list_sites', 'analyze_displacement_directions', 'compute_bond_angles', 'analyze_clusters',
+            'list_sites', 'analyze_displacement_directions', 'compute_bond_angles', 'polyhedral_distortion', 'analyze_clusters',
             'analyze_modulations', 'detect_symmetry', 'measure_symmetry_lowering'
         ]);
         expect(run.view).toEqual(DEFAULT_VIEW);

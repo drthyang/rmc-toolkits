@@ -85,7 +85,7 @@ describe('useCopilotRun (the browser adapter)', () => {
         });
         expect(hook.engine).toEqual(expect.any(Function));
         expect(hook.tools.map((tool) => tool.name)).toEqual([
-            'list_sites', 'analyze_displacement_directions', 'compute_bond_angles', 'analyze_clusters', 'analyze_modulations'
+            'list_sites', 'analyze_displacement_directions', 'compute_bond_angles', 'polyhedral_distortion', 'analyze_clusters', 'analyze_modulations'
         ]);
         // The view's own props pass through from the start, as App always passed them.
         await render(demoProps({ enabled: false, view: { pcaSites: { sites: [] }, liveData: true } }));

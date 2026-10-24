@@ -185,7 +185,14 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // 2026-10-19.20: the held-out marginal pair re-set by a fresh blind author
 // from the updated spec (the marginal situation was re-set after F1's
 // corrected null raised the test's power, 2026-10-19).
-export const PROTOCOL_VERSION = '2026-10-19.20';
+// 2026-10-24.3: a new tool, polyhedral_distortion (the user's interview
+// answer 7 for coordination-shells, approved by the manager on the user's
+// delegation): Baur's DI, Robinson's quadratic elongation and bond-angle
+// variance of a centre's coordination polyhedra, over the configuration and
+// the average structure, refusing a window that cuts the shell by
+// compute_bond_angles' rule; arms B and C are offered it (arm C its
+// description without the method advice), arms A and A+ do not read it.
+export const PROTOCOL_VERSION = '2026-10-24.3';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one
 // follows the full method.

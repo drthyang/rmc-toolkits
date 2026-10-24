@@ -1,0 +1,96 @@
+{
+  "tool": "polyhedral_distortion",
+  "arguments": {
+    "centre": "Ta",
+    "ligand": "Se",
+    "r_min": 2.21,
+    "r_max": 3.23
+  },
+  "content_chars": 1265,
+  "content": {
+    "ref": "r1",
+    "checks": [
+      {
+        "level": "ok",
+        "text": "15932 of 16000 Ta atoms have 6 Se within 2.21–3.23 Å (octahedron): measured; the 68 with another count are left out."
+      }
+    ],
+    "data": {
+      "pair": "Ta–Se (Ta central)",
+      "window_A": [2.21, 3.23],
+      "coordination": {
+        "note": "counts[n] = Ta atoms with exactly n Se in the window",
+        "counts": [0, 0, 0, 0, 0, 68, 15932],
+        "mean": 6,
+        "modal": 6,
+        "modal_share": 1,
+        "unbonded_share": 0
+      },
+      "shell": {
+        "note": "the first Ta–Se shell (find_gr_peaks); cn, cn_in_window: Se per Ta",
+        "window_A": [2.21, 3.23],
+        "cn": 6,
+        "cn_in_window": 6,
+        "holds": "whole"
+      },
+      "measured": {
+        "coordination": 6,
+        "shape": "octahedron",
+        "centres": 16000,
+        "polyhedra": 15932,
+        "skipped": 68
+      },
+      "configuration": {
+        "bond_length_A": {
+          "mean": 2.64,
+          "sd": 0.15
+        },
+        "distortion_index": {
+          "mean": 0.0469,
+          "sd": 0.017,
+          "p10": 0.0261,
+          "median": 0.0459,
+          "p90": 0.0683
+        },
+        "quadratic_elongation": {
+          "mean": 1.0405,
+          "sd": 0.013,
+          "p10": 1.0247,
+          "median": 1.0403,
+          "p90": 1.0563
+        },
+        "angle_variance_deg2": {
+          "mean": 127,
+          "sd": 37,
+          "p10": 79.4,
+          "median": 128,
+          "p90": 174
+        },
+        "trans_angle_deg": {
+          "mean": 158.8,
+          "sd": 3.7
+        }
+      },
+      "average_structure": {
+        "polyhedra": 16,
+        "bond_ladder_A": [2.523, 2.525, 2.527, 2.74, 2.744, 2.747],
+        "distortion_index": {
+          "mean": 0.0415,
+          "sd": 0.0013
+        },
+        "quadratic_elongation": {
+          "mean": 1.0341,
+          "sd": 0.0011
+        },
+        "angle_variance_deg2": {
+          "mean": 111,
+          "sd": 3.1
+        },
+        "trans_angle_deg": {
+          "mean": 159.6,
+          "sd": 0.3
+        }
+      }
+    }
+  }
+}

@@ -55,6 +55,9 @@ const SAMPLES = [
     ['compute_bond_angles', 'compute_bond_angles', { end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.21, r12_max: 3.23 }],
     ['compute_bond_angles.cut-window-workbench-asks', 'compute_bond_angles', CUT, { user: { answer: null, source: 'skipped', index: null } }],
     ['compute_bond_angles.cut-window-refused', 'compute_bond_angles', CUT, { workbench: false }],
+    // The TaSe6 octahedra in the whole first shell: the configuration's and
+    // the average structure's indices (2026-10-24).
+    ['polyhedral_distortion', 'polyhedral_distortion', { centre: 'Ta', ligand: 'Se', r_min: 2.21, r_max: 3.23 }],
     ['analyze_clusters', 'analyze_clusters', { element: 'Ta', r_min: 2.65, r_max: 3.33 }],
     ['analyze_modulations', 'analyze_modulations', {}],
     // One element named: the significance is still corrected over every

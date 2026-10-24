@@ -143,13 +143,15 @@
   {
    "kind": "distortion",
    "param": "rMin",
-   "ge": 0
+   "ge": 0,
+   "tool": "polyhedral_distortion.r_min"
   },
   {
    "kind": "distortion",
    "param": "rMax",
    "gt": 0,
-   "le": 8
+   "le": 8,
+   "tool": "polyhedral_distortion.r_max"
   }
  ],
  "cases": [

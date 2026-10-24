@@ -31,7 +31,9 @@ const { handlePcaMessage, inProcessEngine, MAX_CLUSTER_WINDOW, MAX_DISTORTION_WI
 const { buildCopilotTools } = await import('../copilotTools');
 const { default: useCopilotRun } = await import('../useCopilotRun');
 
-const ANALYSIS_TOOLS = ['list_sites', 'analyze_displacement_directions', 'compute_bond_angles', 'analyze_clusters', 'analyze_modulations'];
+const ANALYSIS_TOOLS = [
+    'list_sites', 'analyze_displacement_directions', 'compute_bond_angles', 'polyhedral_distortion', 'analyze_clusters', 'analyze_modulations'
+];
 // The kept differences between the adapters, by kind: accepted on one and
 // refused on the other (or accepted with other values), refused on both under
 // another name, and read by one adapter only. A new one shows here in review.
