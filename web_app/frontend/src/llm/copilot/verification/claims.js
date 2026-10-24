@@ -27,7 +27,9 @@
 //                (met when any ran; asks for the first the turn offers),
 //                firstOffered (the first the turn offers, else the last, is
 //                the one needed) or allOf (each requirement, every `each`
-//                value its own). A
+//                value its own). Only a call that answered backs a claim: a
+//                refused one (the tool's own fail check) backs none, under
+//                every combinator (the user's decision A5, 2026-10-24). A
 //                requirement is a tool name or { tool, with, each, say }:
 //                `with` names the argument the call must carry (`each`: equal
 //                to each value), `say` how a missing one is named. A row is
@@ -39,9 +41,10 @@
 //                not say (the binding test).
 //
 // Under the turn's method 'off' (the validation's arm C) the gate checks the
-// same rows, but its send-back names no analysis and no tool (OFF_NUDGE):
-// which analysis a conclusion needs is the method. The notice and `missing`
-// (the step card, the record) still name them; the model never reads those.
+// same rows, but its send-back names no analysis and no tool (OFF_NUDGE, and
+// OFF_REFUSED_NUDGE where the backing was refused): which analysis a
+// conclusion needs is the method. The notice and `missing` (the step card, the
+// record) still name them; the model never reads those.
 // Pure, no React.
 
 import { asserts } from './reading';
@@ -181,26 +184,80 @@ export const CLAIM_IDS = Object.freeze(CLAIMS.map((claim) => claim.id));
 export const OFF_NUDGE = 'this conclusion needs its evidence from an analysis run in this question. Answer from '
     + 'the analysis\'s result (quote its numbers by reference). If none can run, say so in the answer instead of concluding.';
 
-/** An unmet claim ({ id, what, missing }) as the gate sends it back under `method`. */
-export const sendBackOf = ({ id, what, missing }, method) => ({
-    id,
-    what,
-    missing,
-    nudge: method === 'off'
-        ? `(From the app, not the user.) Your answer concludes ${what}, but ${OFF_NUDGE}`
-        : `(From the app, not the user.) Your answer concludes ${what}, but this question has not run `
-            + `${missing.join(', ')}. Run it, then answer from its result (quote its numbers by reference). If it cannot `
-            + 'run, say so in the answer instead of concluding.',
-    notice: `The answer concluded ${what} without ${missing.join(', ')}; the app asked for it first.`
-});
+// The same, where an analysis that would back the conclusion refused (the
+// user's decision A5, 2026-10-24: a refused analysis does not count). Still no
+// analysis, tool or remedy named: the tool's own refusal says how to proceed.
+export const OFF_REFUSED_NUDGE = 'an analysis that refused is no evidence: this conclusion needs its evidence from an analysis that '
+    + 'answered in this question. Answer from that analysis\'s result (quote its numbers by reference). If none can answer, say so '
+    + 'in the answer instead of concluding.';
 
-/** An unmet claim as the finding under the answer. */
-export const evidenceFinding = ({ id, what, missing }) => ({
-    rule: 'evidence',
-    id,
-    missing,
-    text: `The answer concludes ${what}, but ${missing.join(', ')} did not run in this question.`
-});
+// How each refused call is named: a window cut (compute_bond_angles',
+// polyhedral_distortion's) says why, any other refusal only that it refused.
+const refusalClause = (refused) => refused
+    .map(({ tool, windowCut }) => (windowCut ? `${tool} refused its window (it cuts the coordination shell)` : `${tool} refused`))
+    .join(' and ');
+
+// The send-back under method 'full' where a refused call would have backed
+// the claim: what refused, what did not run, and the fix — for a window cut
+// both (the whole shell, or the user's own window confirmed), else only to
+// run it so that it answers.
+const refusedNudge = ({ what, refused, unrun }) => `(From the app, not the user.) Your answer concludes ${what}, but `
+    + `${refusalClause(refused)}, and a refused call is no evidence${unrun.length ? `; this question has not run ${unrun.join(', ')}` : ''}. `
+    + (refused.some((item) => item.windowCut)
+        ? 'Run it again on the whole shell, or, if the user wants that window, ask them (ask_user) and call again with '
+            + 'window_confirmed: true; then answer from its result (quote its numbers by reference). '
+        : 'Run it so that it answers, then answer from its result (quote its numbers by reference). ')
+    + 'If it cannot answer, say so in the answer instead of concluding.';
+
+/**
+ * An unmet claim ({ id, what, missing, refused, unrun }) as the gate sends it
+ * back under `method`. `refused` lists the refused calls that would have
+ * backed it ({ tool, windowCut }), `unrun` what is missing beyond them.
+ */
+export const sendBackOf = ({ id, what, missing, refused = [], unrun = missing }, method) => {
+    let nudge;
+    if (method === 'off') {
+        nudge = `(From the app, not the user.) Your answer concludes ${what}, but ${refused.length ? OFF_REFUSED_NUDGE : OFF_NUDGE}`;
+    } else if (refused.length) {
+        nudge = refusedNudge({ what, refused, unrun });
+    } else {
+        nudge = `(From the app, not the user.) Your answer concludes ${what}, but this question has not run `
+            + `${missing.join(', ')}. Run it, then answer from its result (quote its numbers by reference). If it cannot `
+            + 'run, say so in the answer instead of concluding.';
+    }
+    return {
+        id,
+        what,
+        missing,
+        nudge,
+        notice: refused.length
+            ? `The answer concluded ${what} on a refused call (${refused.map((item) => item.tool).join(', ')}), which is no evidence`
+                + `${unrun.length ? `, and without ${unrun.join(', ')}` : ''}; the app asked for an analysis that answers first.`
+            : `The answer concluded ${what} without ${missing.join(', ')}; the app asked for it first.`
+    };
+};
+
+/**
+ * An unmet claim as the finding under the answer; where a refused call would
+ * have backed it, the finding says so and carries `refused` (the tools) and
+ * `unrun` (what did not run beyond them).
+ */
+export const evidenceFinding = ({ id, what, missing, refused = [], unrun = missing }) => (refused.length
+    ? {
+        rule: 'evidence',
+        id,
+        missing,
+        refused: refused.map((item) => item.tool),
+        unrun,
+        text: `The answer concludes ${what}, but ${refused.map((item) => item.tool).join(' and ')} refused in this question, `
+            + `and a refused call is no evidence${unrun.length ? `; ${unrun.join(', ')} did not run` : ''}.`
+    }
+    : {
+        rule: 'evidence',
+        id,
+        missing,
+        text: `The answer concludes ${what}, but ${missing.join(', ')} did not run in this question.`
+    });
 
 // --- reading the claims of one turn -------------------------------------------------
 
@@ -213,8 +270,13 @@ const meets = (call, item) => call.name === item.tool
  * tool names, null for every tool), each with `extra` phrasings joined
  * ({ [id]: { asserted, literal } }), read in sentences about the run
  * (`elements`, the run's), with `each` values from `values`
- * ({ clusterElement: [...], networkCentre: [...] }). Returns { rows, unmet(text, ran) }: unmet is
- * [{ id, what, missing }] in row order, `missing` naming only offered tools.
+ * ({ clusterElement: [...], networkCentre: [...] }). Returns { rows, unmet(text, ran) }:
+ * `ran` are the calls that ran without an error, `{ name, args, refused?,
+ * windowCut? }`; only one that answered (not `refused`) backs a claim. unmet is
+ * [{ id, what, missing, refused, unrun }] in row order: `missing` names what
+ * the claim needs (only offered tools), `refused` the refused calls that would
+ * have backed it ({ tool, windowCut }, one per tool), `unrun` the missing
+ * analyses no refused call covers (none for an anyOf row a refusal covers).
  */
 export const claimsOf = ({ offered = null, extra = null, elements = [], values = {} } = {}) => {
     const has = (name) => !offered || offered.includes(name);
@@ -236,25 +298,44 @@ export const claimsOf = ({ offered = null, extra = null, elements = [], values =
     const instances = ({ requirements }) => requirements.flatMap((item) => (item.each
         ? (values[item.each] || []).map((value) => ({ ...item, value, say: typeof item.say === 'function' ? item.say(value) : item.say }))
         : [item]));
-    const missingOf = ({ backedBy }, ran) => {
-        const ranAny = (item) => ran.some((call) => meets(call, item));
+    // What a row lacks, given the calls that answered and those that refused.
+    const backingOf = ({ backedBy }, ran) => {
+        const answered = ran.filter((call) => !call.refused);
+        const refusals = ran.filter((call) => call.refused);
+        const answers = (item) => answered.some((call) => meets(call, item));
+        // `covered`: the requirements a refused call would have met, had it answered.
         let missing;
+        let covered;
         if (backedBy.need === 'any') {
-            // Asks for the first the turn offers (a row is read only when one is).
-            missing = backedBy.requirements.some(ranAny) ? [] : [backedBy.requirements.find((item) => has(item.tool)) ?? backedBy.requirements[0]];
+            // Asks for the first the turn offers (a row is read only when one is);
+            // a refusal of any option is named, and fixing it is enough.
+            missing = backedBy.requirements.some(answers) ? [] : [backedBy.requirements.find((item) => has(item.tool)) ?? backedBy.requirements[0]];
+            covered = missing.length ? backedBy.requirements : [];
         } else if (backedBy.need === 'first') {
             const needed = backedBy.requirements.find((item) => has(item.tool)) ?? backedBy.requirements.at(-1);
-            missing = ranAny(needed) ? [] : [needed];
+            missing = answers(needed) ? [] : [needed];
+            covered = missing;
         } else {
-            missing = instances(backedBy).filter((item) => !ranAny(item));
+            missing = instances(backedBy).filter((item) => !answers(item));
+            covered = missing;
         }
-        return missing.filter((item) => has(item.tool)).map((item) => item.say);
+        missing = missing.filter((item) => has(item.tool));
+        const refusedItems = covered.filter((item) => has(item.tool) && refusals.some((call) => meets(call, item)));
+        const refused = [];
+        refusedItems.forEach((item) => {
+            const windowCut = refusals.some((call) => meets(call, item) && call.windowCut);
+            const known = refused.find((entry) => entry.tool === item.tool);
+            if (known) known.windowCut = known.windowCut || windowCut;
+            else refused.push({ tool: item.tool, windowCut });
+        });
+        const unrun = backedBy.need === 'any' && refused.length ? [] : missing.filter((item) => !refusedItems.includes(item));
+        return { missing: missing.map((item) => item.say), refused, unrun: unrun.map((item) => item.say) };
     };
     return {
         rows: rows.map(({ claim }) => claim),
         unmet: (text, ran = []) => rows
             .filter((entry) => applies(entry, String(text || '')))
-            .map(({ claim }) => ({ id: claim.id, what: claim.what, missing: missingOf(claim, ran) }))
+            .map(({ claim }) => ({ id: claim.id, what: claim.what, ...backingOf(claim, ran) }))
             .filter((claim) => claim.missing.length)
     };
 };

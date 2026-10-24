@@ -1737,12 +1737,22 @@ by a lower-case letter, so Ti in TiO₆ but not in "Tiny") or the run itself (th
 configuration, structure, model, box, supercell, sample, compound, crystal, material, system; the
 sites, atoms, clusters, octahedra, tetrahedra, polyhedra, displacements; site n), so a definition
 needs no analysis; with no element list every sentence counts. A step counts when it
-returned without an error (a refused bond-angle window still counted its coordination). Rules for
+answered: no error, and not refused — a refused call (the tool's own `fail` check) backs no claim,
+under `anyOf`, `firstOffered` and `allOf` alike (the user's decision A5, 2026-10-24; until then a
+refused bond-angle window still counted its coordination). Rules for
 tools the turn does not offer are dropped. When the model answers with tools still allowed and
 fewer than `maxSendBacks` (2, `DEFAULT_MAX_SEND_BACKS`; a run's `limits.maxEvidenceGates` sets it)
 send-backs this turn, the first unmet rule not sent back yet is sent back: a `gate` event (carrying the withdrawn text), a `retract` of the answer's text, the
 answer as an assistant message and the note "(From the app, not the user.) Your answer concludes
-…, but this question has not run …". The gate reads the answer with its references filled (as the
+…, but this question has not run …". Where a refused call would have backed the claim, the note
+says so instead ("…, but compute_bond_angles refused its window (it cuts the coordination shell),
+and a refused call is no evidence."): for a window cut — a refusal whose data carry `refused`,
+`compute_bond_angles`' and `polyhedral_distortion`'s — both fixes, "Run it again on the whole
+shell, or, if the user wants that window, ask them (ask_user) and call again with
+window_confirmed: true; …"; for any other refusal only "Run it so that it answers, …"; under method
+`'off'` no tool, window or remedy ("…, but an analysis that refused is no evidence: this conclusion
+needs its evidence from an analysis that answered in this question. …", `OFF_REFUSED_NUDGE`). The
+finding and the Outcome's reason name the refusal too ("did not run or refused"). The gate reads the answer with its references filled (as the
 checks will), and sends nothing back on the final round or once the turn's time is spent. On the
 final round, or once the gates are spent, an unmet rule is an `evidence` finding naming what did
 not run; with tools off or unsupported the findings still apply (nothing is sent back). A

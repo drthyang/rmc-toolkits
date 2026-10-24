@@ -520,6 +520,42 @@ describe('the method: full (the Copilot as it ships) and off (arm C)', () => {
         }
     });
 
+    it('a refused analysis backs no claim: the gate sends the conclusion back under either method, and the analysis that answers backs it (decision A5)', async () => {
+        for (const method of TURN_METHODS) {
+            let runs = 0;
+            const refusesFirst = echoTool({
+                name: 'analyze_modulations',
+                parameters: { type: 'object', properties: { element: { type: 'string' } } },
+                run: async () => {
+                    runs += 1;
+                    return runs === 1 ? { data: {}, checks: [{ level: 'fail', text: 'Refused: nothing to test.' }] } : { data: { ordered: [] }, checks: [] };
+                }
+            });
+            const { port, requests } = scriptedPort([
+                { calls: [{ name: 'analyze_modulations', args: {} }] },
+                { text: 'Ti forms a superstructure.\nOutcome: sure.' },
+                { calls: [{ name: 'analyze_modulations', args: { element: 'Ti' } }] },
+                answer('Ti forms a superstructure at (0, 0, ½).')
+            ]);
+            const events = await collect(runTurn(spec({ tools: [refusesFirst], model: port, config: { method } })));
+            // The refusal ran: an analysis for the footer, but no evidence.
+            expect(events.find((event) => event.type === 'tool_end')).toMatchObject({ resultStatus: 'refused', analysis: true });
+            expect(events.find((event) => event.type === 'gate')).toMatchObject({ id: 'order-between-cells', missing: ['analyze_modulations'] });
+            const nudge = requests[2].sent.messages.at(-1).content;
+            expect(nudge.startsWith('(From the app, not the user.) Your answer concludes order between cells, but ')).toBe(true);
+            if (method === 'off') {
+                expect(nudge).toContain('an analysis that refused is no evidence');
+                expect(nudge).not.toContain('analyze_modulations');
+            } else {
+                expect(nudge).toContain('analyze_modulations refused, and a refused call is no evidence. Run it so that it answers');
+            }
+            // Run again, it answers: the claim stands verified.
+            const done = events.find((event) => event.type === 'done');
+            expect(done.audit).toEqual([]);
+            expect(done.gates).toHaveLength(1);
+        }
+    });
+
     it('with tools off, the no-tools prompt under the method: with off, the domain rules without their inference', async () => {
         for (const method of TURN_METHODS) {
             const { sent } = await firstRequest({ tools: [advised()], skills: SKILLS, config: { toolsEnabled: false, method } });

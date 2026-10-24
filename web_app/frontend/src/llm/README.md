@@ -680,7 +680,7 @@ isAnalysis(step)           // the one definition of an analysis
   `args`, `error`, `checks`, `facts`, …) with the tool's `name` and kind (`interactive`,
   `reading`, `view`); a step with no known `resultStatus` is a TypeError. The verification reads
   the step's severity (`severityOf`) and whether it ran (`ran`: not an unknown tool or a skipped
-  call) from it; a `refused` step ran. `show(ref)` builds the tool message, once and
+  call) from it; a `refused` step ran, but backs no claim (below). `show(ref)` builds the tool message, once and
   synchronously, and the ref then resolves to exactly the data it returns (a callback: the ref is
   written into the message before the data is fitted to the budget). Refs are r1, r2, … in record
   order; a step with an error takes none, and its facts are dropped. `analysis` (`isAnalysis`:
@@ -733,7 +733,12 @@ isAnalysis(step)           // the one definition of an analysis
   sends it back once per claim, at most twice a turn (`DEFAULT_MAX_SEND_BACKS`), with what to run (a
   **gate** event; the footer says so), never on the final round or once the turn's time is spent.
   An answer that still lacks its evidence stands, with an `evidence` finding under it (with tools
-  off too), and a withdrawn answer is kept if the model then writes nothing. Claims are read as the answer checks read them (`asserts`: not
+  off too), and a withdrawn answer is kept if the model then writes nothing. Only a call that
+  answered is evidence: a `refused` one (the tool's own `fail` check) backs no claim, under every
+  combinator (the user's decision A5, 2026-10-24), and the send-back says it refused — for a window
+  cut (a refusal whose data carry `refused`: `compute_bond_angles`, `polyhedral_distortion`) with
+  both fixes, the whole shell or the user's own window confirmed (`ask_user`, `window_confirmed`),
+  for any other refusal only to run it so that it answers. Claims are read as the answer checks read them (`asserts`: not
   negated, hypothetical or asked), and only in a sentence about this run: one that names an
   element of the run (Ti, Mo₃, TaSe₆) or the run itself (this structure, the clusters, site 3) — a
   definition ("A superstructure is order that enlarges the cell") needs no analysis; "no order" is
@@ -741,7 +746,8 @@ isAnalysis(step)           // the one definition of an analysis
   method `'off'` (the validation's arm C, *The turn*) it checks the same claims, but its send-back
   names no analysis and no tool, since which analysis a conclusion needs is the method: "Your answer
   concludes … , but this conclusion needs its evidence from an analysis run in this question. …"
-  (`OFF_NUDGE`). The gate event's notice and the end-of-turn finding, which the model never reads,
+  (`OFF_NUDGE`; where the backing refused, "… an analysis that refused is no evidence: …",
+  `OFF_REFUSED_NUDGE`). The gate event's notice and the end-of-turn finding, which the model never reads,
   still name the missing analyses. The app's own phrasings read prose; a caller adds its own
   through `phrasings` (`{ [claim id]: { asserted, literal } }`): the validation harness adds the
   verdict schema's words (`validation/verdict.js` `VERDICT_PHRASINGS`: `off_centre`, the cluster
@@ -992,7 +998,7 @@ toolMessage(result, { budget, ref }) → { content, data } · compactToolMessage
 | `resultStatus` | When | The model reads |
 | --- | --- | --- |
 | `ok` | the tool answered | the ref, the note, the checks, the data |
-| `refused` | the tool answered with a `fail` check (its own refusal: a cut window) | the same; it ran, is an analysis and backs its claim |
+| `refused` | the tool answered with a `fail` check (its own refusal: a cut window) | the same; it ran and is an analysis, but backs no claim (the user's decision A5, 2026-10-24) |
 | `error` | arguments that are not JSON or that the schema refuses, a throw, the time limit | the error (and the dropped-key notes) |
 | `unknown_tool` | no tool has that name | the error, with the names offered |
 | `skipped` | the loop did not run it: past the calls per round, a second question in a round, past the questions per request | the error, saying why |
