@@ -37,7 +37,7 @@ The same React app ships in two runtime modes:
 ## Architecture map
 
 ```
-.claude/skills/<name>/SKILL.md   the AI Copilot's skills (methods; drafts awaiting the user's interview, docs/SKILL_INTERVIEWS.md), Claude Code skills shared with the in-app agent: rmc-fit-assessment, coordination-shells, local-symmetry, displacement-anisotropy, each with small reference files beside it
+.claude/skills/<name>/SKILL.md   the AI Copilot's skills (methods; drafts awaiting the user's interview, docs/SKILL_INTERVIEWS.md), Claude Code skills shared with the in-app agent: rmc-fit-assessment, coordination-shells, local-symmetry, displacement-anisotropy, local-order (validation batch 1), each with small reference files beside it
 
 rmc_toolkits/
   parsers.py     RMC CSV/log (read_chi_log: the last column, every χ² term after Time/moves_acc/moves_gen and their total, the rows per log), STOG parsing (incl. stog.inp / STOG xy / .dat headers), .rmc6f metadata + atom iteration, Frac*.txt conversion, structure loading (read_structure pairs Frac/rmc6f by stem), shared .rmc6f atom-line grammar (classify_rmc6f_atom_line / parse_rmc6f_atoms / Rmc6fParseReport), robust .log reader (read_chi_log), Rwp column roles (rwp_columns / fit_rwp), the one run-folder rule (find_run_configuration)
