@@ -35,7 +35,7 @@ import { createVerification } from '../../llm/copilot/verification';
 import { buildRunContext, lowerGroupTolerance, NOISE_FLOOR_MARGIN } from '../../llm/context/runContext';
 import {
     CLUSTER_CN_MAX, CN_CHANGE_ABS, CN_CHANGE_REL, CN_MATCH_TOLERANCE, clusterElementsOf, cnMarginCut, cnMatches, IDEAL_COORDINATION,
-    isIdealCoordination, MODAL_COORDINATION_SHARE, shellCatalogue, SPLIT_SHELL_REACH_A, UNBONDED_APEX_FRACTION
+    isIdealCoordination, MODAL_COORDINATION_SHARE, SEPARATION_G_FRACTION, shellCatalogue, SPLIT_SHELL_REACH_A, UNBONDED_APEX_FRACTION
 } from '../../llm/context/shells';
 import { SWEEP_RULES } from '../../../validation/armA';
 import {
@@ -622,22 +622,22 @@ export const BINDINGS = [
     {
         file: FIT,
         gate: 'a long wave (step 7)',
-        find: 'A long wave (every |q_i|',
+        find: 'A long wave has every |q_i|',
         number: /every \|q_i\| ≤ (?<n>\d+(?:\.\d+)?) of the cell/,
         constants: [LONG_WAVE]
     },
     {
         file: FIT,
         gate: 'the order rule\'s ratio',
-        find: 'that passes its own test (ratio',
-        number: /\(ratio ≥ (?<n>\d+(?:\.\d+)?) and/,
+        find: 'The test, as `analyze_modulations` applies it:',
+        number: /it: ratio ≥ (?<n>\d+(?:\.\d+)?) and/,
         constants: [ORDER_RATIO],
         verify: () => assert.deepEqual([MODULATION_RULES.ratio, MODULATION_RULES.sigma], [MODULATION_RATIO, MODULATION_SIGMA])
     },
     {
         file: FIT,
         gate: 'the order rule\'s significance',
-        find: 'that passes its own test (ratio',
+        find: 'The test, as `analyze_modulations` applies it:',
         number: /and ≥ (?<n>\d+(?:\.\d+)?)σ against independent cells/,
         constants: [ORDER_SIGMA]
     },
@@ -647,6 +647,23 @@ export const BINDINGS = [
         find: 'No order is claimed at a box-scale wavevector',
         number: /every \|q_i\| ≤ (?<n>\d+(?:\.\d+)?)\)/,
         constants: [LONG_WAVE]
+    },
+    {
+        file: FIT,
+        gate: 'a long wave (firm rule)',
+        find: 'an answer that claims order at a box-scale wavevector',
+        number: /every \|q_i\| ≤ (?<n>\d+(?:\.\d+)?)\)/,
+        constants: [LONG_WAVE]
+    },
+    {
+        // The user's line (interview 2026-10-24): 5 %; today's code flags a constraint-limited pair at
+        // SEPARATION_G_FRACTION (2 %). The fit-assessment code PR adds the 5 % constant.
+        file: FIT,
+        gate: 'a constraint-limited peak (step 4)',
+        find: 'When g(r) just above the cut is above',
+        number: /is above (?<n>\d+(?:\.\d+)?) % of the peak/,
+        unit: '%',
+        constants: [constant('SEPARATION_G_FRACTION', SEPARATION_G_FRACTION, 'llm/context/shells.js, the constraint pile-up (find_gr_peaks\' g_at_constraint_fraction)')]
     }
 ];
 
@@ -666,6 +683,12 @@ export const NOT_GATES = [
     { file: ORDER_SIGNATURES, find: '9.1× isotropic', why: 'the two-site dev case\'s measured peak enhancement, not a threshold' },
     { file: ORDER_SIGNATURES, find: '498× the median, > 8σ', why: 'measured on the ordered-antiphase dev case (a σ above 8 as analyze_modulations writes it): not a threshold' },
     { file: ORDER_SIGNATURES, find: 'every kurtosis within ±0.15', why: 'the range of the thermal-only dev case\'s measured kurtoses, not a gate' },
+    {
+        file: FIT,
+        find: 'at least 3 independent runs or configurations and at least 10 accepted moves per atom',
+        why: 'the user\'s sampling bar (interview 2026-10-24): no module decides it; the fit-assessment code PR flags a distribution quoted from a single configuration without saying so'
+    },
+    { file: FIT, find: 'a partial under 5 % of the signal', why: 'the user\'s line for a weakly weighted partial (interview 2026-10-24): the context gives the weights, no module decides at 5 %' },
     { file: 'rmc-fit-assessment/run-numbers.md', find: 'with a doubled cell below 29 K', why: 'a published transition temperature' }
 ];
 
@@ -1069,6 +1092,7 @@ export const VALUES = [
 // entry repeats them), and `verify` checks the app and A+ apply `app`.
 const SPLIT_RULE = `PC1 resolved, its excess kurtosis ≤ ${String(SPLIT_SITE_KURTOSIS).replace('-', '−')} and ≥ ${SPLIT_SITE_SE} sampling errors below 0 (isSplitSite)`;
 const CLUSTER_RULE = `analyze_clusters for each element whose own first shell holds 0.5–${CLUSTER_CN_MAX} neighbours (clusterElementsOf, CLUSTER_CN_MAX)`;
+const CONVERGENCE_RULE = 'assess_convergence and the watchdog read one fit term, the last .log column (runTools.js convergenceTool, chiColumn)';
 const TOLERANCE_RULE = `a group counts where it holds to ${NOISE_FLOOR_MARGIN} × the noise floor (lowerGroupTolerance, NOISE_FLOOR_MARGIN)`;
 
 const verifySplitRule = () => {
@@ -1102,6 +1126,20 @@ const verifyToleranceRule = () => {
 };
 
 export const RULES = [
+    {
+        file: FIT,
+        rule: 'convergence',
+        find: 'Judge every fit term and the total',
+        states: /\bone fit term\b|\blast `?\.log`? column\b/,
+        skill: 'every fit term and the total, none still falling beyond its noise over the last tenth',
+        app: CONVERGENCE_RULE,
+        verify: async () => {
+            // Today the tool takes no term and reads the one history it is given: the chiColumn's.
+            const tool = buildRunTools({ rValueFile: fallingHistory }).find((item) => item.name === 'assess_convergence');
+            assert.deepEqual(Object.keys(tool.parameters.properties), [], 'assess_convergence takes a term: update this rule');
+            assert.equal((await tool.run({})).data.column, 'X_ray_(R)1');
+        }
+    },
     {
         file: ANISOTROPY,
         rule: 'a split site',
@@ -1197,11 +1235,45 @@ export const RULES = [
 // decided on 2026-10-19 that the skills' facts are fixed now, the interviews
 // after v1, so none is left (the skill fact-sync PR cleared them). JUDGMENT: a
 // method, an order or a judgment call the skill leaves to the user — it stays,
-// listed for the interviews (docs/SKILL_INTERVIEWS.md).
+// listed for the interviews (docs/SKILL_INTERVIEWS.md). AWAITS CODE: an
+// interviewed skill states the user's rule, which a code PR still has to build
+// (each names its PR); the entry leaves when that code lands.
 // Candidate 8: arm A+ reads the app's rules; the skills must state them as the app applies them.
+// The user's interview of rmc-fit-assessment (2026-10-24): the code half is its own PR off main.
+const FIT_CODE_PR = 'awaits the fit-assessment code PR';
 const APP_RULES_WHY = 'arm A+ reads the app\'s rule since candidate 8 (approved by the manager on the user\'s delegation, 2026-10-19: '
     + 'validation/findings/decisions/2026-10-19-aplus-app-rules.json), so the skill, the app and A+ must say one rule';
 export const ALLOW_LIST = [
+    {
+        check: 'rule',
+        file: FIT,
+        fragment: 'Judge every fit term and the total',
+        line: 26,
+        skill: 'every fit term and the total, none still falling beyond its noise over the last tenth',
+        app: CONVERGENCE_RULE,
+        why: `AWAITS CODE: the user's convergence rule (interview 2026-10-24, answer 1); assess_convergence and the watchdog judge one term today: ${FIT_CODE_PR} (every-term convergence)`
+    },
+    {
+        check: 'gate',
+        file: FIT,
+        fragment: 'When g(r) just above the cut is above 5 % of the',
+        line: 38,
+        skill: '5 %',
+        tool: 'SEPARATION_G_FRACTION = 0.02',
+        why: `AWAITS CODE: the user's line for a constraint-limited peak (interview 2026-10-24, answer 4); find_gr_peaks flags it at 2 % today: ${FIT_CODE_PR} (the 5 % constraint constant)`
+    },
+    {
+        check: 'firm-rule',
+        file: FIT,
+        fragment: 'an answer that claims order at a box-scale wavevector',
+        why: `AWAITS CODE: the user's firm rule (interview 2026-10-24, answer 8a); no answer check flags it today: ${FIT_CODE_PR} (its answer check), then mapped in FIRM_RULES`
+    },
+    {
+        check: 'firm-rule',
+        file: FIT,
+        fragment: 'an answer that quotes a distribution from a single',
+        why: `AWAITS CODE: the user's firm rule (interview 2026-10-24, answer 8b); no answer check flags it today: ${FIT_CODE_PR} (its answer check), then mapped in FIRM_RULES`
+    },
     {
         check: 'rule',
         file: SYMMETRY,

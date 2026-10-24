@@ -33,3 +33,19 @@
 - `docs/SKILL_INTERVIEWS.md` lists the eleven choices the sync found and left to the user. The
   read_skill and over-claim record snapshots are re-recorded. The 32k budget pins move by 853 tokens
   (dock) and 854 (arm B). At 48k, 6,886 and 9,615 tokens are left to spare.
+- **rmc-fit-assessment interviewed (2026-10-24).** The skill is now the user's own answers. Its
+  status reads "Interviewed 2026-10-24", and `docs/SKILL_INTERVIEWS.md` §1 records each answer and
+  where it landed. The rules it now states:
+  - convergence judged on every fit term and the total;
+  - a "still improving" caveat only for first-shell quantities;
+  - no fixed Rw cutoff;
+  - a peak constraint-limited above 5 %;
+  - at least 3 independent runs and 10 accepted moves per atom past convergence before a
+    distribution;
+  - the user's list of what is never a finding, and the report's always and nevers;
+  - two new firm rules;
+  - the user's wording for long waves.
+
+  The code half (every-term convergence, the 5 % constant, the two answer checks, the replays) is
+  its own PR. Until it lands, four skill-lint entries are marked "awaits the fit-assessment code
+  PR". `copilotSkills.test.js` tells an interviewed skill from a draft.

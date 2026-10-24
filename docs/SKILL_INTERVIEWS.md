@@ -1,9 +1,10 @@
 # Skill interviews
 
 A skill is the user's method in their own words (`.claude/skills/<name>/SKILL.md`), read by the AI
-Copilot (`read_skill`) and by Claude Code alike. The five skills here are **drafts**: the first four written on
+Copilot (`read_skill`) and by Claude Code alike. The five skills here began as **drafts**: the first four written on
 2026-10-11 from the Workbench's own record (the llm README's spot check and referee-style review,
 `docs/algorithms/*`, the analyses' code and the papers the README cites), not yet from the user.
+`rmc-fit-assessment` was interviewed on 2026-10-24 (§1); the others are still drafts.
 This page is the guide for turning each into the user's method. Each answer lands in one of three
 places:
 
@@ -23,26 +24,56 @@ how you do it?"). Ask for a recent run the method was used on, and for one time 
 Write the answers into the skill in the user's terms, mark what is a firm rule, add a replay for
 each failure they describe, remove the draft status line, and show them the diff.
 
-## 1. RMC fit assessment (`rmc-fit-assessment`, draft)
+## 1. RMC fit assessment (`rmc-fit-assessment`, interviewed 2026-10-24)
 
-1. The draft judges convergence only from the χ² history's recent slope (the watchdog), and the
-   history is the last `.log` column. Is that how you decide a run has converged, or do you look
-   at every fit term, the total, or the configurations themselves?
-2. The draft treats "improving, but slowly" as not converged. When is such a run good enough to
-   analyse, and when must it continue?
-3. The draft runs `compare_fit` on every dataset and reads where the misfit sits in r or Q. Which
-   misfit level, or which concentration in one range, makes you distrust a run, for x-ray and for
-   neutron data?
-4. The draft names peaks the closest-approach constraints shape (g(r) still high at the cut). How
-   do you choose those constraints, and when do you rerun with them loosened?
-5. The draft calls ~3.5 accepted moves per atom "light sampling". How many moves per atom, or how
-   many independent configurations, do you want before you quote a distribution?
-6. Overfitting: the draft lists an Rw below the noise, claims about a weakly weighted partial, and
-   box-scale waves. What else do you look for, and which of these would you refuse to report?
-7. What must a fit report always contain for you, and what must it never claim?
-8. Firm rules: anything the Copilot must never say about a fit without asking you? (Today it
-   flags "converged" against an improving history.)
-9. A recent run you assessed this way; one time a fit you trusted turned out wrong.
+Answered by the user on 2026-10-24. Each answer, and where it landed: the skill's text, code (the
+fit-assessment code PR, its own PR off main) or an eval scenario (its replays in
+`src/__tests__/copilotSkillReplays.test.js`, in the fit-assessment code PR). Until that PR lands,
+the skill lint holds each line today's code does not apply as an entry marked "awaits the
+fit-assessment code PR".
+
+1. *Convergence: the last `.log` column, or every fit term, the total, the configurations?*
+   Judge every fit term and the total; say "converged" only when none is still falling beyond its
+   noise over the last tenth of the run. **Landed:** the skill (step 2, the checklist) and code
+   (every-term convergence, in the fit-assessment code PR; lint entry: the convergence rule).
+2. *When is "improving, but slowly" good enough?* First-shell quantities (distances, CN) may be
+   answered with a "still improving" caveat; for subtle effects (distortions, directions, order)
+   the run must continue. **Landed:** the skill (step 2) and an eval scenario (in the
+   fit-assessment code PR).
+3. *Which misfit makes you distrust a run, for X-ray and for neutron data?* No fixed Rw cutoff.
+   Distrust the run when most of the misfit sits in one r or Q range that the box size or the
+   scale doesn't explain, or when residual features rise above the data's noise; the same rule for
+   X-ray and neutron. **Landed:** the skill (step 3, the checklist).
+4. *Constraints: when is a peak constraint-shaped, and when do you rerun?* g(r) above 5 % of the
+   peak at the cut means the peak is constraint-limited: interpret nothing on its low-r side, and
+   suggest rerunning with the constraint loosened. **Landed:** the skill (step 4, the checklist)
+   and code (the 5 % constant, in the fit-assessment code PR; today's code flags it at 2 %: lint
+   entry).
+5. *How much sampling before a distribution?* At least 3 independent runs or configurations, and
+   at least 10 accepted moves per atom past convergence, before quoting a distribution or a small
+   effect; below that the answer says so (3.5 moves per atom is too light). **Landed:** the skill
+   (step 5, the checklist, the report) and an eval scenario (in the fit-assessment code PR).
+6. *Overfitting: what do you refuse to report?* As a finding, never: an Rw below the noise
+   presented as a better fit; a detailed claim about a partial under 5 % of the signal; order at a
+   box-scale q; any feature that differs between independent runs. **Landed:** the skill (step 6)
+   and an eval scenario (in the fit-assessment code PR).
+7. *What must a report always contain, and never claim?* Always the datasets and their weights,
+   the convergence status, each dataset's Rw and where its misfit sits, the constraint-limited
+   pairs, and the sampling with the number of runs; never "refinement", never esds as if
+   parameters were refined, never order at box-scale q. **Landed:** the skill (the report).
+8. *Firm rules?* Besides the existing converged-versus-improving flag: (a) a claim of order at a
+   box-scale wavevector is flagged; (b) a distribution quoted from a single configuration without
+   saying so is flagged. **Landed:** the skill (two firm-rule sentences, its known failure modes)
+   and code (the two answer checks, in the fit-assessment code PR; lint entries until then, then
+   mapped in FIRM_RULES).
+9. *A recent run; a fit you trusted that turned out wrong.* Not answered on 2026-10-24: open.
+
+The long waves, in the user's words (answering the batch-1 item below and the fact sync's item 5):
+"a long wave is a correlation the finite box can't represent, so it says nothing about order at
+its own q; a point or mode that passes its own test at another q is judged on that test alone."
+**Landed:** the skill (step 7), verbatim. The draft's last sentence there (a long wave that
+dominates every element says the box is small or lightly sampled), which the answers do not
+cover, is gone with it.
 
 ## 2. Coordination shells and bond windows (`coordination-shells`, draft)
 
@@ -142,6 +173,7 @@ Each was approved by the user on 2026-10-14 as a proposal of the tool review
   beside it, and size a lowering with `measure_symmetry_lowering`. Is that the group you quote?
 - `rmc-fit-assessment`: a box-scale wave (every |q_i| ≤ 0.25) voids a claim of order at its own q,
   never a zone-boundary point or general mode that passes its own test. Is that your rule?
+  **Answered 2026-10-24** (§1, the long waves).
 
 ## Fact sync (2026-10-19): what it left for the interviews
 
@@ -174,7 +206,7 @@ to you. Line numbers are in the synced text.
    of the background it compares with", which does not hold:
    - the ratio's background is the median over every q, long waves included;
    - the percentile does leave long waves out, but it is no part of the order rule.
-   Which reason do you give, if any?
+   Which reason do you give, if any? **Answered 2026-10-24** (§1, the long waves).
 6. `displacement-anisotropy/SKILL.md:47–48` (step 3): the tool decides a preferred direction on
    the unrounded peak σ, and the skill now says that a σ just below 3 is never rounded to 3σ.
    Should a near miss (2.9σ, say) be reported as a hint, as the 1.2× judgment call does for a small
