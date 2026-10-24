@@ -83,7 +83,7 @@ const runTools = async ({ props, request }) => {
     const elements = Object.keys(props.structure.elementCounts || {}).sort();
     return [
         ...buildRunTools({ ...props, pcaSites }, { cards: [] }),
-        ...buildCopilotTools({ request, structure: props.structure, elements })
+        ...buildCopilotTools({ request, structure: props.structure, elements, plotFiles: props.plotFiles, runSettings: props.runSettings })
     ];
 };
 

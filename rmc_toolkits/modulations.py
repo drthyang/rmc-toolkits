@@ -44,16 +44,44 @@ element's power tensor at q, with the share of the power along it
 
 The engine also decides what these show (the verdict): every zone-boundary
 point and every strongest mode carries its calibrated significance ``sigma``
-against independent displacements (family-wise, Sidak-corrected over the
-points or modes of every element the configuration has, whichever the call
-names), its ``kind`` ('zone_boundary', 'long_wave', 'general'), whether it is
-``ordered`` (ratio >= ``MODULATION_RATIO`` and sigma >= ``MODULATION_SIGMA``),
+against independent cells (family-wise, Sidak-corrected over the points or
+modes of every element the configuration has, whichever the call names), its
+``kind`` ('zone_boundary', 'long_wave', 'general'), whether it is ``ordered``
+(ratio >= ``MODULATION_RATIO`` and sigma >= ``MODULATION_SIGMA``),
 ``because`` and its ``bar``; each element a ``verdict`` -- ``cellDoubling``,
-``generalOrder``, ``longWave`` -- with the q that decided it and the nearest
-miss; the payload the ``family`` the corrections used (its sizes and
-elements) and the ``rules``. The browser port is ``workers/modulations.js``
-(a separable DFT, the same numbers to floating-point noise; the parity
-fixture pins the verdicts and polarisations too).
+``generalOrder``, ``longWave``, ``diffuseOrder`` -- with the q that decided it
+and the nearest miss (``diffuseOrder``: its evidence); the payload the
+``family`` the corrections used (its sizes and elements) and the ``rules``.
+The browser port is ``workers/modulations.js`` (a separable DFT, the same
+numbers to floating-point noise; the parity fixture pins the verdicts and
+polarisations too).
+
+The null is the configuration's own cells placed at random (finding F1,
+2026-10-19; :func:`independent_cell_null`): every correlation inside a cell is
+kept -- the ligands of a Jahn-Teller octahedron, the vertices of a cluster,
+which share one variable per cell -- and every correlation between cells is
+destroyed. Its cross-spectral matrix is white, E[U(q) U(q)^H] =
+N/(N - 1) sum_c y(c) y(c)^T at every q != 0, with y(c) the displacements of
+all the element's sites in cell c, so the element's power is a weighted sum of
+chi^2_1 (a zone-boundary point, a real Fourier sum) or of chi^2_2 / 2 (a
+general q) with the eigenvalues of that matrix, normalised as the power, as
+weights; its tail is a saddlepoint approximation (:func:`null_tail`). Until
+2026-10-19 the null took the element's m sites as independent (P >= chi^2_m /
+m): sites that share a cell-level variable carry fewer independent components,
+and it found order in 9 to 32 % of fresh configurations of the validation's
+Jahn-Teller, two-feature and octahedral generator kinds (the calibrated null:
+0.1 to 0.6 %, each of three tests at its 0.135 %); for independent sites it was
+conservative (one component per site where an isotropic site has three).
+
+``diffuseOrder`` (plan item 4.4; :func:`diffuse_order`) asks whether the power
+is spread over many q in the pattern that correlation between neighbouring
+cells makes -- short-range order, which no single mode carries: the normal
+scores of the ranks of the power over the compared modes (no long wave, no
+zone-boundary point, no mode already found ordered) regressed on the 13
+neighbour-cell lags cos(2 pi q.R), against the null of independent cells,
+under which the power at every such q is identically distributed. Parseval
+fixes the mean power over q != 0, so the test is about how the power is spread,
+never its total.
 """
 
 from __future__ import annotations
@@ -64,6 +92,7 @@ from itertools import product
 import numpy as np
 from scipy.special import gammaincc, ndtri
 
+from rmc_toolkits.clusters import evidence_clears
 from rmc_toolkits.pca_kde import SiteDisplacements
 
 #: How many of the strongest modes to report per element.
@@ -96,16 +125,21 @@ AXIS_TIE_RTOL = 1e-9
 # whichever elements the call names: choosing the element to ask about after
 # seeing the data is selective inference, so the family never shrinks with the
 # request (finding F3, 2026-10-19; until then it was the elements of the call,
-# and naming one element of three took a 2.98 sigma point to 3.30 sigma). The null: for independent
-# displacements a site's normalised power at a half-integer q (a real Fourier
-# sum) is sum_c w_c chi2_1 with sum w_c = 1, so an element's mean over m sites
-# has at least m degrees of freedom: P >= chi2_m / m is the heaviest tail any
-# site anisotropy allows (conservative). The same holds at a general q (not a
-# zone-boundary point, not a long wave) with a complex sum: P >= chi2_2m / 2m,
-# corrected over the compared modes. The earlier rule (top 1 % of the modes, or
-# rank 1) had no correction: the validation cases found "order" in 6 of 12
-# configurations without any. These were the Copilot tool's rules
-# (copilotTools.js summarizeModulations) until 2026-10-19, ported unchanged.
+# and naming one element of three took a 2.98 sigma point to 3.30 sigma). The
+# null is the independent-cell null (finding F1, 2026-10-19): the element's
+# power at q is U^H W U with U's covariance N/(N - 1) sum_c y(c) y(c)^T (its
+# cells placed at random), a weighted sum of chi2_1 at a half-integer q (a
+# real Fourier sum) and of chi2_2 / 2 at a general q (a complex one), whose
+# weights are the eigenvalues of that covariance normalised as the power
+# (independent_cell_null); the tail is the Lugannani-Rice saddlepoint
+# (null_tail), 0 to +8 % above the exact tail from p = 1e-2 to 1e-9 on every
+# weight pattern checked (conservative). Until F1 the null took the
+# sites as independent, P >= chi2_m / m (and chi2_2m / 2m at a general q):
+# anti-conservative where sites share a cell-level variable (a Jahn-Teller
+# axis, a cluster's breathing), conservative where they do not. The general
+# modes are corrected over the compared modes. The earlier rule (top 1 % of
+# the modes, or rank 1) had no correction: the validation cases found "order"
+# in 6 of 12 configurations without any.
 
 #: Ratio to the median power an ordered point needs (the effect size).
 MODULATION_RATIO = 3
@@ -121,12 +155,58 @@ SIGMA_MAX = 40
 #: The p-value is capped just below 1 before the Sidak step (as the tool did).
 _P_CAP = 1.0 - 1e-16
 
+# --- the independent-cell null (F1) ---------------------------------------------
+
+#: A null weight (an eigenvalue of the normalised cell covariance) below this
+#: fraction of the largest is a direction no site moves in (or rounding): left out.
+NULL_WEIGHT_RTOL = 1e-12
+#: Weights within this relative spread of each other are one weight: the null
+#: is then exactly a gamma (as for one isotropic site), no saddlepoint needed.
+NULL_EQUAL_RTOL = 1e-12
+#: Bisection steps for the saddlepoint equation K'(t) = x (the bracket shrinks
+#: to adjacent doubles long before; both engines run the same steps).
+SADDLEPOINT_STEPS = 200
+#: Within this of the null mean (|w|, the signed root deviance) the
+#: Lugannani-Rice formula cancels: its limit there is used.
+SADDLEPOINT_W_MIN = 1e-6
+
+# --- diffuse order between cells (plan item 4.4) ---------------------------------
+
+#: The lags R (in cells) whose displacement correlation the diffuse test reads:
+#: the 26 cells around a cell (face, edge and corner neighbours), one of each
+#: +R/-R pair. The power of correlation at lag R is cos(2 pi q.R) across q.
+DIFFUSE_LAGS = (
+    (1, 0, 0), (0, 1, 0), (0, 0, 1),
+    (1, 1, 0), (1, -1, 0), (1, 0, 1), (1, 0, -1), (0, 1, 1), (0, 1, -1),
+    (1, 1, 1), (1, 1, -1), (1, -1, 1), (-1, 1, 1),
+)
+#: Family-wise one-sided significance (sigma) diffuse order needs (Sidak over
+#: every element of the configuration, as the other tests).
+DIFFUSE_SIGMA = 3
+#: The effect size diffuse order needs: the strongest neighbour-cell
+#: displacement correlation |Gamma(R)| (a +-2 |Gamma| modulation of the power
+#: across q). With thousands of cells a correlation of 0.02 is significant and
+#: still means nothing physically.
+DIFFUSE_CORRELATION = 0.1
+#: The test needs at least this many compared modes per term of the
+#: regression (the constant and every lag the grid resolves): fewer, and the
+#: chi^2 reference is not reached (a 4 x 4 x 4 grid has 15 such modes).
+DIFFUSE_MODES_PER_TERM = 2
+#: A lag whose template is, within this relative norm, a combination of the
+#: constant and the lags before it adds nothing on this grid (an axis of two
+#: cells makes +R and -R one lag): left out, and the degrees of freedom with it.
+DIFFUSE_RANK_RTOL = 1e-9
+
 MODULATION_RULES = {
     "ratio": MODULATION_RATIO,
     "sigma": MODULATION_SIGMA,
     "longWaveRatio": LONG_WAVE_RATIO,
     "longWaveQ": LONG_WAVE_Q,
     "sigmaMax": SIGMA_MAX,
+    "diffuseSigma": DIFFUSE_SIGMA,
+    "diffuseCorrelation": DIFFUSE_CORRELATION,
+    "diffuseLags": [list(lag) for lag in DIFFUSE_LAGS],
+    "diffuseModesPerTerm": DIFFUSE_MODES_PER_TERM,
 }
 #: Every ``because`` a point and each element finding can give (closed sets;
 #: the parity fixture pins the strings).
@@ -136,8 +216,14 @@ MODULATION_BECAUSE = {
     "generalOrder": ("ordered_mode", "no_ordered_mode", "undefined_statistic", "no_general_mode", "no_displacements"),
     "longWave": ("long_wave_dominates", "below_ratio", "strongest_not_long_wave", "undefined_statistic",
                  "no_displacements"),
+    "diffuseOrder": ("correlated_in_phase", "correlated_antiphase", "below_correlation", "below_sigma",
+                     "undefined_statistic", "too_few_modes", "no_displacements"),
 }
 MODE_KINDS = ("zone_boundary", "long_wave", "general")
+#: The phase of the strongest neighbour-cell correlation: in phase (Gamma > 0,
+#: the power toward the zone centre) or in antiphase (Gamma < 0, toward the
+#: zone boundary).
+DIFFUSE_PHASES = ("in_phase", "antiphase")
 
 
 def is_long_wave(q) -> bool:
@@ -161,26 +247,137 @@ def _reported(sigma: float) -> float | None:
     return None if sigma == -math.inf else min(sigma, SIGMA_MAX)
 
 
-def zone_boundary_sigma(power, sites: int, family: int) -> float | None:
+def _null_weights(weights) -> np.ndarray:
+    """The null's weights as an array: an int m stands for m equal weights 1/m
+    (the bound P >= chi2_m / m the engine used until F1)."""
+    if isinstance(weights, (int, np.integer)) and not isinstance(weights, bool):
+        return np.full(int(weights), 1.0 / int(weights)) if weights > 0 else np.zeros(0)
+    return np.asarray(weights, dtype=float).ravel()
+
+
+def _normal_upper(w: float) -> float:
+    """P(Z > w) for a standard normal Z, accurate in both tails (as the port computes it)."""
+    half = 0.5 * float(gammaincc(0.5, 0.5 * w * w))
+    return half if w >= 0 else 1.0 - half
+
+
+def _saddlepoint_tail(x: float, b: np.ndarray, a: float) -> float:
+    """Lugannani-Rice upper tail of X with cumulant generating function
+    K(t) = -a sum_k log(1 - b_k t) (b_k > 0): a = 1/2, b = 2 lambda for
+    sum lambda_k chi2_1; a = 1, b = lambda for sum lambda_k chi2_2 / 2.
+
+    The saddlepoint t solves K'(t) = x by bisection (SADDLEPOINT_STEPS steps,
+    as the port); w = sign(t) sqrt(2 (t x - K(t))), u = t sqrt(K''(t)) and
+    P(X > x) = 1 - Phi(w) + phi(w) (1/u - 1/w). Within SADDLEPOINT_W_MIN of
+    the mean the formula's limit, 1/2 - kappa_3 / (6 sqrt(2 pi) kappa_2^3/2).
+    """
+    mean = a * float(np.sum(b))
+    if x > mean:
+        lo, hi = 0.0, 1.0 / float(np.max(b))
+    else:
+        # K'(t) < a n / |t| for t < 0: at t = -a n / x it is below x.
+        lo, hi = -a * b.size / x, 0.0
+    for _ in range(SADDLEPOINT_STEPS):
+        mid = 0.5 * (lo + hi)
+        if not lo < mid < hi:
+            break  # the bracket is two adjacent doubles
+        if a * float(np.sum(b / (1.0 - b * mid))) < x:
+            lo = mid
+        else:
+            hi = mid
+    # The root lies in [lo, hi]; lo is never past the pole 1 / max(b).
+    t = lo if x > mean else 0.5 * (lo + hi)
+    cgf = -a * float(np.sum(np.log1p(-b * t)))
+    w = math.copysign(math.sqrt(max(2.0 * (t * x - cgf), 0.0)), t)
+    if abs(w) < SADDLEPOINT_W_MIN:
+        kappa2 = a * float(np.sum(b * b))
+        kappa3 = 2.0 * a * float(np.sum(b * b * b))
+        return 0.5 - kappa3 / (6.0 * math.sqrt(2.0 * math.pi) * kappa2 ** 1.5)
+    u = t * math.sqrt(a * float(np.sum((b / (1.0 - b * t)) ** 2)))
+    tail = _normal_upper(w) + math.exp(-0.5 * w * w) / math.sqrt(2.0 * math.pi) * (1.0 / u - 1.0 / w)
+    return min(max(tail, 0.0), 1.0)
+
+
+def null_tail(power, weights, real: bool) -> float | None:
+    """P(P_null >= power) under the independent-cell null.
+
+    ``weights`` are the null's weights (independent_cell_null: the
+    eigenvalues of the element's normalised cell covariance), or an int m for
+    m equal weights 1/m. ``real``: a zone-boundary point, where the Fourier
+    sum is real and P = sum lambda_k chi2_1; else a general q, P = sum
+    lambda_k chi2_2 / 2. One weight value: the exact gamma. Several: the
+    Lugannani-Rice saddlepoint. None where undefined (power <= 0, no weight).
+    """
+    lam = _null_weights(weights)
+    lam = lam[lam > 0]
+    if power is None or not (power > 0) or not lam.size:
+        return None
+    a, scale = (0.5, 2.0) if real else (1.0, 1.0)
+    if float(lam.max() - lam.min()) <= NULL_EQUAL_RTOL * float(lam.max()):
+        # sum of n equal terms: lambda chi2_n (real) or lambda Gamma(n, 1) (complex).
+        return float(gammaincc(a * lam.size, float(power) / (scale * float(lam.mean()))))
+    return _saddlepoint_tail(float(power), scale * lam, a)
+
+
+def zone_boundary_sigma(power, weights, family: int) -> float | None:
     """The family-wise significance (one-sided sigma) of an element's
-    zone-boundary power ``power`` (normalised: 1 = independent displacements)
-    over ``sites`` sites, among ``family`` points tested. None where undefined
-    (power <= 0) or -inf; +inf is SIGMA_MAX."""
-    if power is None or not (power > 0) or not (sites > 0):
+    zone-boundary power ``power`` (normalised: its mean over q != 0 is
+    N/(N - 1)) against the independent-cell null with ``weights``
+    (:func:`null_tail`, real), among ``family`` points tested. None where
+    undefined (power <= 0) or -inf; +inf is SIGMA_MAX."""
+    p = null_tail(power, weights, True)
+    if p is None:
         return None
-    p = float(gammaincc(sites / 2.0, sites * power / 2.0))
     return _reported(_sidak_sigma(p, family))
 
 
-def general_mode_sigma(power, sites: int, family: int) -> float | None:
-    """The same at a general wavevector, where the Fourier sum is complex
-    (P >= chi2_2m / 2m); ``family`` = the compared modes. Order there is
-    correlation between cells that does not double the cell: incommensurate,
-    or short-range (the 2026-10-14 review's L4)."""
-    if power is None or not (power > 0) or not (sites > 0) or not (family >= 1):
+def general_mode_sigma(power, weights, family: int) -> float | None:
+    """The same at a general wavevector, where the Fourier sum is complex;
+    ``family`` = the compared modes. Order there is correlation between cells
+    that does not double the cell: incommensurate, or short-range (the
+    2026-10-14 review's L4)."""
+    if not (family >= 1):
         return None
-    p = float(gammaincc(sites, sites * power))
+    p = null_tail(power, weights, False)
+    if p is None:
+        return None
     return _reported(_sidak_sigma(p, family))
+
+
+def independent_cell_null(sites: SiteDisplacements, name: str) -> np.ndarray:
+    """The weights of the independent-cell null of one element's power (F1).
+
+    With y(c) the displacements of the element's m moving sites in cell c (3m
+    components; a missing copy is a zero, as on the transform's grid) and the
+    power P(q) = U(q)^H W U(q), W = diag(1 / (m n_s tr C_s)), placing the
+    cells at random gives U(q) the covariance N/(N - 1) sum_c y(c) y(c)^T at
+    every q != 0 (U(0) = 0: each site's mean is subtracted). The weights are
+    the eigenvalues of W^1/2 (that covariance) W^1/2, largest first; their sum
+    is the mean power over q != 0, N/(N - 1). Weights below NULL_WEIGHT_RTOL
+    of the largest are left out. Empty when no site of ``name`` moves.
+    """
+    supercell = np.asarray(sites.supercell, dtype=int)
+    n_q = int(np.prod(supercell))
+    cells = np.mod(np.asarray(sites.cell_indices, dtype=int), supercell)
+    columns, weights = [], []
+    for s, label in enumerate(sites.elements):
+        if label != name:
+            continue
+        rows = np.flatnonzero(sites.site_index == s)
+        u = sites.displacements[rows]
+        variance = _site_variance(u)
+        if not variance > 0:
+            continue
+        column = np.zeros((n_q, 3))
+        column[np.ravel_multi_index(tuple(cells[rows].T), tuple(supercell))] = u
+        columns.append(column)
+        weights.append(1.0 / (rows.size * variance))
+    if not columns:
+        return np.zeros(0)
+    scale = np.sqrt(np.repeat(np.asarray(weights) / len(columns), 3))
+    z = np.concatenate(columns, axis=1) * scale
+    values = np.linalg.eigvalsh((n_q / (n_q - 1.0)) * (z.T @ z))[::-1]
+    return values[values > values[0] * NULL_WEIGHT_RTOL]
 
 
 def mode_polarisation(tensor, unit_vectors) -> dict | None:
@@ -326,6 +523,11 @@ def displacement_modulations(sites: SiteDisplacements, element: str | None = Non
     q_frac = np.array([[_folded(index[axis], supercell[axis]) for axis in range(3)] for index in grid_index])
     long_wave = np.array([is_long_wave(q) for q in q_frac], dtype=bool)
     compared = (np.arange(n_q) <= partner_linear) & (np.arange(n_q) != 0) & ~long_wave
+    # The diffuse test's modes: the compared modes that are not zone-boundary
+    # points (tested on their own, and real where the rest are complex).
+    on_boundary = np.all((grid_index == 0) | (2 * grid_index == supercell), axis=1)
+    diffuse_modes = np.flatnonzero(compared & ~on_boundary)
+    spectra = {}
     result = {
         "supercell": supercell.tolist(),
         "wavevectors": n_q - 1,
@@ -364,6 +566,7 @@ def displacement_modulations(sites: SiteDisplacements, element: str | None = Non
             zone.append(entry)
         order = np.argsort(-flat, kind="stable")
         strongest = []
+        strongest_keys = []
         seen = set()
         for linear in order:
             if linear == 0:
@@ -382,61 +585,232 @@ def displacement_modulations(sites: SiteDisplacements, element: str | None = Non
             boundary_mode = all(key[axis] == 0 or 2 * key[axis] == supercell[axis] for axis in range(3))
             mode["kind"] = "zone_boundary" if boundary_mode else ("long_wave" if is_long_wave(mode["q"]) else "general")
             strongest.append(mode)
+            strongest_keys.append(int(np.ravel_multi_index(key, tuple(supercell))))
             if len(strongest) == top:
                 break
+        weights = independent_cell_null(sites, name)
         result["elements"].append({
             "element": name,
             "sites": used,
             "missingCopies": missing,
             "medianPower": median,
             "comparedModes": int(reference.size),
+            # The independent-cell null's effective number of independent
+            # components, (sum lambda)^2 / sum lambda^2 (3m for m independent
+            # isotropic sites; fewer where sites share a cell-level variable).
+            "nullDof": float(weights.sum() ** 2 / np.sum(weights * weights)),
             "zoneBoundary": zone,
             "strongest": strongest,
         })
-    _decide(result, family_elements, len(boundary), int(compared.sum()))
+        spectra[name] = {"weights": weights, "power": flat, "strongest": strongest_keys}
+    _decide(result, family_elements, len(boundary), int(compared.sum()), spectra,
+            {"modes": diffuse_modes, "q": q_frac[diffuse_modes]})
     return result
 
 
-def _decide(result: dict, family_elements: list[str], points: int, modes: int) -> None:
+def _average_ranks(values: np.ndarray) -> np.ndarray:
+    """Ranks 1..K of ``values`` in ascending order; a run of values within
+    PERCENTILE_RTOL of its smallest shares the run's mean rank (as the port)."""
+    order = np.argsort(values, kind="stable")
+    ranks = np.empty(values.size)
+    start = 0
+    while start < values.size:
+        first = float(values[order[start]])
+        end = start + 1
+        while end < values.size and float(values[order[end]]) <= first + PERCENTILE_RTOL * abs(first):
+            end += 1
+        ranks[order[start:end]] = 0.5 * (start + 1 + end)
+        start = end
+    return ranks
+
+
+def _orthonormal_columns(columns: list[np.ndarray]) -> tuple[list[np.ndarray], list[int]]:
+    """Modified Gram-Schmidt over ``columns`` in order: an orthonormal basis of
+    their span and the indices of the columns kept. A column whose part
+    orthogonal to the earlier ones is within DIFFUSE_RANK_RTOL of its own
+    norm adds nothing and is left out (as the port decides it)."""
+    basis, kept = [], []
+    for index, column in enumerate(columns):
+        vector = np.array(column, dtype=float)
+        norm = math.sqrt(float(vector @ vector))
+        for unit in basis:
+            vector = vector - float(unit @ vector) * unit
+        rest = math.sqrt(float(vector @ vector))
+        if norm > 0 and rest > DIFFUSE_RANK_RTOL * norm:
+            basis.append(vector / rest)
+            kept.append(index)
+    return basis, kept
+
+
+def _solve_dense(matrix: np.ndarray, rhs: np.ndarray) -> np.ndarray:
+    """A small dense system by Gaussian elimination with partial pivoting (the port's)."""
+    a = np.array(matrix, dtype=float)
+    b = np.array(rhs, dtype=float)
+    n = b.size
+    for column in range(n):
+        pivot = column + int(np.argmax(np.abs(a[column:, column])))
+        if pivot != column:
+            a[[column, pivot]] = a[[pivot, column]]
+            b[[column, pivot]] = b[[pivot, column]]
+        for row in range(column + 1, n):
+            factor = a[row, column] / a[column, column]
+            a[row, column:] -= factor * a[column, column:]
+            b[row] -= factor * b[column]
+    x = np.zeros(n)
+    for row in range(n - 1, -1, -1):
+        x[row] = (b[row] - float(a[row, row + 1:] @ x[row + 1:])) / a[row, row]
+    return x
+
+
+def diffuse_order(power, q, family: int) -> dict:
+    """The diffuse test (plan item 4.4): is the power spread over many q in
+    the pattern correlation between neighbouring cells makes?
+
+    ``power`` holds the element's power at the K modes compared (one per
+    +q/-q pair, no long wave, no zone-boundary point, none found ordered),
+    ``q`` their fractional wavevectors. Correlation Gamma(R) between a site's
+    displacements in cells R apart adds 2 Gamma(R) cos(2 pi q.R) to the power
+    over its mean (the power is the Fourier transform of that correlation).
+    Under independent cells the power at every such q is identically
+    distributed (its cross-spectral matrix is white), so the ranks of the
+    power over q are exchangeable whatever the cells hold. The statistic
+    regresses the normal scores a of those ranks on the lags' templates
+    cos(2 pi q.R), R in DIFFUSE_LAGS (with the constant; a lag the grid does
+    not resolve is left out, and its degree of freedom):
+    chi^2 = (K - 1) |P a|^2 / |a|^2, P the projection onto the templates
+    orthogonal to the constant, which is chi^2 with r degrees of freedom under
+    the null (r the lags kept). Ranks bound what any one q can add, so no
+    single mode makes it. The family is every element (Sidak, as F3).
+
+    Parseval fixes the mean power over q != 0 (N/(N - 1)): this is about how
+    the power is spread, never its total. Long waves stay out: RMC's
+    box-scale waves are not short-range order (they are the longWave
+    finding).
+
+    Returns ``modes`` (K), ``df`` (r, None when the grid gives fewer than
+    DIFFUSE_MODES_PER_TERM modes per term or no lag), ``chiSquare``,
+    ``sigma`` (family-wise), ``correlations`` (Gamma per DIFFUSE_LAGS from
+    the least-squares fit of the power itself, beta_R / (2 mean power): the
+    lag's relative modulation of the power over these modes, halved; None for
+    a lag left out), and the strongest: ``lag``, ``correlation``, ``phase``
+    ('in_phase' for Gamma > 0, the power toward the zone centre; 'antiphase'
+    for Gamma < 0, toward the zone boundary).
+    """
+    power = np.asarray(power, dtype=float).ravel()
+    q = np.asarray(q, dtype=float).reshape(-1, 3)
+    modes = int(power.size)
+    out = {"modes": modes, "df": None, "chiSquare": None, "sigma": None,
+           "correlations": [None] * len(DIFFUSE_LAGS), "lag": None, "correlation": None, "phase": None}
+    if modes == 0:
+        return out
+    columns = [np.ones(modes)] + [np.cos(2.0 * np.pi * (q @ np.asarray(lag, dtype=float))) for lag in DIFFUSE_LAGS]
+    basis, kept = _orthonormal_columns(columns)
+    lags = [index - 1 for index in kept if index > 0]
+    if not lags or kept[0] != 0 or modes < DIFFUSE_MODES_PER_TERM * (len(lags) + 1):
+        return out
+    out["df"] = len(lags)
+    design = np.column_stack([columns[index] for index in kept])
+    beta = _solve_dense(design.T @ design, design.T @ power)
+    mean = float(power.mean())
+    if mean > 0:
+        for position, lag in enumerate(lags, start=1):
+            out["correlations"][lag] = float(beta[position] / (2.0 * mean))
+    scores = ndtri((_average_ranks(power) - 0.5) / modes)
+    scores = scores - scores.mean()
+    total = float(scores @ scores)
+    if not total > 0 or not mean > 0:
+        return out
+    projection = sum(float(unit @ scores) ** 2 for unit in basis[1:])
+    chi_square = (modes - 1) * projection / total
+    out["chiSquare"] = float(chi_square)
+    out["sigma"] = _reported(_sidak_sigma(float(gammaincc(len(lags) / 2.0, chi_square / 2.0)), family))
+    # The strongest correlation: the largest |Gamma|, the first lag on a tie.
+    magnitude = np.array([abs(out["correlations"][lag]) for lag in lags])
+    strongest = lags[int(np.flatnonzero(magnitude >= magnitude.max() * (1.0 - PERCENTILE_RTOL))[0])]
+    out["lag"] = list(DIFFUSE_LAGS[strongest])
+    out["correlation"] = out["correlations"][strongest]
+    out["phase"] = "in_phase" if out["correlation"] > 0 else "antiphase"
+    return out
+
+
+def _diffuse_finding(diffuse: dict) -> dict:
+    """diffuseOrder: answer, because and one Evidence record (clusters.py's
+    form): observed = the strongest |Gamma(R)|, null 0, z = the family-wise
+    sigma, change = observed - null, bar {z: DIFFUSE_SIGMA, change:
+    DIFFUSE_CORRELATION} cleared from above; clears recomputable
+    (evidence_clears). The answer is the record's clears."""
+    if diffuse["df"] is None:
+        return {"answer": None, "because": "too_few_modes", "evidence": []}
+    magnitude = abs(diffuse["correlation"]) if diffuse["correlation"] is not None else None
+    record = {
+        "statistic": "neighbourCellCorrelation", "against": "independentCells",
+        "lag": diffuse["lag"], "correlation": diffuse["correlation"], "phase": diffuse["phase"],
+        "chiSquare": diffuse["chiSquare"], "df": diffuse["df"], "modes": diffuse["modes"],
+        "observed": magnitude, "null": 0.0, "z": diffuse["sigma"], "change": magnitude, "changeKind": "difference",
+        "bar": {"z": DIFFUSE_SIGMA, "change": DIFFUSE_CORRELATION}, "side": "above",
+    }
+    record["clears"] = evidence_clears(record)
+    if diffuse["chiSquare"] is None or magnitude is None:
+        return {"answer": None, "because": "undefined_statistic", "evidence": [record]}
+    if record["clears"]:
+        because = "correlated_in_phase" if diffuse["phase"] == "in_phase" else "correlated_antiphase"
+    elif diffuse["sigma"] is None or diffuse["sigma"] < DIFFUSE_SIGMA:
+        because = "below_sigma"
+    else:
+        because = "below_correlation"
+    return {"answer": record["clears"], "because": because, "evidence": [record]}
+
+
+def _decide(result: dict, family_elements: list[str], points: int, modes: int, spectra: dict, diffuse: dict) -> None:
     """Annotate every tested point with its sigma, ordered, because and bar,
     and give each element its verdict, over the family: the ``points``
     zone-boundary points and ``modes`` compared modes of each of
     ``family_elements`` -- every element the configuration has with
-    displacements, whichever the call reports (F3). The sizes are the same
-    for every element, so this is what a call without ``element`` counted."""
+    displacements, whichever the call reports (F3) -- and one diffuse test
+    per element. The sizes are the same for every element, so this is what a
+    call without ``element`` counted. ``spectra`` holds each tested element's
+    null weights, power and strongest modes' grid indices; ``diffuse`` the
+    diffuse test's modes and their wavevectors."""
     tested = [entry for entry in result["elements"] if entry["sites"]]
     family = {
         "zoneBoundaryPoints": points * len(family_elements),
         "comparedModes": modes * len(family_elements),
+        "diffuse": len(family_elements),
         "elements": list(family_elements),
     }
     for entry in tested:
+        spectrum = spectra[entry["element"]]
         for point in entry["zoneBoundary"]:
             point["kind"] = "zone_boundary"
-            _test(point, "zone", entry, family["zoneBoundaryPoints"])
+            _test(point, "zone", entry, family["zoneBoundaryPoints"], spectrum["weights"])
         for mode in entry["strongest"]:
             if mode["kind"] == "general":
-                _test(mode, "general", entry, family["comparedModes"])
+                _test(mode, "general", entry, family["comparedModes"], spectrum["weights"])
             else:
                 mode.update({"sigma": None, "ordered": None, "because": mode["kind"], "bar": None})
+        # The diffuse test asks what the modes found ordered leave.
+        found = {key for key, mode in zip(spectrum["strongest"], entry["strongest"])
+                 if mode["kind"] == "general" and mode["ordered"] is True}
+        keep = np.array([int(key) not in found for key in diffuse["modes"]], dtype=bool)
+        entry["diffuse"] = diffuse_order(spectrum["power"][diffuse["modes"][keep]], diffuse["q"][keep], family["diffuse"])
         entry["verdict"] = _element_verdict(entry)
     result["family"] = family
     result["rules"] = dict(MODULATION_RULES)
 
 
-def _test(point: dict, test: str, entry: dict, family: int) -> None:
-    """One point against its bar. The power is ratio x median, as the tool
-    formed it: sigma far below the background is ill-conditioned (1 - (1 - p)^F
-    rounds), and this keeps it bit for bit the value the tool reported."""
+def _test(point: dict, test: str, entry: dict, family: int, weights: np.ndarray) -> None:
+    """One point against its bar and the element's independent-cell null
+    (``weights``). The power is ratio x median, as the tool formed it: sigma
+    far below the background is ill-conditioned (1 - (1 - p)^F rounds), and
+    this keeps it bit for bit the value the tool reported."""
     ratio = point["ratio"]
     power = ratio * entry["medianPower"] if ratio is not None else None
-    sites = entry["sites"]
-    defined = power is not None and power > 0 and sites > 0 and (test == "zone" or family >= 1)
+    defined = power is not None and power > 0 and len(weights) > 0 and (test == "zone" or family >= 1)
     sigma = None
     if not defined:
         ordered, because = None, "undefined_statistic"
     else:
-        sigma = zone_boundary_sigma(power, sites, family) if test == "zone" else general_mode_sigma(power, sites, family)
+        sigma = zone_boundary_sigma(power, weights, family) if test == "zone" else general_mode_sigma(power, weights, family)
         if ratio < MODULATION_RATIO:
             ordered, because = False, "below_ratio"
         elif sigma is None or sigma < MODULATION_SIGMA:
@@ -497,9 +871,12 @@ def _element_verdict(entry: dict) -> dict:
         long_wave = _modulation_finding(True, "long_wave_dominates", [first])
     else:
         long_wave = _modulation_finding(False, "below_ratio")
-    return {"cellDoubling": cell_doubling, "generalOrder": general_order, "longWave": long_wave}
+    return {"cellDoubling": cell_doubling, "generalOrder": general_order, "longWave": long_wave,
+            "diffuseOrder": _diffuse_finding(entry["diffuse"])}
 
 
 def _untested_verdict() -> dict:
     """An element with no displacement to analyse (zero spread everywhere)."""
-    return {name: _modulation_finding(None, "no_displacements") for name in ("cellDoubling", "generalOrder", "longWave")}
+    verdict = {name: _modulation_finding(None, "no_displacements") for name in ("cellDoubling", "generalOrder", "longWave")}
+    verdict["diffuseOrder"] = {"answer": None, "because": "no_displacements", "evidence": []}
+    return verdict

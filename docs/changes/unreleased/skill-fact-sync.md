@@ -20,10 +20,11 @@
   - The page's resolution is "its default", not ν = 10.
   - A wrong reason in rmc-fit-assessment step 7 (long waves "left out of the background") is
     removed.
-- The skill lint's allow-list holds no FACT entry any more. One JUDGMENT stays: how to word a rung
+- The skill lint's allow-list holds no FACT entry any more, #113's three "awaits the skill
+  fact-sync PR" entries included. One JUDGMENT stays: how to word a rung
   just above the noise floor. The bindings follow the new text: the CN margin is bound to
   `CN_CHANGE_ABS` and `CN_CHANGE_REL`, the counts fallback to `MODAL_COORDINATION_SHARE` and
   `UNBONDED_APEX_FRACTION`, and the split rule to `SPLIT_SITE_KURTOSIS` and `SPLIT_SITE_SE`.
 - `docs/SKILL_INTERVIEWS.md` lists the nine choices the sync found and left to the user. The read_skill
-  and over-claim record snapshots are re-recorded. The 32k budget pins move by 660 tokens (dock)
-  and 659 (arm B). At 48k, 7,088 and 9,818 tokens are left to spare.
+  and over-claim record snapshots are re-recorded. The 32k budget pins move by 659 tokens (dock
+  and arm B). At 48k, 7,080 and 9,810 tokens are left to spare.

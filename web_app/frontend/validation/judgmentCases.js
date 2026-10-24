@@ -24,13 +24,18 @@
 // seen (an engine's false positive, a misread group) are reported with the
 // PR, not hidden. The octahedral case's seed was taken under the cluster
 // window before protocol 2026-10-19.8; since then A+ reads the Workbench's
-// own joined shell there, and the case is the subset's control. The two weak-order cases share one amplitude, set from the
-// noncentral χ² of the zone-boundary power so that the modulation engine's
-// expected significance is 3σ; their seeds come from a rule that takes one on
-// each side of the fixed 3σ bar, so it does not depend on which side an arm
-// lands: seeds 131, 132, … in order, the first whose realised significance
-// at q (every element tested, as A+ and analyze_modulations test it) lies in
-// [3, 4], and the first in [2.5, 3).
+// own joined shell there, and the case is the subset's control. The two weak-order cases share one amplitude, set so
+// that the modulation engine's expected significance at q — the median
+// realised σ — is 3σ against its independent-cell null (judgment-spec.md: the
+// power at q is a scaled noncentral χ²₃, the null a weighted sum of three
+// χ²₁). It was re-set at protocol 2026-10-19.19: the amplitude first set from
+// the one-component bound sat far above the bar once the calibrated null (F1)
+// gave an isotropic site its three components. Their seeds come from the same
+// rule as before, fixed before any σ was read at the new amplitude, which
+// takes one on each side of the fixed 3σ bar, so it does not depend on which
+// side an arm lands: seeds 131, 132, … in order, the first whose realised
+// significance at q (every element tested, as A+ and analyze_modulations test
+// it) lies in [3, 4], and the first in [2.5, 3).
 
 export const JUDGMENT_DEV_CASES = [
     // Two features at once: Jahn–Teller octahedra whose centre is also
@@ -54,10 +59,10 @@ export const JUDGMENT_DEV_CASES = [
     // seeds (the rule above).
     {
         id: 'dev-weak-order-a', kind: 'zone_boundary', judgment: true, situation: 'marginal',
-        params: { elements: ['Ag', 'Nb', 'O'], a: 3.95, supercell: [8, 8, 8], q: [0.5, 0.5, 0], axis: [0, 0, 1], delta: 0.018, decoy: null, weak: true, seed: 132 }
+        params: { elements: ['Ag', 'Nb', 'O'], a: 3.95, supercell: [8, 8, 8], q: [0.5, 0.5, 0], axis: [0, 0, 1], delta: 0.012, decoy: null, weak: true, seed: 133 }
     },
     {
         id: 'dev-weak-order-b', kind: 'zone_boundary', judgment: true, situation: 'marginal',
-        params: { elements: ['Ag', 'Nb', 'O'], a: 3.95, supercell: [8, 8, 8], q: [0.5, 0.5, 0], axis: [0, 0, 1], delta: 0.018, decoy: null, weak: true, seed: 133 }
+        params: { elements: ['Ag', 'Nb', 'O'], a: 3.95, supercell: [8, 8, 8], q: [0.5, 0.5, 0], axis: [0, 0, 1], delta: 0.012, decoy: null, weak: true, seed: 142 }
     }
 ];

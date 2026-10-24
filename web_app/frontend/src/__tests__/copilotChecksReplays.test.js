@@ -50,7 +50,7 @@ const symmetry = { ...describeSymmetry(structure, 0.2), toleranceA: 0.2, ladder:
 const run = { runName: 'Demo', plotFiles, rValueFile, structure, symmetry };
 const tools = [
     ...buildRunTools({ plotFiles, rValueFile, structure, symmetry }),
-    ...buildCopilotTools({ request, structure, elements: Object.keys(structure.elementCounts).sort() })
+    ...buildCopilotTools({ request, structure, elements: Object.keys(structure.elementCounts).sort(), plotFiles })
 ];
 const toolNamed = (name) => tools.find((tool) => tool.name === name);
 

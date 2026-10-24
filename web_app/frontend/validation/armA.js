@@ -6,9 +6,13 @@
 // Arm A, the default Workbench: what its pages show with their defaults,
 // read by fixed rules a competent user would apply (not a straw man): the
 // Detected SG card at 0.2 Å, the PCA Ellipsoid table, the Displacement
-// Directions page per site (ν = 10, smoothing 2) and the partial g(r) on the
-// Dashboard. The cluster and superstructure engines have no page, so arm A
-// cannot use them.
+// Directions page on each split site at its own defaults (the page's
+// DIRECTION_DEFAULTS, read from src/directionSettings.js, never copied:
+// since plan item 2.5, protocol 2026-10-19.17, the engine's resolution and
+// the raw histogram's readouts, the settings analyze_displacement_directions
+// reads; until then ν = 10 with the readouts of the 2× smoothed map) and the
+// partial g(r) on the Dashboard. The cluster and superstructure engines have
+// no page, so arm A cannot use them.
 //
 // Arm A+ (control), the engine sweep: every Copilot engine run exhaustively
 // with its own thresholds and fixed rules joining them, no model. What arm B
@@ -27,7 +31,8 @@ import { clusterElementsOf, extractPeaks, shellCatalogue } from '../src/llm/cont
 import { lowerGroupTolerance, NOISE_FLOOR_MARGIN, symmetryNoiseFloor } from '../src/llm/context/runContext';
 import { describeSymmetry } from '../src/symmetryModel';
 import { unitCellVectors } from '../src/pcaCrystalFrame';
-import { cartesianToUvw, splitDisplacement } from '../src/copilotTools';
+import { cartesianToUvw, directionResolved, splitDisplacement } from '../src/copilotTools';
+import { DIRECTION_DEFAULTS, directionReadoutRequest } from '../src/directionSettings';
 import { isSplitSite, splitSiteEvidence } from '../src/workers/clusters';
 import { normalizeVerdict } from './verdict';
 
@@ -54,9 +59,9 @@ export const ARM_A_RULES = Object.freeze({
     // ellipsoid, however anisotropic, is thermal motion.
     PROLATE_RATIO: 1.3,
     SPLIT_KURTOSIS: -0.5,
-    // Displacement Directions page defaults, and its significance bar.
-    FREQUENCY: 10,
-    SMOOTHING: 2,
+    // Displacement Directions: the page's own defaults (the object itself,
+    // one definition; plan item 2.5), and arm A's significance bar.
+    DIRECTION_SETTINGS: DIRECTION_DEFAULTS,
     SIGMA: 3,
     // Partial g(r): maxima below this (the bonded range, as the eye reads
     // the plot) at least this far apart are a split shell, unless the
@@ -108,19 +113,34 @@ const splitSites = async (run, readings) => {
     return { payload, found };
 };
 
-// Displacement Directions page on one site, at the page's defaults.
-const directionsOf = async (run, site, readings) => {
+// Displacement Directions page on one site, at the page's defaults: the
+// readouts it shows there (directionReadoutRequest, the request the page's
+// readouts come from), with the resolution it read (`frequency`, ν) and the
+// peak cell's radius the page prints beside the direction (± R°, plan item
+// 2.5). Returns the peak's [u v w] when it is significant, else null (the
+// caller takes PC1). Arm A takes a significant peak whatever its cell's size,
+// as a user reading the page; A+ passes `resolved` (the tool's rule,
+// SWEEP_RULES.directionResolved) and takes PC1 where the cell is too wide.
+export const directionsOf = async (run, site, readings, { resolved = null } = {}) => {
     const payload = await run.engine('orientation', {
-        referenceNumber: site.referenceNumber, frequency: ARM_A_RULES.FREQUENCY, smoothing: ARM_A_RULES.SMOOTHING, geometry: false
+        ...directionReadoutRequest({ ...ARM_A_RULES.DIRECTION_SETTINGS, referenceNumber: site.referenceNumber }), geometry: false
     });
     const significant = payload.peakSignificance >= ARM_A_RULES.SIGMA;
     const uvw = Array.isArray(payload.peakDirection) ? uvwOf(run.structure, payload.peakDirection) : null;
+    const radius = Number.isFinite(payload.peakCellRadiusDeg) ? Number(payload.peakCellRadiusDeg.toFixed(1)) : null;
+    const where = `[${uvw?.join(' ')}] ± ${radius}°, the cell radius at ν = ${payload.frequency}`;
+    const unresolved = significant && resolved != null && !resolved(payload.peakCellRadiusDeg);
     readings.push({
         page: 'Displacement Directions', what: `site ${site.referenceNumber} ${site.element}`,
-        value: { peak_sigma: round(payload.peakSignificance), enhancement: round(payload.peakEnhancement), peak_uvw: uvw, map_sigma: round(payload.mapSignificance) },
-        reading: significant ? `preferred direction [${uvw?.join(' ')}]` : 'no significant direction'
+        value: {
+            frequency: payload.frequency, peak_sigma: round(payload.peakSignificance), enhancement: round(payload.peakEnhancement),
+            peak_uvw: uvw, radius_deg: radius, map_sigma: round(payload.mapSignificance)
+        },
+        reading: !significant ? 'no significant direction'
+            : unresolved ? `preferred direction ${where}: not resolved finer than that, so the claim takes PC1`
+                : `preferred direction ${where}`
     });
-    return significant ? uvw : null;
+    return significant && !unresolved ? uvw : null;
 };
 
 // The average structure's distinct A–B distances up to rMax (Å).
@@ -228,8 +248,20 @@ export const runArmA = async (copilotRun) => {
  *                   joining rule (arm A's split shell, unless an off-centred
  *                   centre explains it); the long axis has no app rule (the
  *                   g(r) is orientation-averaged), so the claim has none.
+ *   direction resolution  directionResolved (copilotTools.js, the tool's
+ *                   rule; plan item 2.5, protocol 2026-10-19.17): a split
+ *                   site's direction is the map's significant peak only where
+ *                   the peak cell's radius is within LOW_INDEX_CONE_DEG (15°),
+ *                   else PC1 -- a cell cannot localise a direction more finely
+ *                   than its own size; until then any significant peak.
  *
- * Arm A's rules (ARM_A_RULES) are the frozen protocol's and stay as they were.
+ * Arm A's rules (ARM_A_RULES) are the frozen protocol's and stay as they were,
+ * apart from the Displacement Directions page's defaults, which are the
+ * page's own (plan item 2.5, protocol 2026-10-19.17). A+ reads a split
+ * site's direction map through the same reading (directionsOf), which since
+ * then is analyze_displacement_directions' own result at its defaults; arm A
+ * takes a significant peak whatever its cell's radius, as a user reading the
+ * page, and both record that radius.
  * What remains A+'s own is only how it joins the engines: one claim per
  * element, an ordered mode explains its element's split sites, and an
  * off-centred centre its own split shell.
@@ -241,7 +273,8 @@ export const SWEEP_RULES = Object.freeze({
     splitSite: isSplitSite,
     staticDisplacement: splitDisplacement,
     clusterElements: clusterElementsOf,
-    lowerGroupTolerance
+    lowerGroupTolerance,
+    directionResolved
 });
 
 /**
@@ -289,8 +322,12 @@ const uvwText = (uvw) => uvw.map((value) => Number(value.toFixed(2)) + 0);
 // The point of an element's payload entry at q (a zone-boundary point or a strongest mode).
 const pointAt = (entry, q) => [...(entry.zoneBoundary || []), ...(entry.strongest || [])].find((point) => sameQ(point.q, q)) ?? null;
 
-// The modulation engine's verdicts, per element tested, as a reading, with
-// the polarisation of each ordered point (the direction a claim rests on).
+// The modulation engine's verdicts A+ reads, per element tested, as a
+// reading, with the polarisation of each ordered point (the direction a
+// claim rests on). Diffuse order between cells (verdict.diffuseOrder, plan
+// item 4.4) is not among them: the verdict has no feature kind for it, and
+// adding one changes the scoring (the user's call).
+const MODULATION_FINDINGS_READ = ['cellDoubling', 'generalOrder', 'longWave'];
 const modulationReading = (payload) => {
     const tested = (payload.elements || []).filter((entry) => entry.sites);
     const named = (name) => tested.filter((entry) => entry.verdict[name].answer === true)
@@ -302,7 +339,7 @@ const modulationReading = (payload) => {
         .map(({ q, polarisation }) => ({ q: qText(q), uvw: uvwText(polarisation.uvw), share: round(polarisation.share) }));
     return {
         value: Object.fromEntries(tested.map((entry) => {
-            const verdicts = Object.fromEntries(Object.entries(entry.verdict).map(([name, finding]) => [name, said(finding)]));
+            const verdicts = Object.fromEntries(MODULATION_FINDINGS_READ.map((name) => [name, said(entry.verdict[name])]));
             const rows = polarisations(entry);
             return [entry.element, rows.length ? { ...verdicts, polarisation: rows } : verdicts];
         })),
@@ -383,10 +420,11 @@ export const runArmSweep = async (copilotRun) => {
         features.push({ kind: 'modulation', element: entry.element, q, direction_uvw: polarisation ? uvwText(polarisation.uvw) : null });
     }
 
-    // Split sites not explained by an ordered mode.
+    // Split sites not explained by an ordered mode. The direction: the map's
+    // peak where its cell resolves it (the tool's bound), else PC1.
     for (const [element, { site, magnitude }] of found) {
         if (modulated.has(element)) continue;
-        const peak = await directionsOf(run, site, readings);
+        const peak = await directionsOf(run, site, readings, { resolved: SWEEP_RULES.directionResolved });
         features.push({ kind: 'off_centre', element, direction_uvw: peak ?? uvwOf(run.structure, site.axes[0]), magnitude_A: round(magnitude) });
     }
     // The run's one shell reading (shells.js): the split by number of a shell

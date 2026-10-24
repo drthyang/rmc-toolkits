@@ -158,6 +158,8 @@ describe('the holdout scanner', () => {
         expect(found('seed one two three four five six 987')).toEqual([]);
         expect(found('seed 9870, 1987, 2.987 and 987.5')).toEqual([]);
         expect(found('seedling 987')).toEqual([]);
+        // The digits that end an identifier are not the number (TEST_SET_SHA256 beside "seed").
+        expect(found('each seed is pinned by TEST_SET_SHA987')).toEqual([]);
     });
 
     it('a supercell counts next to its element, written as N³, N × N × N or [N, N, N]; the dev twin\'s does not', () => {

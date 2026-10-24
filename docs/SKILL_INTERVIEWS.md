@@ -94,8 +94,9 @@ each failure they describe, remove the draft status line, and show them the diff
    rule out a distortion. Do you ever pool, and how do you report it?
 3. The draft calls a direction "preferred" only at ≥ 3σ (calibrated, corrected over all cells) and
    asks for the enhancement as well. Is 3σ your line? Which enhancement is too small to matter?
-4. The sphere's resolution: the tool lets the engine choose, and the page shows its default
-   resolution until you pick another. Must a result hold at two resolutions before you trust it?
+4. The sphere's resolution: the tool lets the engine choose, and since plan item 2.5 so does the
+   page by default (it opens at Auto, the engine's resolution). Must a result hold at two
+   resolutions before you trust it?
 5. For a cluster-level question (a trigonal versus a tetragonal distortion), the draft goes to
    `analyze_clusters`' axis families against the shuffle null. Is that the test you would use?
 6. Per-axis kurtosis is shown only on axes the PCA resolves. Do you use it, and how do you read a

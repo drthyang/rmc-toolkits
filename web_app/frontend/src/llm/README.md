@@ -588,7 +588,9 @@ the model's own `ask_user` still works beside it.
 - **Before an analysis runs** (`beforeCall`, for tools that declare `shellWindows(args)`:
   `compute_bond_angles`, `analyze_clusters`): a window that overlaps a first shell but holds less
   of it by the same margin is put to the user — the whole first shell (default) or the window as
-  asked — and the analysis runs in the one chosen, its tool message saying so. The spot check's
+  asked — and the analysis runs in the one chosen, its tool message saying so. It is the one cut
+  rule (`context/shells.js` `windowCut`): `compute_bond_angles` refuses exactly such a window
+  unless the user chose it. The spot check's
   2.3–2.7 Å Se–Ta–Se window: "it holds 3.8 Se per Ta of the shell's 6". Once per question: the
   choice is remembered by (centre, partner, window), and a later call with that window runs in the
   chosen one unasked (a model that repeats its cut window every round is asked once); a call
@@ -762,7 +764,7 @@ from the spot check and the review:
 | Skill | For | Its firm rules in code |
 |---|---|---|
 | `rmc-fit-assessment` | convergence, where the fit misses (`compare_fit`), constraint-limited peaks, sampling, overfitting, the report | the convergence check on the answer (*Checks on the answer*) |
-| `coordination-shells` | bond windows from the partial g(r), coordination against the ideal polyhedron, reading angle distributions | `compute_bond_angles` **refuses** a window that cuts the shell (fewer than 60 % of the central atoms share the most common count, or most have none; the 60 % is an interview item) and returns the counts that show the cut, not the angles, unless `window_confirmed` — which the Workbench's window question sets when the user keeps their window; the polyhedron reading |
+| `coordination-shells` | bond windows from the partial g(r), coordination against the ideal polyhedron, reading angle distributions | `compute_bond_angles` **refuses** a window that cuts the shell — by the one cut rule the Workbench's window question asks on (`context/shells.js` `windowCut`, approved by the user 2026-10-19): a window that meets its shell and holds fewer partner atoms than the whole shell by ≥ max(0.5, 15 % of its CN); the coordination counts (fewer than 60 % with the most common count, or most with none) decide only where the run reads no shell to compare — and returns the counts and the shell reading that show the cut (`shell_ab.cn_in_window` of `shell_ab.cn`), not the angles, unless `window_confirmed`, which the Workbench's window question sets when the user keeps their window; the polyhedron reading. The skill still states the counts rule (skill-lint allow-list, until the skill fact-sync PR) |
 | `local-symmetry` | the tolerance ladder, what breaks between rungs, the noise floor, point-group facts | the point-group facts and the chirality / centrosymmetry / polar / inversion checks |
 | `displacement-anisotropy` | ellipsoids, kurtosis, preferred directions and their σ, effect sizes | the preferred-direction check; the Workbench's one-site-or-pooled question |
 | `local-order` (validation batch 1) | when to say "no order": every analysis that could show one came back empty | the superstructure, cluster and direction checks |
@@ -920,7 +922,9 @@ tool with either name is refused, and the dock says so in its error line.
     refusal still refuses. In this repository: `compute_bond_angles`' cut-window refusal,
     no-angles failure and octahedron note, the pooled-directions note, `analyze_clusters`' window
     failures and split-site note, `find_gr_peaks`' split-shell notes and unseparated-shell warning,
-    `detect_symmetry`'s point-group note.
+    `detect_symmetry`'s point-group note, and `analyze_modulations`' long-wave and in-phase notes,
+    whose causal parentheticals (what the pattern is evidence of) are inference, as in the domain
+    rules: arm C reads their facts and limits without them.
 - `signal` aborts on Stop or timeout. Stop the work if you can.
 - `focus` is the dock's card-focus controller, for view tools: `await focus.show(ids, { marks })`,
   `focus.onClear(undo)` (runs when the highlight ends), `focus.state()`.
@@ -1052,7 +1056,7 @@ In this repository the host tools live in `src/copilotTools.js`:
 | `analyze_displacement_directions` | the orientation engine with calibrated significances and `[u v w]` (Show in Displacement Directions selects the site and resolution) |
 | `compute_bond_angles` | the triplets engine (Show in Bond Geometry fills the triplet and windows, then computes); the sin θ-corrected histogram, and a whole shell of ~6 or ~4 neighbours read against an ideal octahedron or tetrahedron |
 | `analyze_clusters` | the cluster engine (`workers/clusters.js`, `/api/clusters`): the shape of an element's finite clusters (M₄ tetrahedra, dimers, trimers) against a shuffle null of independent atoms, and the average cluster's own distortion. The engine returns its own verdict (distorted, breathing, rigid, split member sites, …); the tool shapes the data and says each finding (`CLUSTER_SENTENCES`), and its `facts` are the verdict's answers |
-| `analyze_modulations` | the modulation engine (`workers/modulations.js`, `/api/modulations`): each element's displacement power at the zone-boundary points and its strongest modes against the configuration's diffuse background — order that enlarges the cell, which the folded average cannot show, and correlation between cells at a general wavevector (incommensurate or short-range). The engine returns each point's calibrated σ (corrected over every element's points, whichever the call names), each point's polarisation (the direction the atoms move in that mode, with its share of the power) and each element's verdict (cell doubling, general order, long wave); the tool renders them (`MODULATION_SENTENCES`), the polarisation of ordered points only, and never prints a ratio or σ below its bar rounded onto it |
+| `analyze_modulations` | the modulation engine (`workers/modulations.js`, `/api/modulations`): each element's displacement power at the zone-boundary points and its strongest modes against the configuration's diffuse background — order that enlarges the cell, which the folded average cannot show, and correlation between cells at a general wavevector (incommensurate or short-range). The engine returns each point's calibrated σ against independent cells, each cell's own correlations kept (corrected over every element's points, whichever the call names), each point's polarisation (the direction the atoms move in that mode, with its share of the power) and each element's verdict (cell doubling, general order, long wave, and diffuse order between cells: correlation between neighbouring cells spread over many q); the tool renders them (`MODULATION_SENTENCES`), the polarisation of ordered points only, a `diffuse` row per element, antiphase correlation as short-range order and in-phase correlation as neighbouring cells moving together, and never prints a ratio, σ or correlation below its bar rounded onto it |
 | `detect_symmetry` | the symmetry finder at any tolerance, without changing the card, with the point group's facts (inversion, Sohncke, polar); offered when the run's structure has an average-structure basis (a browser-loaded run, or a server folder through `/api/structure`, which above the finder's 2000-site cap sends only its size; not a coords-only file). Above the cap it answers "not analysed", in both runtimes |
 | `measure_symmetry_lowering` | the size and direction of the coherent shift of a symmetry lowering: each average site's distance from the position a parent group puts it at, against the noise floor; offered as `detect_symmetry` is |
 | `orient_3d_view` (view) | turns a 3D view (`src/copilotViewTools.js`): look down `[u v w]` / a, b, c / PC1–3 (c up, or b looking down c), centre or ring sites, select a site, reset |
@@ -1135,7 +1139,9 @@ The runs found four bugs, now fixed:
    is at 2.74 Å, and no check said so. It now adds `first_two_peaks_window_A` and a note when the
    second peak overlaps the window.
 3. `compute_bond_angles` said "ok" for such a window. It now warns when fewer than 60 % of the
-   central atoms share the most common bond count.
+   central atoms share the most common bond count. (Later it refused such a window, and since
+   2026-10-19 it refuses on the Workbench's CN margin, the counts deciding only where the run has
+   no shell to compare: *the skills* above.)
 4. A server error sent mid-stream (LM Studio ran out of GPU memory) was skipped, the turn ended
    empty, and the chat crashed rendering it (`turn.items is not iterable`). The error now shows,
    and an empty reply shows its note.
@@ -1187,7 +1193,9 @@ reference (`<card:direction-sphere>`) read "card:direction-sphere" (they now sho
 title; a re-run of the last question confirmed it). The model's numbers for the sphere differ
 from the drawn map because the tool lets the engine choose the resolution while the page keeps
 its own (ν = 10, smoothed), as noted under *Show in* in
-[ai-assistant.md Step 17](../../../../docs/algorithms/ai-assistant.md#step-17--the-copilot-tool-loop-analyses-checks-budgets-verdict).
+[ai-assistant.md Step 17](../../../../docs/algorithms/ai-assistant.md#step-17--the-copilot-tool-loop-analyses-checks-budgets-verdict). Since
+protocol 2026-10-19.17 the page opens at the engine's resolution (Auto) and reads its numbers from
+the raw histogram, so the page and the tool agree by default.
 
 ## Import boundary and extraction recipe
 

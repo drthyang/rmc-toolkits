@@ -745,5 +745,55 @@ class AnisotropyNullTests(unittest.TestCase):
         self.assertGreater(result["orientationAnisotropy"], 3 * result["orientationAnisotropyNull"])
 
 
+class PeakCellRadiusTests(unittest.TestCase):
+    """Plan item 2.5 (the direction resolution, a measurement limit).
+
+    peakDirection is the peak cell's centre, so it names a direction no more
+    finely than the cell is large. Both engines report the peak cell's
+    circumscribed radius, peakCellRadiusDeg: the largest angle from its centre
+    to its own vertices, so every direction assigned to the cell lies within it
+    (an equal-area cap would be smaller and leave the cell's corners outside).
+    """
+
+    def _angles(self, tiling, directions):
+        cells = assign_cells(tiling, directions)
+        units = directions / np.linalg.norm(directions, axis=1, keepdims=True)
+        cosines = np.clip(np.sum(units * tiling.centers[cells], axis=1), -1.0, 1.0)
+        return cells, np.arccos(cosines)
+
+    def test_the_dodecahedron_radius_is_its_closed_form(self):
+        # nu = 1: twelve regular pentagons; centre to vertex of a regular
+        # dodecahedron's face, arccos(sqrt((5 + 2 sqrt 5) / 15)) = 37.377 deg.
+        radii = goldberg_tiling(1).radii
+        exact = np.arccos(np.sqrt((5.0 + 2.0 * np.sqrt(5.0)) / 15.0))
+        np.testing.assert_allclose(radii, exact, rtol=0, atol=1e-12)
+        self.assertAlmostEqual(np.degrees(exact), 37.3774, places=4)
+
+    def test_every_assigned_direction_lies_within_its_cells_radius(self):
+        directions = np.random.default_rng(31).normal(size=(20000, 3))
+        for nu in (1, 2, 3, 6, 10):
+            tiling = goldberg_tiling(nu)
+            cells, angles = self._angles(tiling, directions)
+            self.assertTrue(np.all(angles <= tiling.radii[cells] + 1e-12), msg=f"nu={nu}")
+            # ...and it is not loose: random directions come close to it in the
+            # cell corners (the radius is attained at a vertex).
+            self.assertGreater(angles.max(), 0.9 * tiling.radii.max(), msg=f"nu={nu}")
+
+    def test_the_15_degree_line_falls_between_nu_2_and_nu_3(self):
+        # The tool and arm A+ call a peak direction resolved only within 15 deg
+        # (LOW_INDEX_CONE_DEG): no cell of nu <= 2 is, every cell of nu >= 3 is.
+        self.assertGreater(np.degrees(goldberg_tiling(2).radii.min()), 15.0)
+        self.assertLess(np.degrees(goldberg_tiling(3).radii.max()), 15.0)
+        widths = [goldberg_tiling(nu).radii.max() for nu in range(1, 9)]
+        self.assertTrue(all(a > b for a, b in zip(widths, widths[1:])))
+
+    def test_the_payload_reports_the_peak_cells_radius(self):
+        vectors = golden_cloud()
+        for frequency in (1, 2, 4, None):
+            result = orientation_histogram(vectors, frequency=frequency, geometry=False)
+            tiling = goldberg_tiling(result["frequency"])
+            self.assertEqual(result["peakCellRadiusDeg"], float(np.degrees(tiling.radii[result["peakCell"]])))
+
+
 if __name__ == "__main__":
     unittest.main()

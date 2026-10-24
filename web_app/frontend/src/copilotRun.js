@@ -115,8 +115,15 @@ export const runSymmetry = (structure, toleranceA, ladder) => {
 /** The run's elements: the sorted keys of the structure's element counts. */
 export const runElements = (structure) => Object.keys(structure?.elementCounts || {}).sort();
 
-/** The engine tools for the run (copilotTools.js): none without an engine, no symmetry tool without a basis. */
-export const runEngineTools = (engine, structure, elements) => buildCopilotTools({ request: engine || null, structure: structure || null, elements });
+/**
+ * The engine tools for the run (copilotTools.js): none without an engine, no
+ * symmetry tool without a basis. The plot files and run settings are the
+ * props' own (the same objects), so compute_bond_angles judges a window
+ * against the shell catalogue the Workbench's questions read.
+ */
+export const runEngineTools = ({ engine, structure, elements, plotFiles = null, settings = null }) => buildCopilotTools({
+    request: engine || null, structure: structure || null, elements, plotFiles, runSettings: settings
+});
 
 /** The CopilotRun from its finished fields: `props` frozen, passed whole to CopilotChat. */
 export const assembleCopilotRun = ({
@@ -156,7 +163,7 @@ export const copilotRun = (loaded, view = DEFAULT_VIEW) => {
         structure,
         symmetry: runSymmetry(structure, normalized.toleranceA, runLadder(structure, normalized.ladder)),
         settings: loaded?.settings ?? null,
-        tools: runEngineTools(engine, structure, elements),
+        tools: runEngineTools({ engine, structure, elements, plotFiles, settings: loaded?.settings ?? null }),
         elements,
         engine,
         view: normalized
