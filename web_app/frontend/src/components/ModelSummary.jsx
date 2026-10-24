@@ -168,7 +168,13 @@ const ModelSummary = ({ structure, showSymmetry = true, stale = false }) => {
                 <Stat label="Cell (Å)" className="model-stat-wide">
                     {summary.cellLengths.map((value) => formatNumber(value)).join(' × ')}
                 </Stat>
-                <Stat label="Angles">
+                {/* The lattice angles of the cell, not a per-atom value: the
+                    label says so (the Bond Geometry page shows this card above
+                    its own angle-count tile). */}
+                <Stat
+                    label="Cell angles"
+                    ddProps={{ title: 'α · β · γ: the angles between b and c, a and c, a and b' }}
+                >
                     {summary.angles.map((value) => `${formatNumber(value, 1)}°`).join(' · ')}
                 </Stat>
                 <Stat label="Supercell">

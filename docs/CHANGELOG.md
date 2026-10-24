@@ -5,6 +5,21 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+### Bond Geometry: the "Angles" tile is an angle count, and says so
+
+- The KPI tile labelled "Angles" (shown uppercase, "ANGLES 15.0 per Ta") is a count, not an angle:
+  `angleCount / apexCount`, the mean number of A–B–C angles at one B atom over every B atom of the
+  configuration. It is now labelled **Angle count**; the hero card's ? help (now *About the plot
+  and the angle count*) opens with its definition (all B atoms in the denominator, unbonded ones as
+  0; one angle per pair of bonds, n(n−1)/2 for A = C; inclusive windows; every periodic image, no
+  minimum-image cut-off; the one `.rmc6f` loaded, no averaging over configurations), and the tile's
+  hover starts "Mean number of angles per B atom (a count, not an angle): N angles over M B atoms". The Model information card's lattice angles, which sat
+  above it on the same page under the same word, read **Cell angles** (hover: α · β · γ).
+- Display text only: the engines, the `/api/triplets` and worker payload keys (`angleCount`,
+  `apexCount`), the CLI and the Copilot's `compute_bond_angles` data are unchanged. An independent
+  brute-force count (scipy `cKDTree`) matches the engine's totals exactly on the Demo
+  ([bond-geometry.md](algorithms/bond-geometry.md#step-3--the-kpi-rail)).
+
 ### Dashboard: the G(r) error ribbon, F(Q)'s σ propagated through RMCProfile's transform (protocol 2026-10-24.4)
 
 - New module `rmc_toolkits/ft_uncertainty.py` (exported; the browser port is

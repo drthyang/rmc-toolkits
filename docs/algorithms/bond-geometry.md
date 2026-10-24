@@ -647,15 +647,33 @@ stated reduction of it:
 
 | Tile | Value | Sub line | Hover |
 |---|---|---|---|
-| **Angles** | `angleCount / apexCount`, 1 dp, "per B" | `angleCount` · mean ± std of all angles (`meanAngle`, `stdAngle`, 1 dp: "236,431 · mean 103.1 ± 29.6°"); "0 angles" when there are none | the same in words, plus the realized `binWidth` and where it ran (`browser` for the worker, `server` for `/api/triplets`) |
+| **Angle count** | `angleCount / apexCount`, 1 dp, "per B" — a **count** (dimensionless), not an angle; defined in the hero card's ? help (below) | `angleCount` · mean ± std of all angles (`meanAngle`, `stdAngle`, 1 dp: "236,431 · mean 103.1 ± 29.6°"); "0 angles" when there are none | "Mean number of angles per B atom (a count, not an angle): `angleCount` angles over `apexCount` B atoms", the mean ± std in words, the realized `binWidth` and where it ran (`browser` for the worker, `server` for `/api/triplets`) |
 | **Coordination** | `coordinationSummary.mean` ($\sum_n n\,c_n / \sum_n c_n$ from `coordination`), 2 dp, "per B" — counts a B–B bond at both of its ends, as a coordination number should | `coordinationSummary.modal` and `modalShare` (the lowest $n$ on a tie) · `apexCount` | — |
 | **B–A bond** | `lengths12.meanLength`, 3 dp, Å | `uniqueBonds` (each physical bond once) · the resolved window `bond12` | the B-centred `count` when the end element is the central one |
 | **B–C bond** | the same from `lengths23` — only when `sharedEnds` is false; two tiles on the same pair (A = C, distinct windows) are told apart as (A–B) / (B–C) | | |
 
+**What the angle-count tile means** (the first paragraph of the hero card's ? help, *About the plot
+and the angle count*, in the card header: a ? inside the rail would be clipped by its `overflow:
+hidden`). Its value is the mean number of A–B–C angles at one B atom:
+the exact angle total of engine Step 5 divided by `apexCount`, which is **every** atom of the
+central element in the configuration — B atoms with fewer than two bonds in the windows count as
+0 (on the Demo, Ta–Ta–Ta 2.6–3.4 Å: 42 793 angles over 16 000 Ta = 2.7, of which 368 Ta have no
+Ta–Ta bond). Per B, A = C contributes one angle per unordered pair of bonds with one bond in each
+window ($\binom{n}{2}$ for $n$ bonds in one shared window: an octahedron gives 15), A ≠ C one per
+(A-bond, C-bond) pair, $n_{12}\,n_{23}$. Windows are inclusive at both ends (Step 4, $\pm
+10^{-9}$ Å); bonds are searched over the periodic supercell with explicit images, no
+minimum-image cut-off (Steps 2–3); the configuration is the one `.rmc6f` loaded — nothing is
+averaged over several configurations. The tile's label said "Angles" until 2026-10, which read as
+an angle (and collided with the Model information card's cell angles, now "Cell angles"); the
+payload keys (`angleCount`, `apexCount`) are unchanged. An independent brute-force check
+(scipy `cKDTree`, per-atom $\binom{n}{2}$) reproduces `angleCount`, `apexCount` and the
+coordination histogram exactly on the Demo for Se–Ta–Se (2.2–3.6 and 2.2–2.65 Å), Ga–Se–Ta and
+Ta–Ta–Ta.
+
 Windows print at the precision they were given (2–4 decimals, so a B–C bound of 3.4001 does not
 read as 3.40). The mean angle is kept off the headline on purpose: the mean of a multimodal
 distribution (the Demo's Se–Ta–Se has four angle classes) is not a bond angle. It sits on the
-Angles sub line — visible, so keyboard and touch users have it too (a `title` alone reaches
+angle-count tile's sub line — visible, so keyboard and touch users have it too (a `title` alone reaches
 neither) — written compactly so a four-tile rail shows it whole at 1280 px (the sub line
 ellipsizes when it does not fit), and in the CLI output.
 
