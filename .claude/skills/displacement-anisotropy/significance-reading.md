@@ -1,8 +1,9 @@
 # Reading the significances
 
-Every significance the direction and cluster tools report is a calibrated one-sided normal
-deviate (σ), with tails floored at 1e-300; ≥ 3σ counts as significant. A local, uncorrected
-z-score is never one of them.
+Every significance the direction tool reports is a calibrated one-sided normal deviate (σ), with
+tails floored at 1e-300; ≥ 3σ counts as significant. A local, uncorrected z-score is never one of
+them. The cluster tool's z is no tail probability: it is the distance from its shuffle null's mean
+in the null's standard deviations (below).
 
 | Quantity | What it tests | Null |
 |---|---|---|
@@ -15,7 +16,10 @@ z-score is never one of them.
 exactly 12 pentagons, every count divided by its cell's solid angle.
 
 **Mardia kurtosis** (b₂ − 15)/5 is rotation- and affine-invariant: 0 for a Gaussian cloud, negative
-for a flat or split site, positive for heavy tails. Per-axis kurtosis means something only on axes
+for a flat-topped one, positive for heavy tails. A site is split (two positions) only by the app's
+rule on its PC1: resolved, its excess kurtosis ≤ −0.5 and at least 3 sampling errors below zero
+(`list_sites` gives it a `delta_A`); a negative Mardia kurtosis alone is not a split, and a site
+that misses the rule is "flat-topped, not split". Per-axis kurtosis means something only on axes
 the PCA resolves (an eigenvalue gap above 3 standard errors).
 
 **Cluster statistics** (`analyze_clusters`) count as a finding only when both the z and the effect

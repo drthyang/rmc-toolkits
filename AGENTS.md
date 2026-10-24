@@ -37,7 +37,7 @@ The same React app ships in two runtime modes:
 ## Architecture map
 
 ```
-.claude/skills/<name>/SKILL.md   the AI Copilot's skills (methods; drafts awaiting the user's interview, docs/SKILL_INTERVIEWS.md), Claude Code skills shared with the in-app agent: rmc-fit-assessment, coordination-shells, local-symmetry, displacement-anisotropy, local-order (validation batch 1), each with small reference files beside it
+.claude/skills/<name>/SKILL.md   the AI Copilot's skills (methods, the user's own since the interviews of 2026-10-24, docs/SKILL_INTERVIEWS.md; the skill lint, src/__tests__/skillLint/, binds their numbers and rules to the code, and its allow-list holds only lines that await a code PR), Claude Code skills shared with the in-app agent: rmc-fit-assessment, coordination-shells, local-symmetry, displacement-anisotropy, local-order (validation batch 1), each with small reference files beside it
 
 rmc_toolkits/
   parsers.py     RMC CSV/log, STOG parsing (incl. stog.inp / STOG xy / .dat headers), .rmc6f metadata + atom iteration, Frac*.txt conversion, structure loading (read_structure pairs Frac/rmc6f by stem), shared .rmc6f atom-line grammar (classify_rmc6f_atom_line / parse_rmc6f_atoms / Rmc6fParseReport), robust .log reader (read_chi_log), Rwp column roles (rwp_columns / fit_rwp), the one run-folder rule (find_run_configuration)
@@ -381,10 +381,10 @@ web_app/frontend/src/
   no shell to compare (no partials, no closed shell, no density, a window apart from the first
   shell). The clarifier asks on it and `compute_bond_angles` refuses on it, so they agree on every
   window (`validation/run.js shell-cuts` shows them beside the old counts rule; 15 of the 149
-  record windows changed verdict). The coordination-shells skill still states the 60 % / "most"
-  counts rule: skill-lint allow-list entries until the skill fact-sync PR. `shellReading.test.js` checks every reader against the
-  catalogue on the Demo and the dev cases. The coordination-shells skill still quotes the old
-  first peak (2.33–2.71 Å, 3.9): skill-lint allow-list entries until the user's skill review.
+  record windows changed verdict). Since the skill fact sync the coordination-shells skill states
+  this rule (the counts as its fallback) and the Demo's first peak as the catalogue reads it
+  (2.21–2.65 Å, 3.25), both bound by the skill lint. `shellReading.test.js` checks every reader
+  against the catalogue on the Demo and the dev cases.
 - **One verification module: "is this answer verified?"** (architecture candidate #4,
   2026-10-19). `src/llm/copilot/verification/` holds the evidence gate, the checks on the answer,
   numbers by reference and the computed Outcome behind one factory and two operations:
@@ -775,8 +775,7 @@ plot-parity tests, so those run in CI.
    `validation/findings/decisions/2026-10-19-directions-auto-resolution.json`); the peak direction is
    given ± its cell's circumscribed radius (engines, tool, page; unresolved above 15°, where arm A+
    takes PC1); the map opens unsmoothed. Still open: remove or rename the legacy `significance` /
-   `peakZScore` payload fields before an API freeze; and the displacement-anisotropy skill's two
-   sentences that still say the page defaults to ν = 10 (the skill fact-sync PR).
+   `peakZScore` payload fields before an API freeze.
 8. ~~PCA: identical subsamples in both engines above 20 000 copies~~ **DONE** — the JS draw
    (mulberry32 + partial Fisher–Yates) ported to Python over the same site-major cloud;
    `pca_kde_fixture.json` holds the volumes above the cap to one golden.
