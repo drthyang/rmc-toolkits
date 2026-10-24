@@ -65,6 +65,13 @@
 //   clusters    an element whose own first shell holds 0.5–4.5 neighbours
 //               may form finite clusters (clusterElementsOf: the evidence
 //               gate's "no order" and arm A+'s cluster sweep).
+//   networks    an element that is no cluster element and whose nearest
+//               first shell of another element holds an octahedron or a
+//               tetrahedron (CN 6 or 4) centres polyhedra no finite cluster
+//               holds — corner-, edge- or face-sharing in an extended network,
+//               or isolated (networkCentresOf: the evidence gate's "no order"
+//               asks polyhedral_distortion on it where the run offers it; the
+//               local-order interview, 2026-10-24).
 //   cut         one rule (windowCut; approved by the user, 2026-10-19): a
 //               window that meets a shell cuts it when it holds fewer partner
 //               atoms than the whole shell by at least max(0.5, 15 % of the
@@ -173,6 +180,36 @@ export const clusterElementsOf = (catalogue) => (catalogue?.elements || []).filt
     const cn = catalogue.shell(element, element)?.cn;
     return Number.isFinite(cn) && cn >= CN_MATCH_TOLERANCE && cn <= CLUSTER_CN_MAX;
 });
+
+// The polyhedra polyhedral_distortion reads in full (Robinson's ⟨λ⟩ and σ²θ
+// beside Baur's DI): tetrahedra and octahedra.
+export const POLYHEDRON_COUNTS = Object.freeze([4, 6]);
+
+/**
+ * The elements of a shell catalogue whose coordination polyhedra no finite
+ * cluster holds (the local-order interview, 2026-10-24: "no order" needs
+ * polyhedral_distortion for an extended network, one with no finite clusters
+ * by the catalogue's own-kind rule): every element that is no cluster element
+ * (clusterElementsOf) and whose nearest closed first shell of another element
+ * — the one whose window starts first, the element's own coordination —
+ * holds POLYHEDRON_COUNTS atoms within CN_MATCH_TOLERANCE (cnMatches). The
+ * perovskite's B (BO₆; B–B six at a), the Demo's Ga (GaSe₄; Ga–Ga twelve);
+ * not the A site (AO₁₂), nor O (its nearest shell, two B), nor a cluster
+ * element (the Demo's Ta, whose TaSe₆ octahedra hold its Ta₄ clusters:
+ * analyze_clusters tests them). In the catalogue's order; [] without one.
+ */
+export const networkCentresOf = (catalogue) => {
+    const clusters = new Set(clusterElementsOf(catalogue));
+    return (catalogue?.elements || []).filter((element) => {
+        if (clusters.has(element)) return false;
+        const nearest = catalogue.elements
+            .filter((partner) => partner !== element)
+            .map((partner) => catalogue.shell(element, partner))
+            .filter((shell) => shell?.window && Number.isFinite(shell.cn))
+            .reduce((best, shell) => (best == null || shell.window[0] < best.window[0] ? shell : best), null);
+        return Boolean(nearest) && POLYHEDRON_COUNTS.some((count) => cnMatches(nearest.cn, count));
+    });
+};
 
 /** The Workbench's CN margin: |cn − reference| ≥ max(CN_CHANGE_ABS, CN_CHANGE_REL · reference). */
 export const cnChanges = (cn, reference) => Number.isFinite(cn) && Number.isFinite(reference)

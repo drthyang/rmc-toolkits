@@ -36,7 +36,13 @@
 //                 2026-10-24: a long wave says nothing about order at its q);
 //                 and a cell doubling the box cannot hold — odd along an axis
 //                 it doubles — or along axes no ordered zone-boundary point
-//                 doubles (cell-doubling; the user's rule, 2026-10-24);
+//                 doubles (cell-doubling; the user's rule, 2026-10-24); and
+//                 the diffuse verdict read as the user reads it (2026-10-24:
+//                 only antiphase or general-q order is order): "no order"
+//                 when order was found (no-order), order between cells when
+//                 only in-phase correlation — correlated motion — was
+//                 (correlated-motion), no correlation when any was
+//                 (no-correlation);
 //   cluster       cluster claims (distorted, breathing, rigid) every
 //                 analyze_clusters of the element contradicts (review L5);
 //   coordination  a coordination number every whole-shell count of the
@@ -67,11 +73,11 @@ import {
     clausesOf, elementPattern, groupsIn, namesElement, namesSymbol, normalizeSymbol, positiveMatches, qVectorsIn, symbolSpelling, symbolTokens, windowsIn
 } from './reading';
 import {
-    ALL_AXES, ALONG_AXES, ARROW, BOND_ANGLE_WORDS, BREATHING, CANNOT_HOLD, CELL_DOUBLING, CENTROSYMMETRIC, CHIRAL, CN_CLAIMS, CONVERGED, DEGREES,
-    DISORDER, DISTORTED, DISTRIBUTION_NOUN, DISTRIBUTION_STAT, DOUBLED_AXIS, DOUBLED_CELL, HALF_TUPLE, HAS_AS_SUBGROUP, INDEX_CLAIM, K_TYPE, LONG_WAVE_WORDS,
-    LOST_INVERSION, LOWERING_TO, MAXIMAL, NEIGHBOUR_COUNTS, NOT_A_BOND_ANGLE, ORDER_CLAIM, PARTIAL_SHELL, PER_COUNT, POLAR, POLYHEDRON_CN, PREFERRED,
-    REFERENCE_VALUE, RIGID, RUN_NOUN, SAYS_NOTHING, SINGLE_CONFIGURATION, SITE_REFS, SPLIT_SITE, STILL_MOVING, SUBGROUP_OF, SUPERGROUP_OF,
-    SUPERSTRUCTURE, T_TYPE, WINDOW_CUTOFF, WINDOW_RANGES, WORD_NUMBER
+    ALL_AXES, ALONG_AXES, ARROW, BOND_ANGLE_WORDS, BREATHING, CANNOT_HOLD, CELL_DOUBLING, CELL_ORDER, CENTROSYMMETRIC, CHIRAL, CN_CLAIMS, CONVERGED,
+    CORRELATION_SUBJECT, DEGREES, DISORDER, DISTORTED, DISTRIBUTION_NOUN, DISTRIBUTION_STAT, DOUBLED_AXIS, DOUBLED_CELL, HALF_TUPLE, HAS_AS_SUBGROUP,
+    INDEX_CLAIM, K_TYPE, LONG_WAVE_WORDS, LOST_INVERSION, LOWERING_TO, MAXIMAL, NEIGHBOUR_COUNTS, NOT_A_BOND_ANGLE, NO_CORRELATION, NO_ORDER,
+    ORDER_CLAIM, PARTIAL_SHELL, PER_COUNT, POLAR, POLYHEDRON_CN, PREFERRED, REFERENCE_VALUE, RIGID, RUN_NOUN, SAYS_NOTHING, SINGLE_CONFIGURATION,
+    SITE_REFS, SPLIT_SITE, STILL_MOVING, SUBGROUP_OF, SUPERGROUP_OF, SUPERSTRUCTURE, T_TYPE, WINDOW_CUTOFF, WINDOW_RANGES, WORD_NUMBER
 } from './phrasings';
 
 // --- the run context's own facts ------------------------------------------------------
@@ -578,8 +584,92 @@ const cellDoublingRule = (reading, facts, context) => {
     return [];
 };
 
+// --- order between cells as the diffuse verdict decides it (the local-order interview, 2026-10-24) ---
+
+// "Only antiphase or general-q diffuse order past the bar counts as order;
+// in-phase correlation is neighbouring cells moving together (correlated
+// motion), not order, and never supports a 'no correlation' statement" (the
+// user, 2026-10-24, answers 5 and 6). facts.modulation.diffuse holds each
+// element whose diffuse verdict passed its bar, with its phase. Order found is
+// an ordered zone-boundary point, an ordered general mode, or antiphase
+// diffuse order; a correlation found is any of them, or in-phase diffuse
+// correlation. Three checks, once an analyze_modulations ran:
+//   no-order           "no order" (NO_ORDER, the gate's words) when order was
+//                      found — unless the sentence itself names order between
+//                      cells or antiphase ("no order beyond the antiphase
+//                      correlation");
+//   correlated-motion  order between cells (CELL_ORDER) when none was found:
+//                      in phase only, correlated motion, not order;
+//   no-correlation     no correlation of displacements or cells
+//                      (NO_CORRELATION; "uncorrelated" about
+//                      CORRELATION_SUBJECT) when a correlation was found.
+const diffuseOf = (analyses) => analyses.flatMap((analysis) => analysis.diffuse || []);
+const lagText = (lag) => `[${lag.join(' ')}]`;
+const signedCorrelation = (value) => (value < 0 ? `−${Math.abs(value)}` : `+${value}`);
+const diffuseText = ({ element, phase, lag, correlation, sigma }) => `${element} ${phase === 'antiphase' ? 'in antiphase' : 'in phase'} between `
+    + `cells ${lagText(lag)} apart (${signedCorrelation(correlation)}, ${sigma >= 8 ? '> 8' : sigma}σ)`;
+const orderFound = (analyses) => [
+    ...analyses.flatMap((analysis) => (analysis.ordered || []).map(({ element, q }) => `${element} ordered at q = ${qText(q)}`)),
+    ...analyses.flatMap((analysis) => (analysis.general || []).map(({ element, q }) => `${element} ordered at the general q = ${qText(q)}`)),
+    ...diffuseOf(analyses).filter((item) => item.phase === 'antiphase').map(diffuseText)
+];
+const NAMES_CELL_ORDER = /\bantiphase\b/i;
+
+const noOrderRule = (reading, facts) => {
+    const found = orderFound(facts.map((fact) => fact.modulation).filter(Boolean));
+    if (!found.length) return [];
+    for (const sentence of reading.sentences) {
+        if (positiveMatches(sentence, CELL_ORDER).length || NAMES_CELL_ORDER.test(sentence)) continue;
+        if (clausesOf(sentence).some((clause) => positiveMatches(clause, NO_ORDER).length)) {
+            return [{
+                rule: 'no-order',
+                text: `The answer says there is no order, but analyze_modulations found order between cells in this question: ${found.slice(0, 3).join('; ')}.`
+            }];
+        }
+    }
+    return [];
+};
+
+const correlatedMotionRule = (reading, facts) => {
+    const analyses = facts.map((fact) => fact.modulation).filter(Boolean);
+    if (!analyses.length || orderFound(analyses).length) return [];
+    const inPhase = diffuseOf(analyses).filter((item) => item.phase === 'in_phase');
+    for (const sentence of reading.sentences) {
+        if (clausesOf(sentence).some((clause) => positiveMatches(clause, CELL_ORDER).length)) {
+            return [{
+                rule: 'correlated-motion',
+                text: inPhase.length
+                    ? `The answer claims order between cells, but the only correlation between cells analyze_modulations found in this question is in phase (${inPhase.slice(0, 3).map(diffuseText).join('; ')}): `
+                        + 'neighbouring cells moving together (correlated motion), not order; only antiphase or general-q order past its bar is order.'
+                    : 'The answer claims order between cells, but no analyze_modulations of this question found any: no ordered point or mode, and no '
+                        + 'correlation between neighbouring cells past its bar.'
+            }];
+        }
+    }
+    return [];
+};
+
+const noCorrelationRule = (reading, facts) => {
+    const analyses = facts.map((fact) => fact.modulation).filter(Boolean);
+    const found = [...orderFound(analyses), ...diffuseOf(analyses).filter((item) => item.phase === 'in_phase').map(diffuseText)];
+    if (!found.length) return [];
+    for (const sentence of reading.sentences) {
+        for (const clause of clausesOf(sentence)) {
+            const claims = positiveMatches(clause, NO_CORRELATION).filter((match) => !/^uncorrelated$/i.test(match[2] ?? '') || CORRELATION_SUBJECT.test(clause));
+            if (!claims.length) continue;
+            return [{
+                rule: 'no-correlation',
+                text: `The answer says the displacements are not correlated, but analyze_modulations found a correlation between cells past its bar in this question: ${found.slice(0, 3).join('; ')}`
+                    + (found.length && !orderFound(analyses).length ? ' (in phase: correlated motion, not order, but correlation all the same).' : '.')
+            }];
+        }
+    }
+    return [];
+};
+
 const modulationRules = (reading, facts, context) => [
-    ...superstructureRule(reading, facts, context), ...longWaveRule(reading, facts), ...cellDoublingRule(reading, facts, context)
+    ...superstructureRule(reading, facts, context), ...longWaveRule(reading, facts), ...cellDoublingRule(reading, facts, context),
+    ...noOrderRule(reading, facts), ...correlatedMotionRule(reading, facts), ...noCorrelationRule(reading, facts)
 ];
 
 // --- distributions from one configuration (the user's rule, 2026-10-24) -----------------
@@ -848,13 +938,15 @@ export const FACTS = Object.freeze([
             ordered: [{ element: 'string', q: ['number', 'number', 'number'] }],
             general: [{ element: 'string', q: ['number', 'number', 'number'] }],
             long_wave_q: 'number',
-            long_waves: [{ element: 'string', q: ['number', 'number', 'number'] }]
+            long_waves: [{ element: 'string', q: ['number', 'number', 'number'] }],
+            // The elements whose diffuse verdict passed its bar, in phase or antiphase (the local-order interview, 2026-10-24).
+            'diffuse?': [{ element: 'string', phase: 'string', lag: ['number', 'number', 'number'], correlation: 'number', sigma: 'number' }]
         },
         reads: Object.freeze([
             CELL_DOUBLING, SUPERSTRUCTURE, ORDER_CLAIM, LONG_WAVE_WORDS, SAYS_NOTHING, DOUBLED_CELL, ALONG_AXES, DOUBLED_AXIS, ALL_AXES, HALF_TUPLE,
-            CANNOT_HOLD, RUN_NOUN
+            CANNOT_HOLD, RUN_NOUN, NO_ORDER, CELL_ORDER, NO_CORRELATION, CORRELATION_SUBJECT
         ]),
-        // The superstructure rule, the long-wave rule and the box rule (the user's, 2026-10-24).
+        // The superstructure rule, the long-wave rule, the box rule and the diffuse verdict's three (the user's, 2026-10-24).
         contradicts: modulationRules
     }),
     Object.freeze({

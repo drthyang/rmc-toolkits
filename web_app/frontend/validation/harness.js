@@ -222,7 +222,15 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // only (A+'s readings record the tier; no dev verdict moves); a split or
 // flat-topped site called disorder when analyze_modulations has not tested
 // its element (disorder, on list_sites' facts), and the gate's split-site
-// row reads a flat-topped site called disordered.
+// row reads a flat-topped site called disordered; local-order: the gate's
+// "no order" also needs polyhedral_distortion on each centre of polyhedra no
+// finite cluster holds (networkCentresOf), where the turn offers it, and the
+// diffuse verdict is read as the user reads it — only antiphase (or
+// general-q) order past its bar is order, in-phase correlation is
+// neighbouring cells moving together (correlated motion), not order, the
+// tool says so, and it never supports "no correlation" (no-order,
+// correlated-motion, no-correlation; arm A+ claims an antiphase verdict as a
+// modulation with no q; no dev verdict moves).
 export const PROTOCOL_VERSION = '2026-10-24.2';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one

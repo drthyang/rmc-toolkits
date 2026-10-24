@@ -1407,6 +1407,17 @@ const polarisedText = (row) => {
 // "Ga", "Ga and Se", "Ga, Se and Ta".
 const listText = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0]);
 
+/**
+ * How the diffuse verdict (the modulation engine's diffuseOrder finding) is
+ * read (the local-order interview, 2026-10-24): only a correlation in
+ * antiphase that passes its bar is order between cells; one in phase is
+ * correlated motion — neighbouring cells moving together — never order, and
+ * correlation all the same. The tool's facts and arm A+
+ * (validation/armA.js, SWEEP_RULES.diffuseOrder) read these.
+ */
+export const isDiffuseOrder = (finding) => finding?.because === 'correlated_antiphase';
+export const isCorrelatedMotion = (finding) => finding?.because === 'correlated_in_phase';
+
 export const MODULATION_SENTENCES = {
     cellDoubling: {
         ordered_point: ({ element, point, family, polarisation }) => ({
@@ -1450,7 +1461,9 @@ export const MODULATION_SENTENCES = {
     },
     // Plan item 4.4: correlation between neighbouring cells spread over many
     // q. In antiphase it is short-range order, said per element; in phase it
-    // is neighbouring cells moving together, said once for every element.
+    // is neighbouring cells moving together, correlated motion and not order
+    // (the local-order interview, 2026-10-24: only antiphase or general-q
+    // order past its bar is order), said once for every element.
     diffuseOrder: {
         correlated_antiphase: ({ element, diffuse, family }) => ({
             level: 'ok',
@@ -1462,9 +1475,10 @@ export const MODULATION_SENTENCES = {
         correlated_in_phase: ({ elements, strongest, diffuse }) => methodCheck('note',
             `${listText(elements)} displacements are correlated in phase between neighbouring cells (${elements.length > 1 ? `the strongest, ${strongest}, ` : ''}`
                 + `${signedText(round(diffuse.correlation, 2))} between cells ${lagLabel(diffuse.lag)} apart, ${sigmaText(diffuse.sigma)} against `
-                + 'independent cells): the power beyond the long waves leans toward the zone centre — neighbouring cells moving together',
-            { method: ' (as RMC\'s long waves and acoustic-like thermal motion give)' },
-            ', not a superstructure.'),
+                + 'independent cells): the power beyond the long waves leans toward the zone centre — neighbouring cells moving together '
+                + '(correlated motion',
+            { method: '; as RMC\'s long waves and acoustic-like thermal motion give' },
+            '), not order.'),
         below_correlation: null,
         below_sigma: null,
         undefined_statistic: null,
@@ -1600,7 +1614,19 @@ export const summarizeModulations = (payload, { unitCell = null } = {}) => {
             long_wave_q: rules.longWaveQ,
             long_waves: tested.flatMap((entry) => entry.strongest.slice(0, 3)
                 .filter((mode) => mode.kind === 'long_wave')
-                .map((mode) => ({ element: entry.element, q: mode.q })))
+                .map((mode) => ({ element: entry.element, q: mode.q }))),
+            // The diffuse verdicts that passed their bar (the local-order
+            // interview, 2026-10-24): antiphase is order between cells, in
+            // phase correlated motion — correlation, never order.
+            diffuse: tested
+                .filter((entry) => isDiffuseOrder(entry.verdict.diffuseOrder) || isCorrelatedMotion(entry.verdict.diffuseOrder))
+                .map((entry) => ({
+                    element: entry.element,
+                    phase: isDiffuseOrder(entry.verdict.diffuseOrder) ? 'antiphase' : 'in_phase',
+                    lag: [...entry.diffuse.lag],
+                    correlation: round(entry.diffuse.correlation, 2),
+                    sigma: round(entry.diffuse.sigma, 3)
+                }))
         }
     };
     return { data, checks, facts };

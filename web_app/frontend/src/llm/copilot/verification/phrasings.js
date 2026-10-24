@@ -202,6 +202,22 @@ export const SHELL_CLAIMS = /(^|[^\w-])(jahn[-– ]teller|split (?:first )?(?:co
 // locally" or a local symmetry lowering is about the clusters, not the average.
 export const LOWERING = /(^|[^\w-])((?<!local\s)symmetry[- ]lowering|lower(?:s|ed|ing) (?:the )?(?:average )?symmetry|(?:average structure|space group)\s+(?:is\s+)?lowered|coherent(?:ly)? (?:shift\w*|off[- ]cent\w*|displace\w*)|polar shift|shift(?:ed|s)? (?:by )?\d+(?:\.\d+)?\s*(?:Å|A\b)|\(coherent\))/gi;
 export const NO_ORDER = /(^|[^\w-])(no (?:local |short-range |additional )?order(?!\s+(?:that|which)\s+doubles)|no (?:ordered|correlated) (?:displacements?|distortions?)|(?:only|purely) thermal motion|thermal motion only|nothing beyond (?:the )?(?:average structure|thermal motion)|no (?:sign|evidence) of (?:local )?order)\b/gi;
+// Order between cells as the diffuse verdict decides it (the local-order
+// interview, 2026-10-24): short-range order, order between (neighbouring)
+// cells, diffuse or antiphase order — the claims the in-phase reading,
+// correlated motion, does not back.
+export const CELL_ORDER = /(^|[^\w-])(short[- ]range (?:order(?:ing)?|ordered)|(?:diffuse|antiphase|local) order(?:ing)? between (?:neighbou?ring |adjacent )?cells|order(?:ed|ing)? between (?:neighbou?ring |adjacent )?cells|diffuse (?:short-range )?order(?:ing)?)\b/gi;
+// "No correlation" said of displacements or cells: none between cells or of
+// the displacements, uncorrelated, moving independently, no correlated
+// displacements — which any correlation that passes its bar contradicts, in
+// phase or antiphase (correlated motion is correlation, though not order).
+export const NO_CORRELATION = new RegExp('(^|[^\\w-])(no (?:significant |measurable |detectable |appreciable )?correlations?(?: of| in| between)? '
+    + '(?:the )?(?:[A-Z][a-z]? )?(?:displacements?|motions?|(?:neighbou?ring |adjacent |unit )?cells|neighbou?rs)'
+    + '|uncorrelated|(?:cells|displacements) (?:are |move |vary )?independent(?:ly)?|moves? independently'
+    + '|no correlated (?:displacements?|motions?))\\b', 'gi');
+// What an "uncorrelated" claim must be about to read as one: cells,
+// neighbours, displacements, motion, sites or atoms.
+export const CORRELATION_SUBJECT = /\b(?:cells?|neighbou?r(?:ing|s)?|displacements?|motions?|sites?|atoms?)\b/i;
 // A sentence about this run names the run itself (this structure, the
 // configuration, the clusters, site 3), or one of its elements (claims.js).
 export const RUN_NOUN = /\b(?:th(?:is|e) (?:run|configuration|structure|model|box|supercell|sample|compound|crystal|material|system)|the (?:sites?|atoms|clusters|octahedra|tetrahedra|polyhedra|displacements)|sites? \d+)\b/i;

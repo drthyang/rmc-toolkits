@@ -33,6 +33,8 @@ import {
     buildCopilotTools,
     cartesianToUvw,
     clusterMethod,
+    isCorrelatedMotion,
+    isDiffuseOrder,
     summarizeBondAngles,
     tenDegreeBins,
     summarizeClusters,
@@ -63,11 +65,18 @@ const toolsWithoutPartials = Object.fromEntries(
 
 
 // facts.modulation without the long-wave check's two keys, which are checked
-// here: the engine's bound and long waves only (every |q_i| within it).
+// here: the engine's bound and long waves only (every |q_i| within it); and
+// without the diffuse verdicts (the local-order interview, 2026-10-24),
+// checked to be passing ones with their phase, and pinned where they matter.
 const withoutLongWaves = (modulation) => {
-    const { long_wave_q: bound, long_waves: waves, ...rest } = modulation;
+    const { long_wave_q: bound, long_waves: waves, diffuse, ...rest } = modulation;
     expect(bound).toBe(0.25);
     waves.forEach(({ q }) => expect(q.every((value) => Math.abs(value) <= bound)).toBe(true));
+    diffuse.forEach((item) => {
+        expect(['antiphase', 'in_phase']).toContain(item.phase);
+        expect(item.sigma).toBeGreaterThanOrEqual(3);
+        expect(Math.abs(item.correlation)).toBeGreaterThanOrEqual(0.1);
+    });
     return rest;
 };
 describe('Copilot tools on the demo run', () => {
@@ -631,7 +640,8 @@ describe('Copilot summarizers', () => {
         expect(data.elements[0].strongest.map((row) => row[3])).toEqual([null, null]);
         // The long-wave check's facts (the user's rule, 2026-10-24): the bound and the strongest modes that are long waves.
         expect(facts.modulation).toEqual({
-            elements: ['Nb'], ordered: [{ element: 'Nb', q: [0, 0, 0.5] }], general: [], long_wave_q: 0.25, long_waves: [{ element: 'Nb', q: [0.1, 0, 0] }]
+            elements: ['Nb'], ordered: [{ element: 'Nb', q: [0, 0, 0.5] }], general: [], long_wave_q: 0.25, long_waves: [{ element: 'Nb', q: [0.1, 0, 0] }],
+            diffuse: []
         });
         const odd = summarizeModulations({
             supercell: [3, 4, 4], wavevectors: 47, untestable: [[1, 0, 0]], family: { zoneBoundaryPoints: 0, comparedModes: 0 },
@@ -849,12 +859,21 @@ describe('Copilot summarizers', () => {
         expect(anti.data.note).toMatch(/ diffuse is \[lag, correlation, sigma\]: /);
         // No single mode is ordered: the per-mode tests say no order, the facts hold none.
         expect(withoutLongWaves(anti.facts.modulation)).toEqual({ elements: ['Ag', 'Nb'], ordered: [], general: [] });
+        // The diffuse verdict in the facts (the local-order interview, 2026-10-24): antiphase, order between cells.
+        expect(anti.facts.modulation.diffuse).toEqual([{ element: 'Nb', phase: 'antiphase', lag: [1, 0, 0], correlation: -0.29, sigma: 3.67 }]);
         const inPhase = run('diffuse order in phase');
         const together = inPhase.checks.find((check) => /correlated in phase/.test(check.text));
         expect(together.level).toBe('note');
+        // Correlated motion, not order (the local-order interview, 2026-10-24).
         expect(together.text).toBe('Nb displacements are correlated in phase between neighbouring cells (+0.47 between cells [0 0 1] apart, 4.6σ against '
             + 'independent cells): the power beyond the long waves leans toward the zone centre — neighbouring cells moving together '
-            + '(as RMC\'s long waves and acoustic-like thermal motion give), not a superstructure.');
+            + '(correlated motion; as RMC\'s long waves and acoustic-like thermal motion give), not order.');
+        expect(inPhase.facts.modulation.diffuse).toEqual([{ element: 'Nb', phase: 'in_phase', lag: [0, 0, 1], correlation: 0.47, sigma: 4.6 }]);
+        // The one reading of the verdict: antiphase is order, in phase correlated motion.
+        const verdictOf = (result, element) => result.facts.modulation.diffuse.find((item) => item.element === element);
+        expect(verdictOf(anti, 'Nb').phase).toBe('antiphase');
+        expect([isDiffuseOrder({ because: 'correlated_antiphase' }), isDiffuseOrder({ because: 'correlated_in_phase' }), isDiffuseOrder(null)]).toEqual([true, false, false]);
+        expect([isCorrelatedMotion({ because: 'correlated_in_phase' }), isCorrelatedMotion({ because: 'correlated_antiphase' })]).toEqual([true, false]);
         // Too few compared modes (a 4 × 4 × 4 grid): no row, no word.
         const small = run('doubled (4, 4, 4)');
         expect(small.data.elements.every((entry) => entry.diffuse === undefined)).toBe(true);
@@ -1061,19 +1080,20 @@ describe('the engine tools\' method advice: what arm C reads without it', () => 
         }
         const together = checks.find((check) => /correlated in phase/.test(check.text));
         expect(together.level).toBe('note');
+        // Correlated motion, not order (the local-order interview, 2026-10-24): arm C reads the user's words alone.
         expect(checkText(together, 'full')).toBe('Ga, Se and Ta displacements are correlated in phase between neighbouring cells (the strongest, Se, '
             + '+0.22 between cells [0 0 1] apart, > 8σ against independent cells): the power beyond the long waves leans toward the zone '
-            + 'centre — neighbouring cells moving together (as RMC\'s long waves and acoustic-like thermal motion give), not a superstructure.');
+            + 'centre — neighbouring cells moving together (correlated motion; as RMC\'s long waves and acoustic-like thermal motion give), not order.');
         expect(checkText(together, 'off')).toBe('Ga, Se and Ta displacements are correlated in phase between neighbouring cells (the strongest, Se, '
             + '+0.22 between cells [0 0 1] apart, > 8σ against independent cells): the power beyond the long waves leans toward the zone '
-            + 'centre — neighbouring cells moving together, not a superstructure.');
+            + 'centre — neighbouring cells moving together (correlated motion), not order.');
         // The sentences themselves, as any engine payload reaches them: the
         // same advice, listed apart (methodCheck).
         expect(MODULATION_SENTENCES.longWave.long_wave_dominates({ element: 'Sr', mode: { q: [0.125, 0, 0], ratio: 100 } }).method)
             .toEqual([' (common in RMC)']);
         expect(MODULATION_SENTENCES.diffuseOrder.correlated_in_phase({
             elements: ['Nb'], strongest: 'Nb', diffuse: { correlation: 0.3, lag: [0, 0, 1], sigma: 5 }
-        }).method).toEqual([' (as RMC\'s long waves and acoustic-like thermal motion give)']);
+        }).method).toEqual(['; as RMC\'s long waves and acoustic-like thermal motion give']);
         // Every other modulation check carries no advice: arm C reads it whole.
         checks.filter((check) => check !== together && !longWaves.includes(check))
             .forEach((check) => expect(checkText(check, 'off'), check.text).toBe(check.text));

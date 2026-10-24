@@ -71,8 +71,12 @@ const row = (spec) => Object.freeze({
 });
 
 // An element whose own first shell is a finite cluster's (shells.js
-// clusterElementsOf) needs analyze_clusters before "no order".
+// clusterElementsOf) needs analyze_clusters before "no order"; one that
+// centres octahedra or tetrahedra no finite cluster holds (networkCentresOf:
+// an extended network, or isolated polyhedra) polyhedral_distortion, where
+// the turn offers it (the local-order interview, 2026-10-24).
 const clusterSay = (element) => `analyze_clusters for ${element} (its first ${element}–${element} shell is a finite cluster's)`;
+const networkSay = (element) => `polyhedral_distortion for ${element} (centre ${element}: its polyhedra form no finite cluster)`;
 
 export const CLAIMS = Object.freeze([
     // Order between cells — a superstructure, cell doubling, modulation or
@@ -145,9 +149,12 @@ export const CLAIMS = Object.freeze([
         backedBy: firstOffered('measure_symmetry_lowering', 'detect_symmetry'),
         prompt: { phrase: 'a lowering of the average structure', analysis: 'measure_symmetry_lowering' }
     }),
-    // "No order beyond thermal motion": the superstructure test, a per-site
-    // directions map, and analyze_clusters for every element whose own first
-    // shell is a finite cluster's (the local-order skill).
+    // "No order beyond thermal motion": the superstructure test (its diffuse
+    // verdict included: analyze_modulations), a per-site directions map,
+    // analyze_clusters for every element whose own first shell is a finite
+    // cluster's, and polyhedral_distortion for every centre of polyhedra no
+    // finite cluster holds, counted only where the turn offers it (the
+    // local-order skill; its interview, 2026-10-24).
     row({
         id: 'no-order',
         what: '"no order beyond thermal motion"',
@@ -156,7 +163,8 @@ export const CLAIMS = Object.freeze([
         backedBy: allOf(
             'analyze_modulations',
             { tool: 'analyze_displacement_directions', with: 'site_ref', say: 'analyze_displacement_directions on each kind of site (site_ref)' },
-            { tool: 'analyze_clusters', with: 'element', each: 'clusterElement', say: clusterSay }
+            { tool: 'analyze_clusters', with: 'element', each: 'clusterElement', say: clusterSay },
+            { tool: 'polyhedral_distortion', with: 'centre', each: 'networkCentre', say: networkSay }
         ),
         prompt: { phrase: '"no order"', analysis: 'analyze_modulations' }
     })
@@ -205,7 +213,7 @@ const meets = (call, item) => call.name === item.tool
  * tool names, null for every tool), each with `extra` phrasings joined
  * ({ [id]: { asserted, literal } }), read in sentences about the run
  * (`elements`, the run's), with `each` values from `values`
- * ({ clusterElement: [...] }). Returns { rows, unmet(text, ran) }: unmet is
+ * ({ clusterElement: [...], networkCentre: [...] }). Returns { rows, unmet(text, ran) }: unmet is
  * [{ id, what, missing }] in row order, `missing` naming only offered tools.
  */
 export const claimsOf = ({ offered = null, extra = null, elements = [], values = {} } = {}) => {

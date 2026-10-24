@@ -397,6 +397,56 @@ describe('displacement-anisotropy: the user\'s interview answers (2026-10-24)', 
     });
 });
 
+describe('local-order: the user\'s interview answers (2026-10-24)', () => {
+    const demoRun = { rValueFile, plotFiles, structure };
+    const orderTools = [...buildRunTools(demoRun), ...hostTools];
+    const rulesOf = (done) => done.audit.map((finding) => finding.rule);
+    const modulations = { calls: [{ name: 'analyze_modulations', args: {} }] };
+
+    it('answer 6: the Demo\'s in-phase correlation is neighbouring cells moving together (correlated motion), not order — and never "no correlation"', async () => {
+        const right = await replay([modulations, {
+            text: 'Ga, Se and Ta displacements are correlated in phase between neighbouring cells: neighbouring cells moving together (correlated motion), '
+                + 'not order, with no ordered zone-boundary point.\nOutcome: achieved — correlated motion.'
+        }], { run: demoRun, offered: orderTools });
+        const inPhase = right.toolMessages[0].checks.find((check) => /correlated in phase/.test(check.text));
+        expect(inPhase.text).toMatch(/— neighbouring cells moving together \(correlated motion; as RMC's long waves and acoustic-like thermal motion give\), not order\.$/);
+        expect(rulesOf(right.done)).toEqual([]);
+        for (const [text, rule] of [
+            ['Ga, Se and Ta show short-range order between cells.', 'correlated-motion'],
+            ['The Ga, Se and Ta displacements are uncorrelated between cells.', 'no-correlation']
+        ]) {
+            const wrong = await replay([modulations, { text: `${text}\nOutcome: achieved — x.` }], { run: demoRun, offered: orderTools });
+            expect({ text, rules: rulesOf(wrong.done) }).toEqual({ text, rules: [rule] });
+            expect(wrong.done.outcome.status).toBe('not verified');
+        }
+    });
+
+    it('answer 5: "no order" needs polyhedral_distortion on the Demo\'s GaSe₄ only where the run offers it; its diffuse verdict is analyze_modulations\' own', async () => {
+        const list = { calls: [
+            { name: 'analyze_modulations', args: {} },
+            { name: 'analyze_displacement_directions', args: { site_ref: 1 } },
+            { name: 'analyze_clusters', args: { element: 'Ta', r_min: 2.65, r_max: 3.33 } }
+        ] };
+        const answer = { text: 'There is no local order beyond thermal motion in the tests that ran: in phase only, the Ga, Se and Ta correlation is '
+            + 'correlated motion.\nOutcome: partial — the tests that ran.' };
+        // Without polyhedral_distortion (the Demo today): the list as before, met.
+        const without = await replay([list, answer], { run: demoRun, offered: orderTools });
+        expect(without.done.gates).toEqual([]);
+        expect(rulesOf(without.done)).toEqual([]);
+        // With it offered: Ga's tetrahedra (no finite cluster) are asked for, and a call centred on Ga meets the list.
+        const polyhedra = {
+            name: 'polyhedral_distortion',
+            description: 'Distortion of the coordination polyhedra of a centre element (a stand-in for the tool).',
+            parameters: { type: 'object', properties: { centre: { type: 'string' }, ligand: { type: 'string' } }, required: ['centre', 'ligand'] },
+            run: async () => ({ data: { measured: true }, checks: [] })
+        };
+        const asked = await replay([list, answer, { calls: [{ name: 'polyhedral_distortion', args: { centre: 'Ga', ligand: 'Se' } }] }, answer],
+            { run: demoRun, offered: [...orderTools, polyhedra] });
+        expect(asked.done.gates).toEqual([{ round: 1, id: 'no-order', missing: ['polyhedral_distortion for Ga (centre Ga: its polyhedra form no finite cluster)'] }]);
+        expect(rulesOf(asked.done)).toEqual([]);
+    });
+});
+
 describe('the real model\'s correct answers (gemma4:26b, 2026-10-11)', () => {
     // The checks on an answer through the verification's interface: the
     // tools' facts recorded, the run context given, no claim offered.

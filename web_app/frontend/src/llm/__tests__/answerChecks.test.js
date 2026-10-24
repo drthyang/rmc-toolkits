@@ -352,7 +352,6 @@ describe('the long-wave check: order at a box-scale wavevector (the user\'s rule
             'The strongest Ta mode is a long wave at q = (0.1, 0, 0): a correlation the finite box can\'t represent, so it says nothing about order at its own q.',
             'Ta\'s strongest mode is a long-wavelength wave, q = (0.1, 0, 0) at 6× the median: box-scale displacement correlations, not a crystallographic superstructure.',
             'The modulation at q = (0.1, 0, 0) is a long wave, not order.',
-            'No order: the long waves are box-scale correlations.',
             'Ordered Ta displacements at q = (0, 0, ½): a superstructure doubling the cell along c.',
             'Order at q = (0.3, 0, 0) passed its own test.',
             'Ta displacements are ordered along [0 0 1].',
@@ -360,6 +359,8 @@ describe('the long-wave check: order at a box-scale wavevector (the user\'s rule
         ]) {
             expect({ text, rules: rules(text, { facts }) }).toEqual({ text, rules: [] });
         }
+        // The long-wave check stays quiet on a denial; the no-order check reads the ordered point (the local-order interview, 2026-10-24).
+        expect(rules('No order: the long waves are box-scale correlations.', { facts })).toEqual(['no-order']);
     });
 
     it('needs an analyze_modulations of the question (its bound), as the superstructure check', () => {
@@ -594,6 +595,72 @@ describe('the disorder check: a split or flat-topped site called disorder before
             expect({ text, rules: rules(text, { facts: [sites] }) }).toEqual({ text, rules: [] });
         }
         expect(rules('Site 3 is disordered.', {})).toEqual([]);
+    });
+});
+
+describe('the diffuse verdict as the user reads it: antiphase is order, in phase correlated motion (the local-order interview, 2026-10-24)', () => {
+    // analyze_modulations' facts: no ordered point or mode, and the diffuse verdict that passed its bar (the fixture's two cases).
+    const modulation = (diffuse, extra = {}) => ({
+        facts: [{ modulation: { elements: ['Ag', 'Nb'], ordered: [], general: [], long_wave_q: 0.25, long_waves: [], diffuse, ...extra } }]
+    });
+    const antiphase = modulation([{ element: 'Nb', phase: 'antiphase', lag: [1, 0, 0], correlation: -0.29, sigma: 3.7 }]);
+    const inPhase = modulation([{ element: 'Nb', phase: 'in_phase', lag: [0, 0, 1], correlation: 0.47, sigma: 4.6 }]);
+    const none = modulation([]);
+
+    it('antiphase is order: "no order" is flagged, short-range order is not', () => {
+        for (const text of ['There is no local order beyond thermal motion.', 'No order: the Nb displacements are thermal.', 'Nothing beyond thermal motion in this configuration.']) {
+            expect({ text, rules: rules(text, antiphase) }).toEqual({ text, rules: ['no-order'] });
+        }
+        expect(audit('There is no local order.', antiphase)[0].text).toBe('The answer says there is no order, but analyze_modulations found order '
+            + 'between cells in this question: Nb in antiphase between cells [1 0 0] apart (−0.29, 3.7σ).');
+        for (const text of [
+            'Nb shows short-range order between cells: neighbouring cells [1 0 0] apart move in antiphase.',
+            'There is no order beyond the antiphase correlation of Nb between neighbouring cells.',
+            'No order that doubles the cell was found.'
+        ]) {
+            expect({ text, rules: rules(text, antiphase) }).toEqual({ text, rules: [] });
+        }
+    });
+
+    it('in phase is correlated motion, not order: order between cells is flagged, "no order" is not', () => {
+        for (const text of ['Nb shows short-range order between cells.', 'The in-phase correlation is order between neighbouring cells.']) {
+            expect({ text, rules: rules(text, inPhase) }).toEqual({ text, rules: ['correlated-motion'] });
+        }
+        expect(audit('Nb shows short-range order.', inPhase)[0].text).toBe('The answer claims order between cells, but the only correlation between '
+            + 'cells analyze_modulations found in this question is in phase (Nb in phase between cells [0 0 1] apart (+0.47, 4.6σ)): neighbouring '
+            + 'cells moving together (correlated motion), not order; only antiphase or general-q order past its bar is order.');
+        for (const text of [
+            'There is no local order beyond thermal motion: neighbouring Nb cells move together (correlated motion), not order.',
+            'Nb displacements are correlated in phase between neighbouring cells, not short-range order.'
+        ]) {
+            expect({ text, rules: rules(text, inPhase) }).toEqual({ text, rules: [] });
+        }
+        // Nothing passed at all: order between cells is unsupported too.
+        expect(audit('Nb shows short-range order.', none)[0].text).toMatch(/^The answer claims order between cells, but no analyze_modulations of this question found any/);
+    });
+
+    it('in phase never supports "no correlation": flagged whenever a correlation passed, in phase or antiphase; quiet when none did', () => {
+        const sayings = ['The Nb displacements are uncorrelated between cells.', 'There is no correlation between neighbouring cells.', 'Neighbouring cells move independently.'];
+        for (const text of sayings) {
+            expect({ text, rules: rules(text, inPhase) }).toEqual({ text, rules: ['no-correlation'] });
+            expect({ text, rules: rules(text, antiphase) }).toEqual({ text, rules: ['no-correlation'] });
+            expect({ text, rules: rules(text, none) }).toEqual({ text, rules: [] });
+        }
+        expect(audit('The Nb displacements are uncorrelated.', inPhase)[0].text).toBe('The answer says the displacements are not correlated, but '
+            + 'analyze_modulations found a correlation between cells past its bar in this question: Nb in phase between cells [0 0 1] apart '
+            + '(+0.47, 4.6σ) (in phase: correlated motion, not order, but correlation all the same).');
+        for (const text of ['The Nb displacements are not uncorrelated.', 'There is no correlation between the two sites\' kurtoses.', 'Is there a correlation between cells?']) {
+            expect({ text, rules: rules(text, inPhase) }).toEqual({ text, rules: [] });
+        }
+    });
+
+    it('an ordered point or general mode is order too; without analyze_modulations nothing is read', () => {
+        expect(audit('There is no local order.', modulation([], { ordered: [{ element: 'Nb', q: [0.5, 0.5, 0] }] }))[0].text).toMatch(/: Nb ordered at q = \(½, ½, 0\)\.$/);
+        expect(rules('There is no local order.', modulation([], { general: [{ element: 'Nb', q: [0.375, 0, 0] }] }))).toEqual(['no-order']);
+        expect(rules('Nb shows short-range order between cells.', modulation([], { general: [{ element: 'Nb', q: [0.375, 0, 0] }] }))).toEqual([]);
+        for (const text of ['There is no local order.', 'Nb shows short-range order between cells.', 'The displacements are uncorrelated.']) {
+            expect({ text, rules: rules(text, {}) }).toEqual({ text, rules: [] });
+        }
     });
 });
 

@@ -398,7 +398,10 @@ describe('where a finding stands, and validation batch 1', () => {
     // proposed fix.
     const DECISIONS = join(FRONTEND, 'validation/findings/decisions');
     // The interview answer checks' records (2026-10-24), one per skill.
-    const INTERVIEW_RECORDS = ['2026-10-24-coordination-shells-interview', '2026-10-24-displacement-anisotropy-interview', '2026-10-24-local-symmetry-interview'];
+    const INTERVIEW_RECORDS = [
+        '2026-10-24-coordination-shells-interview', '2026-10-24-displacement-anisotropy-interview', '2026-10-24-local-order-interview',
+        '2026-10-24-local-symmetry-interview'
+    ];
     const decisions = () => {
         const results = parseFindingFiles(readdirSync(DECISIONS).map((name) => ({ name, text: readFileSync(join(DECISIONS, name), 'utf8') })));
         results.forEach((result) => expect(result.errors, result.file).toEqual([]));

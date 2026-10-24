@@ -23,7 +23,9 @@
 // SWEEP_RULES below): the split site, the cluster elements, the lower
 // group's tolerance, a mode's polarisation, a joined shell's split, and a
 // direction's resolution and tier (a split site's peak names its direction
-// only as a finding of the tool's tiers; 2026-10-24).
+// only as a finding of the tool's tiers; 2026-10-24). The diffuse verdict
+// is read as the user reads it (2026-10-24): antiphase is order between
+// cells (a modulation claim with no q), in phase correlated motion.
 //
 // Each reading is recorded with the value it rests on, so a misleading
 // result can be traced to the page that misled.
@@ -33,7 +35,9 @@ import { clusterElementsOf, extractPeaks, shellCatalogue } from '../src/llm/cont
 import { lowerGroupTolerance, NOISE_FLOOR_MARGIN, symmetryNoiseFloor } from '../src/llm/context/runContext';
 import { describeSymmetry } from '../src/symmetryModel';
 import { unitCellVectors } from '../src/pcaCrystalFrame';
-import { cartesianToUvw, directionCandidate, directionResolved, directionTier, neighbourFrequency, splitDisplacement } from '../src/copilotTools';
+import {
+    cartesianToUvw, directionCandidate, directionResolved, directionTier, isCorrelatedMotion, isDiffuseOrder, neighbourFrequency, splitDisplacement
+} from '../src/copilotTools';
 import { DIRECTION_DEFAULTS, directionReadoutRequest } from '../src/directionSettings';
 import { isSplitSite, splitSiteEvidence } from '../src/workers/clusters';
 import { normalizeVerdict } from './verdict';
@@ -273,6 +277,13 @@ export const runArmA = async (copilotRun) => {
  *                   2026-10-24.2): the peak counts only as a finding (≥ 3σ,
  *                   ≥ 1.2× isotropic, held at the neighbouring resolution),
  *                   else PC1; until then any significant peak.
+ *   diffuse order   isDiffuseOrder (copilotTools.js, the tool's facts; the
+ *                   local-order interview, 2026-10-24, protocol 2026-10-24.2):
+ *                   a diffuse verdict in antiphase past its bar is order
+ *                   between cells, a modulation claim with no q (it explains
+ *                   its element's split sites, as an ordered point does); in
+ *                   phase it is correlated motion, never claimed; until then
+ *                   the verdict was not read.
  *
  * Arm A's rules (ARM_A_RULES) are the frozen protocol's and stay as they were,
  * apart from the Displacement Directions page's defaults, which are the
@@ -296,7 +307,10 @@ export const SWEEP_RULES = Object.freeze({
     directionResolved,
     // The tool's tiers (the displacement-anisotropy interview, 2026-10-24):
     // a finding holds at the neighbouring resolution.
-    directionTier: Object.freeze({ tier: directionTier, candidate: directionCandidate, neighbour: neighbourFrequency })
+    directionTier: Object.freeze({ tier: directionTier, candidate: directionCandidate, neighbour: neighbourFrequency }),
+    // The diffuse verdict as order (the local-order interview, 2026-10-24):
+    // antiphase only; in phase is correlated motion.
+    diffuseOrder: isDiffuseOrder
 });
 
 /**
@@ -347,9 +361,14 @@ const pointAt = (entry, q) => [...(entry.zoneBoundary || []), ...(entry.stronges
 // The modulation engine's verdicts A+ reads, per element tested, as a
 // reading, with the polarisation of each ordered point (the direction a
 // claim rests on). Diffuse order between cells (verdict.diffuseOrder, plan
-// item 4.4) is not among them: the verdict has no feature kind for it, and
-// adding one changes the scoring (the user's call).
-const MODULATION_FINDINGS_READ = ['cellDoubling', 'generalOrder', 'longWave'];
+// item 4.4) since protocol 2026-10-24.2 (the local-order interview): only
+// antiphase is order — a modulation claim with no q, the verdict's one kind
+// for order between cells, which scores as it stands (a planted modulation
+// with a q is found with its q undetermined) — and in phase is correlated
+// motion, read and never claimed.
+const MODULATION_FINDINGS_READ = ['cellDoubling', 'generalOrder', 'longWave', 'diffuseOrder'];
+const isAntiphase = (entry) => SWEEP_RULES.diffuseOrder(entry.verdict.diffuseOrder);
+const isInPhase = (entry) => isCorrelatedMotion(entry.verdict.diffuseOrder);
 const modulationReading = (payload) => {
     const tested = (payload.elements || []).filter((entry) => entry.sites);
     const named = (name) => tested.filter((entry) => entry.verdict[name].answer === true)
@@ -359,14 +378,20 @@ const modulationReading = (payload) => {
         .map((q) => ({ q, polarisation: pointAt(entry, q)?.polarisation }))
         .filter((item) => item.polarisation)
         .map(({ q, polarisation }) => ({ q: qText(q), uvw: uvwText(polarisation.uvw), share: round(polarisation.share) }));
+    const diffuse = (pick) => tested.filter(pick)
+        .map((entry) => `${entry.element} [${entry.diffuse.lag.join(' ')}] ${round(entry.diffuse.correlation, 2)} at ${round(entry.diffuse.sigma, 3)}σ`)
+        .join('; ') || 'none';
     return {
         value: Object.fromEntries(tested.map((entry) => {
-            const verdicts = Object.fromEntries(MODULATION_FINDINGS_READ.map((name) => [name, said(entry.verdict[name])]));
+            const verdicts = Object.fromEntries(MODULATION_FINDINGS_READ
+                .filter((name) => entry.verdict[name])
+                .map((name) => [name, said(entry.verdict[name])]));
             const rows = polarisations(entry);
             return [entry.element, rows.length ? { ...verdicts, polarisation: rows } : verdicts];
         })),
         reading: [['cellDoubling', 'cell doubling'], ['generalOrder', 'order at a general q'], ['longWave', 'long wave']]
             .map(([name, label]) => `${label}: ${named(name).join('; ') || 'none'}`).join('; ')
+            + `; diffuse order (antiphase): ${diffuse(isAntiphase)}; correlated motion (in phase, not order): ${diffuse(isInPhase)}`
     };
 };
 
@@ -440,6 +465,14 @@ export const runArmSweep = async (copilotRun) => {
         // Polarisation: the engine's, at the q that decided the order (plan item 4.3).
         const polarisation = pointAt(entry, q)?.polarisation;
         features.push({ kind: 'modulation', element: entry.element, q, direction_uvw: polarisation ? uvwText(polarisation.uvw) : null });
+    }
+    // Diffuse order between cells in antiphase (the local-order interview,
+    // protocol 2026-10-24.2): order with no single q, its element's split
+    // sites explained by it as by an ordered point; in phase is not order.
+    for (const entry of tested.filter(isAntiphase)) {
+        if (modulated.has(entry.element)) continue;
+        modulated.add(entry.element);
+        features.push({ kind: 'modulation', element: entry.element, q: null, direction_uvw: null });
     }
 
     // Split sites not explained by an ordered mode. The direction: the map's

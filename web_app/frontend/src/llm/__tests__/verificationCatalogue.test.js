@@ -42,13 +42,14 @@ describe('the binding test: EVIDENCE_RULES and the claim catalogue', () => {
             coordination: ['compute_bond_angles'],
             // "a lowering …, measure_symmetry_lowering": where it is not offered, the gate asks for detect_symmetry.
             lowering: ['detect_symmetry'],
-            // '"no order", every one of them': the gate asks for a per-site directions map and analyze_clusters
-            // on each element whose own first shell is a finite cluster's, and for neither polyhedral_distortion,
-            // find_gr_peaks nor measure_symmetry_lowering.
+            // '"no order", every one of them': the gate asks for a per-site directions map, analyze_clusters
+            // on each element whose own first shell is a finite cluster's and polyhedral_distortion on each
+            // centre of polyhedra no finite cluster holds (the local-order interview, 2026-10-24; only where
+            // the turn offers it), and for neither find_gr_peaks nor measure_symmetry_lowering.
             'no-order': [
                 'analyze_displacement_directions with site_ref',
                 'analyze_clusters with element for each clusterElement',
-                'not polyhedral_distortion',
+                'polyhedral_distortion with centre for each networkCentre',
                 'not find_gr_peaks',
                 'not measure_symmetry_lowering'
             ]

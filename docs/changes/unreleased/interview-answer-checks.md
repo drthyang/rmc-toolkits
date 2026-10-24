@@ -37,3 +37,15 @@
   evidence gate reads a flat-topped site called disordered as it reads a split site. Approved by
   the user, 2026-10-24
   (`validation/findings/decisions/2026-10-24-displacement-anisotropy-interview.json`).
+- **local-order.** "No order" now also needs `polyhedral_distortion` on each centre of octahedra or
+  tetrahedra no finite cluster holds (the Demo's Ga, a perovskite's B site), where the run offers
+  it; its diffuse verdict is `analyze_modulations`' own. The diffuse verdict is read as the user
+  reads it: only antiphase (or general-q) order past its bar is order; in-phase correlation is
+  "neighbouring cells moving together (correlated motion), not order", as `analyze_modulations` now
+  says it, and never supports "no correlation". Three checks on the answer: `no-order` ("no order"
+  when order was found), `correlated-motion` (order between cells when only in-phase correlation, or
+  none, was found) and `no-correlation` (uncorrelated displacements when a correlation passed, in
+  phase included). Arm A+ claims an antiphase verdict as a modulation with no q, the verdict's one
+  kind for order between cells; no dev case passes the diffuse test, so no dev record moves.
+  Approved by the user, 2026-10-24
+  (`validation/findings/decisions/2026-10-24-local-order-interview.json`).
