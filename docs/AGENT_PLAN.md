@@ -29,7 +29,7 @@ drafts of batch 1 wait in PR #71 for the user's review.
   snapshot of the prompt, the tool list and the descriptions (phase 1.7) shows any change in the
   diff.
 
-## Status (plan-status 4, 2026-10-19)
+## Status (plan-status 5, 2026-10-24)
 
 **Scope.** On 2026-10-19 the user widened the work to the whole plan, through phase 6, and
 delegated approvals to the manager. Still the user's: skill text (#71, 5.2, 5.4, and 5.5's
@@ -83,26 +83,31 @@ PR, and a decision record in `validation/findings/decisions/` and here.
 | — | #111 | Flask mode: the Copilot gets the plot data (the same 11 analyses and context as the browser path) |
 | 4.4, F1 | #112 | an independent-cell null for the modulation tests; a test for diffuse order between cells (protocol 2026-10-19.16) |
 | 6 (cut rule) | #113 | one window-cut rule, the g(r) CN margin (approved by the user; protocol 2026-10-19.18) |
+| 1.6 (ii) dev | #115 | the dev marginal situation re-set for the corrected null (protocol 2026-10-19.19) |
+| 1.6 (ii) test | #116 | the held-out marginal pair re-set by a fresh blind author (protocol 2026-10-19.20) |
+| — | #117 | plan status 4 |
+| 5.2 | #71 | the batch-1 skill drafts: the review's proposals and a new local-order skill |
+| 5.2, 5.6 | #114 | the skills' facts synced with the tools, and the five interviews: every skill "Interviewed 2026-10-24" |
+| — | #119 | the fit-assessment interview's rules in code: convergence on every χ² term and the total, the 5 % constraint, two answer checks (protocol 2026-10-24.1) |
+| — | #121 | the interview answers of four skills as checks: coordination shells, local symmetry, displacement anisotropy, local order (protocol 2026-10-24.2) |
+| — | #122 | the χ² clamp test compared to 1e-12 relative (the oldest-deps CI job) |
+| — | #118 | `polyhedral_distortion`: a polyhedron's distortion indices, per polyhedron and for the average structure (protocol 2026-10-24.3) |
+| — | #120 | the G(r) error ribbons: F(Q)'s σ propagated through RMCProfile's transform (protocol 2026-10-24.4) |
 
-**In progress:**
-- the marginal judgment situation re-set for the corrected null: the dev pair (#115, protocol
-  2026-10-19.19) and the held-out pair, re-chosen by a fresh blind author from the updated spec (#116,
-  protocol 2026-10-19.20);
-- #71 (the batch-1 skill drafts, brought up to date with main) and #114 (the skill fact sync,
-  stacked on it), both waiting for the user's review.
+**In progress:** phase 6, the changelog fold (this PR): the change fragments of #80–#122 folded
+into CHANGELOG.md's Unreleased section, in merge order; no version, release or tag.
 
-**Then:** phase 6. The browser check of what jsdom can't cover (its first pass found the Flask-mode
-Copilot without plot data, fixed in #111); the changelog fold; the freeze: arms A and A+ on dev
-and test with `--final` from a clean tree, and the frozen commit recorded (no tag; tags are the
-user's); the report.
+**Then:** the freeze: arms A and A+ on dev and test with `--final` from a clean tree, and the
+frozen commit recorded (no tag; tags are the user's); the report.
 
-**Waiting for the user (preconditions for the freeze):**
-- the skill review: #71 and the fact sync #114 (the user decided on 2026-10-19 to fix the skills'
-  facts now and hold the interviews after v1). After #114 the skill lint holds no fact entry; its one
-  judgment entry and the interview items wait for the interviews;
-- 5.4 and 5.5's on-demand references, which are skill text;
-- whether a tool's own refusal (a bond-angle window that cuts the shell) should still count as the
-  analysis behind a coordination claim (#11's drift item A5).
+**Waiting for the user:**
+- the live-run go/no-go, after the freeze;
+- the user's post-v1 list:
+  - the neighbouring-ν choice for a direction finding;
+  - the "most anharmonic" ranking;
+  - A5: whether a tool's own refusal (a bond-angle window that cuts the shell) counts as the
+    analysis behind a coordination claim;
+  - the eval gaps no check can catch.
 
 **Decisions** (the manager, on the user's delegation, 2026-10-19):
 - **1.8:** arm C removes the whole method, through a structural switch in the turn module.
@@ -144,8 +149,16 @@ user's); the report.
   freeze — local models first, then Sonnet 5.5 within the $40 cap, one heavy model at a time at 48k
   or more, synthetic cases only, with streaming and the divider after a configuration change the
   first things to watch.
-- **5.4:** waits for the user's skill review. Arm B's descriptions keep their method advice until
-  the skill text carries it; arm C drops it through 1.8.
+- **The skill interviews (the user, 2026-10-24):** all five skills are now the user's own answers
+  (#114), and their rules are in code: every-term convergence and the 5 % constraint (#119), the
+  four skills' answer checks (#121), `polyhedral_distortion` for an extended network (#118), and
+  the G(r) error ribbons for residuals judged against σ(r) (#120). The records:
+  `2026-10-24-fit-assessment-interview.json`, `2026-10-24-coordination-shells-interview.json`,
+  `2026-10-24-local-symmetry-interview.json`, `2026-10-24-displacement-anisotropy-interview.json`,
+  `2026-10-24-local-order-interview.json`, `2026-10-24-polyhedral-distortion.json` and
+  `2026-10-24-ft-error-propagation.json`, in `validation/findings/decisions/`.
+- **5.4:** arm B's descriptions keep their method advice until the skill text carries it; arm C
+  drops it through 1.8.
 - **The held-out breathing case:** recomposed, because its cluster was the skills' reference compound,
   which `read_skill` serves to arm B. The user may reverse this (its record is in
   `validation/findings/decisions/`).
