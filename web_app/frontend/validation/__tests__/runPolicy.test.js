@@ -24,7 +24,7 @@ import { ANTI_REPEAT_TEMPERATURE, providerModel } from '../../src/llm/provider/m
 import { PROVIDER_PRESETS } from '../../src/llm/provider/presets';
 import { buildCase, DEV_CASES } from '../cases';
 import { renderReport } from '../report';
-import { liveRun } from '../run';
+import { liveRun, parseLimits } from '../run';
 import { MODELS, resolveModel } from '../models';
 import {
     buildRunPolicy, CONTEXT_GUARD, FINAL_ROUND_FORMS, MIN_CONTEXT_TOKENS, noteWindowAfter, preflight, REPLY_CAPS, replyCapOf, RunPolicyError,
@@ -227,6 +227,15 @@ describe('a live run under the policy (run.js liveRun, fake servers)', () => {
         await expect(liveRun({ built: built('dev-offcentre'), arm: 'C', model, runIndex: 0, base: providerModel(model, { session: {} }) }))
             .rejects.toBeInstanceOf(RunPolicyError);
         expect(chats).toEqual([]);
+    });
+
+    it('--limits: the batch\'s budgets reach the turn and the record keeps them', async () => {
+        fakeServer({ kind: 'lmstudio', loaded: 49152, replies: [{ call: ['list_sites', {}] }, { text: ANSWER }] });
+        const model = qwen();
+        const limits = parseLimits('maxTurnMs=2400000, requestMaxMs=1200000');
+        const record = await liveRun({ built: built('dev-offcentre'), arm: 'C', model, runIndex: 0, base: providerModel(model, { session: {} }), limits });
+        expect(record.error).toBeNull();
+        expect(record.policy.limits).toEqual({ ...TURN_LIMITS, maxTurnMs: 2400000, requestMaxMs: 1200000 });
     });
 
     it('LM Studio at 48k: the record keeps the policy and the window, read before and after; the transcript and the report show it', async () => {
@@ -557,5 +566,21 @@ describe('the final round\'s tool_choice \'none\', as the model port sends it to
         }
         // A cloud provider is never probed: only its chat endpoint is called.
         if (preset.cloud) expect(calls.map((call) => call.url)).toEqual(chats.map((chat) => chat.url));
+    });
+});
+
+describe('parseLimits (run.js --limits)', () => {
+    it('reads key=value pairs over the turn\'s budgets', () => {
+        expect(parseLimits('maxTurnMs=2400000,requestMaxMs=1200000')).toEqual({ maxTurnMs: 2400000, requestMaxMs: 1200000 });
+        expect(parseLimits(' maxRounds=6 ,')).toEqual({ maxRounds: 6 });
+    });
+    it('refuses an unknown budget, a value that is not a positive integer, a malformed pair and an empty flag', () => {
+        expect(() => parseLimits('maxTurnSeconds=60')).toThrow(/unknown budget 'maxTurnSeconds'/);
+        expect(() => parseLimits('maxTurnMs=0')).toThrow(/positive integer/);
+        expect(() => parseLimits('maxTurnMs=1.5e3x')).toThrow(/positive integer/);
+        expect(() => parseLimits('maxTurnMs=12.5')).toThrow(/positive integer/);
+        expect(() => parseLimits('maxTurnMs')).toThrow(/not key=value/);
+        expect(() => parseLimits(true)).toThrow(/key=value pairs/);
+        expect(() => parseLimits(',')).toThrow(/at least one/);
     });
 });
