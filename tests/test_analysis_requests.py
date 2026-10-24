@@ -115,6 +115,7 @@ class AnalysisRequestContractTests(unittest.TestCase):
         self.assertEqual(tuple(limits[("kde", "grid")]["clamp"]), backend_app.PCA_GRID_CLAMP)
         self.assertEqual(limits[("orientation", "smoothing")]["le"], backend_app.MAX_ORIENTATION_SMOOTHING)
         self.assertEqual(limits[("clusters", "rMax")]["le"], backend_app.MAX_CLUSTER_WINDOW)
+        self.assertEqual(limits[("distortion", "rMax")]["le"], backend_app.MAX_DISTORTION_WINDOW)
 
     def test_every_case_on_the_flask_adapter(self):
         replayed = 0

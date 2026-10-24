@@ -37,7 +37,8 @@ export const ANALYSIS_ROUTES = Object.freeze({
     orientation: '/api/pca/orientation',
     triplets: '/api/triplets',
     clusters: '/api/clusters',
-    modulations: '/api/modulations'
+    modulations: '/api/modulations',
+    distortion: '/api/distortion'
 });
 
 /**
