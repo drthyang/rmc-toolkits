@@ -622,12 +622,13 @@ describe('where a finding stands, and validation batch 1', () => {
     // The interview answer checks (2026-10-24): one record per skill, each filed
     // with its change, so it names no commit (a commit cannot name its own
     // hash) and stands as approved until the PR merges.
-    it('decisions: the interview answer checks, one record per skill, approved by the user directly, with their known-answer tests', () => {
+    it('decisions: the interview answer checks, one record per skill, approved by the user directly and implemented with their known-answer tests', () => {
         for (const id of INTERVIEW_RECORDS) {
             const record = decisions()[id];
             expect(record, id).toMatchObject({
-                kind: 'orchestration', needs_user_approval: true, status: 'approved', approval: { by: 'user', date: '2026-10-24', batch: 3 }
+                kind: 'orchestration', needs_user_approval: true, status: 'implemented', approval: { by: 'user', date: '2026-10-24', batch: 3 }
             });
+            expect(record.commit, id).toMatch(/^[0-9a-f]{7,40}$/);
             expect(splitOf(record.case), id).toBe('dev');
             for (const field of ['evidence', 'proposed_fix']) {
                 expect(record[field], `${id} ${field}`).toMatch(/Approved by the user, 2026-10-24\./);
