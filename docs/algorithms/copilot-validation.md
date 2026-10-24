@@ -1540,8 +1540,8 @@ estimate + 8,192 tokens of reply, the `max_tokens` each request is sent with sin
 `meteredModel`, a decorator over the model port: it reserves when the request is prepared, so a
 refused request is never sent); a JSON-lines ledger keeps the total across restarts. The client sees no usage report, so the charge is an upper bound: the
 Copilot's conservative token estimate (2.5 characters per token of text), with every prompt token
-at the dearest prompt rate. Prices (USD per million tokens, 2026-10-14; the cache read fixed on
-2026-10-24): input $2, output $10, cache hits $0.20, cache writes $2.50, so prompts are charged
+at the dearest prompt rate. Prices (USD per million tokens, 2026-10-14; checked against the pricing
+page on 2026-10-24): input $2, output $10, cache hits $0.10, cache writes $2.50, so prompts are charged
 at $2.50. The charge counts what streamed back, so thinking billed as output but returned with
 no text (Sonnet 5.5 thinks adaptively by default) is not in it: each request's reservation is
 bounded by `max_tokens`, the ledger's charge for it is not. `RMC_EVAL_SONNET_MODEL`,

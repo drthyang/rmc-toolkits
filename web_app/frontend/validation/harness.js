@@ -266,8 +266,8 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // the retry asked again unchanged), and every reply is capped at the
 // 8,192 tokens the spend tracker prices (max_tokens in the body, thinking
 // within it: models.js maxTokens = spend.js MAX_REPLY_TOKENS), so the
-// tracker's worst case is enforced; its cap is $20 and its cache-read price
-// $0.20 per million tokens. The run policy records both (temperature
+// tracker's worst case is enforced; its cap is $20 (the cache-read price
+// stays $0.10, the pricing page's for claude-sonnet-5-5). The run policy records both (temperature
 // { base: null, warmer_retry_min: null, sent: false }, reply_cap max_tokens
 // 8192). The local models' requests, the prompt, the tools and the scoring
 // are unchanged; arms A and A+ do not send requests.

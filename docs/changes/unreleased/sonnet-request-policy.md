@@ -4,7 +4,8 @@
   only its default sampling, and a request carrying `temperature` is refused with HTTP 400. Its
   `validation/models.js` entry now sets `temperature: null` (NEBULA's setting) and
   `maxTokens: MAX_REPLY_TOKENS` (8,192). Its spend cap is $20 (RMC's share of the cycle's $40 total
-  may be up to $28; $12 before), and its cache-read price is $0.20 per million tokens.
+  may be up to $28; $12 before). Its cache-read price stays $0.10 per million tokens (the pricing
+  page's for `claude-sonnet-5-5`, checked 2026-10-24).
 - The model port (`providerModel`) takes the two settings, only when given, so the dock's requests
   are unchanged. With `temperature: null` no request carries a temperature key, the warmer retry
   included: the retry is still asked, but unchanged. `client.js` and `ollama.js` leave a null

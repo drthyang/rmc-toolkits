@@ -386,9 +386,9 @@ describe('the API model\'s defaults', () => {
     it('Sonnet: its id and prices by default, the key required, prompt tokens at the cache-write rate', () => {
         expect(() => resolveModel('claude-sonnet-5.5', {})).toThrow(/set ANTHROPIC_API_KEY/);
         const sonnet = resolveModel('claude-sonnet-5.5', { ANTHROPIC_API_KEY: 'k' });
-        // The user's decisions of 2026-10-24: a $20 cap, the cache read at $0.20.
+        // The user's decision of 2026-10-24: a $20 cap (the cache read is the pricing page's $0.10).
         expect(sonnet).toMatchObject({ model: 'claude-sonnet-5-5', capUSD: 20, splits: ['test'], arms: ['B'], runsPerCase: 3 });
-        expect(sonnet.prices).toEqual({ inputPerMTok: 2, outputPerMTok: 10, cacheReadPerMTok: 0.2, cacheWritePerMTok: 2.5 });
+        expect(sonnet.prices).toEqual({ inputPerMTok: 2, outputPerMTok: 10, cacheReadPerMTok: 0.1, cacheWritePerMTok: 2.5 });
         const tracker = createSpendTracker({ capUSD: sonnet.capUSD, prices: sonnet.prices, ledger: memoryLedger() });
         // The planned test set, arm B, 3 runs: ~2.4M prompt + 0.15M reply tokens.
         expect(tracker.cost(2.4e6, 0.15e6)).toBeCloseTo(7.5, 6);

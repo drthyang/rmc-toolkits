@@ -68,12 +68,12 @@ export const MODELS = Object.freeze({
         runsPerCase: 3,
         // Arm B only: B and C together would roughly double the spend.
         arms: ['B'],
-        // USD per million tokens (2026-10-14, from the orchestrator; the
-        // cache read fixed to $0.20 on the user's decision, 2026-10-24). The
+        // USD per million tokens (2026-10-14, from the orchestrator; checked
+        // against the pricing page for claude-sonnet-5-5 on 2026-10-24). The
         // tracker charges every prompt token at the dearest prompt rate (a
         // cache write, $2.50), an upper bound whether or not a prompt is
         // cached: the client sees no usage report to tell.
-        prices: { inputPerMTok: 2, outputPerMTok: 10, cacheReadPerMTok: 0.2, cacheWritePerMTok: 2.5 },
+        prices: { inputPerMTok: 2, outputPerMTok: 10, cacheReadPerMTok: 0.1, cacheWritePerMTok: 2.5 },
         priceEnv: { inputPerMTok: 'RMC_EVAL_PRICE_IN', outputPerMTok: 'RMC_EVAL_PRICE_OUT' }
     }
 });
