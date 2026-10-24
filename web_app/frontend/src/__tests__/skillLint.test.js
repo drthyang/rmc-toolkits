@@ -219,9 +219,10 @@ describe('the skill lint (AGENT_PLAN 5.1)', () => {
         }
     });
 
+    // None is held since the skill fact sync; the lint's own tests below pin
+    // the two sides a gate finding carries (`written`, `decidedBy`).
     it('names each gate mismatch it holds with a line: the line, the skill\'s number as written and the app\'s constant', () => {
         const entries = ALLOW_LIST.filter((item) => item.check === 'gate' && item.line != null);
-        expect(entries.length).toBeGreaterThan(0);
         for (const entry of entries) {
             const finding = result.findings.find((item) => item.check === 'gate' && item.file === entry.file && item.context.includes(entry.fragment));
             expect(finding, entry.fragment).toBeDefined();

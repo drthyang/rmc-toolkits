@@ -50,8 +50,7 @@ a Rietveld refinement: never call it a refinement, and there are no esds of refi
    cell's reciprocal axes) is a correlation RMC leaves in a finite box. It voids any claim of
    order at its own q: never report it as a superstructure, a modulation or a cell doubling. It
    does not void a zone-boundary point, or a mode at a general wavevector, that passes its own
-   test (ratio ≥ 3 and ≥ 3σ against independent displacements, corrected over the points
-   tested): the test already leaves long waves out of the background it compares with. A long
+   test (ratio ≥ 3 and ≥ 3σ against independent cells, corrected over the points tested). A long
    wave that dominates every element says the box is small or lightly sampled for statements
    about long-range order (to confirm with the user).
 

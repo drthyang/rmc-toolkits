@@ -7,8 +7,8 @@ run's numbers.
 | Order | Shows in | Hides from |
 |---|---|---|
 | Two-site disorder (each B atom ±δ along an axis, at random) | `list_sites`: negative kurtosis, prolate; directions: a peak along the axis; `find_gr_peaks`: the B–X shell split by the off-centring | `analyze_modulations` (no correlation between cells); the ladder (the average site stays) |
-| Ordered antiphase displacements (a superstructure) | `analyze_modulations`: the zone-boundary point, ≥ 3σ | `list_sites` and directions: the same split cloud as two-site disorder; the ladder |
-| Order at a general wavevector (incommensurate, short-range between cells) | `analyze_modulations`: a strongest mode that is neither zone boundary nor long wave, ≥ 3σ | the average structure; single-site statistics |
+| Ordered antiphase displacements (a superstructure) | `analyze_modulations`: the zone-boundary point, ratio ≥ 3 and ≥ 3σ | `list_sites` and directions: the same split cloud as two-site disorder; the ladder |
+| Order at a general wavevector (incommensurate, short-range between cells) | `analyze_modulations`: a strongest mode that is neither zone boundary nor long wave, ratio ≥ 3 and ≥ 3σ | the average structure; single-site statistics |
 | Breathing clusters (size fluctuates collectively, shape regular) | `analyze_clusters`: breathing above independent atoms | every page; the cluster's shape at its own size |
 | Rigid clusters (atoms of a cluster move together) | `analyze_clusters`: shape spread or bond-length spread below independent atoms | every page |
 | Distorted polyhedra, disordered orientation (Jahn–Teller) | `find_gr_peaks`: a split shell (first peak alone a lower CN); split X sites; `analyze_clusters` on the X polyhedron: an axis-family pattern, split sites named | the average structure (a regular average polyhedron) |

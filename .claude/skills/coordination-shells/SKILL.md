@@ -30,8 +30,8 @@ analysis.
    `window_A` (onset to the first deep minimum), `peaks_in_shell_A`, `mean_d_A` (from r²g, not
    the g peak), `cn` both ways, `cn_if_cut_0p2A_earlier_later`, `trough_g_fraction`. A shell
    with two peaks is ONE split shell, e.g. two bond lengths of one distorted polyhedron: the
-   TaSe₆ shell has Ta–Se peaks at 2.52 and 2.74 Å; the first-peak window 2.33–2.71 Å holds
-   3.9 Se per Ta, the whole shell 6. When the two bond lengths are well resolved, the trough
+   TaSe₆ shell has Ta–Se peaks at 2.52 and 2.74 Å; the first-peak window 2.21–2.65 Å holds
+   3.25 Se per Ta, the whole shell 6. When the two bond lengths are well resolved, the trough
    between them is deep; `find_gr_peaks` then joins a later peak within 0.5 Å of the first whose
    summed CN is an ideal polyhedral count (4, 6, 8, 12), and reports the first peak alone as
    `first_shell.first_peak_only` with its own CN. A Jahn–Teller CuF₆ (4 × 1.93 + 2 × 2.25 Å) holds
@@ -56,8 +56,9 @@ analysis.
    a tetrahedron; 60° inside an M₄ tetrahedron.
 7. **Distortion.** A g(r) peak's position or width cannot tell a distortion from thermal spread.
    For a cluster or polyhedron distortion (Jahn–Teller, dimers, trimers), run `analyze_clusters`
-   (against its shuffle null of independent atoms) or compare angle spreads; quote the effect
-   size with its z.
+   (shape against a shuffle null at each cluster's own size, size against independent atoms) where
+   the element's own first shell is a finite cluster's (0.5–4.5 neighbours of its own kind; an
+   extended network has none), or compare angle spreads; quote the effect size with its z.
 
 ## Judgment calls
 
@@ -67,8 +68,9 @@ analysis.
   confirm with the user).
 - The split-shell rule's reach (a second peak within 0.5 Å of the first) and its ideal counts
   (4, 6, 8, 12, within half an atom) (batch 1; to confirm with the user).
-- The 60 % modal-coordination threshold the app uses to call a window cut (to confirm with the
-  user).
+- The CN margin the app calls a window cut by, fewer partner atoms than the whole shell by at
+  least max(0.5, 15 % of its CN) (the user's choice of rule, 2026-10-19), and with no shell to
+  compare the 60 % modal-coordination share (to confirm with the user).
 
 ## Acceptance checklist
 
@@ -86,9 +88,11 @@ analysis.
 - **A window that cut the TaSe₆ shell** (spot check, 2026-10-10): asked for "Se–Ta–Se angles
   against an ideal octahedron", gemma4 used 2.3–2.7 Å, got CN 3.75 and called the octahedra
   "incomplete" (✗). qwen3.8 started at 2.33–2.71 Å (CN 3.86) and widened itself. *Firm rule in
-  the app:* `compute_bond_angles` refuses a window in which fewer than 60 % of the central atoms
-  share the most common bond count, or most have none, unless `window_confirmed` is set; it
-  returns the coordination counts that show the cut, not the angles.
+  the app:* `compute_bond_angles` refuses, unless `window_confirmed` is set, a window that holds
+  fewer partner atoms than the whole first shell by at least max(0.5, 15 % of the shell's CN);
+  with no shell to compare (none with a CN, or a window apart from it), one in which fewer than
+  60 % of the central atoms share the most common bond count, or most have none. It returns the
+  numbers that show the cut, not the angles.
 - **"There are no near-180° angles"** (spot check, after the fix): 20 % of the angles lay at
   150–170° in raw counts. The tool now returns the sin θ-corrected histogram too.
 - **"± 0.02 Å" invented** for GaSe₄ (review): the tool now gives the measured spread (sd 0.095 Å).
