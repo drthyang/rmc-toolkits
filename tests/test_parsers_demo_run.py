@@ -257,8 +257,14 @@ class DemoRunApiTests(unittest.TestCase):
         self.assertAlmostEqual(terms["total"][-1], math.log(sum(rows[-1])), places=12)
         self.assertAlmostEqual(terms["series"][0][-1], math.log(rows[-1][0]), places=12)
         np.testing.assert_allclose(terms["series"][-1], data["series"][0]["y"], rtol=0, atol=0)
-        # A term that is zero throughout (a curvature constraint not in use) at the clamp.
-        self.assertEqual(set(terms["series"][1]), {math.log(1e-12)})
+        # A term that is zero throughout (a curvature constraint not in use) at the clamp:
+        # one value on every row, ln(1e-12). numpy's log may differ from math.log in the last
+        # ulp (its SIMD path on some CPUs, under the oldest pinned numpy), so the value is
+        # compared to 1e-12 relative, not bit for bit.
+        clamped = terms["series"][1]
+        self.assertEqual(len(clamped), len(rows))
+        self.assertEqual(len(set(clamped)), 1)
+        self.assertTrue(math.isclose(clamped[0], math.log(1e-12), rel_tol=1e-12, abs_tol=0.0))
 
     def test_structure_endpoint_reports_the_header_composition(self):
         response = self.client.get("/api/structure", query_string={"dir": DEMO_REL, "maxPoints": 500})
