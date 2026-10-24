@@ -14,7 +14,7 @@ split into two lengths, so the first M–X shell has two peaks.
 
 | Polyhedron | Pair | Shell window | Peaks in shell | CN | Notes |
 |---|---|---|---|---|---|
-| TaSe₆ | Ta–Se | ≈ 2.21–3.23 Å (find_gr_peaks, 2026-10-11); 2.33–2.96 Å in the review | 2.52, 2.74 Å | 6 (5.89 in 2.33–2.96 Å) | first-peak window 2.33–2.71 Å holds only 3.9: it cuts the shell |
+| TaSe₆ | Ta–Se | ≈ 2.21–3.23 Å (find_gr_peaks, 2026-10-11); 2.33–2.96 Å in the review | 2.52, 2.74 Å | 6 (5.89 in 2.33–2.96 Å) | first-peak window 2.21–2.65 Å holds only 3.25: it cuts the shell |
 | GaSe₄ | Ga–Se | 2.18–2.79 Å | — | 3.99 | mean 2.434 Å, sd 0.095 Å; angle 109.4° (sd 4.1°); low-r side shaped by the 2.2 Å constraint |
 | Ta₄ | Ta–Ta | shell mean 3.00 Å (r²g) | g peak 2.93 Å | 3 | clusters 20 % less distorted than independent atoms at their own size (z = −49; 23 % against independent atoms alone, before the 2026-10-17 shape null), breathing +27 % (z = 27) |
 
