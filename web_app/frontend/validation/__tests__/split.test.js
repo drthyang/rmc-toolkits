@@ -642,13 +642,13 @@ describe('where a finding stands, and validation batch 1', () => {
         });
     });
 
-    it('decisions: a refused analysis backs no claim (A5, option 2), approved by the user directly, with its known-answer tests', () => {
-        // Filed with the change it records: approved here, implemented (naming its commit) in the commit after it.
+    it('decisions: a refused analysis backs no claim (A5, option 2), approved by the user directly and implemented with its known-answer tests', () => {
         const refused = decisions()['2026-10-24-refused-not-evidence'];
         expect(refused).toMatchObject({
-            case: 'dev-jahn-teller', kind: 'orchestration', needs_user_approval: true, status: 'approved',
+            case: 'dev-jahn-teller', kind: 'orchestration', needs_user_approval: true, status: 'implemented',
             approval: { by: 'user', date: '2026-10-24', batch: 3 }
         });
+        expect(refused.commit).toMatch(/^[0-9a-f]{40}$/);
         expect(refused.evidence).toContain('"A5: option 2. A refused analysis doesn\'t count: the gate sends the claim back, and the model re-runs on '
             + 'the whole shell or asks me to confirm the window. Land it before the B/C runs."');
         for (const field of ['evidence', 'proposed_fix']) {
