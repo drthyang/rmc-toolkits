@@ -554,6 +554,25 @@ export const MISFIT_CONCENTRATION = 0.4;
 // A range whose own Rw is this many times the dataset's is poorly fitted for
 // its signal, whatever its share of the squared residual.
 export const RELATIVE_MISFIT_FACTOR = 3;
+// A residual feature is above noise when it is at least this many σ(r).
+export const ABOVE_NOISE_SIGMA = 3;
+
+// σ(r) of an X-ray G(r) (RMCProfile's transform of F(Q)): the file's own σ
+// column, else the one propagated from F(Q)'s σ (plotData.uncertainty, the
+// host's ft_uncertainty payload; docs/algorithms/run-dashboard.md, "The G(r)
+// error ribbon"). Null for any other dataset, or a G(r) with no word on σ;
+// { sigma: null, why } when its σ is known to be unavailable.
+const fitSigma = (file, exp) => {
+    if (file.plotKind !== 'xpdf') return null;
+    if (Array.isArray(exp.sigma) && exp.sigma.length === exp.x.length) {
+        return { sigma: 'file', from: file.name || null, values: exp.sigma, uncertainty: null };
+    }
+    const uncertainty = file.plotData?.uncertainty;
+    if (uncertainty?.status === 'propagated' && Array.isArray(uncertainty.sigma) && uncertainty.sigma.length === exp.x.length) {
+        return { sigma: 'propagated', from: uncertainty.sources?.input || null, values: uncertainty.sigma, uncertainty };
+    }
+    return uncertainty?.reason ? { sigma: null, why: uncertainty.reason } : null;
+};
 
 const fitTool = (plotFiles, cardIds) => {
     const files = (plotFiles || []).filter((file) => FIT_KINDS[file.plotKind] && file.plotData?.series?.length >= 2);
@@ -569,7 +588,8 @@ const fitTool = (plotFiles, cardIds) => {
         description: 'Where the model misses the measured data, for one fitted dataset: the R-factor (as the '
             + 'dashboard\'s Rwp) over consecutive ranges of r or Q, the share of the squared residual in each range, '
             + 'and the largest residual features (position, model above or below the data, size relative to the '
-            + 'data\'s rms).',
+            + 'data\'s rms). For an X-ray G(r) with σ(r) (propagated from F(Q)\'s σ), each feature\'s size in σ and '
+            + 'whether it is above noise; its r points are correlated.',
         // The method advice (method.js): sent with method 'full', after the description.
         method: 'Use it for "where does the fit fail" and "is the misfit at short or long range"; run it once '
             + 'per dataset (a G(r) and its F(Q) are separate entries).',
@@ -601,9 +621,25 @@ const fitTool = (plotFiles, cardIds) => {
                 { Q_A: ['number|null', 'number|null'], rw: 'number|null', share_of_misfit: 'number|null' }
             )],
             'largest_residuals?': [oneOf(
-                { r: 'number|null', model_minus_data: 'number|null', relative_to_data_rms: 'number|null' },
+                {
+                    r: 'number|null', model_minus_data: 'number|null', relative_to_data_rms: 'number|null',
+                    'relative_to_sigma?': 'number|null', 'above_noise?': 'boolean'
+                },
                 { Q: 'number|null', model_minus_data: 'number|null', relative_to_data_rms: 'number|null' }
-            )]
+            )],
+            // An X-ray G(r) only: its σ(r) and what the residual is against it,
+            // or why it has none.
+            'noise?': oneOf(
+                {
+                    sigma: 'string',
+                    from: 'string|null',
+                    rms_residual_over_sigma: 'number|null',
+                    above_noise_at: 'number',
+                    'reproduction?': { residual: 'number|null', tolerance: 'number|null' },
+                    'correlation?': { neighbour: 'number|null', effective_points: 'number|null', points: 'number' }
+                },
+                { sigma: 'null', why: 'string' }
+            )
         },
         label: ({ dataset }) => `Fit residual ${dataset || ''}`.trim(),
         page: 'dashboard',
@@ -615,7 +651,7 @@ const fitTool = (plotFiles, cardIds) => {
             exp.x.forEach((x, i) => {
                 const observed = exp.y[i];
                 const model = calc.y?.[i];
-                if (Number.isFinite(x) && Number.isFinite(observed) && Number.isFinite(model)) points.push([x, observed, model]);
+                if (Number.isFinite(x) && Number.isFinite(observed) && Number.isFinite(model)) points.push([x, observed, model, i]);
             });
             const axis = /sq|bragg/.test(file.plotKind) ? 'Q' : 'r';
             const data = { dataset, kind: FIT_KINDS[file.plotKind], axis, model_series: calc.label, data_series: exp.label };
@@ -660,15 +696,62 @@ const fitTool = (plotFiles, cardIds) => {
                 const a = Math.abs(smooth[i]);
                 if (a >= Math.abs(smooth[i - 1]) && a > Math.abs(smooth[i + 1])) extrema.push(i);
             }
+            // An X-ray G(r)'s σ(r): a residual feature is above noise only
+            // against it (≥ ABOVE_NOISE_SIGMA σ at its position; the 5-point
+            // mean of correlated points has no smaller σ than one point).
+            const sigma = fitSigma(file, exp);
+            const sigmaAt = (i) => {
+                const value = sigma?.values?.[points[i][3]];
+                return Number.isFinite(value) && value > 0 ? value : null;
+            };
             data.largest_residuals = extrema
                 .sort((a, b) => Math.abs(smooth[b]) - Math.abs(smooth[a]))
                 .slice(0, 5)
-                .map((i) => ({
-                    [axis]: roundSig(points[i][0], 4),
-                    model_minus_data: roundSig(smooth[i], 2),
-                    relative_to_data_rms: roundSig(smooth[i] / dataRms, 2)
-                }))
+                .map((i) => {
+                    const entry = {
+                        [axis]: roundSig(points[i][0], 4),
+                        model_minus_data: roundSig(smooth[i], 2),
+                        relative_to_data_rms: roundSig(smooth[i] / dataRms, 2)
+                    };
+                    if (sigma?.values) {
+                        const s = sigmaAt(i);
+                        entry.relative_to_sigma = s === null ? null : roundSig(smooth[i] / s, 2);
+                        entry.above_noise = s !== null && Math.abs(smooth[i]) >= ABOVE_NOISE_SIGMA * s;
+                    }
+                    return entry;
+                })
                 .sort((a, b) => a[axis] - b[axis]);
+            if (sigma?.values) {
+                const ratios = points.map((_, i) => {
+                    const s = sigmaAt(i);
+                    return s === null ? null : residuals[i] / s;
+                }).filter((value) => value !== null);
+                data.noise = {
+                    sigma: sigma.sigma,
+                    from: sigma.from,
+                    rms_residual_over_sigma: ratios.length
+                        ? roundSig(Math.sqrt(ratios.reduce((sum, value) => sum + value * value, 0) / ratios.length), 3)
+                        : null,
+                    above_noise_at: ABOVE_NOISE_SIGMA
+                };
+                const { uncertainty } = sigma;
+                if (uncertainty) {
+                    data.noise.reproduction = {
+                        residual: roundSig(uncertainty.reproduction?.gr?.residual, 2),
+                        tolerance: roundSig(uncertainty.reproduction?.tolerance, 2)
+                    };
+                    const { correlation } = uncertainty;
+                    if (correlation) {
+                        data.noise.correlation = {
+                            neighbour: roundSig(correlation.neighbour, 2),
+                            effective_points: Number.isFinite(correlation.effectivePoints) ? Math.round(correlation.effectivePoints) : null,
+                            points: correlation.points
+                        };
+                    }
+                }
+            } else if (sigma?.why) {
+                data.noise = { sigma: null, why: sigma.why };
+            }
             const worst = data.by_range.reduce((best, entry, k) => (entry.share_of_misfit > data.by_range[best].share_of_misfit ? k : best), 0);
             const span = data.by_range[worst][`${axis}_A`];
             const unit = axis === 'r' ? ' Å' : ' Å⁻¹';
@@ -690,6 +773,31 @@ const fitTool = (plotFiles, cardIds) => {
                     text: `Relative to its own signal the fit is poorest at ${axis} = ${where[0]}–${where[1]}${axis === 'r' ? ' Å' : ' Å⁻¹'} `
                         + `(Rw ${data.by_range[poorest].rw}, ${roundSig(data.by_range[poorest].rw / data.rw, 2)}× the overall), `
                         + 'though it holds little of the squared residual: weak signal, noise, or unreproduced sharp detail.'
+                });
+            }
+            if (data.noise?.sigma) {
+                const above = data.largest_residuals.filter((entry) => entry.above_noise);
+                const { noise } = data;
+                const against = noise.sigma === 'file'
+                    ? 'the G(r) file\'s own σ'
+                    : `σ(r) propagated from ${noise.from || 'F(Q)'}'s σ (RMCProfile's transform reproduces this G(r) to `
+                        + `${noise.reproduction?.residual} of its maximum, tolerance ${noise.reproduction?.tolerance})`;
+                const correlated = noise.correlation
+                    ? `The r points are correlated (ρ = ${noise.correlation.neighbour} between neighbours, `
+                        + `≈ ${noise.correlation.effective_points} independent of ${noise.correlation.points})`
+                    : 'The r points of a Fourier-transformed G(r) are correlated';
+                checks.push({
+                    level: 'note',
+                    text: `Against ${against}: ${above.length} of the ${data.largest_residuals.length} largest residual features `
+                        + `${above.length === 1 ? 'is' : 'are'} above noise (≥ ${ABOVE_NOISE_SIGMA} σ`
+                        + `${above.length ? `: ${axis} = ${above.map((entry) => entry[axis]).join(', ')}${unit}` : ''}); `
+                        + `the residual's rms is ${noise.rms_residual_over_sigma} σ. ${correlated}: adjacent points beyond σ `
+                        + 'are one feature, not several.'
+                });
+            } else if (data.noise) {
+                checks.push({
+                    level: 'note',
+                    text: `No σ(r) for this G(r) (${data.noise.why}): whether a residual feature is above noise is not judged.`
                 });
             }
             checks.unshift({ level: 'ok', text: `Rw ${data.rw} over ${axis} = ${data.range[0]}–${data.range[1]}${unit}; ${where}` });

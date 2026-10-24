@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { checkText, toolDescription } from '../copilot/method';
-import { buildRunTools } from '../copilot/runTools';
+import { ABOVE_NOISE_SIGMA, buildRunTools } from '../copilot/runTools';
 
 const grid = (n, step) => Array.from({ length: n }, (_, i) => i * step);
 const gaussian = (r, center, sigma, height) => height * Math.exp(-((r - center) ** 2) / (2 * sigma ** 2));
@@ -379,6 +379,66 @@ describe('buildRunTools', () => {
         expect(checks[0].text).toMatch(/^Rw [\d.]+ over r = 1–20\.98 Å; the misfit is concentrated in r = 1–4\.33 Å/);
     });
 
+    it('compare_fit: a residual feature is above noise only against σ(r), with the correlation and the reproduction noted', async () => {
+        // The same bump (0.3 at 3.5 Å) over σ(r) = 0.02: 15 σ, above noise; a
+        // 0.04 wiggle at 12 Å is 2 σ, not.
+        const x = grid(1000, 0.02).map((r) => r + 1);
+        const exp = x.map((r) => Math.sin(3 * r) * Math.exp(-r / 15));
+        const calc = exp.map((value, i) => value + gaussian(x[i], 3.5, 0.05, 0.3) + gaussian(x[i], 12, 0.05, 0.04));
+        const uncertainty = {
+            status: 'propagated',
+            reason: null,
+            sigma: x.map(() => 0.02),
+            reproduction: { tolerance: 1e-6, gr: { residual: 1.5e-14, rms: 1.8e-14, pass: true, offset: 2.7e-4 }, fq: null },
+            correlation: { points: 1000, gridStep: 0.02, nyquistStep: 0.116, neighbour: 0.9749, nyquist: -0.758, effectivePoints: 62.4, nyquistPoints: 151.7 },
+            sources: { transform: 'run_FT_XFQ1.csv', fq: 'run_XFQ1.csv', settings: 'run.dat', input: 'scale_ft_rmc.fq' }
+        };
+        const fit = (plotData) => toolMap({ plotFiles: [{ name: 'run_FT_XFQ1.csv', plotKind: 'xpdf', plotData }] }).compare_fit;
+        const series = [{ label: 'X_ray-calc', x, y: calc }, { label: 'X_ray_exp_renorm', x, y: exp }];
+        const { data, checks } = await fit({ series, uncertainty }).run({ dataset: 'xpdf' });
+        const bump = data.largest_residuals.find((entry) => Math.abs(entry.r - 3.5) < 0.05);
+        expect(bump.above_noise).toBe(true);
+        expect(bump.relative_to_sigma).toBeGreaterThan(10);
+        const wiggle = data.largest_residuals.find((entry) => Math.abs(entry.r - 12) < 0.05);
+        expect(wiggle.above_noise).toBe(false);
+        expect(wiggle.relative_to_sigma).toBeLessThan(ABOVE_NOISE_SIGMA);
+        expect(data.noise).toEqual({
+            sigma: 'propagated',
+            from: 'scale_ft_rmc.fq',
+            rms_residual_over_sigma: data.noise.rms_residual_over_sigma,
+            above_noise_at: 3,
+            reproduction: { residual: 1.5e-14, tolerance: 1e-6 },
+            correlation: { neighbour: 0.97, effective_points: 62, points: 1000 }
+        });
+        expect(data.noise.rms_residual_over_sigma).toBeGreaterThan(1);
+        const note = checks.find((check) => check.text.startsWith('Against σ(r)'));
+        expect(note.level).toBe('note');
+        expect(note.text).toContain('propagated from scale_ft_rmc.fq\'s σ (RMCProfile\'s transform reproduces this G(r) to 1.5e-14 of its maximum, tolerance 0.000001)');
+        expect(note.text).toMatch(/: 1 of the \d largest residual features is above noise \(≥ 3 σ: r = 3\.5\d* Å\)/);
+        expect(note.text).toContain('The r points are correlated (ρ = 0.97 between neighbours, ≈ 62 independent of 1000): adjacent points beyond σ are one feature, not several.');
+
+        // The file's own σ wins; no reproduction or correlation to quote.
+        const own = await fit({ series: [series[0], { ...series[1], sigma: x.map(() => 0.5) }], uncertainty }).run({ dataset: 'xpdf' });
+        expect(own.data.noise).toMatchObject({ sigma: 'file', from: 'run_FT_XFQ1.csv', above_noise_at: 3 });
+        expect(own.data.noise.reproduction).toBeUndefined();
+        expect(own.data.largest_residuals.every((entry) => entry.above_noise === false)).toBe(true);
+        expect(own.checks.at(-1).text).toMatch(/^Against the G\(r\) file's own σ: 0 of the \d largest residual features are above noise \(≥ 3 σ\)/);
+
+        // No σ: said, and nothing is called above noise.
+        const none = await fit({ series, uncertainty: { status: 'unavailable', reason: 'F(Q) carries no uncertainties: scale_ft_rmc.fq has no error column', sigma: null } })
+            .run({ dataset: 'xpdf' });
+        expect(none.data.noise).toEqual({ sigma: null, why: 'F(Q) carries no uncertainties: scale_ft_rmc.fq has no error column' });
+        expect(none.data.largest_residuals.every((entry) => !('above_noise' in entry) && !('relative_to_sigma' in entry))).toBe(true);
+        expect(none.checks.at(-1)).toEqual({
+            level: 'note',
+            text: 'No σ(r) for this G(r) (F(Q) carries no uncertainties: scale_ft_rmc.fq has no error column): whether a residual feature is above noise is not judged.'
+        });
+        // An F(Q) dataset, or a G(r) with no word on σ, reads as before.
+        const plain = await fit({ series }).run({ dataset: 'xpdf' });
+        expect(plain.data.noise).toBeUndefined();
+        expect(plain.checks).toHaveLength(1);
+    });
+
     it('compare_fit: reads the roles from the labels, keys repeated kinds, and flags a poor weak-signal range', async () => {
         // Columns given (data, model): the labels decide. The high-Q third is weak and badly fitted.
         const x = grid(900, 0.03).map((q) => q + 0.5);
@@ -479,7 +539,7 @@ describe('the run tools\' method advice: arm C reads them without it', () => {
         expect(toolDescription(fit, 'full')).toBe(`${fit.description} Use it for "where does the fit fail" and "is the misfit at short or long range"; `
             + 'run it once per dataset (a G(r) and its F(Q) are separate entries).');
         expect(toolDescription(fit, 'off')).toBe(fit.description);
-        expect(fit.description).toMatch(/^Where the model misses the measured data, for one fitted dataset: .* size relative to the data's rms\)\.$/);
+        expect(fit.description).toMatch(/^Where the model misses the measured data, for one fitted dataset: .* size relative to the data's rms\)\. For an X-ray G\(r\) with σ\(r\) \(propagated from F\(Q\)'s σ\), each feature's size in σ and whether it is above noise; its r points are correlated\.$/);
     });
 
     it('find_gr_peaks: a split shell\'s note keeps its reading; "use first_shell.window_A" is advice', async () => {

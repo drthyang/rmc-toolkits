@@ -50,6 +50,9 @@ const SAMPLES = [
     ['assess_convergence', 'assess_convergence', {}],
     ['find_gr_peaks', 'find_gr_peaks', { pair: 'Ta-Se' }],
     ['compare_fit', 'compare_fit', { dataset: 'xray_sq' }],
+    // The Demo's G(r): its F(Q) carries no σ (the input file is not in the
+    // folder), so no residual is called above noise, and the result says why.
+    ['compare_fit.xpdf', 'compare_fit', { dataset: 'xpdf' }],
     ['list_sites', 'list_sites', {}],
     ['analyze_displacement_directions', 'analyze_displacement_directions', { site_ref: 1 }],
     ['compute_bond_angles', 'compute_bond_angles', { end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.21, r12_max: 3.23 }],

@@ -128,19 +128,19 @@
   {
    "round": 0,
    "why": "first",
-   "sent": "30158 characters, sha256 79926c14e8137440",
+   "sent": "30299 characters, sha256 440f3c6280e954ad",
    "num_ctx": null
   },
   {
    "round": 1,
    "why": "tools",
-   "sent": "32580 characters, sha256 37b3a50fbe440a72",
+   "sent": "32994 characters, sha256 8f86f88479654112",
    "num_ctx": null
   },
   {
    "round": 2,
    "why": "tools",
-   "sent": "37901 characters, sha256 530ac7e2c5ac61a3",
+   "sent": "38315 characters, sha256 be4d0748274800e7",
    "num_ctx": null
   }
  ],
@@ -221,6 +221,10 @@
     {
      "level": "ok",
      "text": "Rw 0.0208 over r = 1.005–7.995 Å; the misfit is concentrated in r = 2.17–3.33 Å: 97 % of the squared residual (Rw 0.036 there)."
+    },
+    {
+     "level": "note",
+     "text": "No σ(r) for this G(r) (no run-control file rmc_run.dat beside rmc_run_FT_XFQ1.csv): whether a residual feature is above noise is not judged."
     }
    ],
    "data": {
@@ -310,7 +314,11 @@
       "model_minus_data": -0.0055,
       "relative_to_data_rms": -0.0053
      }
-    ]
+    ],
+    "noise": {
+     "sigma": null,
+     "why": "no run-control file rmc_run.dat beside rmc_run_FT_XFQ1.csv"
+    }
    },
    "error": null,
    "ms": "<ms>",

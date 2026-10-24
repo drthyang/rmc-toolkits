@@ -62,7 +62,7 @@
     "type": "function",
     "function": {
       "name": "compare_fit",
-      "description": "Where the model misses the measured data, for one fitted dataset: the R-factor (as the dashboard's Rwp) over consecutive ranges of r or Q, the share of the squared residual in each range, and the largest residual features (position, model above or below the data, size relative to the data's rms). Use it for \"where does the fit fail\" and \"is the misfit at short or long range\"; run it once per dataset (a G(r) and its F(Q) are separate entries).",
+      "description": "Where the model misses the measured data, for one fitted dataset: the R-factor (as the dashboard's Rwp) over consecutive ranges of r or Q, the share of the squared residual in each range, and the largest residual features (position, model above or below the data, size relative to the data's rms). For an X-ray G(r) with σ(r) (propagated from F(Q)'s σ), each feature's size in σ and whether it is above noise; its r points are correlated. Use it for \"where does the fit fail\" and \"is the misfit at short or long range\"; run it once per dataset (a G(r) and its F(Q) are separate entries).",
       "parameters": {
         "type": "object",
         "properties": {
