@@ -94,11 +94,11 @@ PR, and a decision record in `validation/findings/decisions/` and here.
 | — | #118 | `polyhedral_distortion`: a polyhedron's distortion indices, per polyhedron and for the average structure (protocol 2026-10-24.3) |
 | — | #120 | the G(r) error ribbons: F(Q)'s σ propagated through RMCProfile's transform (protocol 2026-10-24.4) |
 
-**In progress:** phase 6, the changelog fold (this PR): the change fragments of #80–#122 folded
-into CHANGELOG.md's Unreleased section, in merge order; no version, release or tag.
+**Frozen (2026-10-24)** at commit 226f6f2 (protocol 2026-10-24.4), after the changelog fold
+(#123): arms A, A+ and D re-recorded with `--final` from a clean tree on dev and test, no score
+moved (`validation/baseline/freeze.json`); no tag (tags are the user's).
 
-**Then:** the freeze: arms A and A+ on dev and test with `--final` from a clean tree, and the
-frozen commit recorded (no tag; tags are the user's); the report.
+**Then:** the live runs (arms B and C), on the user's go/no-go.
 
 **Waiting for the user:**
 - the live-run go/no-go, after the freeze;
