@@ -101,9 +101,11 @@ moved (`validation/baseline/freeze.json`); no tag (tags are the user's). Re-froz
 request policy (2026-10-24.6): the same scores on dev and test, the test set unchanged. Re-pointed to
 7456af9 (`run.js live --limits`, runner only), dev re-checked: unchanged.
 
-**Then:** the live runs (arms B and C), on the user's go (2026-10-24): the local models on dev, one at
-a time; Claude Sonnet 5.5 on test once the user confirms the Console's $20 limit, with a stop after its
-first case to compare the ledger with the Console's usage.
+**Live runs** (the user's go, 2026-10-24; paused by the user on 2026-10-25): gemma4:26b done (dev smoke,
+test arms B and C: `docs/algorithms/copilot-validation.md`, "Live results (2026-10-25)"). Still to run, all
+at 7456af9 with `--limits maxTurnMs=3600000,requestMaxMs=1200000`: meta/muse-glimmer (dev smoke, then test
+B and C), then Claude Sonnet 5.5 on test (arm B) once the user confirms the Console's $20 limit, with a stop
+after its first case to compare the ledger with the Console's usage. qwen3.8-27b is dropped this cycle.
 
 **Waiting for the user:**
 - the user's post-v1 list:
