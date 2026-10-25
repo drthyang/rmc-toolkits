@@ -6,7 +6,7 @@
 //
 //   npx vite-node validation/run.js -- write   --split dev --out <dir>
 //   npx vite-node validation/run.js -- arm-a   --split dev [--out <dir>]
-//   npx vite-node validation/run.js -- live    --arm B --model qwen3.8-27b --split dev [--runs 3] [--cases id,id] [--out <dir>] [--pca-table]
+//   npx vite-node validation/run.js -- live    --arm B --model qwen3.8-27b --split dev [--runs 3] [--cases id,id] [--out <dir>] [--pca-table] [--limits key=value,…]
 //   npx vite-node validation/run.js -- report  --in <dir> [--in <dir>…] [--out <file>]
 //   npx vite-node validation/run.js -- findings <file.jsonl | folder of .json records>
 //   npx vite-node validation/run.js -- shell-cuts [--out <file.json>]
@@ -57,7 +57,7 @@ import { renderReport } from './report';
 import { resolveModel } from './models';
 import { createSpendTracker, meteredModel } from './spend';
 import { parseFindingFiles, parseFindings } from './findings';
-import { noteWindowAfter, preflight, readServer, windowSummary } from './runPolicy';
+import { noteWindowAfter, preflight, readServer, TURN_LIMITS, windowSummary } from './runPolicy';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '../../..');
@@ -93,6 +93,29 @@ const treeClean = () => {
     } catch {
         return false;
     }
+};
+
+/**
+ * `--limits key=value,…`: the batch's overrides of the turn's budgets (the
+ * keys of TURN_LIMITS, positive integers, milliseconds for the *Ms ones), e.g.
+ * `--limits maxTurnMs=2400000,requestMaxMs=1200000` for a slow local model.
+ * The same values go to every run of the batch and each record keeps them
+ * (`policy.limits`); without the flag the turn's own budgets apply.
+ */
+export const parseLimits = (value) => {
+    if (typeof value !== 'string') throw new Error('--limits needs key=value pairs, e.g. --limits maxTurnMs=2400000,requestMaxMs=1200000');
+    const limits = {};
+    for (const pair of value.split(',').map((item) => item.trim()).filter(Boolean)) {
+        const parts = pair.split('=');
+        if (parts.length !== 2) throw new Error(`--limits: '${pair}' is not key=value`);
+        const [key, raw] = parts;
+        if (!Object.hasOwn(TURN_LIMITS, key)) throw new Error(`--limits: unknown budget '${key}'; known: ${Object.keys(TURN_LIMITS).join(', ')}`);
+        const number = Number(raw);
+        if (!Number.isInteger(number) || number <= 0) throw new Error(`--limits: ${key} must be a positive integer, got '${raw}'`);
+        limits[key] = number;
+    }
+    if (!Object.keys(limits).length) throw new Error('--limits needs at least one key=value pair');
+    return Object.freeze(limits);
 };
 
 /** The held-out set only from committed code, and only on purpose. */
@@ -226,6 +249,8 @@ const commands = {
         }
         guardSplit({ split, final: args.final, clean: split === 'test' ? treeClean() : true });
         const pcaTable = Boolean(args['pca-table']);
+        const limits = args.limits === undefined ? {} : parseLimits(args.limits);
+        if (Object.keys(limits).length) console.log(`limits for every run: ${JSON.stringify({ ...TURN_LIMITS, ...limits })}`);
         if (pcaTable && split !== 'dev') throw new Error('--pca-table is a dev check: --split dev only');
         const runs = Number(args.runs || model.runsPerCase || 3);
         const out = resolve(args.out || `validation/runs/${new Date().toISOString().slice(0, 10)}_${model.name.replace(/[^\w.-]+/g, '-')}_${arm}_${split}${pcaTable ? '_pca-table' : ''}`);
@@ -261,7 +286,7 @@ const commands = {
                 }
                 let record;
                 try {
-                    record = await liveRun({ built, arm, model, runIndex: index, base, tracker, note: id, skills, commit, pcaTable });
+                    record = await liveRun({ built, arm, model, runIndex: index, base, tracker, note: id, skills, commit, pcaTable, limits });
                 } catch (failure) {
                     if (failure?.name === 'RunPolicyError') {
                         console.log(`${id}: NOT STARTED (run policy)`);

@@ -1155,7 +1155,9 @@ gain only the readings later changes added (the direction tier, the diffuse read
 are the user's. Re-frozen the same day at commit bf72b11 (protocol 2026-10-24.6), after the
 refused-analysis rule (2026-10-24.5) and Claude Sonnet 5.5's request policy (2026-10-24.6): the same
 commands give the same scores on both splits, and `TEST_SET_SHA256` is unchanged. The live arms B and
-C run at this protocol (the user's go, 2026-10-24).
+C run at this protocol (the user's go, 2026-10-24). `freeze.json` was then re-pointed to 7456af9, which
+adds only `run.js live --limits` (a runner flag, no protocol change); the records stay those made at
+bf72b11, and arms A, A+ and D on dev re-run at 7456af9 give the same records apart from the commit.
 
 **Protocol 2026-10-24.5 (a refused analysis backs no claim, the user's decision A5).** The user's
 words: "A5: option 2. A refused analysis doesn't count: the gate sends the claim back, and the model
@@ -1423,7 +1425,7 @@ policies side by side.
 | --- | --- |
 | `server` | The kind the context guard detects (`detectServer`: `lmstudio`, `ollama`, or `openai` for any other server, the cloud providers among them), Ollama's version, and the kind the model expects (`models.js` `server`) |
 | `temperature` | The model's (0.2), and the floor of a request asked again after a looping reply (0.6). Claude Sonnet 5.5 takes none (since protocol 2026-10-24.6): `{ base: null, warmer_retry_min: null, sent: false }`, no temperature key in any of its requests, the retry included |
-| `limits` | The turn's budgets as the run used them (`runPolicy.js` `TURN_LIMITS`: the agent loop's `DEFAULT_LIMITS` and the verification's send-backs, `maxEvidenceGates`): 6 rounds of at most 4 calls, 10 minutes, 3,000 characters a result and 12,000 a turn, 2 questions, 2 gate send-backs, the stall and no-progress guards |
+| `limits` | The turn's budgets as the run used them (`runPolicy.js` `TURN_LIMITS`: the agent loop's `DEFAULT_LIMITS` and the verification's send-backs, `maxEvidenceGates`): 6 rounds of at most 4 calls, 10 minutes, 3,000 characters a result and 12,000 a turn, 2 questions, 2 gate send-backs, the stall and no-progress guards; with the batch's overrides when `live` is given `--limits key=value,…` (the same for every run of the batch) |
 | `context` | The minimum window for the server kind; how the window is sized; the window read before the run (and after it, on LM Studio); the model's maximum (Ollama); every `num_ctx` an Ollama request was sent (`num_ctx_used`; each request in `requests` keeps its own) |
 | `reply_cap` | Ollama: `num_predict`, the num_ctx minus the prompt estimate. LM Studio: none sent (the guard needs 4,096 tokens of room). Cloud: none sent, unless the model carries a cap: Claude Sonnet 5.5 sends `max_tokens` 8192 in every request (since protocol 2026-10-24.6; `{ sent: 'max_tokens', max_tokens: 8192 }`) |
 | `context_guard` | The guard's decisions: a request that would not fit is refused, never cut; 2.5 characters a token, 1.4 for tool JSON, 8 tokens a message; 8,192 tokens reserved for the reply; 4,096 of room on LM Studio; contexts in steps of 8,192, at least 16,384; the 0.4 read-share backstop |
@@ -1714,6 +1716,12 @@ npx vite-node validation/run.js -- live --arm B --model qwen3.8-27b --split dev 
 # side by side
 npx vite-node validation/run.js -- report --in validation/runs/<dir> --in validation/runs/<dir> --out validation/runs/report.md
 ```
+
+A slow local model can be given more time with `--limits key=value,…` on `live` (the keys of
+`TURN_LIMITS`, positive integers, milliseconds for the `*Ms` ones), e.g. `--limits
+maxTurnMs=2400000,requestMaxMs=1200000`: the same values for every arm and run of a batch, kept in
+each record's `policy.limits`. Without the flag a record is as before. A batch with other limits
+goes to its own folder, never into one holding runs made with different limits.
 
 A rerun keeps runs already recorded in its folder, so an interrupted batch resumes. Merge the
 local-model hardening (`fix/local-model-robustness`) first: its deadlines and loop guards keep a

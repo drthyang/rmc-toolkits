@@ -98,7 +98,8 @@ PR, and a decision record in `validation/findings/decisions/` and here.
 (#123): arms A, A+ and D re-recorded with `--final` from a clean tree on dev and test, no score
 moved (`validation/baseline/freeze.json`); no tag (tags are the user's). Re-frozen at commit bf72b11
 (protocol 2026-10-24.6), after the refused-analysis rule (2026-10-24.5, #126) and Claude Sonnet 5.5's
-request policy (2026-10-24.6): the same scores on dev and test, the test set unchanged.
+request policy (2026-10-24.6): the same scores on dev and test, the test set unchanged. Re-pointed to
+7456af9 (`run.js live --limits`, runner only), dev re-checked: unchanged.
 
 **Then:** the live runs (arms B and C), on the user's go (2026-10-24): the local models on dev, one at
 a time; Claude Sonnet 5.5 on test once the user confirms the Console's $20 limit, with a stop after its
