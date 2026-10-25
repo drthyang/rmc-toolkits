@@ -12,7 +12,7 @@
     "date": "2026-10-24",
     "batch": 3
   },
-  "commit": "0000000",
+  "commit": "eacada30ff25a3b1b7af2cbaaf6a6d16ad16608b",
   "tests": [
     "web_app/frontend/src/__tests__/directionSettings.test.js › open at ν = 10 with the map smoothed 4×, the readouts at smoothing 0 (the user's choice, 2026-10-24)",
     "web_app/frontend/src/__tests__/directionSettings.test.js › arm A keeps the settings frozen at protocol 2026-10-24.6, not the page's current defaults",
