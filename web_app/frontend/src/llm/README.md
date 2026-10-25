@@ -1230,7 +1230,8 @@ from the drawn map because the tool lets the engine choose the resolution while 
 its own (ν = 10, smoothed), as noted under *Show in* in
 [ai-assistant.md Step 17](../../../../docs/algorithms/ai-assistant.md#step-17--the-copilot-tool-loop-analyses-checks-budgets-verdict). Since
 protocol 2026-10-19.17 the page opens at the engine's resolution (Auto) and reads its numbers from
-the raw histogram, so the page and the tool agree by default.
+the raw histogram, so the page and the tool agreed by default; since 2026-10-24 the page opens at
+ν = 10, smoothed 4× (the user's choice), and they agree at Auto.
 
 ## Import boundary and extraction recipe
 

@@ -11,10 +11,10 @@
 // views : sphere : site picker = 3 : 6.5 : 6.5), and each panel's actions
 // (frame toggle, Reset, Save) live in its own header.
 //
-// The settings open at DIRECTION_DEFAULTS (directionSettings.js), the rule
-// the validation's arm A reads too: the resolution opens at Auto, the
-// engine's recommended frequency and the tiling the AI Copilot reads, with
-// the ν it chose in the Auto choice's label. Like every option here, a pick
+// The settings open at DIRECTION_DEFAULTS (directionSettings.js): ν = 10
+// with the map smoothed 4× (the user's choice, 2026-10-24). Auto, the
+// engine's recommended frequency and the tiling the AI Copilot reads, shows
+// the ν it chose in its label. Like every option here, a pick
 // is page state: it stays when the site changes, the tab is left and the page
 // returns, or another run opens (the page is never remounted), until the user
 // changes it (Auto included) or a Copilot step's Show in sets it. The
@@ -163,7 +163,7 @@ export default function OrientationPage({ directory, localRun, dataEpoch = 0, re
                                     <p>
                                         Geodesic frequency ν of the hex tiling (10ν² + 2 cells — hexagons
                                         plus the 12 pentagons every hexagonal tiling of a sphere must
-                                        contain). Auto, the default, is the engine&apos;s choice and the
+                                        contain). Auto is the engine&apos;s choice and the
                                         tiling the AI Copilot reads: the finest ν whose cells still
                                         average at least 12 displacements, the guard against reading
                                         Poisson noise as structure. Its label shows the ν it chose for

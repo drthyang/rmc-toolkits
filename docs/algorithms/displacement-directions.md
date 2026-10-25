@@ -445,12 +445,13 @@ suites over $N = 1$–20 000.
 Bounds: `MIN_FREQUENCY = 1` ([orientation.py:85](../../rmc_toolkits/orientation.py)),
 `MAX_FREQUENCY = 64` (line 86, $C = 40\,962$ cells). `recommended_frequency` never exceeds 24 on
 its own; the UI dropdown offers `auto, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24` and **defaults to
-Auto** (since plan item 2.5, 2026-10-19; until then $\nu = 10$), the tiling
-`analyze_displacement_directions` reads when it is given no frequency. The Auto choice is labelled
+$\nu = 10$** (the user's choice, 2026-10-24; Auto from plan item 2.5, 2026-10-19, until then; $\nu = 10$
+before that). Auto is the tiling `analyze_displacement_directions` reads when it is given no
+frequency. The Auto choice is labelled
 with the $\nu$ the engine chose for the site on screen (`recommendedFrequency`, e.g.
 `Auto · ν=2 (42)`), also while another resolution is picked. The defaults live in
-[directionSettings.js](../../web_app/frontend/src/directionSettings.js) (`DIRECTION_DEFAULTS`), which
-the validation's arm A reads too (view section, Step 3).
+[directionSettings.js](../../web_app/frontend/src/directionSettings.js) (`DIRECTION_DEFAULTS`); the
+validation's arm A keeps its own settings, Auto, frozen at protocol 2026-10-24.6 (view section, Step 3).
 
 **Validation.** `recommended_frequency` / `recommendedFrequency` raise on a non-finite point count
 (`n_points must be a finite number`), a non-finite or $< 1$ `target_per_cell`, and a
@@ -1748,7 +1749,7 @@ independently computed in each language — not a shared-golden parity suite.
    The module docstring's "±10 %" understates this.
 2. **Smoothing introduces a small icosahedral artefact** (§6.4): it conserves total mass exactly
    but is not area-weighted, so an exactly isotropic map reads 0.976–1.060 at 2 passes and
-   0.903–1.202 at 12 (the page's map opens unsmoothed since 2026-10-19). `zScore` and
+   0.903–1.202 at 12 (the page's map opens at 4 passes since 2026-10-24). `zScore` and
    `antipodalAsymmetry` are computed from raw counts and are immune.
 3. **`zScore` ignores the weight, and mixes smoothed with raw.** Under
    `amplitude`/`amplitude2` the colour shows weighted mass per steradian while the significance
@@ -1789,7 +1790,8 @@ independently computed in each language — not a shared-golden parity suite.
    picks $\nu = 1$ (a few hundred copies) or 2 (~1000 copies) for the same data (§3), and the
    page and `analyze_displacement_directions` read one site on two tilings (on the dev thermal
    case's flattened O sites the map test read about 2σ on the page against about 7σ on the tool).
-   The page now opens at Auto, and a manual $\nu$ above it over-bins on purpose. The calibrated
+   Since 2026-10-24 the page opens at $\nu = 10$ again (the user's choice; its readouts still from
+   the raw histogram), so above Auto's $\nu$ it over-bins on purpose. The calibrated
    readouts stay honest there — the peak test, the map test
    (exact-moment reference, withheld below 0.1 expected coincident pairs) and the conditional
    asymmetry null (§6.3, §7) all hold their false-alarm rates at $\nu = 10$ — but a
@@ -2103,23 +2105,25 @@ panels do not agree here; the "falls back to 1" behaviour is `unitCellVectors`' 
 
 **The page and the tool at the same settings (plan item 2.5, 2026-10-19).** The page's opening
 settings and both of its requests are one module,
-[`directionSettings.js`](../../web_app/frontend/src/directionSettings.js), which the validation's arm
-A reads too (`validation/armA.js`: `ARM_A_RULES.DIRECTION_SETTINGS` *is* `DIRECTION_DEFAULTS`), so the
-page and the rule that reads it cannot drift:
+[`directionSettings.js`](../../web_app/frontend/src/directionSettings.js). The validation's arm A
+builds its request with `directionReadoutRequest` from its own settings, the page's defaults of plan
+item 2.5 frozen at protocol 2026-10-24.6 (`validation/armA.js`: `ARM_A_RULES.DIRECTION_SETTINGS` =
+Auto, count, Crystal, no cut, smoothing 0), not from the page's current defaults:
 
 ```js
-DIRECTION_DEFAULTS = { frequency: 'auto', weight: 'count', frame: 'cartesian', minQuantile: 0, smoothing: 0 }
+DIRECTION_DEFAULTS = { frequency: 10, weight: 'count', frame: 'cartesian', minQuantile: 0, smoothing: 4 }
 directionReadoutRequest(s) = { referenceNumber, frequency: s.frequency === 'auto' ? null : s.frequency,
                                weight, frame, minAmplitudeQuantile: s.minQuantile, smoothing: 0 }
 directionMapRequest(s)     = { ...directionReadoutRequest(s), smoothing: s.smoothing }
 ```
 
-The map opens unsmoothed (smoothing 0, decided 2026-10-19; it was 2): Auto's cells already average
-at least 12 displacements, and on its coarse tilings two passes left about 30 % of a cell's excess
-in place, a blur of 35–63°. It is a display setting only — no readout, and so no score of the
+The page opens at $\nu = 10$ with the map smoothed 4× (four neighbour passes), the user's choice
+(2026-10-24; decision record `2026-10-24-directions-page-defaults`). From 2026-10-19 it opened at
+Auto, unsmoothed (on Auto's coarse tilings two passes left about 30 % of a cell's excess in place,
+a blur of 35–63°). The smoothing is a display setting only — no readout, and so no score of the
 validation's arms, depends on it — and at 0 the drawn map *is* the readout (one request).
 
-At the defaults the readout request is what `analyze_displacement_directions` asks for itself (no
+At Auto the readout request is what `analyze_displacement_directions` asks for itself (no
 frequency, so the engine's `recommendedFrequency`; count weight, Crystal frame, no amplitude cut, no
 smoothing), and the known-answer test checks it on every site of the dev thermal case: the page's
 readout gives the tool's result field for field
@@ -2159,7 +2163,7 @@ side:
 * **Client-side only, no refetch** — amplitude height (relief), colormap, contrast, cell borders,
   axes. Changing those re-runs only the mesh-rebuild effect.
 
-**The resolution's state.** It opens at Auto (`DIRECTION_DEFAULTS.frequency`), and the Auto choice
+**The resolution's state.** It opens at $\nu = 10$ (`DIRECTION_DEFAULTS.frequency`), and the Auto choice
 reads `Auto · ν=n (10n²+2)` with the engine's $\nu$ for the site on screen (`autoResolutionLabel` of
 its readout's `recommendedFrequency`; plain `Auto` before the first readout). Like every option on
 the page it is page state: a pick stays when the site changes, when the tab is left and the page
@@ -2509,7 +2513,7 @@ directly.
 Directly under the colorbar, `DirectionReadouts` prints four statistics. **All four are engine
 outputs — none is recomputed in the browser — and all four come from `readout`, the smoothing-0
 payload** (Step 3), never from the drawn map: the smoothing redraws the sphere and its colorbar but
-never moves a readout, and at the page's defaults they are exactly what
+never moves a readout, and at Auto they are exactly what
 `analyze_displacement_directions` returns. Each is recalled here with its definition and the
 formatting the UI applies. $N$ is the number of surviving displacement vectors (`usedPoints`), $C$
 the cell count, $n_c$ the **raw** (unsmoothed) count in cell $c$, and $e_c = N\,\Omega_c/4\pi$ its
@@ -3065,10 +3069,10 @@ destructure.
 | Control | State | Default | Range / options | Unit |
 | --- | --- | --- | --- | --- |
 | Site | `selectedRef` | first "clean" site, else first reference number | reference numbers in the file | — |
-| Resolution | `frequency` | **`auto`**, labelled `Auto · ν=n (10n²+2)` with the engine's ν (since plan item 2.5; until then 10) | `auto`, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24 → $10\nu^2+2$ cells | — |
+| Resolution | `frequency` | **10** (1002 cells; the user's choice, 2026-10-24; `auto` from plan item 2.5 until then, labelled `Auto · ν=n (10n²+2)` with the engine's ν) | `auto`, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24 → $10\nu^2+2$ cells | — |
 | Weight | `weight` | `count` | `count` \| `amplitude` (\|Δr\|) \| `amplitude2` (\|Δr\|²) | — |
 | Min \|Δr\| | `minQuantile` | **0** | 0 – 0.5, step 0.05 (displayed as %) | quantile of \|Δr\| |
-| Smoothing | `smoothing` | **0** (2 until 2026-10-19) | 0 – 12, step 1; the drawn map only (the readouts are requested at 0) | diffusion passes |
+| Smoothing | `smoothing` | **4** (shown 4×; 2026-10-24; 0 from 2026-10-19, 2 before) | 0 – 12, step 1; the drawn map only (the readouts are requested at 0) | diffusion passes |
 | Frame | `frame` | `cartesian` (**Crystal**) | `cartesian` \| `pca` | — |
 | Cluster | `clusterThreshold` | 1.5 | 0.4 – 2.5, step 0.1; visible only when `sites.reconstructed` (browser path) | Å |
 | — | `geometry` | always `true` | — | — |

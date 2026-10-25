@@ -4,10 +4,10 @@
 // Plan item 2.5, the known answer: the Displacement Directions page and
 // analyze_displacement_directions at the same settings. On the dev thermal
 // case (thermal motion only, its X flattened across its bond) every site's
-// readout at the page's defaults is the tool's result, number for number, and
-// arm A reads exactly that. Under the page's old default (ν = 10, the
-// readouts of the 2× smoothed map) the flattened X's map test stayed below
-// the 3σ bar that the engine's tiling clears. Dev case only.
+// readout at Auto (arm A's settings, frozen at protocol 2026-10-24.6; the
+// page opens at ν = 10 since 2026-10-24) is the tool's result, number for
+// number, and arm A reads exactly that. At ν = 10 the flattened X's map test
+// stays below the 3σ bar that the engine's tiling clears. Dev case only.
 
 import { describe, expect, it } from 'vitest';
 import { buildCase, DEV_CASES } from '../cases';
@@ -18,12 +18,13 @@ import { unitCellVectors } from '../../src/pcaCrystalFrame';
 import { DIRECTION_DEFAULTS, directionMapRequest, directionReadoutRequest } from '../../src/directionSettings';
 
 const loadThermal = () => loadRun(buildCase(DEV_CASES.find((item) => item.id === 'dev-thermal-null')), { ladder: false });
-const atDefaults = (run, referenceNumber, request = directionReadoutRequest) => run.engine('orientation', {
-    ...request({ ...DIRECTION_DEFAULTS, referenceNumber }), geometry: false
+// The page at Auto, unsmoothed: arm A's frozen settings and the tool's.
+const atAuto = (run, referenceNumber, request = directionReadoutRequest) => run.engine('orientation', {
+    ...request({ ...ARM_A_RULES.DIRECTION_SETTINGS, referenceNumber }), geometry: false
 });
 
 describe('the page and the tool at the same settings (plan item 2.5): the dev thermal case', () => {
-    it('every site: the page\'s default readout is analyze_displacement_directions\' result, and arm A reads it', async () => {
+    it('every site: the page\'s readout at Auto is analyze_displacement_directions\' result, and arm A reads it', async () => {
         const run = await loadThermal();
         const { structure } = run.props;
         const unitCell = unitCellVectors(structure.latticeVectors, structure.supercell);
@@ -32,7 +33,7 @@ describe('the page and the tool at the same settings (plan item 2.5): the dev th
         expect(sites.length).toBeGreaterThan(0);
         for (const site of sites) {
             const ref = site.referenceNumber;
-            const page = await atDefaults(run, ref);
+            const page = await atAuto(run, ref);
             const answer = await tool.run({ site_ref: ref });
             // The engine's own tiling.
             expect(page.frequency, `site ${ref}`).toBe(page.recommendedFrequency);
@@ -54,16 +55,19 @@ describe('the page and the tool at the same settings (plan item 2.5): the dev th
         }
     });
 
-    it('the flattened X is anisotropic on the engine\'s tiling, and was below the bar on the old page default', async () => {
+    it('the flattened X is anisotropic on the engine\'s tiling, and below the bar at ν = 10', async () => {
         const run = await loadThermal();
         const { sites } = await run.engine('sites');
         const flattened = sites.filter((site) => site.element === 'O');
         expect(flattened.length).toBeGreaterThan(0);
         for (const site of flattened) {
-            const page = await atDefaults(run, site.referenceNumber);
-            const old = await run.engine('orientation', { referenceNumber: site.referenceNumber, frequency: 10, smoothing: 2, geometry: false });
+            const page = await atAuto(run, site.referenceNumber);
+            // The page's opening readout (ν = 10; the map test reads the raw
+            // counts, so the smoothing would not move it either).
+            const fine = await run.engine('orientation', { ...directionReadoutRequest({ ...DIRECTION_DEFAULTS, referenceNumber: site.referenceNumber }), geometry: false });
+            expect(fine.frequency).toBe(10);
             expect(page.mapSignificance, `site ${site.referenceNumber}`).toBeGreaterThanOrEqual(ARM_A_RULES.SIGMA);
-            expect(old.mapSignificance, `site ${site.referenceNumber}`).toBeLessThan(ARM_A_RULES.SIGMA);
+            expect(fine.mapSignificance, `site ${site.referenceNumber}`).toBeLessThan(ARM_A_RULES.SIGMA);
             // Thermal motion: no preferred direction on either.
             expect(page.peakSignificance).toBeLessThan(ARM_A_RULES.SIGMA);
         }
@@ -73,13 +77,13 @@ describe('the page and the tool at the same settings (plan item 2.5): the dev th
         const run = await loadThermal();
         const { sites } = await run.engine('sites');
         let moved = 0;
-        // The map opens unsmoothed (the drawn map is then the readout itself);
-        // a user who smooths it, two passes here, redraws only the map.
+        // Unsmoothed, the drawn map is the readout itself; a user who smooths
+        // it, two passes here, redraws only the map.
         const smoothed = (settings) => directionMapRequest({ ...settings, smoothing: 2 });
-        expect(directionMapRequest({ ...DIRECTION_DEFAULTS, referenceNumber: 1 })).toEqual(directionReadoutRequest({ ...DIRECTION_DEFAULTS, referenceNumber: 1 }));
+        expect(directionMapRequest({ ...ARM_A_RULES.DIRECTION_SETTINGS, referenceNumber: 1 })).toEqual(directionReadoutRequest({ ...ARM_A_RULES.DIRECTION_SETTINGS, referenceNumber: 1 }));
         for (const site of sites) {
-            const readout = await atDefaults(run, site.referenceNumber);
-            const drawn = await atDefaults(run, site.referenceNumber, smoothed);
+            const readout = await atAuto(run, site.referenceNumber);
+            const drawn = await atAuto(run, site.referenceNumber, smoothed);
             expect(drawn.smoothing).toBe(2);
             // The same tiling and the same raw-count tests.
             expect(drawn.frequency).toBe(readout.frequency);
