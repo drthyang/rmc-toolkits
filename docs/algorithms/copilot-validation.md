@@ -1755,3 +1755,48 @@ sends an answer back:
 **Tokens and cost.** For Sonnet, about 70–90k prompt tokens and 3–6k reply tokens per run, so the
 27 test runs of arm B come to about 2.4M prompt + 0.15M reply tokens. That is about $6.30 at list
 prices ($4.80 prompt + $1.50 reply), less with cache hits. The tracker's upper bound is $7.50, inside the $20 cap.
+
+## Live results (2026-10-25): gemma4:26b only
+
+One local model has run so far: `gemma4:26b` on Ollama 0.40.2, at commit 7456af9 (protocol
+2026-10-24.6), with `run.js live --limits maxTurnMs=3600000,requestMaxMs=1200000` (60 minutes a turn,
+20 a request; the stall guard and the 6-round budget unchanged). **Muse Glimmer and Claude Sonnet 5.5
+have not run yet** (the user paused the live tier on 2026-10-25), and the user dropped qwen3.8-27b for
+this cycle, so this is not yet the arms-across-models comparison. The numbers are counts only on the test
+split. Its records are sealed in `validation/holdout/live/`, the dev smoke's are in
+`validation/baseline/live/`, and the summary is `validation/baseline/live/gemma4-26b-summary.json`.
+
+| split | arm | runs | mean score | A / A+ / D | minutes a run (mean, max) | 6-round endings | cut | errors |
+|---|---|---|---|---|---|---|---|---|
+| dev (smoke, 1 run a case) | B | 15 | 0.652 | 0.814 / 0.952 / 1.000 | 1.7, 3.1 | 11 (73 %) | 0 | 0 |
+| test (3 runs a case) | B | 42 | 0.748 | 0.800 / 0.948 / 1.000 | 1.5, 4.6 | 36 (86 %) | 0 | 0 |
+| test (3 runs a case) | C | 42 | 0.397 | 0.800 / 0.948 / 1.000 | 1.3, 3.4 | 10 (24 %) | 0 | 1 |
+
+- **No run measured the machine.** None reached the turn or request limit, and none was cut. The 6-round
+  endings are the model's own pace under the frozen budget, the same for every model.
+- **The method roughly doubles Gemma's score** (test: B 0.748, C 0.397). Most of C's loss is answers with
+  no VERDICT line (19 of 42), which the fixed scoring reads as 0. B still trails arm A by 0.05 and A+ by
+  0.20.
+- **Three failure patterns, the same on dev and test:**
+  - Number references written as `{{rN.data.…}}`. The prompt's form is the path within the result's
+    data, `{{rN.sites.0.delta_A}}`. 69 of the dev smoke's 82 unfilled references, 115 of 161 in test B and
+    72 of 101 in test C have that prefix. Inside a VERDICT an unfilled number breaks the JSON, so an
+    otherwise right answer scores 0 (dev-offcentre and dev-symmetry-lowering).
+  - `element: "all"`, which the tools refuse with their list of elements (5 dev runs, 12 test-B runs, 7
+    test-C runs).
+  - About one tool call per round (1.02 to 1.04 calls a round), with `read_skill` taking rounds too, so
+    most arm-B runs spend all 6 rounds.
+- **The final round on Ollama** (the last request carries no tools): of the dev smoke's 11 six-round runs,
+  10 answered from the earlier results in the messages and 1 came back empty.
+- **The one run error** (test C) is Ollama stopping a reply on its token repeat limit in round 0. That is
+  the model's repetition, recorded as an error ending.
+- **num_ctx sent:** 32,768 (the instance already loaded) and 40,960 once a prompt outgrew it. The model
+  holds 262,144.
+
+**The dock, checked live with gemma4:26b** (Flask mode, the Demo run as a server folder, Live Data on):
+- Answers stream: the Thinking panel fills, then the answer arrives token by token, then the Outcome chip.
+- Within one configuration, a question's request carries the earlier questions and answers.
+- Saving the run's `.rmc6f` puts up the divider "New configuration saved — earlier answers were about
+  the previous one".
+- The next request carries none of the earlier questions or answers. The page's console showed two 404s
+  for resources, not investigated.
