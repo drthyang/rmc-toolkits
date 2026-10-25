@@ -428,7 +428,9 @@ describe('where a finding stands, and validation batch 1', () => {
             '2026-10-19-engine-verdicts', '2026-10-19-f5-shell-join', '2026-10-19-jt-split', '2026-10-19-judgment-dev-cases',
             '2026-10-19-list-sites-split', '2026-10-19-marginal-reset-dev', '2026-10-19-mode-polarisation', '2026-10-19-modulation-bar-and-family',
             '2026-10-19-modulation-null', '2026-10-19-provenance-told', '2026-10-19-shell-catalogue', '2026-10-19-shell-cut-rule',
-            ...INTERVIEW_RECORDS.filter((id) => id < '2026-10-24-fit-assessment-interview'),
+            ...INTERVIEW_RECORDS.filter((id) => id < '2026-10-24-directions-page-defaults'),
+            '2026-10-24-directions-page-defaults',
+            ...INTERVIEW_RECORDS.filter((id) => id > '2026-10-24-directions-page-defaults' && id < '2026-10-24-fit-assessment-interview'),
             '2026-10-24-fit-assessment-interview',
             '2026-10-24-ft-error-propagation',
             ...INTERVIEW_RECORDS.filter((id) => id > '2026-10-24-fit-assessment-interview'),
@@ -701,6 +703,27 @@ describe('where a finding stands, and validation batch 1', () => {
                 expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
             });
         }
+    });
+
+    it('decisions: the Displacement Directions page opens at ν = 10, smoothed 4× (the user\'s request), the tool and arm A unchanged, approved by the user directly and implemented with its tests', () => {
+        const defaults = decisions()['2026-10-24-directions-page-defaults'];
+        expect(defaults).toMatchObject({
+            case: 'dev-thermal-null', kind: 'orchestration', needs_user_approval: true, status: 'implemented',
+            approval: { by: 'user', date: '2026-10-24', batch: 3 }
+        });
+        for (const field of ['evidence', 'proposed_fix']) {
+            expect(defaults[field], field).toMatch(/Approved by the user, 2026-10-24\.$/);
+            expect(defaults[field], field).not.toMatch(/on the user's delegation/i);
+            expect(defaults[field], field).toMatch(/arm A is defined by the settings frozen at protocol 2026-10-24\.6, not by the page's current defaults; armA\.js pins them/i);
+        }
+        // The request, quoted.
+        expect(defaults.evidence).toContain('"RMC: Displacement Directions page: set the defaul mu=10, smoothing=4x"');
+        expect(defaults.commit).toMatch(/^[0-9a-f]{40}$/);
+        expect(defaults.tests.length).toBeGreaterThan(0);
+        defaults.tests.forEach((test) => {
+            const [path, title] = test.split(' › ');
+            expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+        });
     });
 
     it('decisions: Claude Sonnet 5.5\'s request policy (no temperature, a reply cap, the $20 cap), approved by the user directly and implemented with its tests', () => {

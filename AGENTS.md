@@ -91,7 +91,7 @@ web_app/frontend/src/
   moveStats.js                   per-atom sampling ratios from the .rmc6f move counters (Model information card)
   structureReport.js             whether a structure read looks mid-write (Live Data keeps the previous summary)
   orientationSphere.js           pure helpers for the orientation sphere (cell mesh/outline typed arrays, relief radii, colorbar gradient) — unit-tested, no Three.js
-  directionSettings.js           the Displacement Directions page's settings, one module for the page and the validation's arm A (plan item 2.5): `DIRECTION_DEFAULTS` (Auto = the engine's recommendedFrequency, count, Crystal, no cut, smoothing 0: the map opens unsmoothed, a display setting only), `FREQUENCY_OPTIONS`, `directionReadoutRequest` (the analysis settings at smoothing 0: what every readout comes from, and at the defaults what analyze_displacement_directions asks) and `directionMapRequest` (the same, smoothed: what is drawn), `autoResolutionLabel` (`Auto · ν=n (cells)`)
+  directionSettings.js           the Displacement Directions page's settings (plan item 2.5): `DIRECTION_DEFAULTS` (ν = 10, count, Crystal, no cut, smoothing 4×: the user's choice, 2026-10-24; smoothing a display setting only), `FREQUENCY_OPTIONS` ('auto' = the engine's recommendedFrequency, the tool's tiling), `directionReadoutRequest` (the analysis settings at smoothing 0: what every readout comes from, and at Auto what analyze_displacement_directions asks; arm A builds its request with it from its own settings, pinned in armA.js at protocol 2026-10-24.6) and `directionMapRequest` (the same, smoothed: what is drawn), `autoResolutionLabel` (`Auto · ν=n (cells)`)
   useDirectionHistogram.js       the page's two orientation requests for the selected site (readout + map, landing together; a smoothing change asks for the map only, reusing the readout); returns `{ readout, map, loadedRef, loading, error }`
   pcaCrystalFrame.js             pure crystallographic-frame math (3×3 algebra, unit-cell vectors from the supercell lattice, fractional ⟷ PCA transforms, per-PC angles to a/b/c + [u v w], `crystalOrientationRows` (the Crystal orientation table), `projectVolumeOntoFrame` (crystal-frame wall marginals by line integrals through the volume)) — unit-tested, no Three.js
   useSiteCloud.js                shared hook: .rmc6f text loading, worker/API request routing, per-site ellipsoid table, selected site (one app-lifetime worker → shared parse cache across the PCA Ellipsoid and Orientation pages); `dataEpoch` in its request dependencies reloads in place on a Flask Live Data save. The routing itself is the exported `requestAnalysis(kind, params, { rmc6fText, directory, worker, signal })`, the analysis request seam (its interface in its doc comment: `kind` a key of `ANALYSIS_ROUTES`, else "unknown request kind" before any work; params flat scalars that never override kind/text/dir/id; a refusal names the parameter; the cancel semantics), which the Copilot's run engine (useCopilotRun.js) calls with its own worker and an abort signal
@@ -129,7 +129,7 @@ web_app/frontend/src/
     FoldedCellPanel.jsx          Bond Geometry's folded unit cell with the detected bonds drawn over the atom cloud
     StructurePage.jsx            KDE slice, Slab In Cell, Three.js 3D view  ← most complex component
     PcaKdePage.jsx               PCA Ellipsoid tab: site picker, ADP table, Three.js isosurface + ellipsoid + wall projections; unit-cell picker via SiteStructurePanel
-    OrientationPage.jsx          Displacement Directions tab (the nav label; the code says "orientation"; own workspace page — not a PCA product): owns the options (top controls bar, PCA-page style; they open at `DIRECTION_DEFAULTS`, the resolution at Auto with the engine's ν in its label, and stay as page state) and the two results (`useDirectionHistogram`) + the 3:6.5:6.5 equal-height grid (Axis views : sphere : SiteStructurePanel), height viewport-clamped for 16:9; an App `request` prop (a Copilot step's Show in) selects the step's site and resolution
+    OrientationPage.jsx          Displacement Directions tab (the nav label; the code says "orientation"; own workspace page — not a PCA product): owns the options (top controls bar, PCA-page style; they open at `DIRECTION_DEFAULTS`, ν = 10 and smoothing 4×, with the engine's ν in the Auto choice's label, and stay as page state) and the two results (`useDirectionHistogram`) + the 3:6.5:6.5 equal-height grid (Axis views : sphere : SiteStructurePanel), height viewport-clamped for 16:9; an App `request` prop (a Copilot step's Show in) selects the step's site and resolution
     BondGeometryPage.jsx        Bond Geometry tab (beside Atomic Density): Model information card (ModelSummary with showSymmetry={false}), the controls bar as a form (Enter computes), then a hero + right-stack grid — the angle distribution (fixed 0–180° axis, step curve, no reference line — the axis says random = 1; KPI rail under its header, its coordination tile the engine's coordinationSummary) beside the folded-cell bond view and the partial-g(r) window helper; one colour system (element chips; BOND_COLORS in plotPalette.js for the A–B / B–C roles); empty/computing/stale/no-angles/error states inside the cards; compute-on-demand via useSiteCloud requestPca('triplets') → worker or /api/triplets; an App `request` prop (a Copilot step's Show in) fills the triplet and windows (`tripletInputsFromRequest`) and computes once the boxes hold exactly that request
     OrientationView.jsx          renders display:contents → its two panels drop into the page grid: the Axis-views mini panel (three fixed-angle a/b/c | PC1/2/3 views, click to snap) and the sphere panel (flat-shaded Goldberg cells, amplitude relief, only the selected frame's axis rods, header Crystal|PCA toggle + Reset + Save, per-cell hover, colorbar + asymmetry/significance strip); draws `result` (the smoothed map) and prints every readout from `readout` (the raw histogram, `DirectionReadouts`; the peak ± its cell radius), never the drawn map's own peak
     SiteStructurePanel.jsx       clickable unit-cell site picker (thermal-ellipsoid markers, bonds, a/b/c gizmo) shared by the PCA Ellipsoid and Orientation pages; sized by UnitCellPanel.css (shared with FoldedCellPanel)
@@ -272,12 +272,13 @@ web_app/frontend/src/
   cells go to the lowest index within `PEAK_TIE_RTOL = 1e-9`; neighbour/polygon cycles start at their
   smallest index. `recommended_frequency` floors to ≥ 12 points per cell. The peak cell is picked on
   the *smoothed* enhancement, so with smoothing on the peak's cell, direction and σ move with it:
-  the Displacement Directions page opens at Auto (`recommended_frequency`, the tool's tiling) and
-  reads every readout from a smoothing-0 request (`directionSettings.js`, plan item 2.5), smoothing
-  only the map it draws (it opens unsmoothed), so the page, arm A and analyze_displacement_directions
-  read the same numbers. A cell names a direction only to within its size: both engines return the
-  peak cell's circumscribed radius, `peakCellRadiusDeg` (the largest angle from its centre to its
-  vertices, so every direction assigned to it lies within it: 37.38° at ν = 1, 19.35–20.91° at
+  the Displacement Directions page reads every readout from a smoothing-0 request
+  (`directionSettings.js`, plan item 2.5), smoothing only the map it draws; it opens at ν = 10,
+  smoothed 4× (2026-10-24), and at Auto (`recommended_frequency`, the tool's tiling) the page,
+  arm A (pinned there, protocol 2026-10-24.6) and analyze_displacement_directions read the same
+  numbers. A cell names a direction only to within its size: both engines return the peak cell's
+  circumscribed radius, `peakCellRadiusDeg` (the largest angle from its centre to its vertices, so
+  every direction assigned to it lies within it: 37.38° at ν = 1, 19.35–20.91° at
   ν = 2); the tool and the page give the peak "± R°, the cell radius at ν = n", the tool calls a
   direction unresolved above `LOW_INDEX_CONE_DEG` (15°, `directionResolved`) and names no family
   then, and arm A+ takes PC1 there. The tool labels the peak (`directionTier`, the user's tiers,
@@ -815,12 +816,13 @@ plot-parity tests, so those run in CI.
    when none still falls beyond 3 × its noise over the last tenth; `plotData.chiTerms` from both
    runtimes; decision record `validation/findings/decisions/2026-10-24-fit-assessment-interview.json`).
 7. Displacement Directions: ~~decide the default resolution (Auto instead of ν = 10)~~ **decided**
-   (plan item 2.5, 2026-10-19): the page opens at Auto, the engine's resolution and the tool's, and
+   (plan item 2.5, 2026-10-19; since 2026-10-24 the page opens at ν = 10, smoothed 4×, the user's
+   choice, while the tool and arm A keep Auto: `2026-10-24-directions-page-defaults.json`): the page
    takes every readout from the raw histogram (`directionSettings.js`; decision record
    `validation/findings/decisions/2026-10-19-directions-auto-resolution.json`); the peak direction is
    given ± its cell's circumscribed radius (engines, tool, page; unresolved above 15°, where arm A+
-   takes PC1); the map opens unsmoothed. Still open: remove or rename the legacy `significance` /
-   `peakZScore` payload fields before an API freeze.
+   takes PC1). Still open: remove or rename the legacy `significance` / `peakZScore` payload
+   fields before an API freeze.
 8. ~~PCA: identical subsamples in both engines above 20 000 copies~~ **DONE** — the JS draw
    (mulberry32 + partial Fisher–Yates) ported to Python over the same site-major cloud;
    `pca_kde_fixture.json` holds the volumes above the cap to one golden.

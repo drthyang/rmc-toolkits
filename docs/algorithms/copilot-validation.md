@@ -54,10 +54,13 @@ meters it for an API model (`spend.js` `meteredModel`).
 ### The Displacement Directions page at its defaults
 
 Decided 2026-10-19 (plan item 2.5; protocol 2026-10-19.17). Arm A reads a split site's direction
-map on the Displacement Directions page as the page shows it at its defaults, and takes those
-defaults from the page itself: `ARM_A_RULES.DIRECTION_SETTINGS` *is* the page's
-`DIRECTION_DEFAULTS` (`src/directionSettings.js`), and the request is the page's own readout
-request (`directionReadoutRequest`), so no number is copied into the protocol. Since this decision
+map on the Displacement Directions page as the page showed it at its defaults, and took those
+defaults from the page itself (`ARM_A_RULES.DIRECTION_SETTINGS` was the page's
+`DIRECTION_DEFAULTS`, `src/directionSettings.js`); the request is the page's own readout
+request (`directionReadoutRequest`). Since 2026-10-24 the page opens at ν = 10, smoothed 4× (the
+user's choice), and arm A is defined by the settings frozen at protocol 2026-10-24.6, not by the
+page's current defaults: `validation/armA.js` pins them (Auto, count, Crystal, no cut, smoothing
+0), and its records are unchanged. Since this decision
 the page opens at Auto, the engine's recommended resolution (`recommendedFrequency`), and takes
 every readout (the peak, its direction and σ, the map test, the ± asymmetry, the Bingham
 anisotropy) from the raw histogram, at smoothing 0; the smoothing redraws the map only. That is
@@ -83,7 +86,7 @@ isotropic) is read again at the neighbouring resolution (ν − 1, ν + 1 at ν 
 the claim only as a finding, held there at ≥ 3σ on the same axis; a hint or nothing takes PC1. The
 reading records the tier, the neighbouring resolution and its σ. On dev it moves no verdict or
 score: every split site's peak is a finding, and every one's cell is wider than 15° (PC1 already).
-Arm A reads the page as before. The page's map opens unsmoothed, which no reading or score depends on.
+Arm A reads the page as before. The page's map opened unsmoothed, which no reading or score depends on.
 The moved dev records are re-recorded in `arm-a-dev.json` (the others as recorded) and pinned in
 `arms.test.js`; the tables under [Arm A results](#arm-a-results-no-model-2026-10-14-commit-b4fe09f)
 were recorded under the earlier default, and the test set's records move at its next scoring.

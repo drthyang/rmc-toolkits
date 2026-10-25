@@ -2,13 +2,13 @@
 // Copyright (C) 2026 Tsung-Han Yang
 /* @vitest-environment jsdom */
 
-// Plan item 2.5: the Displacement Directions page opens at Auto, the engine's
-// resolution (the tiling analyze_displacement_directions reads), and shows
-// the ν the engine chose; a picked resolution overrides it and stays when the
-// site changes; and every readout comes from the raw histogram (smoothing 0)
-// while the sphere draws the map at the page's smoothing (0 to open, so one
-// request), so the smoothing never moves a readout. The engine is a recording
-// fake; the Three.js panels are stubbed.
+// The Displacement Directions page opens at ν = 10 with the map smoothed 4×
+// (the user's choice, 2026-10-24); Auto, the engine's resolution (the tiling
+// analyze_displacement_directions reads), shows the ν the engine chose; a
+// picked resolution stays when the site changes; and every readout comes from
+// the raw histogram (smoothing 0) while the sphere draws the map at the
+// page's smoothing (plan item 2.5), so the smoothing never moves a readout.
+// The engine is a recording fake; the Three.js panels are stubbed.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
@@ -80,7 +80,7 @@ vi.mock('../SiteStructurePanel', () => ({ default: () => null }));
 
 const { default: OrientationPage } = await import('../OrientationPage');
 
-describe('the Displacement Directions page opens at the engine\'s resolution (plan item 2.5)', () => {
+describe('the Displacement Directions page opens at ν = 10, smoothed 4× (2026-10-24)', () => {
     let container;
     let root;
 
@@ -124,39 +124,45 @@ describe('the Displacement Directions page opens at the engine\'s resolution (pl
     // The latest readout request (every readout request is at smoothing 0).
     const lastReadout = () => orientationRequests().filter((params) => params.smoothing === 0).at(-1);
 
-    it('opens at Auto, labelled with the ν the engine chose, and reads its readouts from the raw histogram', async () => {
+    it('opens at ν = 10 with the map smoothed 4×, and reads its readouts from the raw histogram', async () => {
         await render();
-        expect(resolution().value).toBe('auto');
-        expect(selectedText(resolution())).toBe('Auto · ν=2 (42)');
-        // The map opens unsmoothed (decided 2026-10-19): the smoothing slider at 0.
-        expect(container.querySelector('input[aria-label="Neighbour smoothing passes"]').value).toBe('0');
+        expect(resolution().value).toBe('10');
+        expect(selectedText(resolution())).toBe('ν=10 (1002)');
+        // Auto still names the engine's choice for the site on screen.
+        expect([...resolution().options].find((option) => option.value === 'auto').textContent).toBe('Auto · ν=2 (42)');
+        // The map opens smoothed 4× (four neighbour passes).
+        expect(container.querySelector('input[aria-label="Neighbour smoothing passes"]').value).toBe('4');
+        expect(container.textContent).toContain('4×');
 
-        // One request: the readout at smoothing 0 with no frequency (the
-        // engine's choice, as the tool asks), which the sphere also draws.
+        // Two requests landing together: the readout at smoothing 0 and the
+        // drawn map, the same request smoothed 4×.
+        const readoutRequest = { referenceNumber: 1, frequency: 10, weight: 'count', frame: 'cartesian', minAmplitudeQuantile: 0, smoothing: 0 };
         expect(orientationRequests()).toEqual([
-            expect.objectContaining({ referenceNumber: 1, frequency: null, weight: 'count', frame: 'cartesian', minAmplitudeQuantile: 0, smoothing: 0 })
+            expect.objectContaining(readoutRequest),
+            expect.objectContaining({ ...readoutRequest, smoothing: 4 })
         ]);
-        expect(state.view.readout).toMatchObject({ smoothing: 0, peakSignificance: 4.5, frequency: RECOMMENDED });
-        expect(state.view.result).toBe(state.view.readout);
+        expect(state.view.readout).toMatchObject({ smoothing: 0, peakSignificance: 4.5, frequency: 10 });
+        expect(state.view.result).toMatchObject({ smoothing: 4, peakSignificance: 1.5, frequency: 10 });
         expect(state.view.loadedRef).toBe(1);
     });
 
     it('the smoothing redraws the map only: the readout is neither asked again nor changed', async () => {
         await render();
         const readout = state.view.readout;
+        const [readoutRequest] = orientationRequests();
         await slide('Neighbour smoothing passes', 5);
         // One request: the map, smoothed; the readout is the raw one it was.
-        expect(orientationRequests().slice(1)).toEqual([{ ...orientationRequests()[0], smoothing: 5 }]);
+        expect(orientationRequests().slice(2)).toEqual([{ ...readoutRequest, smoothing: 5 }]);
         expect(state.view.readout).toBe(readout);
         expect(state.view.result).toMatchObject({ smoothing: 5, peakSignificance: 1.5 });
-        // Back at 0 the readout is the map: nothing to ask.
+        // At 0 the readout is the map: nothing to ask.
         await slide('Neighbour smoothing passes', 0);
-        expect(orientationRequests()).toHaveLength(2);
+        expect(orientationRequests()).toHaveLength(3);
         expect(state.view.result).toBe(readout);
         expect(state.view.readout).toBe(readout);
     });
 
-    it('a picked resolution overrides Auto and stays when the site changes; Auto names the engine\'s ν meanwhile', async () => {
+    it('a picked resolution overrides the default and stays when the site changes; Auto names the engine\'s ν meanwhile', async () => {
         await render();
         await change(resolution(), 6);
         expect(resolution().value).toBe('6');
@@ -178,7 +184,7 @@ describe('the Displacement Directions page opens at the engine\'s resolution (pl
 
     it('a Copilot step\'s Show in sets its site and resolution', async () => {
         await render();
-        await change(resolution(), 10);
+        await change(resolution(), 6);
         await render({ request: { id: 1, page: 'orientation', params: { referenceNumber: 2, frequency: 'auto' } } });
         expect(select('Site').value).toBe('2');
         expect(resolution().value).toBe('auto');

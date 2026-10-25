@@ -6,11 +6,12 @@
 // Arm A, the default Workbench: what its pages show with their defaults,
 // read by fixed rules a competent user would apply (not a straw man): the
 // Detected SG card at 0.2 Å, the PCA Ellipsoid table, the Displacement
-// Directions page on each split site at its own defaults (the page's
-// DIRECTION_DEFAULTS, read from src/directionSettings.js, never copied:
-// since plan item 2.5, protocol 2026-10-19.17, the engine's resolution and
-// the raw histogram's readouts, the settings analyze_displacement_directions
-// reads; until then ν = 10 with the readouts of the 2× smoothed map) and the
+// Directions page on each split site at the settings frozen at protocol
+// 2026-10-24.6 (ARM_A_RULES.DIRECTION_SETTINGS: since plan item 2.5,
+// protocol 2026-10-19.17, the engine's resolution and the raw histogram's
+// readouts, the settings analyze_displacement_directions reads; until then
+// ν = 10 with the readouts of the 2× smoothed map; the page's own defaults
+// have moved on since, 2026-10-24) and the
 // partial g(r) on the Dashboard. The cluster and superstructure engines have
 // no page, so arm A cannot use them.
 //
@@ -38,7 +39,7 @@ import { unitCellVectors } from '../src/pcaCrystalFrame';
 import {
     cartesianToUvw, directionCandidate, directionResolved, directionTier, isCorrelatedMotion, isDiffuseOrder, neighbourFrequency, splitDisplacement
 } from '../src/copilotTools';
-import { DIRECTION_DEFAULTS, directionReadoutRequest } from '../src/directionSettings';
+import { directionReadoutRequest } from '../src/directionSettings';
 import { isSplitSite, splitSiteEvidence } from '../src/workers/clusters';
 import { normalizeVerdict } from './verdict';
 
@@ -65,9 +66,10 @@ export const ARM_A_RULES = Object.freeze({
     // ellipsoid, however anisotropic, is thermal motion.
     PROLATE_RATIO: 1.3,
     SPLIT_KURTOSIS: -0.5,
-    // Displacement Directions: the page's own defaults (the object itself,
-    // one definition; plan item 2.5), and arm A's significance bar.
-    DIRECTION_SETTINGS: DIRECTION_DEFAULTS,
+    // Displacement Directions: arm A is defined by the settings frozen at
+    // protocol 2026-10-24.6, not by the page's current defaults; and arm A's
+    // significance bar.
+    DIRECTION_SETTINGS: Object.freeze({ frequency: 'auto', weight: 'count', frame: 'cartesian', minQuantile: 0, smoothing: 0 }),
     SIGMA: 3,
     // Partial g(r): maxima below this (the bonded range, as the eye reads
     // the plot) at least this far apart are a split shell, unless the
@@ -119,7 +121,7 @@ const splitSites = async (run, readings) => {
     return { payload, found };
 };
 
-// Displacement Directions page on one site, at the page's defaults: the
+// Displacement Directions page on one site, at arm A's frozen settings: the
 // readouts it shows there (directionReadoutRequest, the request the page's
 // readouts come from), with the resolution it read (`frequency`, ν) and the
 // peak cell's radius the page prints beside the direction (± R°, plan item
@@ -135,7 +137,7 @@ export const directionsOf = async (run, site, readings, { resolved = null, tiers
     const payload = await run.engine('orientation', request);
     const significant = payload.peakSignificance >= ARM_A_RULES.SIGMA;
     // The tool's tier: a candidate is checked at the neighbouring resolution
-    // (the page's defaults are the engine's own resolution).
+    // (arm A's settings are the engine's own resolution).
     const neighbour = tiers && tiers.candidate(payload) ? await run.engine('orientation', { ...request, frequency: tiers.neighbour(payload.frequency) }) : null;
     const tier = tiers ? tiers.tier(payload, neighbour) : null;
     const taken = tier ? tier.tier === 'finding' : significant;
@@ -286,8 +288,9 @@ export const runArmA = async (copilotRun) => {
  *                   the verdict was not read.
  *
  * Arm A's rules (ARM_A_RULES) are the frozen protocol's and stay as they were,
- * apart from the Displacement Directions page's defaults, which are the
- * page's own (plan item 2.5, protocol 2026-10-19.17). A+ reads a split
+ * apart from the Displacement Directions settings, the page's defaults of
+ * plan item 2.5 (protocol 2026-10-19.17), frozen at protocol 2026-10-24.6
+ * when the page's own moved on. A+ reads a split
  * site's direction map through the same reading (directionsOf), which since
  * then is analyze_displacement_directions' own result at its defaults; arm A
  * takes a significant peak whatever its cell's radius, as a user reading the

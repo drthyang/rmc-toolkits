@@ -1473,9 +1473,9 @@ per click.
   `{referenceNumber, frequency}`, with frequency `'auto'` when the Copilot let the engine choose.
   The page's smoothing, weight and frame are left as the user set them: a smoothed map can differ
   (the Copilot's is unsmoothed), while every readout under it comes from the raw histogram. Since
-  plan item 2.5 the page also opens at Auto, unsmoothed, and reads its readouts at smoothing 0, so
-  at its defaults its map and numbers are the step's, the direction ± the same cell radius
-  (displacement-directions.md, view section Step 3). Element pooling has no page view, so that step
+  plan item 2.5 the page reads its readouts at smoothing 0, so at Auto its numbers are the step's,
+  the direction ± the same cell radius (displacement-directions.md, view section Step 3); it opens
+  at ν = 10, smoothed 4× (2026-10-24), and a Show in sets the step's resolution. Element pooling has no page view, so that step
   only opens the page.
 - Other steps open their page without parameters.
 

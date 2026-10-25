@@ -288,6 +288,8 @@ documented in [ALGORITHMS.md](ALGORITHMS.md) stands.
   - ~~Making Auto (or a coarser ν) the default resolution instead of ν = 10.~~ Done (plan item
     2.5, 2026-10-19): the page opens at Auto, the tool's tiling, and reads its readouts at smoothing
     0. Measured during the audit, 1 of 52 real sites exceeded 2σ at ν = 10, against 8–11 on Auto.
+    Since 2026-10-24 the page opens at ν = 10, smoothed 4× (the user's choice); the tool and arm A
+    keep Auto.
   - A direction finer than its cell: on Auto a small site's tiling is coarse (ν = 1 names a cube
     axis only to within 31.7°). Reported since plan item 2.5 (the peak ± its cell's circumscribed
     radius; unresolved above 15°; the map opens unsmoothed); still open: a direction estimate finer
