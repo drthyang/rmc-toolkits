@@ -3,6 +3,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { completeChat } from '../provider/client';
+import { temperatureFor } from '../provider/sampling';
 import { buildWatchdogMessages, parseWatchdogReply } from '../prompts/templates';
 import { classifyRun, significantChange, watchdogRunStats } from './heuristics';
 
@@ -13,7 +14,9 @@ import { classifyRun, significantChange, watchdogRunStats } from './heuristics';
 // total, by the rule the Copilot's assess_convergence reads (heuristics.js
 // judgeConvergence; the chart draws the last column only). The LLM is only
 // asked to narrate, and only when the status flips or enough genuinely new
-// data arrived — never on the raw 3-second poll cadence.
+// data arrived — never on the raw 3-second poll cadence. Its request runs at
+// temperature 0, or with none for a model that takes none (Claude:
+// provider/sampling.js).
 
 const MS_PER_MINUTE = 60000;
 
@@ -80,7 +83,7 @@ export const useWatchdog = ({ rValueFile, settings }) => {
             model,
             apiKey,
             messages: buildWatchdogMessages(stats, status, lastLlmRef.current.status, column),
-            temperature: 0,
+            temperature: temperatureFor({ baseUrl, model }, 0),
             signal: controller.signal
         }).then((reply) => {
             const parsed = parseWatchdogReply(reply);

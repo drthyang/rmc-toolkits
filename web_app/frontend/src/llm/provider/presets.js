@@ -41,8 +41,9 @@ export const PROVIDER_PRESETS = [
     {
         // Anthropic's OpenAI-compatible endpoint speaks the same /chat/completions
         // dialect, so it slots in as a preset. Its browser-CORS + version headers
-        // are added in the client (see anthropicHeaders); models are Claude IDs
-        // like claude-opus-4-8 / claude-sonnet-5 / claude-haiku-4-5.
+        // are added in the client (client.js requestHeaders); models are Claude IDs
+        // like claude-opus-5-5 / claude-sonnet-5-5, which take no temperature
+        // (sampling.js).
         id: 'anthropic',
         label: 'Anthropic',
         baseUrl: 'https://api.anthropic.com/v1',
@@ -63,6 +64,15 @@ const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]', '::1', '0.0.
 export const isLocalUrl = (baseUrl) => {
     try {
         return LOCAL_HOSTNAMES.has(new URL(baseUrl).hostname);
+    } catch {
+        return false;
+    }
+};
+
+/** Anthropic's own API (api.anthropic.com): its headers (client.js), and no temperature (sampling.js). */
+export const isAnthropicUrl = (baseUrl) => {
+    try {
+        return new URL(baseUrl).hostname === 'api.anthropic.com';
     } catch {
         return false;
     }

@@ -6,6 +6,7 @@ import { describeTurn, runTurn } from './copilot/turn';
 import { stoppedByFailure } from './copilot/turnPolicy';
 import { applyTurnEvent, closeTurn, newAssistantTurn } from './copilot/turnState';
 import { providerModel } from './provider/model';
+import { temperatureFor } from './provider/sampling';
 
 // The dock's adapter of the turn module (copilot/turn.js): the conversation
 // state for the Copilot page — the finished turns, the turn in progress,
@@ -43,7 +44,9 @@ import { providerModel } from './provider/model';
 // through provider/contextGuard.js, which never sends a request the model
 // would cut to fit its context window (it sizes Ollama's context, or refuses
 // the turn with a message that says why); `session` keeps the context asked
-// per model across the conversation.
+// per model across the conversation. A model that takes no temperature
+// (provider/sampling.js: Claude) is given `temperature: null`, so none of its
+// requests carries one, the warmer retry included (copilotModel).
 //
 // `offered` and `skillsError` describe what the Copilot can run on this run
 // with its analyses on (describeTurn): the composer's status line and the
@@ -57,6 +60,16 @@ const EMPTY_DESCRIPTION = Object.freeze({
     offered: Object.freeze({ tools: [], skills: [], askUser: false, view: false }),
     skillsError: null
 });
+
+/**
+ * The dock's model port from the user's settings: providerModel with the
+ * settings' temperature, or null (none sent, the warmer retry included) for
+ * a model that takes none (provider/sampling.js takesNoTemperature).
+ */
+export const copilotModel = (settings, options) => providerModel(
+    { ...settings, temperature: temperatureFor(settings) },
+    options
+);
 
 // The configuration a question was asked under (null: the host names none).
 const askedUnder = (turn) => turn.configKey ?? null;
@@ -190,7 +203,7 @@ export const useCopilot = ({
             for await (const event of runTurn({
                 question: text,
                 run,
-                model: providerModel(settings, { session: contextSessionRef.current }),
+                model: copilotModel(settings, { session: contextSessionRef.current }),
                 tools,
                 askUser,
                 skills,

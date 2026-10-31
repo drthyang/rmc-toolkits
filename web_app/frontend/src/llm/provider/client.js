@@ -6,6 +6,8 @@
 // SDK, no SSE library — so the whole provider surface stays readable in one
 // file and adds zero runtime dependencies.
 
+import { isAnthropicUrl } from './presets';
+
 const trimBase = (baseUrl) => (baseUrl || '').replace(/\/+$/, '');
 
 // Cloud providers (OpenAI, Gemini, …) authenticate with a Bearer token; local
@@ -15,20 +17,15 @@ const authHeaders = (apiKey) => (apiKey ? { Authorization: `Bearer ${apiKey}` } 
 // Anthropic's API blocks browser (CORS) requests unless the caller opts in with
 // `anthropic-dangerous-direct-browser-access`, and its endpoints expect an API
 // version. Its OpenAI-compatible /chat/completions still authenticates with a
-// Bearer token, so only these two extra headers are Anthropic-specific.
-const isAnthropic = (baseUrl) => {
-    try {
-        return new URL(baseUrl).hostname === 'api.anthropic.com';
-    } catch {
-        return false;
-    }
-};
+// Bearer token, so only these two extra headers are Anthropic-specific (the
+// host test is presets.js isAnthropicUrl; which models take no temperature is
+// sampling.js).
 
 // Headers for one request: Bearer auth plus, for Anthropic, its browser-access
 // and version headers. Keyed off the base URL so no per-call plumbing is needed.
 const requestHeaders = (baseUrl, apiKey) => ({
     ...authHeaders(apiKey),
-    ...(isAnthropic(baseUrl)
+    ...(isAnthropicUrl(baseUrl)
         ? {
             'anthropic-version': '2023-06-01',
             'anthropic-dangerous-direct-browser-access': 'true'
@@ -115,7 +112,8 @@ export const checkConnection = async (baseUrl, { signal, apiKey } = {}) => {
 // `tools` / `toolChoice` join the body only when given, so plain chat and
 // watchdog requests are byte-identical to servers that predate tool calling.
 // The body is built from what it is given: a null temperature is left out
-// (the model's own default sampling; the model port decides when), and
+// (the model's own default sampling; sampling.js says which models take
+// none, and the model port and the watchdog send them null), and
 // `max_tokens` joins only when `maxTokens` is a number (never by default).
 // An HTTP failure carries its status and its parsed body (httpError), which
 // lets the model port tell "this model cannot call tools" from a dead server.

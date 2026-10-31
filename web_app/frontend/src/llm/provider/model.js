@@ -157,9 +157,10 @@ export const asModelPort = (model) => {
  * for the context asked per model.
  *
  * Two settings change what goes out, and only when given (the dock gives
- * neither: its requests are as before):
- *   temperature null   the model takes only its default sampling (Claude
- *                      Sonnet 5.5 answers a temperature with HTTP 400), so
+ * temperature null to a model that takes none, sampling.js
+ * takesNoTemperature, through useCopilot.js copilotModel, and never a cap):
+ *   temperature null   the model takes only its default sampling (current
+ *                      Claude models answer a temperature with HTTP 400), so
  *                      no request carries a temperature key, the 'warmer'
  *                      retry included: it is asked again, unchanged. Any other
  *                      value (a number, or undefined for the provider's

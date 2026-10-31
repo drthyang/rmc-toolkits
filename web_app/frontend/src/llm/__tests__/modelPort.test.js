@@ -20,8 +20,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runCopilotTurn } from '../copilot/agentLoop';
 import { ContextLimitError, estimatePromptTokens, forgetServers } from '../provider/contextGuard';
 import {
-    ContextLimitError as PortContextLimitError, TOOL_CHOICE_FORMS, ToolsUnsupportedError, isToolsUnsupported, providerModel, toolChoiceForm
+    ANTI_REPEAT_TEMPERATURE, ContextLimitError as PortContextLimitError, TOOL_CHOICE_FORMS, ToolsUnsupportedError, isToolsUnsupported,
+    providerModel, toolChoiceForm
 } from '../provider/model';
+import { copilotModel } from '../useCopilot';
 
 const encoder = new TextEncoder();
 const streamOf = (text) => new ReadableStream({
@@ -222,6 +224,53 @@ describe('stream: sends the plan', () => {
             await collect(port.stream(await port.prepare(intent('none'))));
             expect(chats()[0].body).toEqual({ model: 'm', messages: MESSAGES, temperature: 0.2, stream: true, tools: TOOLS, tool_choice: 'none' });
         }
+    });
+});
+
+describe('the dock\'s port (useCopilot.js copilotModel): no temperature for Claude, the setting for every other model', () => {
+    // The dock's settings as saved: 0.2, the default, whatever the model.
+    const dock = (baseUrl, model) => copilotModel({ baseUrl, model, temperature: 0.2, apiKey: 'test-key' }, { session: {} });
+    const ANTHROPIC = 'https://api.anthropic.com/v1';
+    // The first request, the warmer retry after a loop, and the final round.
+    const ROUNDS = [['auto', null], ['auto', 'warmer'], ['none', 'warmer']];
+    const bodiesOf = async (port, chats) => {
+        for (const [choice, retry] of ROUNDS) await collect(port.stream(await port.prepare(intent(choice, { retry }))));
+        return chats().map((chat) => chat.body);
+    };
+
+    it('Claude on Anthropic\'s API: no temperature key in any request, the warmer retry included', async () => {
+        const { calls, chats } = fakeServer('cloud');
+        const port = dock(ANTHROPIC, 'claude-opus-5-5');
+        for (const [choice, retry] of ROUNDS) expect('temperature' in await port.prepare(intent(choice, { retry }))).toBe(false);
+        const bodies = await bodiesOf(port, chats);
+        expect(bodies).toEqual(ROUNDS.map(([choice]) => ({ model: 'claude-opus-5-5', messages: MESSAGES, stream: true, tools: TOOLS, tool_choice: choice })));
+        // Never probed, and never a forced tool choice: only "auto" and "none" (the final round), both accepted.
+        expect(calls.every((call) => call.path === '/v1/chat/completions')).toBe(true);
+        expect(bodies.map((body) => body.tool_choice)).toEqual(['auto', 'auto', 'none']);
+    });
+
+    it('a claude- model id on another server, or any model on Anthropic\'s API: no temperature either', async () => {
+        for (const [baseUrl, model] of [['https://gateway.example/v1', 'claude-sonnet-5-5'], [ANTHROPIC, 'some-new-model']]) {
+            forgetServers();
+            const { chats } = fakeServer('cloud');
+            expect((await bodiesOf(dock(baseUrl, model), chats)).map((body) => 'temperature' in body)).toEqual([false, false, false]);
+        }
+    });
+
+    it('LM Studio and a cloud model that is not Claude: 0.2, and the warmer retry at 0.6 or more', async () => {
+        for (const [kind, model] of [['lmstudio', 'm'], ['cloud', 'gpt-5']]) {
+            forgetServers();
+            const { chats } = fakeServer(kind);
+            const temperatures = (await bodiesOf(dock(URLS[kind], model), chats)).map((body) => body.temperature);
+            expect(temperatures).toEqual([0.2, ANTI_REPEAT_TEMPERATURE, ANTI_REPEAT_TEMPERATURE]);
+            expect(ANTI_REPEAT_TEMPERATURE).toBeGreaterThanOrEqual(0.6);
+        }
+    });
+
+    it('Ollama (its native API): options.temperature 0.2, and the warmer retry at 0.6 or more', async () => {
+        const { chats } = fakeServer('ollama');
+        const temperatures = (await bodiesOf(dock(URLS.ollama, 'm'), chats)).map((body) => body.options.temperature);
+        expect(temperatures).toEqual([0.2, ANTI_REPEAT_TEMPERATURE, ANTI_REPEAT_TEMPERATURE]);
     });
 });
 

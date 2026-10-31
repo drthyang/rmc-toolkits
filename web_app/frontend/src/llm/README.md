@@ -146,6 +146,9 @@ inputs on its page, stays the *user's* action.
    - Each fragment's provider data (`extra_content`, where Gemini puts its `thought_signature`)
      is kept, because it must be echoed back.
    - An HTTP failure carries its `status` and its parsed error body (`httpError`).
+   - **`provider/sampling.js`**: which models take no temperature (`takesNoTemperature`: a
+     `claude-` model id or `api.anthropic.com`) and `temperatureFor`, null for those; see *The
+     model port*.
    - **`provider/contextGuard.js` + `provider/ollama.js`**: the context guard decides each request
      before it is sent (`planCopilotChat()`: the server kind, Ollama's `num_ctx` and `num_predict`,
      LM Studio's loaded context, or a refusal), and `streamCopilotChat()` sends it under that plan,
@@ -239,7 +242,8 @@ inputs on its page, stays the *user's* action.
 9. **`watchdog/`**: the convergence rule over every ln(χ²) term of the .log and their total
    (`seriesTrend`, `judgeConvergence`) is the **source of truth** for the badge, `assess_convergence`
    and the context's `watchdog_status`. The LLM only writes the tooltip note, and only when the status flips or enough new data
-   arrived.
+   arrived. Its request runs at temperature 0, or with none for a model that takes none (Claude:
+   `provider/sampling.js`).
 10. **`useAssistant.js`, `useCopilot.js` and `components/`**
     - `useAssistant()` holds the settings, the connection probe (with auto-connect) and the run
       context.
@@ -359,12 +363,21 @@ port, none in the turn or the loop.
   probed), puts the tool choice in that server's form, and asks the context guard for its plan
   (`planCopilotChat`). It returns the request exactly as it goes out:
   `{ baseUrl, model, temperature, messages, tools, toolChoice, plan }`. A `'warmer'` retry runs at
-  `ANTI_REPEAT_TEMPERATURE` = 0.6 or above. Two settings change what goes out, only when given
-  (the dock gives neither): `temperature: null` sends no temperature key at all, the warmer retry
-  included (a model that takes only its default sampling, as Claude Sonnet 5.5 in the validation),
-  and `maxTokens`, a positive integer, caps every reply (`sent.maxTokens`; `max_tokens` in an
-  OpenAI-compatible body, thinking within it; on Ollama a ceiling on the plan's `numPredict`).
-  `max_tokens` is never sent by default. The plan is plain JSON:
+  `ANTI_REPEAT_TEMPERATURE` = 0.6 or above. Two settings change what goes out, only when given:
+  `temperature: null` sends no temperature key at all, the warmer retry included (a model that
+  takes only its default sampling), and `maxTokens`, a positive integer, caps every reply
+  (`sent.maxTokens`; `max_tokens` in an OpenAI-compatible body, thinking within it; on Ollama a
+  ceiling on the plan's `numPredict`). `max_tokens` is never sent by default. The dock gives
+  `temperature: null` to a model that takes none (`useCopilot.js` `copilotModel`), and never a
+  reply cap; the validation sets both for Claude Sonnet 5.5 (`validation/models.js`). Which
+  models take no temperature is `provider/sampling.js`: `takesNoTemperature({ baseUrl, model })`
+  holds for a `claude-` model id or Anthropic's API (`api.anthropic.com`), since current Claude
+  models answer a temperature with HTTP 400 ("`temperature` is deprecated for this model").
+  `temperatureFor(settings, t)` is null for those and `t` otherwise. The watchdog uses it for its
+  temperature 0, and the settings drawer greys the field out ("Claude uses its own sampling").
+  Every other model keeps the setting (0.2 by default) and the warmer retry. The connection test
+  sends no temperature to any model: it only lists the models (`GET /models`). The plan is plain
+  JSON:
   - Ollama: `{ server: 'ollama', version, estimate, needed, numCtx, numPredict, loadedContext,
     maxContext }`;
   - LM Studio: `{ server: 'lmstudio', estimate, needed, loadedContext }` (`loadedContext` null:
@@ -1310,10 +1323,17 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   `ToolsUnsupportedError` from
   Ollama's and OpenAI's shapes and the fallback text, and never from a schema 400, a 5xx, a request
   without tools, a failure mid-reply or an abort; the loop over the port (an Ollama turn whose
-  final reply is the answer; a model without tools asked again without them). In `turn.test.js`,
-  a refused request has no `request` event.
+  final reply is the answer; a model without tools asked again without them); the dock's port
+  (`copilotModel`): Claude on Anthropic's API sends no temperature key in the first request, the
+  warmer retry or the final round, and its tool choice is only `"auto"` or `"none"`, never forced;
+  LM Studio, a cloud model that is not Claude, and Ollama's native API send 0.2 and 0.6 or more
+  on the retry. In `turn.test.js`, a refused request has no `request` event.
   `copilotChat.test.jsx` runs a turn on a mocked Ollama loaded at 4,096 (native requests with
-  `num_ctx` ≥ 16,384 and no `/v1` call), a refused turn, and a cut reply.
+  `num_ctx` ≥ 16,384 and no `/v1` call), a refused turn, and a cut reply; and a looping first
+  reply through the dock, asked again warmer: no temperature in either request for Claude, 0.2
+  then 0.6 for a local model. `sampling.test.jsx` pins `takesNoTemperature` and
+  `temperatureFor`, the watchdog's request (no temperature for Claude, 0 for Ollama and LM
+  Studio) and the settings drawer's temperature field (off for Claude, with its note).
 - **How a call ends** (`tools.test.js`, the tool contract at its interface): every result status
   and who decides it, with the exact texts the model reads (the skip reasons, the unknown tool, the
   repeat's note), the constructors' TypeErrors, an interactive tool's `choice` passed through and
