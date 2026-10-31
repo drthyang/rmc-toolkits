@@ -3,10 +3,12 @@
 
 import React, { useState } from 'react';
 import { PROVIDER_PRESETS, isLocalUrl, providerForUrl } from '../provider/presets';
+import { takesNoTemperature } from '../provider/sampling';
 
 // Connection + model settings drawer: provider presets (local + cloud), base
 // URL, an API-key field and data-leaves-your-device warning for cloud
-// providers, connection test with actionable hints, temperature, whether the
+// providers, connection test with actionable hints, temperature (greyed out
+// for a model that takes none: Claude, provider/sampling.js), whether the
 // Copilot may run analyses, and the watchdog toggle. The model itself is
 // picked from the toolbar.
 
@@ -54,6 +56,8 @@ const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
     const activeProvider = providerForUrl(settings.baseUrl);
     const isCloud = activeProvider ? activeProvider.cloud : !isLocalUrl(settings.baseUrl);
     const providerLabel = activeProvider?.label || 'this remote server';
+    // Claude refuses a temperature: none is sent, so the field is off.
+    const noTemperature = takesNoTemperature(settings);
     // This page's origin — the value a local server must allow via CORS.
     const pageOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://drthyang.github.io';
 
@@ -178,10 +182,16 @@ const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
                         min="0"
                         max="2"
                         step="0.1"
-                        value={settings.temperature}
-                        title="Lower is more factual; 0.2 is a good default."
+                        value={noTemperature ? '' : settings.temperature}
+                        placeholder={noTemperature ? '—' : undefined}
+                        disabled={noTemperature}
+                        aria-describedby={noTemperature ? 'llm-temperature-note' : undefined}
+                        title={noTemperature ? undefined : 'Lower is more factual; 0.2 is a good default.'}
                         onChange={(event) => onSave({ temperature: Number(event.target.value) })}
                     />
+                    {noTemperature && (
+                        <span id="llm-temperature-note" className="llm-field-hint">Claude uses its own sampling</span>
+                    )}
                 </div>
             </div>
 

@@ -663,6 +663,46 @@ describe('CopilotChat', () => {
         });
     });
 
+    describe('the temperature, per model', () => {
+        // A passage a looping model writes again and again: the loop stops it
+        // and asks again once, warmer (the reminder).
+        const LOOP = 'Wait, let me reconsider the Ta–Se window once more: the first shell spans 2.4 to 2.9 Å, '
+            + 'so the coordination number should be six, but the cut at 2.65 Å splits it, so let me check again. ';
+        const looping = () => sse(Array.from({ length: 12 }, () => delta({ content: LOOP })));
+        const answered = () => sse([delta({ content: 'Six Se.\n\nOutcome: achieved — counted.' }, 'stop')]);
+        const serve = (models) => vi.stubGlobal('fetch', vi.fn(async (url, options = {}) => {
+            if (isServerProbe(url)) return notFound;
+            if (String(url).endsWith('/v1/models')) return { ok: true, status: 200, json: async () => ({ data: models.map((id) => ({ id })) }) };
+            chatBodies.push(JSON.parse(options.body));
+            return chatBodies.length === 1 ? looping() : answered();
+        }));
+        const askAfterLoop = async () => {
+            act(() => root.render(chat()));
+            await openChat();
+            await ask('How many Se around Ta?');
+            await settleUntil(() => container.querySelector('.llm-outcome'));
+            expect(chatBodies).toHaveLength(2);
+            expect(chatBodies[1].messages.at(-1).content).toMatch(/kept repeating the same passage/);
+        };
+
+        it('Claude on Anthropic\'s API: no temperature in any request, the warmer retry included', async () => {
+            serve(['claude-opus-5-5']);
+            saveSettings({ baseUrl: 'https://api.anthropic.com/v1', model: 'claude-opus-5-5', apiKey: 'test-key' });
+            await askAfterLoop();
+            expect(chatBodies.map((body) => body.model)).toEqual(['claude-opus-5-5', 'claude-opus-5-5']);
+            expect(chatBodies.map((body) => 'temperature' in body)).toEqual([false, false]);
+            // Never a forced tool choice (Claude refuses one).
+            expect(chatBodies.map((body) => body.tool_choice)).toEqual(['auto', 'auto']);
+        });
+
+        it('a local model keeps the setting: 0.2, and 0.6 or more on the warmer retry', async () => {
+            serve(['local-model']);
+            saveSettings({ baseUrl: 'http://localhost:1234/v1', model: 'local-model' });
+            await askAfterLoop();
+            expect(chatBodies.map((body) => body.temperature)).toEqual([0.2, 0.6]);
+        });
+    });
+
     describe('asking the user (ask_user)', () => {
         const askCall = (args) => sse([
             delta({ content: 'The Ta–Se shell is split.' }),
