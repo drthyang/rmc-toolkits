@@ -7,7 +7,7 @@ name = "rmc-toolkits"
 version = "0.8.0.dev0"
 description = "A browser-based dashboard and post-processing utilities for RMCProfile and STOG outputs."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "AGPL-3.0-or-later" }
 authors = [{ name = "Tsung-Han Yang" }]
 keywords = ["RMCProfile", "STOG", "PDF", "EXAFS", "crystallography", "neutron", "x-ray", "KDE"]
@@ -18,7 +18,6 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",

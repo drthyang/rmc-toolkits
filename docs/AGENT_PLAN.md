@@ -24,7 +24,7 @@ drafts of batch 1 wait in PR #71 for the user's review.
   for it are marked **(approval)**.
 - **No API spend.** Local models and scripted CI only, until the user says otherwise. The
   Sonnet arm's share ($20 since the user's decision of 2026-10-24, $12 before) stays unspent.
-- **Each PR** passes CI (Python on 3.9 floors, 3.11, 3.13; frontend lint, vitest, build), updates
+- **Each PR** passes CI (Python on 3.10 floors, 3.11, 3.13; frontend lint, vitest, build), updates
   its docs, and leaves the app working. A refactor PR keeps the model-visible text unchanged: a
   snapshot of the prompt, the tool list and the descriptions (phase 1.7) shows any change in the
   diff.

@@ -16,7 +16,7 @@ jobs:
         include:
           # Oldest supported interpreter with the declared dependency floors
           # (pyproject.toml) pinned exactly, so the floors stay honest.
-          - python-version: "3.9"
+          - python-version: "3.10"
             deps: oldest
           - python-version: "3.11"
             deps: latest
