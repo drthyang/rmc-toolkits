@@ -277,7 +277,15 @@ validation's live arms are offered compute-only tools: no view or change tool re
       owns the card-focus controller.
     - `CopilotView` renders the transcript (`ToolStep` cards, `QuestionCard`, `ChangeCard` for a
       change step, `MarkdownMessage` with its card chips, the Outcome chip), the composer, and a
-      polite live region that announces step, change and verdict changes.
+      polite live region that announces step, change and verdict changes. A long finished answer
+      shows its lead — the conclusion, which the dock's prompt asks for first (`ANSWER_RULES`) —
+      with the rest behind *Show details* (`components/answerParts.js`; a button with
+      `aria-expanded`, the rest rendered only when open): the rest folds when it holds a table, a
+      heading or code, or, at 160 characters or more, when the answer runs to 700 or the rest
+      holds more than 8 numbers. An answer in the prompt's shape (a conclusion, a few numbers, a
+      caveat) shows whole, and a streaming one always does. Nothing is dropped: every analysis's
+      numbers stay on its step card, and the rest one click away (the user's report of
+      2026-11-01: answers "overwhelmingly long … dumping numbers").
 11. **`focus/focus.js` + `focus/cardRefs.js` + `copilot/viewTools.js`** — pointing at the page.
     - `createFocusController()` sets `data-copilot-focus` (primary | secondary | running |
       preview) on the host's `[data-copilot-card]` elements; `Copilot.css` draws the breathing edge.

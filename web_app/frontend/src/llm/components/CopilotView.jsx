@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { contextToJson } from '../context/runContext';
 import { effectOf } from '../copilot/effects';
 import { STOPPED_BY } from '../copilot/turnPolicy';
@@ -9,6 +9,7 @@ import { changeReply, questionReply, stepSummary, turnReferences } from '../copi
 import { useCopilot } from '../useCopilot';
 import ChangeCard from './ChangeCard';
 import MarkdownMessage from './MarkdownMessage';
+import { answerParts } from './answerParts';
 import { plainReferences } from './referenceDisplay';
 import QuestionCard from './QuestionCard';
 import ToolStep from './ToolStep';
@@ -84,10 +85,19 @@ const ReasoningPanel = ({ reasoning, active, reasoningMs }) => {
 };
 
 // `references`: the turn's (turnReferences), so a reference the turn's
-// results fill shows its number while the text still streams.
+// results fill shows its number while the text still streams. A long
+// finished text shows its lead — the conclusion, which the prompt asks for
+// first — with the rest behind "Show details" (answerParts.js); a text
+// still streaming shows whole.
 const TextSegment = ({ item, last, cardLinks, references }) => {
+    const [open, setOpen] = useState(false);
+    const detailsId = useId();
+    const parts = useMemo(() => (item.streaming || !item.text ? null : answerParts(item.text)), [item.streaming, item.text]);
     const thinkingOnly = item.streaming && !item.text;
     if (!item.text && !item.reasoning && !(item.streaming && last)) return null;
+    const markdown = (text) => (
+        <MarkdownMessage {...cardLinks} references={references} streaming={Boolean(item.streaming)}>{text}</MarkdownMessage>
+    );
     return (
         <>
             {item.reasoning ? (
@@ -95,8 +105,25 @@ const TextSegment = ({ item, last, cardLinks, references }) => {
             ) : null}
             {thinkingOnly && !item.reasoning && <ThinkingDots />}
             {item.text ? (
-                <div className={`llm-bubble is-markdown${item.streaming ? ' is-streaming' : ''}`}>
-                    <MarkdownMessage {...cardLinks} references={references} streaming={Boolean(item.streaming)}>{item.text}</MarkdownMessage>
+                <div className={`llm-bubble is-markdown${item.streaming ? ' is-streaming' : ''}${parts?.rest ? ' is-folded' : ''}`}>
+                    {parts?.rest ? (
+                        <>
+                            {markdown(parts.lead)}
+                            <button
+                                type="button"
+                                className="llm-answer-toggle"
+                                aria-expanded={open}
+                                aria-controls={detailsId}
+                                onClick={() => setOpen((value) => !value)}
+                            >
+                                {open ? 'Hide details' : 'Show details'}
+                                <span className="llm-answer-chevron" aria-hidden="true"><ChevronIcon /></span>
+                            </button>
+                            <div id={detailsId} className="llm-answer-details" hidden={!open}>
+                                {open ? markdown(parts.rest) : null}
+                            </div>
+                        </>
+                    ) : markdown(item.text)}
                     {item.streaming && <span className="llm-caret" aria-hidden="true" />}
                 </div>
             ) : null}
