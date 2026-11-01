@@ -51,37 +51,40 @@ const DETAILS = ['A–B window: 2.00–3.00 → 2.21–2.65 Å'];
 
 // A change tool as the contract has it: asks the approve port, then reports
 // what it did; `stale` makes the page move while the card waits.
-const changeTool = ({ stale = false, undo = null } = {}) => ({
-    name: 'set_window',
-    effect: 'change',
-    description: 'Set the window on the page.',
-    parameters: { type: 'object', properties: { r12_max: { type: 'number' } }, additionalProperties: false },
-    label: () => 'Set the window',
-    page: 'geometry',
-    run: vi.fn(async (args, { approve, signal }) => {
-        const { approved, auto } = await approve({ tool: 'set_window', title: 'Change the window', line: LINE, details: DETAILS }, { signal });
-        if (!approved) {
+const changeTool = ({ stale = false, undo = null } = {}) => {
+    let applied = 0;
+    return {
+        name: 'set_window',
+        effect: 'change',
+        description: 'Set the window on the page.',
+        parameters: { type: 'object', properties: { r12_max: { type: 'number' } }, additionalProperties: false },
+        label: () => 'Set the window',
+        page: 'geometry',
+        run: vi.fn(async (args, { approve, signal }) => {
+            const { approved, auto } = await approve({ tool: 'set_window', title: 'Change the window', line: LINE, details: DETAILS }, { signal });
+            if (!approved) {
+                return {
+                    data: { declined: true },
+                    checks: [{ level: 'note', text: 'The user declined this change.' }],
+                    change: { status: 'declined', line: LINE, details: DETAILS, auto, id: null }
+                };
+            }
+            if (stale) {
+                return {
+                    data: { stale: true },
+                    checks: [{ level: 'fail', text: 'Not applied: the page changed while the card waited.' }],
+                    change: { status: 'stale', line: LINE, details: DETAILS, auto, id: null }
+                };
+            }
             return {
-                data: { declined: true },
-                checks: [{ level: 'note', text: 'The user declined this change.' }],
-                change: { status: 'declined', line: LINE, details: DETAILS, auto, id: null }
+                data: { applied: true, computed: true },
+                checks: [{ level: 'ok', text: `Applied: ${LINE}.` }],
+                change: { status: 'applied', line: LINE, details: DETAILS, auto, id: `w${applied += 1}` }
             };
-        }
-        if (stale) {
-            return {
-                data: { stale: true },
-                checks: [{ level: 'fail', text: 'Not applied: the page changed while the card waited.' }],
-                change: { status: 'stale', line: LINE, details: DETAILS, auto, id: null }
-            };
-        }
-        return {
-            data: { applied: true, computed: true },
-            checks: [{ level: 'ok', text: `Applied: ${LINE}.` }],
-            change: { status: 'applied', line: LINE, details: DETAILS, auto, id: 'w1' }
-        };
-    }),
-    undo: undo || vi.fn(async () => ({ ok: true, computed: false }))
-});
+        }),
+        undo: undo || vi.fn(async () => ({ ok: true, computed: false }))
+    };
+};
 
 describe('a change in the dock: the approval card', () => {
     let container;
@@ -278,6 +281,16 @@ describe('a change in the dock: the approval card', () => {
         expect(card().textContent).toContain('Undone: the earlier inputs are back.');
         expect(card().querySelector('.llm-ask-kicker').textContent).toBe('Bond Geometry changeUndone');
         expect(button('Undo')).toBeUndefined();
+
+        // The next question's change, whose step has the same id (the model
+        // reused its call id), is its own: not undone, with its Undo.
+        await ask('Set it again.');
+        act(() => [...container.querySelectorAll('.llm-change')].at(-1).querySelector('.llm-change-apply').click());
+        await settleUntil(() => container.querySelectorAll('.llm-outcome').length === 2);
+        const second = [...container.querySelectorAll('.llm-change')].at(-1);
+        expect(second.className).toContain('is-applied');
+        expect(second.querySelector('.llm-ask-kicker').textContent).toBe('Bond Geometry changeApplied by the Copilot');
+        expect([...second.querySelectorAll('button')].some((item) => item.textContent === 'Undo')).toBe(true);
     });
 
     it('says in one short line why an applied change did not compute, and why a change was refused', async () => {

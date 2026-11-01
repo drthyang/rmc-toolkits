@@ -137,7 +137,7 @@ const AssistantTurn = ({
                     step={step}
                     request={step.status === 'running' ? approval : null}
                     onDecide={onDecide}
-                    undo={undos?.[step.id] ?? null}
+                    undo={(step.change?.id && undos?.[step.change.id]) || null}
                     onUndo={onUndo}
                     pageLabel={step.page ? pages?.[step.page] : null}
                     onOpenPage={onOpenPage}

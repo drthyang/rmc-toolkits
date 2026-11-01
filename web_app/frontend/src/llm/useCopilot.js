@@ -48,8 +48,9 @@ import { temperatureFor } from './provider/sampling';
 // reload) it approves at once ({ approved: true, auto: true }).
 // `onApproval(request)` reports a change waiting (the unread mark).
 // `undoChange(step)` undoes an applied change through its tool's `undo`; how
-// it went is `undos[step.id]` ({ state: 'running' | 'done' | 'failed',
-// reason }), cleared with the conversation.
+// it went is `undos[change id]` ({ state: 'running' | 'done' | 'failed',
+// reason }), keyed by the applied change's id (unique in the app, where a
+// step's id may repeat in a later turn), cleared with the conversation.
 //
 // Every model request goes through providerModel (provider/model.js) and so
 // through provider/contextGuard.js, which never sends a request the model
@@ -140,7 +141,7 @@ export const useCopilot = ({
     // Read when a change asks, so a switch to Auto applies from the next change on.
     const autoApproveRef = useRef(autoApprove);
     autoApproveRef.current = autoApprove;
-    // How each Undo went, by step id.
+    // How each Undo went, by the applied change's id.
     const [undos, setUndos] = useState({});
     const toolsRef = useRef(tools);
     toolsRef.current = tools;
@@ -232,7 +233,8 @@ export const useCopilot = ({
     const undoChange = useCallback(async (step) => {
         const tool = (toolsRef.current || []).find((item) => item?.name === step?.name);
         if (!step?.change?.id || typeof tool?.undo !== 'function') return;
-        setUndos((current) => ({ ...current, [step.id]: { state: 'running' } }));
+        const key = step.change.id;
+        setUndos((current) => ({ ...current, [key]: { state: 'running' } }));
         let outcome;
         try {
             outcome = await tool.undo(step.change);
@@ -241,7 +243,7 @@ export const useCopilot = ({
         }
         setUndos((current) => ({
             ...current,
-            [step.id]: outcome?.ok ? { state: 'done' } : { state: 'failed', reason: outcome?.reason || 'it could not be undone' }
+            [key]: outcome?.ok ? { state: 'done' } : { state: 'failed', reason: outcome?.reason || 'it could not be undone' }
         }));
     }, []);
 
