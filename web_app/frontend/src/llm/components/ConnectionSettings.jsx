@@ -9,8 +9,10 @@ import { takesNoTemperature } from '../provider/sampling';
 // URL, an API-key field and data-leaves-your-device warning for cloud
 // providers, connection test with actionable hints, temperature (greyed out
 // for a model that takes none: Claude, provider/sampling.js), whether the
-// Copilot may run analyses, and the watchdog toggle. The model itself is
-// picked from the toolbar.
+// Copilot may run analyses, how its changes to a page's inputs are approved
+// (Ask first, the default, or Auto: `autoApprove`, the dock's, never saved, so
+// a reload is back at Ask first), and the watchdog toggle. The model itself
+// is picked from the toolbar.
 
 const CheckIcon = () => (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -42,7 +44,20 @@ const hostLabel = (url) => {
     }
 };
 
-const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
+const APPROVAL_MODES = [
+    {
+        auto: false,
+        label: 'Ask first',
+        title: 'Every change to a page\'s inputs waits on its card for your Apply.'
+    },
+    {
+        auto: true,
+        label: 'Auto',
+        title: 'Changes apply without a card; each one can still be undone. Back to Ask first on reload.'
+    }
+];
+
+const ConnectionSettings = ({ settings, connection, onSave, onTest, autoApprove = false, onAutoApprove = null }) => {
     const [showGuide, setShowGuide] = useState(false);
     const testing = connection.status === 'testing';
 
@@ -200,7 +215,7 @@ const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
                 <label
                     className="llm-check"
                     htmlFor="llm-copilot-tools"
-                    title="The Copilot computes site statistics, displacement directions, bond angles, symmetry and convergence checks itself. They only compute: nothing on the pages or on disk changes."
+                    title="The Copilot computes site statistics, displacement directions, bond angles, symmetry and convergence checks itself. They only compute; it changes a page's inputs only as set under Changes, and nothing on disk."
                 >
                     <input
                         id="llm-copilot-tools"
@@ -211,6 +226,27 @@ const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
                     <span>Let the Copilot run analyses</span>
                 </label>
             </div>
+
+            {onAutoApprove && (
+                <div className="llm-field">
+                    <span className="llm-field-label" id="llm-approval-label">Changes</span>
+                    <div className="llm-approval" role="radiogroup" aria-labelledby="llm-approval-label">
+                        {APPROVAL_MODES.map((mode) => (
+                            <button
+                                key={mode.label}
+                                type="button"
+                                role="radio"
+                                aria-checked={autoApprove === mode.auto}
+                                className={`llm-approval-option${autoApprove === mode.auto ? ' is-active' : ''}`}
+                                title={mode.title}
+                                onClick={() => onAutoApprove(mode.auto)}
+                            >
+                                {mode.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             <div className="llm-field">
                 <span className="llm-field-label">Watchdog</span>

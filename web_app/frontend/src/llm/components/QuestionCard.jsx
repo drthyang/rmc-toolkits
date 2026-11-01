@@ -3,6 +3,7 @@
 
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { questionReply } from '../copilot/turnState';
+import { mayTakeFocus } from './cardFocus';
 
 // The Copilot's clarifying question (ask_user, copilot/askUser.js) as a card
 // in the conversation: the question, 2–4 option buttons (each with its one-line
@@ -18,17 +19,7 @@ import { questionReply } from '../copilot/turnState';
 // the same reading the screen reader's line takes.
 
 // Focus may move to the card from nowhere in particular or from inside the
-// conversation (the empty composer, where it rests after a question is sent),
-// never out of a field that holds text the user is typing.
-const mayTakeFocus = (card) => {
-    if (typeof document === 'undefined' || !card) return false;
-    const active = document.activeElement;
-    if (!active || active === document.body) return true;
-    if (active.matches?.('input, textarea, select, [contenteditable="true"]') && (active.value || active.isContentEditable)) {
-        return false;
-    }
-    return Boolean(card.closest('.llm-chat-panel')?.contains(active));
-};
+// conversation, never out of a field the user is typing in (cardFocus.js).
 
 const QuestionCard = ({ step, request = null, onAnswer }) => {
     const questionId = useId();

@@ -6,10 +6,11 @@
 // spec is the request in the dock's and the harness's snapshot files. The turn
 // is the one assembly behind both adapters, so each adapter adds only what is
 // its own: the dock its run props, its tools (the run tools over its cards,
-// highlight_cards, the host's engine and view tools), its question card and
-// the user's settings through providerModel; the harness a case opened
-// through the run module, its compute-only tools, the simulated user and the
-// skills (arm B). The files are read, never written here; each file's two
+// highlight_cards, the host's engine, view and change tools: App's
+// copilotHostTools), its question card, its approval card (the approve port)
+// and the user's settings through providerModel; the harness a case opened
+// through the run module, its compute-only tools (liveArmTools), the
+// simulated user and the skills (arm B). The files are read, never written here; each file's two
 // header lines name its own capture point and are not compared.
 
 import { readFileSync } from 'node:fs';
@@ -24,9 +25,10 @@ import { providerModel } from '../../llm/provider/model';
 import { DEFAULT_SETTINGS } from '../../llm/settings';
 import { copilotSkills } from '../../copilotSkills';
 import { buildCopilotCards, COPILOT_PAGES } from '../../copilotCards';
-import { buildViewTools } from '../../copilotViewTools';
+import { copilotHostTools } from '../../copilotHostTools';
+import { createChangeHistory } from '../../bondGeometryControl';
 import { buildCase, DEV_CASES } from '../../../validation/cases';
-import { liveQuestion, skippingUser } from '../../../validation/harness';
+import { liveArmTools, liveQuestion, skippingUser } from '../../../validation/harness';
 import { loadSkills } from '../../../validation/run';
 import { loadRun } from '../../../validation/runFolder';
 import { bundledSkills, jsonFile, loadDemoAssistantRun, promptVariants, recordingModel, renderRequest } from './helpers';
@@ -65,7 +67,10 @@ describe('the turn\'s first request is the dock\'s and the harness\'s', () => {
     it('a dock-shaped spec (the Demo run): dock/first-request.txt and dock/tools.json', async () => {
         const { run: props, copilot } = demo;
         const cards = buildCopilotCards({ plotFiles: props.plotFiles, rValueFile: props.rValueFile, symmetry: props.symmetry });
-        const hostTools = [...copilot.tools, ...buildViewTools({ cards, pages: COPILOT_PAGES, activePage: () => 'dashboard' })];
+        const hostTools = copilotHostTools({
+            engineTools: copilot.tools, elements: copilot.elements, cards, pages: COPILOT_PAGES,
+            activePage: () => 'dashboard', history: createChangeHistory()
+        });
         const recorder = recordingModel();
         provider.current = recorder;
         await run({
@@ -74,6 +79,7 @@ describe('the turn\'s first request is the dock\'s and the harness\'s', () => {
             model: providerModel({ ...DEFAULT_SETTINGS, model: 'snapshot-model' }, { session: {} }),
             tools: [...buildRunTools(props, { cards }), ...buildFocusTools({ cards, pages: COPILOT_PAGES }), ...hostTools],
             askUser: async () => ({ source: 'skipped' }),
+            approve: async () => ({ approved: false, auto: false }),
             skills: copilotSkills
         });
         const [first] = recorder.requests;
@@ -88,7 +94,7 @@ describe('the turn\'s first request is the dock\'s and the harness\'s', () => {
                 question: liveQuestion(built),
                 run: caseRun.props,
                 model: recorder.port,
-                tools: [...buildRunTools(caseRun.props, { cards: [] }), ...caseRun.tools],
+                tools: liveArmTools(caseRun),
                 askUser: skippingUser([]),
                 skills,
                 config: { method }

@@ -42,6 +42,13 @@ import './CopilotChat.css';
 // `configKey` its configuration (a new one, from a Live Data save, ends the
 // earlier answers with a divider and keeps them out of the model's memory).
 
+// The rail's label for what arrived while it was collapsed.
+const RAIL_LABELS = Object.freeze({
+    question: 'AI Copilot — a question for you',
+    approval: 'AI Copilot — a change waits for your approval',
+    answer: 'AI Copilot — new answer'
+});
+
 const hasMatchMedia = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function';
 const viewportWidth = () => (typeof window !== 'undefined' ? window.innerWidth : 1440);
 const viewportHeight = () => (typeof window !== 'undefined' ? window.innerHeight : 900);
@@ -155,9 +162,13 @@ const ResizeHandle = ({ mode, width, sheet, dockRef, onResize, onCommit, onReset
 
 const CopilotPanel = ({
     id, hidden, mode, onCollapse, run, hostTools, pages, onOpenPage, runKey, configKey, cards, focus, onTurnEnd,
-    onBusyChange, onQuestion, skills
+    onBusyChange, onQuestion, onApproval, skills
 }) => {
     const assistant = useAssistant({ ...run, enabled: true });
+    // How a change tool's change is approved: Ask first (false, the default:
+    // every change waits on its card) or Auto (true: applied at once, still
+    // undoable). Held here only, never saved: every reload starts at Ask first.
+    const [autoApprove, setAutoApprove] = useState(false);
     const hasRun = Boolean((run.plotFiles && run.plotFiles.length) || run.structure);
     const { runName, plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites, liveData } = run;
     // The run props as one object for the turn, kept while none changes.
@@ -222,6 +233,8 @@ const CopilotPanel = ({
                             connection={assistant.connection}
                             onSave={assistant.saveSettings}
                             onTest={assistant.runTest}
+                            autoApprove={autoApprove}
+                            onAutoApprove={setAutoApprove}
                         />
                     </div>
                 )}
@@ -244,7 +257,9 @@ const CopilotPanel = ({
                             onTurnEnd={onTurnEnd}
                             onBusyChange={onBusyChange}
                             onQuestion={onQuestion}
+                            onApproval={onApproval}
                             skills={skills}
+                            autoApprove={autoApprove}
                         />
                     ) : (
                         <p className="llm-chat-norun">Open a run folder, or load the Demo, to start.</p>
@@ -268,7 +283,7 @@ const CopilotChat = ({
     const [mounted, setMounted] = useState(initialOpen);
     const [width, setWidth] = useState(() => clampDockWidth(saved.width ?? defaultDockWidth(viewportWidth(), rootFontSize()), viewportWidth()));
     const [sheet, setSheet] = useState(() => clampSheet(saved.sheet));
-    // What arrived while collapsed: null, 'answer' or 'question'.
+    // What arrived while collapsed: null, 'answer', 'question' or 'approval'.
     const [unread, setUnread] = useState(null);
     const [busy, setBusy] = useState(false);
     const panelId = useId();
@@ -401,11 +416,13 @@ const CopilotChat = ({
     const onQuestion = useCallback(() => {
         if (!openRef.current) setUnread('question');
     }, []);
+    // So does a change waiting for the user's approval.
+    const onApproval = useCallback(() => {
+        if (!openRef.current) setUnread('approval');
+    }, []);
 
     const run = { runName, plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites, liveData };
-    const railLabel = unread === 'question'
-        ? 'AI Copilot — a question for you'
-        : (unread ? 'AI Copilot — new answer' : (busy ? 'AI Copilot — working' : 'AI Copilot'));
+    const railLabel = RAIL_LABELS[unread] || (busy ? 'AI Copilot — working' : 'AI Copilot');
 
     return (
         <aside
@@ -467,6 +484,7 @@ const CopilotChat = ({
                     onTurnEnd={onTurnEnd}
                     onBusyChange={setBusy}
                     onQuestion={onQuestion}
+                    onApproval={onApproval}
                     skills={skills}
                 />
             )}

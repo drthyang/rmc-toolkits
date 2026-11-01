@@ -40,6 +40,17 @@ import { temperatureFor } from './provider/sampling';
 // when the turn is stopped, the conversation restarts or the panel unmounts.
 // `onQuestion(request)` reports a new question (the dock's unread mark).
 //
+// A change tool (copilot/effects.js) asks first through `approve`, the
+// turn's approve port: with `autoApprove` off (Ask first, the default) it
+// holds the change the card shows (`approval`) until `decideChange(approved)`
+// settles it ({ approved, auto: false }), and rejects with an AbortError as a
+// question does; with `autoApprove` on (Auto, which the dock resets on every
+// reload) it approves at once ({ approved: true, auto: true }).
+// `onApproval(request)` reports a change waiting (the unread mark).
+// `undoChange(step)` undoes an applied change through its tool's `undo`; how
+// it went is `undos[step.id]` ({ state: 'running' | 'done' | 'failed',
+// reason }), cleared with the conversation.
+//
 // Every model request goes through providerModel (provider/model.js) and so
 // through provider/contextGuard.js, which never sends a request the model
 // would cut to fit its context window (it sizes Ollama's context, or refuses
@@ -114,7 +125,7 @@ export const turnHistory = (turns, configKey = null) => {
 
 export const useCopilot = ({
     settings, run, tools, toolsEnabled = true, runKey = null, configKey = null, focus = null, onTurnEnd = null,
-    onQuestion = null, skills = null
+    onQuestion = null, onApproval = null, skills = null, autoApprove = false
 }) => {
     const [turns, setTurns] = useState([]);
     const [live, setLive] = useState(null);
@@ -123,11 +134,23 @@ export const useCopilot = ({
     // The question waiting for the user: { request, reply(answer) }.
     const [question, setQuestion] = useState(null);
     const questionRef = useRef(null);
+    // The change waiting for the user's approval: { request, decide(approved) }.
+    const [approval, setApproval] = useState(null);
+    const approvalRef = useRef(null);
+    // Read when a change asks, so a switch to Auto applies from the next change on.
+    const autoApproveRef = useRef(autoApprove);
+    autoApproveRef.current = autoApprove;
+    // How each Undo went, by step id.
+    const [undos, setUndos] = useState({});
+    const toolsRef = useRef(tools);
+    toolsRef.current = tools;
     const abortRef = useRef(null);
     const onTurnEndRef = useRef(onTurnEnd);
     useEffect(() => { onTurnEndRef.current = onTurnEnd; }, [onTurnEnd]);
     const onQuestionRef = useRef(onQuestion);
     useEffect(() => { onQuestionRef.current = onQuestion; }, [onQuestion]);
+    const onApprovalRef = useRef(onApproval);
+    useEffect(() => { onApprovalRef.current = onApproval; }, [onApproval]);
     // Bumped by clear(): a turn still finishing after it must not reappear.
     const generationRef = useRef(0);
     // The context asked for per model, kept across this conversation's turns
@@ -169,17 +192,70 @@ export const useCopilot = ({
     /** The user's reply to the waiting question: { answer, source, index }. */
     const answerQuestion = useCallback((reply) => questionRef.current?.reply(reply), []);
 
+    // A change tool's way to the user: Auto approves at once; Ask first shows
+    // the card and waits for Apply or Decline.
+    const approve = useCallback((request, { signal } = {}) => new Promise((resolve, reject) => {
+        if (signal?.aborted) {
+            reject(abortError());
+            return;
+        }
+        if (autoApproveRef.current) {
+            resolve({ approved: true, auto: true });
+            return;
+        }
+        const pending = { request };
+        const settle = () => {
+            signal?.removeEventListener('abort', onAbort);
+            if (approvalRef.current === pending) {
+                approvalRef.current = null;
+                setApproval(null);
+            }
+        };
+        const onAbort = () => {
+            settle();
+            reject(abortError());
+        };
+        pending.decide = (approved) => {
+            settle();
+            resolve({ approved: Boolean(approved), auto: false });
+        };
+        signal?.addEventListener('abort', onAbort, { once: true });
+        approvalRef.current = pending;
+        setApproval(pending);
+        onApprovalRef.current?.(request);
+    }), []);
+
+    /** The user's decision on the waiting change: Apply (true) or Decline (false). */
+    const decideChange = useCallback((approved) => approvalRef.current?.decide(approved), []);
+
+    /** Undo an applied change (a change step's record) through its tool's `undo`. */
+    const undoChange = useCallback(async (step) => {
+        const tool = (toolsRef.current || []).find((item) => item?.name === step?.name);
+        if (!step?.change?.id || typeof tool?.undo !== 'function') return;
+        setUndos((current) => ({ ...current, [step.id]: { state: 'running' } }));
+        let outcome;
+        try {
+            outcome = await tool.undo(step.change);
+        } catch (failure) {
+            outcome = { ok: false, reason: failure?.message || String(failure) };
+        }
+        setUndos((current) => ({
+            ...current,
+            [step.id]: outcome?.ok ? { state: 'done' } : { state: 'failed', reason: outcome?.reason || 'it could not be undone' }
+        }));
+    }, []);
+
     // What the Copilot can run on this run, with its analyses on. A host that
     // hands the turn what it refuses (a tool named ask_user, say) gets the
     // reason in the error line instead of a broken panel; asking then fails
     // with the same reason.
     const description = useMemo(() => {
         try {
-            return describeTurn({ run, tools, askUser, skills, config: { toolsEnabled: true } });
+            return describeTurn({ run, tools, askUser, approve, skills, config: { toolsEnabled: true } });
         } catch (failure) {
             return { ...EMPTY_DESCRIPTION, setupError: failure?.message || String(failure) };
         }
-    }, [run, tools, askUser, skills]);
+    }, [run, tools, askUser, approve, skills]);
     const offersTools = description.offered.tools.length > 0;
     const unsupported = unsupportedModels.has(settings.model);
     const toolsOn = toolsEnabled && offersTools && !unsupported;
@@ -206,6 +282,7 @@ export const useCopilot = ({
                 model: copilotModel(settings, { session: contextSessionRef.current }),
                 tools,
                 askUser,
+                approve,
                 skills,
                 // Earlier turns travel as their question and final answer
                 // only, and only those about the current configuration.
@@ -249,12 +326,13 @@ export const useCopilot = ({
             }
             setLive(null);
         }
-    }, [turns, configKey, run, tools, toolsEnabled, unsupported, focus, askUser, skills, settings]);
+    }, [turns, configKey, run, tools, toolsEnabled, unsupported, focus, askUser, approve, skills, settings]);
 
     const clear = useCallback(() => {
         generationRef.current += 1;
         abortRef.current?.abort();
         setTurns([]);
+        setUndos({});
         setError(null);
         focus?.clear('new-conversation');
     }, [focus]);
@@ -281,6 +359,10 @@ export const useCopilot = ({
         clear,
         question: question?.request || null,
         answerQuestion,
+        approval: approval?.request || null,
+        decideChange,
+        undos,
+        undoChange,
         offered: description.offered,
         skillsError: description.skillsError,
         toolsActive: toolsOn,

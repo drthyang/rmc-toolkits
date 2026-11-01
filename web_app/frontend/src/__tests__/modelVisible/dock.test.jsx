@@ -21,6 +21,10 @@
 // jsdom), so the run gets the same handler in-thread (pcaKdeWorker's
 // handlePcaMessage); the tool definitions do not depend on it.
 // useCopilotRun.test.jsx checks that the hook hands App what the core gives.
+// The host's tools are App's own list (copilotHostTools.js: the engine tools,
+// the view tools and the change tool), and the dock reads them all through
+// the one list of tool effects (llm/copilot/effects.js): every tool it sends
+// is named there, with every effect among them.
 //
 // A change to these files is a change to what the model sees: call it out in
 // the PR.
@@ -32,9 +36,11 @@ import CopilotChat from '../../llm/components/CopilotChat';
 import { DOCK_STORAGE_KEY } from '../../llm/components/dockLayout';
 import { DEFAULT_SETTINGS, saveSettings } from '../../llm/settings';
 import { skillIndex } from '../../llm/copilot/skills';
+import { COPILOT_TOOL_EFFECTS, TOOL_EFFECTS } from '../../llm/copilot/effects';
 import { copilotSkills } from '../../copilotSkills';
 import { buildCopilotCards, COPILOT_PAGES } from '../../copilotCards';
-import { buildViewTools } from '../../copilotViewTools';
+import { copilotHostTools } from '../../copilotHostTools';
+import { createChangeHistory } from '../../bondGeometryControl';
 import {
     bundledSkills, jsonFile, loadDemoAssistantRun, promptVariants, recordingModel, renderRequest
 } from './helpers';
@@ -79,10 +85,10 @@ describe('the dock\'s first request (the Demo run)', () => {
 
         const { run, copilot } = demo;
         const cards = buildCopilotCards({ plotFiles: run.plotFiles, rValueFile: run.rValueFile, symmetry: run.symmetry });
-        const tools = [
-            ...copilot.tools,
-            ...buildViewTools({ cards, pages: COPILOT_PAGES, activePage: () => 'dashboard' })
-        ];
+        const tools = copilotHostTools({
+            engineTools: copilot.tools, elements: copilot.elements, cards, pages: COPILOT_PAGES,
+            activePage: () => 'dashboard', history: createChangeHistory()
+        });
 
         container = document.createElement('div');
         document.body.appendChild(container);
@@ -113,6 +119,11 @@ describe('the dock\'s first request (the Demo run)', () => {
         const [first] = model.current.requests;
         expect(first).toBeDefined();
         expect(first.model).toBe(MODEL_ID);
+        // Every tool the dock sends is in the one list, and it offers every effect.
+        const sentNames = first.tools.map((tool) => tool.function.name);
+        expect(sentNames.filter((name) => !Object.hasOwn(COPILOT_TOOL_EFFECTS, name))).toEqual([]);
+        expect([...new Set(sentNames.map((name) => COPILOT_TOOL_EFFECTS[name]))].sort()).toEqual([...TOOL_EFFECTS].sort());
+        expect(sentNames.filter((name) => COPILOT_TOOL_EFFECTS[name] === 'change')).toEqual(['set_bond_geometry']);
         await expect(jsonFile(first.tools)).toMatchFileSnapshot('__snapshots__/dock/tools.json');
         await expect(renderRequest(first, {
             title: 'First request of the dock (CopilotChat + useCopilot), the Demo run (GaTa4Se8 250 K)',
