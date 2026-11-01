@@ -54,7 +54,11 @@ vi.mock('axios', () => ({
         get: vi.fn(async (url, config) => {
             state.requests.push({ url, params: config?.params });
             if (url.endsWith('/api/pca/sites')) return { data: await (state.sites ?? SITES) };
-            if (url.endsWith('/api/triplets')) return { data: triplets(config.params) };
+            if (url.endsWith('/api/triplets')) {
+                // A request the engine refuses (a stand-in for a server error).
+                if (Number(config.params.binWidth) === 44) throw new Error('the angle budget is exceeded');
+                return { data: triplets(config.params) };
+            }
             if (url.endsWith('/api/files')) return { data: { files: [] } };
             if (url.endsWith('/api/structure')) return { data: { atomCount: 52, elements: SITES.elements } };
             throw new Error(`unexpected ${url}`);
@@ -259,7 +263,24 @@ describe('set_bond_geometry on the Bond Geometry page', () => {
         const result = await call({ r12_min: 1.9, r12_max: 2.1 }, approving(true));
         expect(result.change).toMatchObject({ status: 'applied', auto: true });
         expect(result.data).toMatchObject({ applied: true, computed: true, angle_count: 0 });
+        expect(checkShape(result.data, SET_BOND_GEOMETRY_SHAPE)).toEqual([]);
         expect(result.checks).toEqual([{ level: 'warn', text: 'Applied: Se–Nb–Se · 1.90–2.10 Å · 1° bins; the page found no angles in these windows: widen them.' }]);
+    });
+
+    it('applied, but the page could not compute it: the change stands, and the model is told why', async () => {
+        await render();
+        const result = await call({ bin_width: 44 }, approving(true));
+        expect(result.resultStatus).toBe('ok');
+        expect(result.data).toEqual({
+            applied: true,
+            inputs: { end1: 'Se', apex: 'Nb', end2: 'Se', r12_min: 2, r12_max: 3, distinct_bc: false, bin_width: 44 },
+            computed: false,
+            not_computed: 'the angle budget is exceeded'
+        });
+        expect(checkShape(result.data, SET_BOND_GEOMETRY_SHAPE)).toEqual([]);
+        expect(result.checks).toEqual([{ level: 'warn', text: 'Applied: Se–Nb–Se · 2.00–3.00 Å · 44° bins, but the page did not compute it: the angle budget is exceeded.' }]);
+        expect(box('Angle bin width in degrees').value).toBe('44');
+        expect(result.change).toMatchObject({ status: 'applied', id: 'bond-geometry-1' });
     });
 
     it('a declined change returns {"declined": true} and leaves the page as it was', async () => {
@@ -267,6 +288,7 @@ describe('set_bond_geometry on the Bond Geometry page', () => {
         const result = await call({ end1: 'Ga' }, vi.fn(async () => ({ approved: false, auto: false })));
         expect(result.resultStatus).toBe('ok');
         expect(result.data).toEqual({ declined: true });
+        expect(checkShape(result.data, SET_BOND_GEOMETRY_SHAPE)).toEqual([]);
         expect(result.checks).toEqual([{ level: 'note', text: 'The user declined this change. Ask what they would prefer, or propose something else.' }]);
         expect(result.change).toMatchObject({ status: 'declined', id: null });
         expect(select('End element A').value).toBe('Se');
@@ -290,6 +312,7 @@ describe('set_bond_geometry on the Bond Geometry page', () => {
         for (let i = 0; i < 50 && !result; i += 1) await settleFor(20);
         expect(result.resultStatus).toBe('refused');
         expect(result.data).toEqual({ stale: true, inputs: { end1: 'Ga', apex: 'Nb', end2: 'Se', r12_min: 2, r12_max: 3, distinct_bc: false, bin_width: 1 } });
+        expect(checkShape(result.data, SET_BOND_GEOMETRY_SHAPE)).toEqual([]);
         expect(result.checks[0]).toMatchObject({ level: 'fail', text: expect.stringMatching(/^Not applied: the Bond Geometry page changed while the card waited/) });
         expect(result.change).toMatchObject({ status: 'stale', id: null });
         // The user's edit stands, nothing was computed, nothing recorded.
@@ -306,6 +329,7 @@ describe('set_bond_geometry on the Bond Geometry page', () => {
         const result = await call({ r12_max: 2.8 }, approve);
         expect(approve).not.toHaveBeenCalled();
         expect(result.data).toEqual({ unchanged: true, inputs: expect.objectContaining({ r12_max: 2.8 }) });
+        expect(checkShape(result.data, SET_BOND_GEOMETRY_SHAPE)).toEqual([]);
         expect(result.change).toMatchObject({ status: 'unchanged' });
         expect(tripletRequests()).toHaveLength(1);
     });

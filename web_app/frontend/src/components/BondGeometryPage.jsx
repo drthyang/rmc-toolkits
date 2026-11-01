@@ -405,14 +405,15 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
         inputs: { end1, apex, end2, r12Min, r12Max, split23, r23Min, r23Max, binWidth },
         computing,
         shown: resultRequest,
-        result: result ? { angleCount: result.angleCount, apexCount: result.apexCount } : null,
-        epoch: runEpoch.current
+        result: result ? { angleCount: result.angleCount, apexCount: result.apexCount } : null
     };
+    // The epoch is read as it stands, not as the last render saw it: a new
+    // run or configuration bumps it in an effect.
     const controller = useMemo(() => ({
-        state: () => ({ ...live.current, inputs: { ...live.current.inputs } }),
+        state: () => ({ ...live.current, inputs: { ...live.current.inputs }, epoch: runEpoch.current }),
         stamp: () => {
-            const { epoch, inputs, shown, computing: busy } = live.current;
-            return JSON.stringify({ epoch, inputs, shown, computing: busy });
+            const { inputs, shown, computing: busy } = live.current;
+            return JSON.stringify({ epoch: runEpoch.current, inputs, shown, computing: busy });
         },
         apply: (inputs, { compute: computeAfter = true, clear = false } = {}) => new Promise((resolve) => {
             settlePending('a newer change replaced it');
