@@ -4,6 +4,7 @@
 import { asModelPort, ToolsUnsupportedError } from '../provider/model';
 import { ASK_USER, MAX_QUESTIONS } from './askUser';
 import { resolveClarification } from './clarify';
+import { effectOf, isChangeTool } from './effects';
 import { beforeStall, repeatsItself, textToolCalls, withDeadlines } from './robustness';
 import {
     accumulateToolCall, canonicalJson, finalizeToolCalls, parseToolArguments, validateToolArguments
@@ -44,9 +45,12 @@ import { createVerification } from './verification';
 //                                                  A request the port refuses in prepare (the
 //                                                  context guard, a spend cap) has none
 //   { type: 'text', delta } / { type: 'reasoning', delta }
-//   { type: 'tool_start', id, name, label, args, page, cards, interactive }
+//   { type: 'tool_start', id, name, label, args, page, cards, interactive, effect }
+//                                                  effect: the tool's (effects.js; null for
+//                                                  an unknown tool)
 //   { type: 'tool_end', id, name, status, resultStatus, args, data, checks, error, note, choice,
-//     ms, cached, ref, analysis, pageParams }       the step's end: the transcript
+//     change, ms, cached, ref, analysis, pageParams }
+//                                                  the step's end: the transcript
 //                                                  of the call, its ToolResult as the
 //                                                  tool contract decided it (tools.js),
 //                                                  never re-derived here:
@@ -65,6 +69,9 @@ import { createVerification } from './verification';
 //                                                  place), or null;
 //                                                  choice: the user's reply to a
 //                                                  question, or null;
+//                                                  change: a change tool's record
+//                                                  (applied, declined, unchanged,
+//                                                  stale), or null; never sent;
 //                                                  ref: the result's reference (null on
 //                                                  an error and for a Workbench question);
 //                                                  analysis: the step is an analysis
@@ -102,7 +109,10 @@ import { createVerification } from './verification';
 // toward the turn budget: the agent follows a skill for the whole question).
 // An interactive tool (ask_user) waits for the user: it has no time limit, the
 // wait does not count toward `maxTurnMs`, and a turn asks at most
-// `maxQuestions` questions, one per step. Turn time is read from `clock.now()`
+// `maxQuestions` questions, one per step. A change tool (effects.js) waits
+// for the user's approval the same way: no time limit (the tool bounds its own
+// work after the approval), its time off the turn's, never answered from the
+// cache; it is not a question and not an analysis. Turn time is read from `clock.now()`
 // (the turn's clock; Date.now by default) by the policy, which starts the turn
 // when it is created; the loop reports each wait for the user to it.
 //
@@ -170,6 +180,7 @@ const toolEnd = ({ id, name, result, data, ref, analysis, pageParams }) => ({
     error: result.error,
     note: result.note,
     choice: result.choice ?? null,
+    change: result.change ?? null,
     ms: result.ms,
     cached: result.cached,
     ref,
@@ -273,7 +284,7 @@ export async function* runCopilotTurn({
             options: item.request.options,
             default: item.request.options[item.request.defaultIndex]?.label
         };
-        yield { type: 'tool_start', id, name: ASK_USER, label: 'Question for you', args, page: null, cards: [], interactive: true, app: true };
+        yield { type: 'tool_start', id, name: ASK_USER, label: 'Question for you', args, page: null, cards: [], interactive: true, app: true, effect: effectOf({ name: ASK_USER }) };
         const started = now();
         const reply = await toolContext.askUser(item.request, { signal });
         const ms = now() - started;
@@ -506,7 +517,8 @@ export async function* runCopilotTurn({
                 page: tool?.page || null,
                 cards: tool && parsed.ok ? toolCards(tool, parsed.value) : [],
                 interactive: Boolean(tool?.interactive),
-                reading: Boolean(tool?.keep)
+                reading: Boolean(tool?.keep),
+                effect: tool ? effectOf(tool) : null
             };
 
             // The call's result, as the tool contract decides it (tools.js):
@@ -529,6 +541,13 @@ export async function* runCopilotTurn({
                 result = await executeToolCall(tool, call.arguments, { signal, timeoutMs: null, context: toolContext });
                 waitedMs += result.ms;
                 if (!result.error) questions += 1;
+            } else if (isChangeTool(tool)) {
+                // A change waits for the user's approval on its card: no time
+                // limit while they decide (the tool bounds what it does after
+                // it), the call's time off the turn's, and a real request every
+                // time — the page may have moved since — never a cached result.
+                result = await executeToolCall(tool, runArguments, { signal, timeoutMs: null, context: toolContext });
+                waitedMs += result.ms;
             } else {
                 // Keyed on the validated arguments, so "2" and 2 are one call.
                 const validated = parsed.ok ? validateToolArguments(tool.parameters, parsed.value) : null;
@@ -552,7 +571,11 @@ export async function* runCopilotTurn({
             // can quote by reference gets its ref, kept with the data it was
             // sent; its facts are for the checks on the answer.
             const sent = verify.record({
-                name: call.name, interactive: Boolean(tool?.interactive), reading: Boolean(tool?.keep), view: Boolean(tool?.view), ...result
+                name: call.name, interactive: Boolean(tool?.interactive), reading: Boolean(tool?.keep), view: Boolean(tool?.view),
+                ...result,
+                // A change tool's step (effects.js), never an analysis; after
+                // the result, whose own `change` is the change's record.
+                change: isChangeTool(tool)
             }, (ref) => toolMessage(result, { budget, ref }));
             messages.push({ role: 'tool', tool_call_id: call.id, content: sent.content });
             keepWithinTurnBudget(roundStart);

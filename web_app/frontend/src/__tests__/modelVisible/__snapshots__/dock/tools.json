@@ -417,6 +417,68 @@
   {
     "type": "function",
     "function": {
+      "name": "set_bond_geometry",
+      "description": "Set the Bond Geometry page's inputs as the user would: the triplet A–B–C (B the central atom), the A–B bond window, a distinct B–C window, the angle bin width. Controls you leave out keep their values. The user approves the change on a card first (unless they chose Auto); then the page computes its angle distribution. Returns the inputs now on the page and whether it computed, or {\"declined\": true}. The user can undo it. Choose the windows as the coordination-shells skill says: the whole first coordination shell (find_gr_peaks' first_shell.window_A) unless the user asked for another. Use it when the user wants an analysis set up on the page; to answer a question, run compute_bond_angles. Do not ask leave with ask_user first: the card asks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "end1": {
+            "type": "string",
+            "enum": ["Ga", "Se", "Ta"],
+            "description": "Element A."
+          },
+          "apex": {
+            "type": "string",
+            "enum": ["Ga", "Se", "Ta"],
+            "description": "Element B, the central atom."
+          },
+          "end2": {
+            "type": "string",
+            "enum": ["Ga", "Se", "Ta"],
+            "description": "Element C."
+          },
+          "r12_min": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 15,
+            "description": "A–B window minimum (Å)."
+          },
+          "r12_max": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 15,
+            "description": "A–B window maximum (Å)."
+          },
+          "distinct_bc": {
+            "type": "boolean",
+            "description": "The Distinct B–C switch: false makes the B–C bond use the A–B window again; r23_min with r23_max turns it on."
+          },
+          "r23_min": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 15,
+            "description": "B–C window minimum (Å); give both or neither."
+          },
+          "r23_max": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 15,
+            "description": "B–C window maximum (Å)."
+          },
+          "bin_width": {
+            "type": "number",
+            "minimum": 0.1,
+            "maximum": 45,
+            "description": "Angle bin width (degrees)."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
       "name": "ask_user",
       "description": "Ask the user ONE short clarifying question and wait for the answer. Only when the answer changes which analysis you run or its parameters (which coordination shell or r-window, which site or pair, which tolerance, which run or dataset) and neither the run context nor an analysis can settle it. Offer 2–4 short options, each with a one-line description (e.g. the window in Å), and your default.",
       "parameters": {

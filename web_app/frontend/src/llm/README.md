@@ -46,6 +46,12 @@ It is **docked beside the pages**, not over them, and it **points at the page** 
 - **Its answers are checked.** Where an answer contradicts what the analyses or the run context
   established, a **Check** line says so under it and the Outcome chip drops to **Not verified**,
   whatever the model said of its own answer. See *Checks on the answer* below.
+- **It changes one input, and asks first.** Its one change tool, `set_bond_geometry`, sets the
+  Bond Geometry inputs as the user would (the triplet, the bond windows, the bin width). The
+  change waits on an approval card in the conversation — one line, the page after the change, the
+  details behind "?", **Apply** / **Decline** — unless the user switched the drawer's *Changes*
+  to **Auto** (never saved: every reload is back at **Ask first**). An applied change is the
+  Copilot's, with **Undo** on its card. See *Change tools* below.
 
 How one question runs (one turn of `copilot/turn.js`, which builds the prompt, the tools offered
 and the checks from the run props; *The turn* below):
@@ -92,12 +98,17 @@ configuration file. Cloud use is opt-in, and the settings drawer warns that data
 The *Let the Copilot run analyses* switch turns the tools off. Nothing is sent until the user asks a
 question. API keys are stored in `localStorage` only.
 
-**The analyses only compute; the view tools only change what is on screen.** No tool moves a
-slider, changes an analysis input or the Detected-SG tolerance, or writes or downloads a file.
-The view tools (`highlight_cards`, `orient_3d_view`, `current_view`) open a page, scroll, give a
-card its edge, mark a plot, turn a 3D camera, ring sites, and select a site as the user's click
-would — and nothing else. A step card's **Show in \<page\>** button, which loads an analysis's
-inputs on its page, stays the *user's* action.
+**The analyses only compute; the view tools only change what is on screen; one change tool sets
+the Bond Geometry inputs, once the user approves.** Every tool's effect — `compute`, `view` or
+`change` — is in one list (`copilot/effects.js`). No tool writes or downloads a file or changes
+the Detected-SG tolerance, and no tool but `set_bond_geometry` changes an analysis input. The view
+tools (`highlight_cards`, `orient_3d_view`, `current_view`) open a page, scroll, give a card its
+edge, mark a plot, turn a 3D camera, ring sites, and select a site as the user's click would — and
+nothing else. `set_bond_geometry` sets the Bond Geometry page's controls through the page's own
+handlers, as the user's typing and Compute click would, after the user's **Apply** on its card (or
+at once in **Auto**), and **Undo** puts the earlier inputs back. A step card's **Show in
+\<page\>** button, which loads an analysis's inputs on its page, stays the *user's* action. The
+validation's live arms are offered compute-only tools: no view or change tool reaches them.
 
 ## How each seam works (reading order)
 
@@ -166,8 +177,9 @@ inputs on its page, stays the *user's* action.
      tolerates servers that send whole calls or reuse an index.
    - `parseToolArguments()` accepts `''` and fenced JSON.
    - `validateToolArguments()` checks the JSON-Schema subset the tools use: types, `enum`,
-     `minimum` / `maximum`, `required`. Unknown keys are dropped with a note. Numeric strings
-     are accepted for number fields.
+     `minimum` / `maximum`, `required`. Unknown keys are dropped with a note, or refused in a
+     strict schema (`additionalProperties: false`, a change tool's). Numeric strings are accepted
+     for number fields.
 5. **`copilot/tools.js`** holds the tool contract (below) and `executeToolCall()`: parse, validate,
    run with a timeout, and give the tool its own `AbortSignal`, which is aborted on Stop or timeout.
    It decides how every call ends (*How a call ends*, below): one ToolResult with its
@@ -259,12 +271,13 @@ inputs on its page, stays the *user's* action.
     - `CopilotChat` is the dock (`components/dockLayout.js` holds its pure size rules): the rail,
       then the panel, and the resize handle. The panel mounts on first open, so nothing is fetched
       before that, and stays mounted while collapsed, so a running answer continues. It composes
-      the connection bar, the settings drawer (`ConnectionSettings`, with the analyses switch) and
-      `CopilotView`. Focus goes to the composer on open (once connected) and back to the rail on
-      collapse. It owns the card-focus controller.
-    - `CopilotView` renders the transcript (`ToolStep` cards, `MarkdownMessage` with its card chips,
-      the Outcome chip), the composer, and a polite live region that announces step and verdict
-      changes.
+      the connection bar, the settings drawer (`ConnectionSettings`, with the analyses switch and
+      the *Changes* mode, Ask first | Auto, held by the panel and never saved) and `CopilotView`.
+      Focus goes to the composer on open (once connected) and back to the rail on collapse. It
+      owns the card-focus controller.
+    - `CopilotView` renders the transcript (`ToolStep` cards, `QuestionCard`, `ChangeCard` for a
+      change step, `MarkdownMessage` with its card chips, the Outcome chip), the composer, and a
+      polite live region that announces step, change and verdict changes.
 11. **`focus/focus.js` + `focus/cardRefs.js` + `copilot/viewTools.js`** — pointing at the page.
     - `createFocusController()` sets `data-copilot-focus` (primary | secondary | running |
       preview) on the host's `[data-copilot-card]` elements; `Copilot.css` draws the breathing edge.
@@ -294,6 +307,7 @@ runTurn({
   model,                   // required: a model port (below)
   tools = [],              // the caller's tools, in order; never ask_user or read_skill (a TypeError)
   askUser = null,          // the ask-user port; null: no ask_user tool and no Workbench questions
+  approve = null,          // the approve port a change tool asks; null: no change tool is offered
   skills = null,           // the host's bundle { files, references, load } (parsed here) or { list, load }
   history = [],            // [{ question, answer }], oldest first
   signal = null, clock = { now: Date.now },
@@ -306,9 +320,9 @@ describeTurn(spec) → { offered: { tools, skills, askUser, view }, prompt: 'too
 ```
 
 - **What it builds.** The run context and the context as the model reads it (`shown`: trimmed to
-  its budget); the tools offered (the caller's, then `ask_user` with an ask-user port and tools on,
-  then `read_skill` with skills, tools on and method `'full'`), each as the model reads it under the
-  method; the system prompt for them; the
+  its budget); the tools offered (the caller's — a change tool only with an approve port —, then
+  `ask_user` with an ask-user port and tools on, then `read_skill` with skills, tools on and method
+  `'full'`), each as the model reads it under the method; the system prompt for them; the
   history window (an unanswered question is dropped, each answer compacted to
   `MEMORY_ANSWER_CHARS` = 2,000 characters, the newest `HISTORY_MESSAGES` = 8 messages kept); the
   Workbench's questions (`clarify.js`); and one verification (`createVerification`, *Evidence,
@@ -927,6 +941,18 @@ The host passes engine tools as plain objects; the module validates and runs the
 `read_skill` are the turn's own (it adds them from its ask-user port and the `skills` prop): a host
 tool with either name is refused, and the dock says so in its error line.
 
+**Each tool's effect is in one list** (`copilot/effects.js`, `COPILOT_TOOL_EFFECTS`): every tool
+the Copilot can be offered — the turn's own, the tools over the run props, `highlight_cards` and
+the host's engine, view and change tools — by name, with what it does to the Workbench:
+`'compute'` (computes or reads, changes nothing the user sees: the analyses, the run data,
+`ask_user`, `read_skill`), `'view'` (changes only what is on screen) or `'change'` (changes an
+analysis input the user can set: `set_bond_geometry`). The dock reads its tools through the list
+with every effect (`toolsWithEffects(…, DOCK_EFFECTS)`), the validation's live arms with
+`'compute'` only (`validation/harness.js` `liveArmTools`, `LIVE_ARM_EFFECTS`), so no view or
+change tool reaches them. A tool the list does not name (a test's) falls back on its own
+declaration (`effect`, else `view: true` → `'view'`, else `'compute'`); the real tools declare
+none, and `view: true` stays exactly on the view tools (`src/__tests__/toolEffects.test.js`).
+
 ```js
 {
   name: 'compute_bond_angles',           // /^[a-z][a-z0-9_]{0,63}$/, unique
@@ -944,7 +970,8 @@ tool with either name is refused, and the dock says so in its error line.
                                          // its bond windows, checked against the shells before it runs (optional)
   resultBudget: 9000,                    // its own result budget in characters (read_skill) (optional)
   keep: true,                            // its result is never compacted later in the question (optional)
-  run: async (args, { signal, focus, askUser }) => ({ data, checks, facts, choice }),
+  undo: async (change) => ({ ok, reason }),   // a change tool's: puts back what one applied change set (optional)
+  run: async (args, { signal, focus, askUser, approve }) => ({ data, checks, facts, choice, change }),
 }
 ```
 
@@ -994,6 +1021,31 @@ tool with either name is refused, and the dock says so in its error line.
   arguments for the window the user chose (`confirmed`: they kept their own).
 - Parameters may be arrays (`items`, `minItems`, `maxItems`) and objects (their own `properties` /
   `required`); a list sent as JSON text or a bare comma list is accepted.
+- A strict schema (`additionalProperties: false`, a change tool's) refuses an unknown argument,
+  naming the arguments there are, where any other drops it with a note.
+
+**Change tools** (effect `'change'`, `set_bond_geometry` the one so far). A change tool changes
+nothing before the user agrees: its `run` asks the turn's approve port, `approve(request, {
+signal })` with `request = { tool, title, line, details }` — `line` the page after the change in
+one plain line, `details` a line per control it changes, before → after — which resolves `{
+approved, auto }`. In the dock (`useCopilot.js`) that is the approval card (**Ask first**, the
+default: the card waits for **Apply** or **Decline**, and rejects with an AbortError on Stop or a
+new conversation, as a question does) or, with the drawer's *Changes* on **Auto**, an immediate
+`{ approved: true, auto: true }`; the mode lives in the dock only and is never saved, so a reload
+is back at Ask first. The loop runs a change tool with no time limit while its card waits (the
+tool bounds its own work after the approval), its time off the turn's, and never from the cache;
+a change step is not an analysis (`isAnalysis`). The tool returns, beside its data and checks,
+`change`, its record — `{ status: 'applied' | 'declined' | 'unchanged' | 'stale', line, details,
+auto, id, note }` (`CHANGE_STATUSES`; `note`, optional, one short line for the user, such as why
+the page did not compute an applied change) — which the ToolResult keeps (on `'ok'`, or for `'stale'` on
+`'refused'`), `tool_end` carries and the step keeps (`turnState.js` `changeReply`); the model
+never reads it. A declined change's data are `{"declined": true}`; a change whose page moved
+while its card waited (the page's stamp) is not applied, a refusal (`stale`). The card
+(`components/ChangeCard.jsx`) shows the line, the details behind "?", Apply / Decline while it
+waits, then how it went; an applied change is the Copilot's, with **Undo**, which calls the tool's
+`undo(change)` (`useCopilot` `undoChange`, its outcome in `undos`). The rail says when a change
+waits while the dock is collapsed. The turn offers a change tool only with an approve port, which
+the validation harness never passes.
 
 **How a call ends (architecture candidate #11, the tool transcript).** The contract decides it;
 the loop only forwards it. Every call ends as one ToolResult:
@@ -1107,6 +1159,7 @@ In this repository the host tools live in `src/copilotTools.js`:
 | `analyze_modulations` | the modulation engine (`workers/modulations.js`, `/api/modulations`): each element's displacement power at the zone-boundary points and its strongest modes against the configuration's diffuse background — order that enlarges the cell, which the folded average cannot show, and correlation between cells at a general wavevector (incommensurate or short-range). The engine returns each point's calibrated σ against independent cells, each cell's own correlations kept (corrected over every element's points, whichever the call names), each point's polarisation (the direction the atoms move in that mode, with its share of the power) and each element's verdict (cell doubling, general order, long wave, and diffuse order between cells: correlation between neighbouring cells spread over many q); the tool renders them (`MODULATION_SENTENCES`), the polarisation of ordered points only, a `diffuse` row per element, antiphase correlation as short-range order and in-phase correlation as neighbouring cells moving together (correlated motion), not order (the local-order interview, 2026-10-24), and never prints a ratio, σ or correlation below its bar rounded onto it |
 | `detect_symmetry` | the symmetry finder at any tolerance, without changing the card, with the point group's facts (inversion, Sohncke, polar); offered when the run's structure has an average-structure basis (a browser-loaded run, or a server folder through `/api/structure`, which above the finder's 2000-site cap sends only its size; not a coords-only file). Above the cap it answers "not analysed", in both runtimes |
 | `measure_symmetry_lowering` | the size and direction of the coherent shift of a symmetry lowering: each average site's distance from the position a parent group puts it at, against the noise floor; offered as `detect_symmetry` is |
+| `set_bond_geometry` (change) | `src/copilotChangeTools.js`, built with the view tools in `src/copilotHostTools.js`: sets the Bond Geometry page's controls — `end1`, `apex`, `end2`, `r12_min`, `r12_max`, `distinct_bc`, `r23_min`, `r23_max`, `bin_width`, each optional, the others kept — through the controller the page registers while mounted (`src/bondGeometryControl.js`, the inputs model in `src/bondGeometryInputs.js`), after the approval card, then the page computes as Compute does. Strict schema, the boxes' ranges (windows 0–15 Å, bins 0.1–45°) and the run's elements; refused in plain words with no run open, a run the page cannot read, or values the page cannot compute; nothing asked when the page already shows exactly that; not applied when the page moved while the card waited. Its method advice points to the coordination-shells skill for the windows. Each applied change is the agent's entry in the app's change history; `undo` puts the earlier inputs back while the page still holds the agent's on the same run and configuration. Offered in the dock only |
 | `orient_3d_view` (view) | turns a 3D view (`src/copilotViewTools.js`): look down `[u v w]` / a, b, c / PC1–3 (c up, or b looking down c), centre or ring sites, select a site, reset |
 | `current_view` (view) | the page on screen, its cards, the highlight, and each 3D view's direction and site |
 
@@ -1419,10 +1472,24 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
 - **Pointing:** the focus controller (`focus.test.js`: levels, page switch and wait, clearing,
   undo callbacks, re-rendered cards), card references (`cardRefs.test.js`), `highlight_cards`
   (`viewTools.test.js`), the dock's size rules (`dockLayout.test.js`), and list/object arguments
-  (`toolCalls.test.js`).
+  (`toolCalls.test.js`, with the strict schema of a change tool).
+- **Effects and change tools:** the one list of effects, the change record's invariants, the
+  approve port reaching the tool, no time limit while the card waits, never cached, not an
+  analysis, a decline, Stop while the card waits (`changeTools.test.js`); the approval card
+  through the dock — one line, the details behind "?", Apply, Decline, Auto from the drawer and
+  its reset on reload, Stop, a stale refusal, Undo and a refused Undo, the rail
+  (`changeCard.test.jsx`).
 
 The host tools are tested on the committed demo run with the real engines in
 `src/__tests__/copilotTools.test.js`; the 3D view tools and their math in `viewer3d.test.js`,
 `cameraPose.test.js`, `useCopilotViewer.test.jsx`, `copilotViewTools.test.js` and
 `copilotCards.test.js` (which also checks that every card in the catalog is tagged in its page),
-and the plot marks in `interactivePlotMarks.test.jsx`. Run everything with `npm test` (vitest).
+and the plot marks in `interactivePlotMarks.test.jsx`. The change tool on the Bond Geometry page
+in `copilotChangeTools.test.jsx` (its schema; its refusals; Ask first, Auto, a decline, the
+stale-state check, nothing to change; the page's own controls set and the page computing; Undo
+and its refusals) and `copilotChangeDock.test.jsx` (the dock beside the page, end to end), the
+page's controller in `components/__tests__/BondGeometryControl.test.jsx`, its inputs model in
+`bondGeometryInputs.test.js`, and every tool's effect against the one list — the dock reads every
+effect, the arms compute only — in `toolEffects.test.js`, `toolEffectsReaders.test.jsx` (both
+adapters pass their tools through `toolsWithEffects`) and
+`validation/__tests__/computeOnly.test.js`. Run everything with `npm test` (vitest).

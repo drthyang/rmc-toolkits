@@ -379,3 +379,22 @@ now change **what is on screen** — never data, an analysis input or a file.
   Answers cite cards as `card:` chips. Show in stays the user's action, because it loads a page's
   analysis inputs.
 - The details are in the changelog and the module README.
+
+## 13. Change: one change tool, the Bond Geometry inputs (2026-11-01)
+
+The user decided that the Copilot may change the one thing the Workbench lets a user change, the
+Bond Geometry inputs, as MATERIA's agent changes its pages: it asks first, and the change can be
+undone. The Workbench stays an interpretation workbench; the value is in assessment and guidance,
+so no long list of change tools follows.
+
+- **One list of effects.** Every tool is `compute`, `view` or `change` in
+  `src/llm/copilot/effects.js`. The dock offers all three; the validation's live arms compute only,
+  so their protocol is unchanged.
+- **`set_bond_geometry`.** It sets the page's controls (triplet, A–B window, distinct B–C window,
+  bin width) through the page's own handlers and lets the page compute, as the user's typing and
+  Compute would. It is refused in plain words when no run is open or the values leave the page
+  unable to compute, and is not applied when the page changed while its card waited.
+- **Ask first, Auto, Undo.** The approval card (one line, details behind "?", Apply / Decline) is
+  the default; the drawer's Auto applies changes at once and resets to Ask first on reload. An
+  applied change is the agent's, with Undo on its card.
+- Show in stays the user's action. The details are in the changelog and the module README.

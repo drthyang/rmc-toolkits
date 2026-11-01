@@ -3,9 +3,11 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { contextToJson } from '../context/runContext';
+import { effectOf } from '../copilot/effects';
 import { STOPPED_BY } from '../copilot/turnPolicy';
-import { questionReply, stepSummary } from '../copilot/turnState';
+import { changeReply, questionReply, stepSummary } from '../copilot/turnState';
 import { useCopilot } from '../useCopilot';
+import ChangeCard from './ChangeCard';
 import MarkdownMessage from './MarkdownMessage';
 import QuestionCard from './QuestionCard';
 import ToolStep from './ToolStep';
@@ -13,8 +15,9 @@ import { ArrowUpIcon, ChevronIcon, StopIcon, UserGlyph, WaveMark } from './icons
 
 // The Copilot conversation: questions, and for each one the assistant's turn —
 // what it said, the analyses it ran (ToolStep cards), the clarifying question
-// it asked, if any (QuestionCard: the turn waits for the reply), its answer,
-// and the Outcome chip with its own verdict. User messages stay plain text; replies
+// it asked, if any (QuestionCard: the turn waits for the reply), a change it
+// proposed to a page's inputs (ChangeCard: Apply / Decline, then Undo), its
+// answer, and the Outcome chip with its own verdict. User messages stay plain text; replies
 // render Markdown through the sanitizing pipeline (MarkdownMessage), with the
 // cards they cite as chips that bring the card on screen (`focus.show`).
 
@@ -107,12 +110,49 @@ const groupItems = (items) => items.reduce((groups, item) => {
     return groups;
 }, []);
 
-const AssistantTurn = ({ turn, pages, onOpenPage, cardLinks, question = null, onAnswer = null }) => {
+const AssistantTurn = ({
+    turn, pages, onOpenPage, cardLinks, question = null, onAnswer = null, approval = null, onDecide = null, undos = null,
+    onUndo = null
+}) => {
     const groups = groupItems(turn.items);
     const summary = stepSummary(turn.items);
     const stopNote = stopNoteFor(turn);
     // An empty reply's reason already says the length limit was reached.
     const cutNote = turn.cut && !(turn.stoppedBy === 'empty' && turn.reason);
+    const stepCard = (step) => {
+        if (step.interactive) {
+            return (
+                <QuestionCard
+                    key={step.id}
+                    step={step}
+                    request={step.status === 'running' ? question : null}
+                    onAnswer={onAnswer}
+                />
+            );
+        }
+        if (step.effect === 'change') {
+            return (
+                <ChangeCard
+                    key={step.id}
+                    step={step}
+                    request={step.status === 'running' ? approval : null}
+                    onDecide={onDecide}
+                    undo={(step.change?.id && undos?.[step.change.id]) || null}
+                    onUndo={onUndo}
+                    pageLabel={step.page ? pages?.[step.page] : null}
+                    onOpenPage={onOpenPage}
+                />
+            );
+        }
+        return (
+            <ToolStep
+                key={step.id}
+                step={step}
+                pageLabel={step.page ? pages?.[step.page] : null}
+                onOpenPage={onOpenPage}
+            />
+        );
+    };
     return (
         <div className="llm-message is-assistant">
             <span className="llm-message-avatar" aria-hidden="true"><WaveMark /></span>
@@ -120,21 +160,7 @@ const AssistantTurn = ({ turn, pages, onOpenPage, cardLinks, question = null, on
                 <span className="llm-message-name">Copilot</span>
                 {groups.map((group, index) => (group.kind === 'steps' ? (
                     <ol key={index} className="llm-steps" aria-label="Analyses run">
-                        {group.steps.map((step) => (step.interactive ? (
-                            <QuestionCard
-                                key={step.id}
-                                step={step}
-                                request={step.status === 'running' ? question : null}
-                                onAnswer={onAnswer}
-                            />
-                        ) : (
-                            <ToolStep
-                                key={step.id}
-                                step={step}
-                                pageLabel={step.page ? pages?.[step.page] : null}
-                                onOpenPage={onOpenPage}
-                            />
-                        )))}
+                        {group.steps.map(stepCard)}
                     </ol>
                 ) : (
                     <TextSegment key={index} item={group} last={turn.streaming && index === groups.length - 1} cardLinks={cardLinks} />
@@ -187,9 +213,19 @@ const QUESTION_LINE = {
     stopped: () => 'Not answered.'
 };
 
+// A change step's line, in the card's words (changeReply).
+const CHANGE_LINE = {
+    applied: (text) => `Change applied: ${text}`,
+    declined: (text) => `Change declined: ${text}`,
+    unchanged: (text) => `No change needed: ${text}`,
+    stale: () => 'Change not applied: the page changed while it waited.',
+    not_applied: (text) => `Change not applied: ${text}`,
+    stopped: () => 'Change stopped before it was made.'
+};
+
 // One short line for screen readers when a step starts or ends, or a turn
 // ends with its verdict — never the streamed tokens themselves.
-const announcementFor = (turn) => {
+const announcementFor = (turn, approval = null) => {
     // The newest turn can be the question itself (a turn that failed before
     // any output is not kept): nothing to announce.
     if (!turn || !Array.isArray(turn.items)) return '';
@@ -203,6 +239,11 @@ const announcementFor = (turn) => {
         if (step.status === 'running') return `The Copilot asks: ${step.args?.question || ''}`;
         const { state, text } = questionReply(step);
         return QUESTION_LINE[state](text);
+    }
+    if (step.effect === 'change') {
+        if (step.status === 'running') return approval ? `The Copilot asks to apply a change: ${approval.line}` : `Running: ${step.label}`;
+        const { state, text } = changeReply(step);
+        return CHANGE_LINE[state]?.(text) ?? `${step.label}: ${step.status}`;
     }
     return step.status === 'running' ? `Running: ${step.label}` : `${step.label}: ${step.status}`;
 };
@@ -233,10 +274,11 @@ const UserMessage = ({ content }) => (
 
 const CopilotView = ({
     context, run, settings, connected, tools, toolsEnabled, pages, onOpenPage, runKey, configKey = null,
-    cards = null, focus = null, onTurnEnd = null, onBusyChange = null, onQuestion = null, skills = null
+    cards = null, focus = null, onTurnEnd = null, onBusyChange = null, onQuestion = null, onApproval = null, skills = null,
+    autoApprove = false
 }) => {
     const copilot = useCopilot({
-        settings, run, tools, toolsEnabled, runKey, configKey, focus, onTurnEnd, onQuestion, skills
+        settings, run, tools, toolsEnabled, runKey, configKey, focus, onTurnEnd, onQuestion, onApproval, skills, autoApprove
     });
     useEffect(() => { onBusyChange?.(copilot.busy); }, [copilot.busy, onBusyChange]);
     const showCard = useCallback((id) => { focus?.show([id], { source: 'user' }); }, [focus]);
@@ -252,24 +294,24 @@ const CopilotView = ({
     // ends the conversation (after the running answer, if any).
     const configurationChanged = copilot.breaks.after;
     const announcement = useMemo(() => {
-        const line = announcementFor(copilot.live || copilot.turns.at(-1));
+        const line = announcementFor(copilot.live || copilot.turns.at(-1), copilot.approval);
         return configurationChanged && !copilot.live ? `${line} ${CONFIGURATION_DIVIDER_TEXT}.`.trim() : line;
-    }, [copilot.live, copilot.turns, configurationChanged]);
+    }, [copilot.live, copilot.turns, copilot.approval, configurationChanged]);
 
     // Keep the newest message in view as turns, steps and tokens arrive — but
-    // never scroll a waiting question's top out of view (a short sheet on a
-    // phone would show its options without the question).
+    // never scroll a waiting question's or change's top out of view (a short
+    // sheet on a phone would show its buttons without what they answer).
     useEffect(() => {
         const el = logRef.current;
         if (!el) return;
-        const waiting = el.querySelector('.llm-ask.is-waiting');
+        const waiting = el.querySelector('.llm-ask.is-waiting, .llm-change.is-waiting');
         if (!waiting) {
             el.scrollTop = el.scrollHeight;
             return;
         }
         const top = waiting.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
         el.scrollTop = Math.max(0, Math.min(el.scrollHeight - el.clientHeight, top - 8));
-    }, [copilot.turns, copilot.live, copilot.question]);
+    }, [copilot.turns, copilot.live, copilot.question, copilot.approval]);
 
     // The chatbox focuses its panel when it opens before the model is
     // connected (the composer is disabled until then); once it connects,
@@ -323,16 +365,22 @@ const CopilotView = ({
 
     // What the Copilot can run on this run with its analyses on (the turn's
     // own ask_user and read_skill included): the status line and the list.
+    // Analyses are the compute tools (copilot/effects.js) that are neither a
+    // question nor a skill read; a change tool sets a page's inputs once the
+    // user approves (Auto: without asking).
     const offered = copilot.offered;
     const toolStatus = (() => {
         if (copilot.toolsUnsupported) return 'This model cannot run analyses — answers come from the run summary.';
         if (!toolsEnabled) return 'Analyses are off — answers come from the run summary.';
-        const analyses = offered.tools.filter((tool) => !tool.view && !tool.interactive && !tool.keep).length;
+        const analyses = offered.tools.filter((tool) => effectOf(tool) === 'compute' && !tool.interactive && !tool.keep).length;
         if (!analyses) return 'No analyses are available for this run.';
         const pointing = offered.view ? ' and point at its cards' : '';
+        const changes = offered.tools.some((tool) => effectOf(tool) === 'change')
+            ? (autoApprove ? '; changes its inputs without asking (Auto)' : '; changes its inputs once you approve')
+            : '';
         const count = offered.skills.length;
         const methods = count ? `, following ${count} skill${count === 1 ? '' : 's'}` : '';
-        return `Can run ${analyses} ${analyses === 1 ? 'analysis' : 'analyses'} on this run${pointing}${methods}.`;
+        return `Can run ${analyses} ${analyses === 1 ? 'analysis' : 'analyses'} on this run${pointing}${methods}${changes}.`;
     })();
 
     return (
@@ -343,7 +391,17 @@ const CopilotView = ({
                         ...(copilot.breaks.before.includes(index) ? [<ConfigurationDivider key={`configuration-${index}`} />] : []),
                         turn.role === 'user'
                             ? <UserMessage key={index} content={turn.content} />
-                            : <AssistantTurn key={index} turn={turn} pages={pages} onOpenPage={onOpenPage} cardLinks={cardLinks} />
+                            : (
+                                <AssistantTurn
+                                    key={index}
+                                    turn={turn}
+                                    pages={pages}
+                                    onOpenPage={onOpenPage}
+                                    cardLinks={cardLinks}
+                                    undos={copilot.undos}
+                                    onUndo={copilot.undoChange}
+                                />
+                            )
                     ])}
                     {copilot.live && (
                         <AssistantTurn
@@ -353,6 +411,10 @@ const CopilotView = ({
                             cardLinks={cardLinks}
                             question={copilot.question}
                             onAnswer={copilot.answerQuestion}
+                            approval={copilot.approval}
+                            onDecide={copilot.decideChange}
+                            undos={copilot.undos}
+                            onUndo={copilot.undoChange}
                         />
                     )}
                     {configurationChanged && <ConfigurationDivider />}
@@ -376,7 +438,7 @@ const CopilotView = ({
                     )}
                     {offered.tools.length > 0 && (
                         <details className="llm-context-inspector">
-                            <summary title="The analyses the Copilot may run on this run, and its view tools. Analyses only compute; view tools only point at cards and turn 3D views — none changes data or a file.">
+                            <summary title="The analyses the Copilot may run on this run, its view tools and its change tools. Analyses only compute; view tools only point at cards and turn 3D views; a change tool sets a page's inputs once you approve — none changes data or a file.">
                                 What the Copilot can run
                             </summary>
                             <ul className="llm-tool-list">

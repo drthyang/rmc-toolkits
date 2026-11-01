@@ -33,6 +33,11 @@
 //   askUser       (request, { signal }) → Promise<{ source, index?, answer? }>,
 //                 rejecting with an AbortError on abort; null: no ask_user
 //                 tool and no Workbench questions
+//   approve       (request, { signal }) → Promise<{ approved, auto }>, the
+//                 approve port a change tool asks before it changes anything
+//                 (the dock's approval card; Auto approves at once), rejecting
+//                 with an AbortError on abort; null: no change tool is offered
+//                 (effects.js; the validation harness has none)
 //   skills        the host's bundle { files, references?, load? } (parsed
 //                 here; a malformed skill is `skillsError`, never thrown), or
 //                 already parsed skills { list, load? }, or null
@@ -64,6 +69,7 @@
 //   - ask_user is offered only with an askUser port and tools on; read_skill
 //     only with skills, tools on and method 'full'; both after `tools`, in
 //     that order;
+//   - a change tool (effects.js) is offered only with an approve port;
 //   - tools are active exactly when config.toolsEnabled holds and at least
 //     one tool is offered; inactive, the request has no tools and the prompt
 //     is the no-tools one;
@@ -104,6 +110,7 @@
 import { runCopilotTurn } from './agentLoop';
 import { ASK_USER, buildAskUserTool } from './askUser';
 import { buildClarifier } from './clarify';
+import { isChangeTool } from './effects';
 import { TURN_METHODS, toolAsSent, toolDescription } from './method';
 import { compactAnswer, explainModelError } from './robustness';
 import { READ_SKILL, buildReadSkillTool, parseSkillFiles, skillIndex } from './skills';
@@ -134,7 +141,7 @@ const invalid = (message) => {
 const readSpec = (spec, { running }) => {
     if (!isObject(spec)) invalid('the spec must be an object');
     const {
-        question, run, model = null, tools = [], askUser = null, skills = null, history = [], signal = null,
+        question, run, model = null, tools = [], askUser = null, approve = null, skills = null, history = [], signal = null,
         clock = DEFAULT_CLOCK, toolContext = null, config = {}
     } = spec;
     if (running && (typeof question !== 'string' || !question.trim())) invalid('question must be a non-empty string');
@@ -147,6 +154,7 @@ const readSpec = (spec, { running }) => {
     // whatever this turn's method: a malformed spec fails in every arm.
     usableTools(tools).forEach((tool) => toolDescription(tool, 'full'));
     if (askUser != null && typeof askUser !== 'function') invalid('askUser must be a function or null');
+    if (approve != null && typeof approve !== 'function') invalid('approve must be a function or null');
     if (skills != null && !(isObject(skills) && (isObject(skills.files) || Array.isArray(skills.list)))) {
         invalid('skills must be { files, references?, load? }, { list, load? } or null');
     }
@@ -162,7 +170,7 @@ const readSpec = (spec, { running }) => {
     // Its rows and patterns are the verification's to check (createVerification).
     if (phrasings != null && !isObject(phrasings)) invalid('config.phrasings must be { [claim id]: { asserted, literal } } or null');
     return {
-        question, run, model, tools, askUser, skills, history, signal, clock, toolContext,
+        question, run, model, tools, askUser, approve, skills, history, signal, clock, toolContext,
         config: { toolsEnabled, method, limits, phrasings }
     };
 };
@@ -183,15 +191,17 @@ const readSkills = (skills) => {
 // The assembly, pure: the context, the tools offered, the prompt they get.
 // The method switch is here: read_skill only with method 'full', each tool
 // as the model reads it under the method (toolAsSent), and the method passed
-// to the prompt (turnMessages).
-const planTurn = ({ run, tools, askUser, skills, config }) => {
+// to the prompt (turnMessages). A change tool needs someone to approve it:
+// without an approve port it is not offered.
+const planTurn = ({ run, tools, askUser, approve, skills, config }) => {
     const context = buildRunContext(run);
     const { list, load, error } = readSkills(skills);
     const on = config.toolsEnabled;
     const asks = on && typeof askUser === 'function';
     const reads = on && config.method === 'full' && list.length > 0;
+    const approves = typeof approve === 'function';
     const offered = [
-        ...usableTools(tools),
+        ...usableTools(tools).filter((tool) => approves || !isChangeTool(tool)),
         ...(asks ? [buildAskUserTool()] : []),
         ...(reads ? [buildReadSkillTool(list, { load })] : [])
     ].map((tool) => toolAsSent(tool, config.method));
@@ -313,7 +323,11 @@ export async function* runTurn(spec) {
             // The tool-free prompt under the turn's method (with 'off', the
             // domain rules' definitions and conduct only).
             noToolsSystemPrompt: copilotSystemPrompt({ toolsEnabled: false, method: plan.method }),
-            toolContext: { ...(turn.toolContext || {}), ...(turn.askUser ? { askUser: turn.askUser } : {}) },
+            toolContext: {
+                ...(turn.toolContext || {}),
+                ...(turn.askUser ? { askUser: turn.askUser } : {}),
+                ...(turn.approve ? { approve: turn.approve } : {})
+            },
             clock: turn.clock,
             ...checks
         })) {

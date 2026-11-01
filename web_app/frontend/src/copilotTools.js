@@ -2035,7 +2035,8 @@ export const summarizeSymmetryLowering = (shifts, lower, { tolerance, noiseFloor
 
 // --- the tool list ---------------------------------------------------------------
 
-const elementProperty = (elements, description) => (
+/** A tool parameter naming one of the run's elements (an enum when the run lists them); the change tool's too. */
+export const elementProperty = (elements, description) => (
     elements.length
         ? { type: 'string', enum: elements, description }
         : { type: 'string', description }

@@ -36,8 +36,10 @@ import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { copilotSkills } from '../copilotSkills';
 import { buildCopilotCards } from '../copilotCards';
+import { buildChangeTools } from '../copilotChangeTools';
 import { buildCopilotTools } from '../copilotTools';
 import { buildViewTools } from '../copilotViewTools';
+import { createChangeHistory } from '../bondGeometryControl';
 import { buildAskUserTool } from '../llm/copilot/askUser';
 import { buildReadSkillTool } from '../llm/copilot/skills';
 import { buildRunTools } from '../llm/copilot/runTools';
@@ -74,6 +76,7 @@ const offeredTools = async () => {
             request, structure: run.structure, elements: Object.keys(run.structure.elementCounts || {}).sort(), plotFiles: run.plotFiles, runSettings: run.runSettings
         }),
         ...buildViewTools({ cards, pages: COPILOT_PAGES, activePage: () => 'dashboard' }),
+        ...buildChangeTools({ elements: Object.keys(run.structure.elementCounts || {}).sort(), history: createChangeHistory() }),
         buildAskUserTool(),
         buildReadSkillTool(bundledSkills(), { load: copilotSkills.load })
     ].filter(Boolean);

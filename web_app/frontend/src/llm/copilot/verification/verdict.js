@@ -23,8 +23,9 @@
 // partial or not achieved ("the run cannot tell"), that stands.
 // Analyses are the steps that ran (isAnalysis, the one definition: the
 // evidence gate's, the Outcome's and the dock footer's, through tool_end's
-// `analysis`): not a question to the user, a skill read, a view tool, a call
-// to an unknown tool or one skipped by the budget.
+// `analysis`): not a question to the user, a skill read, a view tool, a
+// change tool (it sets a page's inputs: effects.js), a call to an unknown tool
+// or one skipped by the budget.
 // Pure, no React.
 
 import { STOPPED_BY } from '../turnPolicy';
@@ -34,11 +35,12 @@ export const VERDICT_STATUSES = ['achieved', 'partial', 'not verified', 'not ach
 /**
  * Whether a recorded step is an analysis: it ran (`executed`: not skipped by
  * the budget, not an unknown tool, not a refused question) and it is not a
- * question to the user (`interactive`), a skill read (`reading`) or a view
- * tool (`view`). A failed analysis is one too, and a refused one; the
- * evidence gate also needs it to have answered (no error, not refused).
+ * question to the user (`interactive`), a skill read (`reading`), a view
+ * tool (`view`) or a change tool (`change`). A failed analysis is one too, and
+ * a refused one; the evidence gate also needs it to have answered (no error,
+ * not refused).
  */
-export const isAnalysis = (step) => Boolean(step?.executed) && !step.interactive && !step.reading && !step.view;
+export const isAnalysis = (step) => Boolean(step?.executed) && !step.interactive && !step.reading && !step.view && !step.change;
 
 // The findings that make an answer unverified, by rule, as the note says them.
 const findingReason = (findings) => {
