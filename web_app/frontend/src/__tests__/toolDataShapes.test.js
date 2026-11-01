@@ -29,7 +29,9 @@ import { checkShape, declaredKeys } from '../llm/copilot/dataShape';
 import { buildAskUserTool } from '../llm/copilot/askUser';
 import { buildReadSkillTool } from '../llm/copilot/skills';
 import { buildRunTools } from '../llm/copilot/runTools';
+import { MESSAGE_DATA_KEY } from '../llm/copilot/references';
 import { executeToolCall, toRequestTools } from '../llm/copilot/tools';
+import { SET_BOND_GEOMETRY, SET_BOND_GEOMETRY_SHAPE } from '../copilotChangeTools';
 import { copilotSkills } from '../copilotSkills';
 import { buildCopilotTools } from '../copilotTools';
 import { inProcessEngine } from '../workers/pcaKdeWorker';
@@ -309,6 +311,18 @@ describe('every live tool\'s data fits its declared dataShape', () => {
         DEV_CASES.filter((item) => item.id !== 'dev-fit-unconverged').forEach((item) => {
             expect(results.get(item.id).tools.some((tool) => fitTools.includes(tool.name)), item.id).toBe(false);
         });
+    });
+
+    // A reference may be written from the tool message's root ({{r5.data.x}}:
+    // llm/copilot/references.js), which reads `data` as the message's own
+    // key. It names one value only while no tool's data has a top-level key
+    // of that name (the dock's change tool included).
+    it('no tool\'s data has a top-level key named like the tool message\'s data key', () => {
+        const shapes = new Map([[SET_BOND_GEOMETRY, SET_BOND_GEOMETRY_SHAPE]]);
+        for (const { tools } of results.values()) tools.forEach((tool) => shapes.set(tool.name, tool.dataShape));
+        const clashes = [...shapes].filter(([, shape]) => declaredKeys(shape).includes(MESSAGE_DATA_KEY));
+        expect(shapes.size).toBeGreaterThan(10);
+        expect(clashes.map(([name]) => name)).toEqual([]);
     });
 
     it('the model never receives a dataShape: a request tool is its name, description and parameters', () => {

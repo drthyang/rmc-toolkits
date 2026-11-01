@@ -790,8 +790,16 @@ isAnalysis(step)           // the one definition of an analysis
   r2, … in the order of the turn); the model writes `{{r2.peak.significance_sigma}}` — the ref, then
   the path in the data it was shown, array items by index (`{{r3.sites.0.shift_A}}`) — or
   `{{ctx.<path>}}` for the run context as the model read it (trimmed), and the app writes the
-  engine's value in place where the answer is shown, recorded and checked. A number keeps the tool's rounding, a list of scalars reads
-  `[a, b, c]`. A reference that names nothing stays as written and is a `reference` finding. The
+  engine's value in place where the answer is shown, recorded and checked. The same path written
+  from the root of the tool message the model read (`{"ref": "r2", "checks": […], "data": {…}}`),
+  `{{r2.data.peak.significance_sigma}}`, names the same value (`MESSAGE_DATA_KEY`): gemma4:26b wrote
+  most of its references that way in the validation's first live runs, and a model in the dock did on
+  2026-11-01, all left unfilled until then. It is exact, not a guess: no tool's data has a top-level
+  `data` key (`toolDataShapes.test.js`), and if one had, its own path would be read first. A number
+  keeps the tool's rounding, a list of scalars reads `[a, b, c]`. A reference that names nothing is
+  never filled with a near miss (a similar key, the mean of an object named whole); the store's
+  `explain(path)` says what the path reaches (`no_result`, `no_key` with the keys there,
+  `not_a_value` with what the object holds). It stays as written and is a `reference` finding. The
   dock fills the earlier text segments of a turn, and a stopped one, the same way (`turnState.js`,
   `{{ctx.…}}` from the turn's `start.shown`).
 - **The computed verdict** (`verification/verdict.js`). The Outcome chip is the app's: **not verified**
