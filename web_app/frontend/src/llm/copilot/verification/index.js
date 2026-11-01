@@ -36,7 +36,7 @@
 // record(step, show): once per tool step, in the order the model reads them.
 // `step` is the call's ToolResult (the tool contract, tools.js: resultStatus,
 // args, error, checks, facts?, …) with the tool's `name` and kind
-// (`interactive`, `reading`, `view`); the verification reads the step's
+// (`interactive`, `reading`, `view`, `change`); the verification reads the step's
 // severity (severityOf: the `status` the Outcome counts) and whether it ran
 // (ran: not an unknown tool or a skipped call) from it. `show(ref)` builds the
 // tool message — called once, synchronously, returning { data, … } — and the
@@ -218,6 +218,7 @@ export const createVerification = ({
             const entry = {
                 name: step.name, args: step.args, status: severityOf(step), error: step.error || null,
                 interactive: Boolean(step.interactive), reading: Boolean(step.reading), view: Boolean(step.view),
+                change: Boolean(step.change),
                 executed: toolRan(step), ref,
                 refused, windowCut: refused && typeof step.data?.refused === 'string'
             };

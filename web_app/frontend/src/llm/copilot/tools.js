@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { answerResult, replyChoice } from './askUser';
+import { isChangeTool } from './effects';
 import { keyNumbers } from './robustness';
 import { parseToolArguments, validateToolArguments } from './toolCalls';
 
@@ -31,8 +32,18 @@ import { parseToolArguments, validateToolArguments } from './toolCalls';
 //     resultBudget: 9000,                    // its own result budget, characters (optional)
 //     keep: true,                            // its result is never compacted later in
 //                                            // the question (read_skill) (optional)
-//     run: async (args, { signal, focus, askUser }) => ({ data, checks, facts, choice })
+//     undo: async (change) => ({ ok, reason }),   // a change tool's: puts back what one
+//                                            // applied change set (optional)
+//     run: async (args, { signal, focus, askUser, approve }) => ({ data, checks, facts, choice, change })
 //   }
+//
+// What a tool does to the Workbench is its effect (effects.js: one list for
+// every tool, 'compute' | 'view' | 'change'). A change tool asks the user
+// through `approve(request, { signal })` (the dock's approval card; Auto
+// approves at once) before it changes anything, and returns `change`, the
+// record of what it did, kept on the step and never sent: `{ status:
+// 'applied' | 'declined' | 'unchanged' | 'stale', line, details, auto, id }`
+// (CHANGE_STATUSES; `id` names an applied change for its `undo`).
 //
 // `data` is the compact JSON the model reads (never a raw engine payload);
 // `checks` are deterministic verdicts on the full result, each
@@ -76,15 +87,19 @@ import { parseToolArguments, validateToolArguments } from './toolCalls';
 //            message of its own, the text the model reads of it instead;
 //   choice   a question the user answered: the reply's source and option index,
 //            and `confirmed`, whether the window the user chose is their own
-//            (clarify.js; null when the question is not about a window).
+//            (clarify.js; null when the question is not about a window);
+//   change   a change tool's record (see above): on 'ok' (applied, declined,
+//            unchanged) or 'refused' (stale: the page moved while the card
+//            waited, so nothing was applied).
 //
 // The constructors (toolResult, skippedCall, unknownToolCall, repeatedCall,
 // withNote, questionResult, and executeToolCall itself) check these
 // invariants and throw a TypeError on a result that breaks one. The tool
 // message the model reads depends only on the ref, the error, the note, the
-// checks and the data, in that key order (toolMessage); the status and the
-// choice are never sent. severityOf gives the step's status as the dock and
-// the Outcome read it ('ok' | 'warn' | 'failed'), ran whether the tool ran.
+// checks and the data, in that key order (toolMessage); the status, the
+// choice and the change record are never sent. severityOf gives the step's
+// status as the dock and the Outcome read it ('ok' | 'warn' | 'failed'), ran
+// whether the tool ran.
 
 export const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
 export const CHECK_LEVELS = ['ok', 'note', 'warn', 'fail'];
@@ -95,6 +110,9 @@ export const RESULT_STATUSES = Object.freeze(['ok', 'refused', 'error', 'unknown
 export const ERROR_STATUSES = Object.freeze(['error', 'unknown_tool', 'skipped']);
 // Where a question's reply came from (askUser.js).
 export const CHOICE_SOURCES = Object.freeze(['option', 'other', 'skipped']);
+// How a change tool's call ended (its `change` record): 'stale' only on a
+// refused result (nothing was applied), the others only on an 'ok' one.
+export const CHANGE_STATUSES = Object.freeze(['applied', 'declined', 'unchanged', 'stale']);
 
 /** Why the loop skipped a call: each reason's message, given the limit or the questions asked. */
 export const SKIP_REASONS = Object.freeze({
@@ -149,16 +167,33 @@ const checkChoice = (where, choice) => {
     if (![true, false, null].includes(choice.confirmed)) invalid(where, 'choice.confirmed must be true, false or null');
 };
 
+// A change record is { status, line, details, auto, id }: a known status
+// ('stale' exactly on a refused result), a line, a list of detail lines,
+// whether Auto approved it, and the applied change's id (or null).
+const checkChange = (where, change, resultStatus) => {
+    if (!change || typeof change !== 'object' || Array.isArray(change)) invalid(where, 'change must be { status, line, details, auto, id }');
+    if (!CHANGE_STATUSES.includes(change.status)) invalid(where, `change.status must be one of ${CHANGE_STATUSES.join(', ')}, got ${JSON.stringify(change.status)}`);
+    if ((change.status === 'stale') !== (resultStatus === 'refused')) {
+        invalid(where, change.status === 'stale' ? 'a stale change is a \'refused\' result' : `a '${change.status}' change is an 'ok' result`);
+    }
+    if (typeof change.line !== 'string' || !change.line) invalid(where, 'change.line must be a non-empty string');
+    if (!Array.isArray(change.details) || change.details.some((line) => typeof line !== 'string')) invalid(where, 'change.details must be a list of strings');
+    if (typeof change.auto !== 'boolean') invalid(where, 'change.auto must be true or false');
+    if (!(change.id === null || (typeof change.id === 'string' && change.id))) invalid(where, 'change.id must be a non-empty string or null');
+};
+
 /**
  * A ToolResult (see the header), checked: a known status, an error exactly
  * when the status is 'error', 'unknown_tool' or 'skipped' (then no data and
  * no facts), a fail check exactly when it is 'refused' (or beside an error),
- * a repeat only of 'ok' or 'refused', a choice only on 'ok'. Frozen (shallow).
+ * a repeat only of 'ok' or 'refused', a choice only on 'ok', a change record
+ * only on 'ok' or 'refused' ('stale' exactly on 'refused'). Frozen (shallow).
  * Every field but the status has a default, so `toolResult({ facts })` is a
  * step that ran and answered.
  */
 export const toolResult = ({
-    resultStatus = 'ok', args = {}, data = null, checks = [], error = null, facts, ms = 0, cached = false, note = null, choice
+    resultStatus = 'ok', args = {}, data = null, checks = [], error = null, facts, ms = 0, cached = false, note = null, choice,
+    change
 } = {}) => {
     const where = 'toolResult';
     if (!RESULT_STATUSES.includes(resultStatus)) invalid(where, `resultStatus must be one of ${RESULT_STATUSES.join(', ')}, got ${JSON.stringify(resultStatus)}`);
@@ -177,11 +212,16 @@ export const toolResult = ({
         if (resultStatus !== 'ok') invalid(where, `a '${resultStatus}' result has no choice: only a question the user answered`);
         checkChoice(where, choice);
     }
+    if (change !== undefined) {
+        if (resultStatus !== 'ok' && resultStatus !== 'refused') invalid(where, `a '${resultStatus}' result has no change record: only a change tool that ran`);
+        checkChange(where, change, resultStatus);
+    }
     return Object.freeze({
         resultStatus, args, data, checks, error,
         ...(facts !== undefined ? { facts } : {}),
         ms, cached: Boolean(cached), note,
-        ...(choice !== undefined ? { choice: Object.freeze({ ...choice }) } : {})
+        ...(choice !== undefined ? { choice: Object.freeze({ ...choice }) } : {}),
+        ...(change !== undefined ? { change: Object.freeze({ ...change, details: Object.freeze([...change.details]) }) } : {})
     });
 };
 
@@ -336,6 +376,26 @@ const readChoice = (tool, choice) => (tool?.interactive && choice && CHOICE_SOUR
     ? { source: choice.source, index: Number.isInteger(choice.index) ? choice.index : null, confirmed: null }
     : undefined);
 
+// A change tool's record of what it did, as the result's change; only a
+// change tool's (effects.js), and dropped when malformed or when it does not
+// fit how the call ended (a stale record without its refusal).
+const readChange = (tool, change, resultStatus) => {
+    if (!isChangeTool(tool) || !change || typeof change !== 'object') return undefined;
+    const record = {
+        status: change.status,
+        line: typeof change.line === 'string' ? change.line : '',
+        details: Array.isArray(change.details) ? change.details.filter((line) => typeof line === 'string') : [],
+        auto: change.auto === true,
+        id: typeof change.id === 'string' && change.id ? change.id : null
+    };
+    try {
+        checkChange('readChange', record, resultStatus);
+        return record;
+    } catch {
+        return undefined;
+    }
+};
+
 /**
  * Parse, validate and run one call. Resolves (never rejects, except on abort
  * of the turn) to a ToolResult: 'ok', 'refused' (the tool answered with a
@@ -392,6 +452,7 @@ export const executeToolCall = async (tool, rawArguments, { signal, timeoutMs, c
     const checks = [...notes, ...normalizeChecks(answer?.checks)];
     const resultStatus = checks.some(isFail) ? 'refused' : 'ok';
     const choice = resultStatus === 'ok' ? readChoice(tool, answer?.choice) : undefined;
+    const change = readChange(tool, answer?.change, resultStatus);
     return toolResult({
         resultStatus,
         args: validated.value,
@@ -399,7 +460,8 @@ export const executeToolCall = async (tool, rawArguments, { signal, timeoutMs, c
         checks,
         ...(answer?.facts && typeof answer.facts === 'object' ? { facts: answer.facts } : {}),
         ms: elapsed(),
-        ...(choice ? { choice } : {})
+        ...(choice ? { choice } : {}),
+        ...(change ? { change } : {})
     });
 };
 

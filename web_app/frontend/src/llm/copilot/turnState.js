@@ -8,8 +8,9 @@
 // new turn. A step keeps its tool_end as the loop sent it: its severity
 // (`status`, or 'running' / 'stopped'), how the call ended (`resultStatus`,
 // the tool contract's, tools.js; null while running and once stopped), the
-// app's `note` and the user's `choice`. The step cards read those, never the
-// text the model read (questionReply).
+// app's `note`, the user's `choice`, the tool's `effect` (effects.js) and a
+// change tool's `change` record. The step cards read those, never the text
+// the model read (questionReply, changeReply).
 
 import { createReferenceStore, fillReferences } from './references';
 
@@ -87,6 +88,7 @@ export const applyTurnEvent = (turn, event, now = 0) => {
                     interactive: Boolean(event.interactive),
                     app: Boolean(event.app),
                     reading: Boolean(event.reading),
+                    effect: event.effect ?? null,
                     // Set when it ends (tool_end's `analysis`).
                     analysis: false,
                     status: 'running',
@@ -96,6 +98,7 @@ export const applyTurnEvent = (turn, event, now = 0) => {
                     error: null,
                     note: null,
                     choice: null,
+                    change: null,
                     ms: null,
                     cached: false,
                     pageParams: null
@@ -114,6 +117,7 @@ export const applyTurnEvent = (turn, event, now = 0) => {
                     error: event.error,
                     note: event.note ?? null,
                     choice: event.choice ?? null,
+                    change: event.change ?? null,
                     ms: event.ms,
                     cached: Boolean(event.cached),
                     ref: event.ref ?? null,
@@ -198,6 +202,34 @@ export const questionReply = (step) => {
         return { state: 'skipped', text: answer ? `Skipped: the Copilot uses its default, ${answer}.` : 'Skipped.' };
     }
     return { state: 'answered', text: answer == null ? '' : String(answer) };
+};
+
+/**
+ * How a change step stands (a change tool's: effects.js), as its card and the
+ * screen reader say it, read from the step's result and its change record
+ * (never from the text the model read): `{ state, text }`.
+ *   'running'     it runs: preparing the change, waiting for the user on its
+ *                 card (the dock knows which) or applying it;
+ *   'stopped'     Stop or a restart came first: nothing more was done;
+ *   'not_applied' it could not run as asked (an error, or a call that never
+ *                 ran: no run open, values the page refuses); `text` is why;
+ *   'applied' | 'declined' | 'unchanged' | 'stale'
+ *                 the change record's status; `text` is its line, or for a
+ *                 stale change the refusal.
+ */
+export const changeReply = (step) => {
+    if (step.status === 'running') return { state: 'running', text: '' };
+    if (step.status === 'stopped') return { state: 'stopped', text: 'Stopped before the change was made.' };
+    const change = step.change;
+    if (step.error || !change) {
+        const fail = (step.checks || []).find((check) => check.level === 'fail');
+        return { state: 'not_applied', text: step.error || fail?.text || 'The change was not made.' };
+    }
+    if (change.status === 'stale') {
+        const fail = (step.checks || []).find((check) => check.level === 'fail');
+        return { state: 'stale', text: fail?.text || change.line };
+    }
+    return { state: change.status, text: change.line };
 };
 
 /**

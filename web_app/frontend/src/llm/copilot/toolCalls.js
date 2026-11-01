@@ -222,18 +222,22 @@ function checkObject(key, raw, spec) {
  * Check parsed arguments against the JSON-Schema subset the tools use
  * (`properties` with type / enum / minimum / maximum, arrays with `items` /
  * minItems / maxItems, objects with their own `properties`, and `required`).
- * Unknown keys are dropped with a note; `null` for an optional key means
- * "not given". Returns `{ ok, value, errors, notes }`.
+ * Unknown keys are dropped with a note — or, in a strict schema
+ * (`additionalProperties: false`: a change tool's), refused, naming the
+ * arguments there are; `null` for an optional key means "not given". Returns
+ * `{ ok, value, errors, notes }`.
  */
 export const validateToolArguments = (schema, args) => {
     const properties = schema?.properties || {};
     const required = Array.isArray(schema?.required) ? schema.required : [];
+    const strict = schema?.additionalProperties === false;
     const value = {};
     const errors = [];
     const notes = [];
     Object.entries(args || {}).forEach(([key, raw]) => {
         if (!Object.prototype.hasOwnProperty.call(properties, key)) {
-            notes.push(`ignored unknown argument "${key}"`);
+            if (strict) errors.push(`unknown argument "${key}"; the arguments are ${Object.keys(properties).join(', ') || 'none'}`);
+            else notes.push(`ignored unknown argument "${key}"`);
             return;
         }
         if (raw === null || raw === undefined) return;

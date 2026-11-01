@@ -136,6 +136,20 @@ describe('validateToolArguments', () => {
     it('rejects non-finite numbers', () => {
         expect(validateToolArguments(schema, { pair: 'Ta-Se', r_max: 'abc' }).errors[0]).toMatch(/finite number/);
     });
+
+    it('a strict schema (additionalProperties: false, a change tool\'s) refuses an unknown key, naming the arguments there are', () => {
+        const strict = { ...schema, additionalProperties: false };
+        const result = validateToolArguments(strict, { pair: 'Ta-Se', extra: 1, window: [2, 3] });
+        expect(result.ok).toBe(false);
+        expect(result.errors).toEqual([
+            'unknown argument "extra"; the arguments are pair, r_max, n, flag',
+            'unknown argument "window"; the arguments are pair, r_max, n, flag'
+        ]);
+        expect(result.notes).toEqual([]);
+        // Known keys still go through every other rule, and null is still absent.
+        expect(validateToolArguments(strict, { pair: 'Ta-Se', r_max: null })).toEqual({ ok: true, value: { pair: 'Ta-Se' }, errors: [], notes: [] });
+        expect(validateToolArguments(strict, { pair: 'Ta-Se', r_max: 40 }).errors).toEqual(['r_max must be ≤ 15, got 40']);
+    });
 });
 
 describe('canonicalJson', () => {

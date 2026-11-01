@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { DOCK_EFFECTS, toolsWithEffects } from '../copilot/effects';
 import { buildRunTools } from '../copilot/runTools';
 import { buildFocusTools } from '../copilot/viewTools';
 import { createFocusController } from '../focus/focus';
@@ -166,13 +167,15 @@ const CopilotPanel = ({
     );
 
     // The tools the dock offers: the tools over the run props, the view tool
-    // over the host's cards, then the host's tools. The turn adds ask_user and
-    // read_skill (from the host's skills) itself (copilot/turn.js).
-    const tools = useMemo(() => [
+    // over the host's cards, then the host's tools, read through the one list
+    // of tool effects (copilot/effects.js): the dock offers every effect —
+    // compute, view and change. The turn adds ask_user and read_skill (from
+    // the host's skills) itself (copilot/turn.js).
+    const tools = useMemo(() => toolsWithEffects([
         ...buildRunTools(runProps, { cards }),
         ...buildFocusTools({ cards, pages }),
         ...(hostTools || [])
-    ].filter(Boolean), [runProps, hostTools, cards, pages]);
+    ], DOCK_EFFECTS), [runProps, hostTools, cards, pages]);
 
     return (
         <section

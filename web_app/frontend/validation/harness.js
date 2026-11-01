@@ -19,7 +19,11 @@
 //       advice in a tool description or a check; the guardrails still run.
 //
 // The view tools (highlight_cards, orient_3d_view) need a screen and are left
-// out of both arms; every tool offered only computes. The simulated user
+// out of both arms; every tool offered only computes: the arms read their
+// tools through the one list of tool effects (src/llm/copilot/effects.js,
+// LIVE_ARM_EFFECTS: 'compute'), so no view or change tool (the dock's
+// set_bond_geometry) reaches them, and the turn gets no approve port, without
+// which it offers no change tool. The simulated user
 // skips every question (the model must use its stated default), and the run
 // and its files have one neutral name for every case (runFolder.js RUN_NAME:
 // a case id names its kind), so nothing about the planted truth reaches the
@@ -78,6 +82,7 @@
 // never sent, has no entry, and the run's `error` is the ContextLimitError.
 
 import { ASK_USER } from '../src/llm/copilot/askUser';
+import { effectOf, toolsWithEffects } from '../src/llm/copilot/effects';
 import { READ_SKILL } from '../src/llm/copilot/skills';
 import { buildRunTools } from '../src/llm/copilot/runTools';
 import { ERROR_STATUSES } from '../src/llm/copilot/tools';
@@ -280,6 +285,16 @@ export const ARMS = Object.freeze({
     C: { skills: false, method: 'off', label: 'Copilot without the method: no skills, method rules or advice (ablation)' }
 });
 
+/** What the live arms are offered: compute-only tools (src/llm/copilot/effects.js). */
+export const LIVE_ARM_EFFECTS = Object.freeze(['compute']);
+
+/**
+ * The live arms' tools for a run (runFolder.js loadRun): the tools over its
+ * props, with no cards, and its engine tools, read through the one list of
+ * tool effects, compute only (LIVE_ARM_EFFECTS).
+ */
+export const liveArmTools = (run) => toolsWithEffects([...buildRunTools(run.props, { cards: [] }), ...run.tools], LIVE_ARM_EFFECTS);
+
 /** The simulated user: skips every question, so the model uses its own default. */
 export const skippingUser = (log) => async (request) => {
     log.push({ question: request.question, options: request.options.map((option) => option.label), reply: 'skipped' });
@@ -382,14 +397,15 @@ export const runLiveCase = async ({
     let shown = null;
     // One question through the turn module (src/llm/copilot/turn.js), as the
     // dock runs it; the harness adds only what is its own: the case's run, its
-    // compute-only tools (the tools over the run props, with no cards, and the
-    // run's engine tools), the simulated user, the arm's skills and method,
-    // the verdict's words for the evidence gate, and its port.
+    // compute-only tools (liveArmTools: the tools over the run props, with no
+    // cards, and the run's engine tools), the simulated user, the arm's skills
+    // and method, the verdict's words for the evidence gate, and its port. No
+    // approve port: the turn offers no change tool.
     for await (const event of runTurn({
         question,
         run: run.props,
         model: port,
-        tools: [...buildRunTools(run.props, { cards: [] }), ...run.tools],
+        tools: liveArmTools(run),
         askUser: skippingUser(asked),
         skills: ARMS[arm].skills ? skills : null,
         signal,
@@ -399,6 +415,8 @@ export const runLiveCase = async ({
         if (event.type === 'start') {
             // Refused before any request: a broken harness, not a run.
             if (event.offered.view) throw new Error('a view tool was offered: the live arms offer compute-only tools');
+            const other = event.offered.tools.find((tool) => effectOf(tool) !== 'compute');
+            if (other) throw new Error(`${other.name} (${effectOf(other)}) was offered: the live arms offer compute-only tools`);
             if (event.skillsError) throw new Error(event.skillsError);
             record.method = event.method;
             record.tools_offered = event.offered.tools.map((tool) => tool.name);
