@@ -1471,8 +1471,12 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   the answer judged — the answer checks with their negated and qualified phrasings
   (`answerChecks.test.js`); the evidence gate under both methods, the fixed order, numbers by
   reference, the computed verdict, the errors (`verification.test.js`); the catalogues and the
-  binding of `EVIDENCE_RULES` to CLAIMS (`verificationCatalogue.test.js`); the reference store
-  (`references.test.js`) and the dock's reducer and footer (`turnState.test.js`); the real tools'
+  binding of `EVIDENCE_RULES` to CLAIMS (`verificationCatalogue.test.js`); the reference store,
+  the message-root path and `explain` (`references.test.js`), the reference repair (in
+  `verification.test.js`, `turnPolicy.test.js`, `agentLoop.test.js`, and the user's sentence of
+  2026-11-01 in a real turn on the Demo, `src/__tests__/answerReferences.test.js`), the dock's
+  display of references and its fold of a long answer (`referenceDisplay.test.jsx`,
+  `answerParts.test.jsx`) and the dock's reducer and footer (`turnState.test.js`); the real tools'
   facts against FACTS (`src/__tests__/verificationFacts.test.js`); the verdict's words through
   the harness's phrasings (`validation/__tests__/verdictPhrasings.test.js`); and in the loop
   (`agentLoop.test.js`); the clarifier on synthetic shells — split,
