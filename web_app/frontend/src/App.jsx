@@ -14,7 +14,8 @@ import { copilotSkills } from './copilotSkills';
 import { DEFAULT_VIEW } from './copilotRun';
 import useCopilotRun from './useCopilotRun';
 import { buildCopilotCards, COPILOT_PAGES } from './copilotCards';
-import { buildViewTools } from './copilotViewTools';
+import { copilotHostTools } from './copilotHostTools';
+import { createChangeHistory } from './bondGeometryControl';
 import API_BASE_URL from './api';
 import {
   buildLocalRun,
@@ -125,20 +126,30 @@ function App() {
     enabled: copilotOpened,
   });
   const { plotFiles: copilotPlotFiles, rValueFile: copilotRValueFile, symmetry: copilotSymmetry } = copilotRun.props;
-  // The cards it may point at, and the view tools that turn the 3D views
-  // (copilotCards.js, copilotViewTools.js). current_view reads the page on
-  // screen through a ref, so the tools are not rebuilt on every page switch.
+  const { tools: copilotEngineTools, elements: copilotElements } = copilotRun;
+  // The cards it may point at, the view tools that turn the 3D views and the
+  // change tool for the Bond Geometry inputs (copilotCards.js,
+  // copilotHostTools.js). current_view reads the page on screen through a
+  // ref, so the tools are not rebuilt on every page switch. The change
+  // history is the app's, so an Undo outlives a rebuilt tool list.
   const activePageRef = useRef(activePage);
   activePageRef.current = activePage;
+  const copilotOpenPageRef = useRef(null);
+  const [changeHistory] = useState(() => createChangeHistory());
   const copilotCards = useMemo(() => buildCopilotCards({
     plotFiles: copilotPlotFiles,
     rValueFile: copilotRValueFile,
     symmetry: copilotSymmetry,
   }), [copilotPlotFiles, copilotRValueFile, copilotSymmetry]);
-  const copilotTools = useMemo(() => [
-    ...copilotRun.tools,
-    ...buildViewTools({ cards: copilotCards, pages: COPILOT_PAGES, activePage: () => activePageRef.current }),
-  ], [copilotRun.tools, copilotCards]);
+  const copilotTools = useMemo(() => copilotHostTools({
+    engineTools: copilotEngineTools,
+    elements: copilotElements,
+    cards: copilotCards,
+    pages: COPILOT_PAGES,
+    activePage: () => activePageRef.current,
+    history: changeHistory,
+    openPage: (page) => copilotOpenPageRef.current?.(page, null),
+  }), [copilotEngineTools, copilotElements, copilotCards, changeHistory]);
   // Only where the dock sits matters here (not its width), so dragging the
   // dock's edge does not re-render the pages.
   const handleCopilotLayout = useCallback((layout) => setCopilotLayout((current) => (
@@ -331,6 +342,9 @@ function App() {
       setPageRequest({ page, params, id: pageRequestIdRef.current });
     }
   };
+  // The change tool opens the Bond Geometry page through here when the turn
+  // has no card focus to do it (copilotChangeTools.js).
+  copilotOpenPageRef.current = handleCopilotOpenPage;
 
   const handleNativeBrowse = async () => {
     setBrowseStatus({ kind: 'loading', text: 'Opening folder picker…' });
