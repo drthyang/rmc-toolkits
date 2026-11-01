@@ -1036,7 +1036,8 @@ is back at Ask first. The loop runs a change tool with no time limit while its c
 tool bounds its own work after the approval), its time off the turn's, and never from the cache;
 a change step is not an analysis (`isAnalysis`). The tool returns, beside its data and checks,
 `change`, its record — `{ status: 'applied' | 'declined' | 'unchanged' | 'stale', line, details,
-auto, id }` (`CHANGE_STATUSES`) — which the ToolResult keeps (on `'ok'`, or for `'stale'` on
+auto, id, note }` (`CHANGE_STATUSES`; `note`, optional, one short line for the user, such as why
+the page did not compute an applied change) — which the ToolResult keeps (on `'ok'`, or for `'stale'` on
 `'refused'`), `tool_end` carries and the step keeps (`turnState.js` `changeReply`); the model
 never reads it. A declined change's data are `{"declined": true}`; a change whose page moved
 while its card waited (the page's stamp) is not applied, a refusal (`stale`). The card

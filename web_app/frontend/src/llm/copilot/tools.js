@@ -42,8 +42,10 @@ import { parseToolArguments, validateToolArguments } from './toolCalls';
 // through `approve(request, { signal })` (the dock's approval card; Auto
 // approves at once) before it changes anything, and returns `change`, the
 // record of what it did, kept on the step and never sent: `{ status:
-// 'applied' | 'declined' | 'unchanged' | 'stale', line, details, auto, id }`
-// (CHANGE_STATUSES; `id` names an applied change for its `undo`).
+// 'applied' | 'declined' | 'unchanged' | 'stale', line, details, auto, id,
+// note }` (CHANGE_STATUSES; `id` names an applied change for its `undo`;
+// `note`, optional, one short line for the user, such as why the page did not
+// compute an applied change).
 //
 // `data` is the compact JSON the model reads (never a raw engine payload);
 // `checks` are deterministic verdicts on the full result, each
@@ -167,9 +169,10 @@ const checkChoice = (where, choice) => {
     if (![true, false, null].includes(choice.confirmed)) invalid(where, 'choice.confirmed must be true, false or null');
 };
 
-// A change record is { status, line, details, auto, id }: a known status
-// ('stale' exactly on a refused result), a line, a list of detail lines,
-// whether Auto approved it, and the applied change's id (or null).
+// A change record is { status, line, details, auto, id, note? }: a known
+// status ('stale' exactly on a refused result), a line, a list of detail
+// lines, whether Auto approved it, the applied change's id (or null), and an
+// optional short line for the user (or null).
 const checkChange = (where, change, resultStatus) => {
     if (!change || typeof change !== 'object' || Array.isArray(change)) invalid(where, 'change must be { status, line, details, auto, id }');
     if (!CHANGE_STATUSES.includes(change.status)) invalid(where, `change.status must be one of ${CHANGE_STATUSES.join(', ')}, got ${JSON.stringify(change.status)}`);
@@ -180,6 +183,7 @@ const checkChange = (where, change, resultStatus) => {
     if (!Array.isArray(change.details) || change.details.some((line) => typeof line !== 'string')) invalid(where, 'change.details must be a list of strings');
     if (typeof change.auto !== 'boolean') invalid(where, 'change.auto must be true or false');
     if (!(change.id === null || (typeof change.id === 'string' && change.id))) invalid(where, 'change.id must be a non-empty string or null');
+    if (!(change.note == null || (typeof change.note === 'string' && change.note))) invalid(where, 'change.note must be a non-empty string or null');
 };
 
 /**
@@ -386,7 +390,8 @@ const readChange = (tool, change, resultStatus) => {
         line: typeof change.line === 'string' ? change.line : '',
         details: Array.isArray(change.details) ? change.details.filter((line) => typeof line === 'string') : [],
         auto: change.auto === true,
-        id: typeof change.id === 'string' && change.id ? change.id : null
+        id: typeof change.id === 'string' && change.id ? change.id : null,
+        note: typeof change.note === 'string' && change.note ? change.note : null
     };
     try {
         checkChange('readChange', record, resultStatus);

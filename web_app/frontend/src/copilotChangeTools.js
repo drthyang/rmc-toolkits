@@ -92,7 +92,8 @@ const changeLabel = ({ end1, apex, end2, r12_min: lo, r12_max: hi }) => {
     return parts.join(' · ');
 };
 
-// What the model reads once a change was applied, and how the page took it.
+// What the model reads once a change was applied, and how the page took it;
+// `note` is the card's short line for the user when it did not go as asked.
 const appliedResult = (after, outcome) => {
     const line = inputsLine(after);
     if (outcome.computed) {
@@ -101,13 +102,15 @@ const appliedResult = (after, outcome) => {
             data: { applied: true, inputs: toolInputs(after), computed: true, angle_count: count },
             checks: [count > 0
                 ? { level: 'ok', text: `Applied: ${line}; the page computed ${count} angles.` }
-                : { level: 'warn', text: `Applied: ${line}; the page found no angles in these windows: widen them.` }]
+                : { level: 'warn', text: `Applied: ${line}; the page found no angles in these windows: widen them.` }],
+            note: count > 0 ? null : 'The page found no angles in these windows.'
         };
     }
     const why = outcome.error || outcome.reason || 'it did not compute';
     return {
         data: { applied: true, inputs: toolInputs(after), computed: false, not_computed: why },
-        checks: [{ level: 'warn', text: `Applied: ${line}, but the page did not compute it: ${why}.` }]
+        checks: [{ level: 'warn', text: `Applied: ${line}, but the page did not compute it: ${why}.` }],
+        note: `The page did not compute it: ${why}.`
     };
 };
 
@@ -223,7 +226,8 @@ export const buildChangeTools = ({ elements = [], history, openPage = null, wait
             }
             const entry = history.record({ before: before.inputs, after, epoch: before.epoch, shownBefore: Boolean(before.shown) });
             const outcome = await withinTime(controller.apply(after), wait.compute);
-            return { ...appliedResult(after, outcome), change: { status: 'applied', line, details, auto, id: entry.id } };
+            const { data, checks, note } = appliedResult(after, outcome);
+            return { data, checks, change: { status: 'applied', line, details, auto, id: entry.id, note } };
         },
 
         // Undo one applied change: the earlier inputs back, through the same

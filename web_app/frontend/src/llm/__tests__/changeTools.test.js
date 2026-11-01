@@ -144,13 +144,16 @@ describe('a change record on the tool result (tools.js)', () => {
         expect(() => toolResult({ change: record('applied', { details: [3] }) })).toThrow(/change.details/);
         expect(() => toolResult({ change: record('applied', { auto: 'yes' }) })).toThrow(/change.auto/);
         expect(() => toolResult({ change: record('applied', { id: '' }) })).toThrow(/change.id/);
+        expect(() => toolResult({ change: record('applied', { note: '' }) })).toThrow(/change.note/);
+        expect(toolResult({ change: record('applied', { note: 'The page found no angles in these windows.' }) }).change.note)
+            .toBe('The page found no angles in these windows.');
     });
 
     it('executeToolCall keeps a change tool\'s record, drops another tool\'s and a malformed one, and never sends it', async () => {
         const approve = vi.fn(async () => ({ approved: true, auto: false }));
         const applied = await executeToolCall(setter(), '{"value":3}', { timeoutMs: 1000, context: { approve } });
         expect(applied.resultStatus).toBe('ok');
-        expect(applied.change).toEqual({ status: 'applied', line: 'value 3', details: [], auto: false, id: 'v1' });
+        expect(applied.change).toEqual({ status: 'applied', line: 'value 3', details: [], auto: false, id: 'v1', note: null });
         const message = toolMessage(applied, { budget: 3000, ref: 'r1' }).content;
         expect(message).not.toContain('"change"');
         expect(message).not.toContain('v1');
@@ -200,7 +203,7 @@ describe('the turn and a change tool', () => {
         const end = events.find((event) => event.type === 'tool_end');
         expect(start).toMatchObject({ name: 'set_value', effect: 'change' });
         expect(end).toMatchObject({ name: 'set_value', resultStatus: 'ok', status: 'ok', analysis: false, error: null });
-        expect(end.change).toEqual({ status: 'applied', line: 'value 3', details: [], auto: false, id: 'v1' });
+        expect(end.change).toEqual({ status: 'applied', line: 'value 3', details: [], auto: false, id: 'v1', note: null });
         // The model read the data and the checks, never the record.
         const message = requests[1].messages.at(-1);
         expect(JSON.parse(message.content)).toEqual({ ref: 'r1', checks: [{ level: 'ok', text: 'Applied: value 3.' }], data: { applied: true, value: 3 } });

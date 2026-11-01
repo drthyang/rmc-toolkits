@@ -36,6 +36,8 @@ const SAY = {
     stopped: 'Stopped before the change was made.'
 };
 
+const capitalize = (text) => (text ? `${text.charAt(0).toUpperCase()}${text.slice(1)}` : text);
+
 const UNDO_TEXT = {
     running: 'Undoing…',
     done: 'Undone: the earlier inputs are back.'
@@ -75,9 +77,9 @@ const ChangeCard = ({ step, request = null, onDecide, undo = null, onUndo, pageL
     const meta = waiting
         ? 'Needs your approval'
         : (undone ? 'Undone' : `${META[state] || state}${applied && record?.auto ? ' · Auto' : ''}`);
-    // The step's own warning (the page did not compute, no angles) stays visible.
-    const warning = applied ? (step.checks || []).find((check) => check.level === 'warn') : null;
-    const said = state === 'not_applied' ? reply.text : SAY[state];
+    // The tool's short line for the user (the page did not compute, no angles).
+    const note = applied ? record?.note : null;
+    const said = state === 'not_applied' ? capitalize(reply.text) : SAY[state];
 
     return (
         <li
@@ -114,7 +116,7 @@ const ChangeCard = ({ step, request = null, onDecide, undo = null, onUndo, pageL
                     {details.map((text) => <li key={text}>{text}</li>)}
                 </ul>
             )}
-            {warning && <p className="llm-step-headline is-warn">{warning.text}</p>}
+            {note && <p className="llm-step-headline is-warn">{note}</p>}
             {said && <p className={`llm-step-headline${state === 'stale' || state === 'not_applied' ? ' is-fail' : ''}`}>{said}</p>}
             {undo && undo.state !== 'running' && undo.state !== 'done' && (
                 <p className="llm-step-headline is-fail">{`Not undone: ${undo.reason}.`}</p>

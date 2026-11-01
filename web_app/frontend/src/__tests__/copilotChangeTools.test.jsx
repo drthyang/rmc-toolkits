@@ -243,7 +243,7 @@ describe('set_bond_geometry on the Bond Geometry page', () => {
         });
         expect(checkShape(result.data, SET_BOND_GEOMETRY_SHAPE)).toEqual([]);
         expect(result.checks).toEqual([{ level: 'ok', text: 'Applied: Ga–Nb–Se · A–B 2.40–2.90 Å, B–C 2.50–2.80 Å · 2° bins; the page computed 240 angles.' }]);
-        expect(result.change).toMatchObject({ status: 'applied', auto: false, id: 'bond-geometry-1', line: 'Ga–Nb–Se · A–B 2.40–2.90 Å, B–C 2.50–2.80 Å · 2° bins' });
+        expect(result.change).toMatchObject({ status: 'applied', auto: false, id: 'bond-geometry-1', line: 'Ga–Nb–Se · A–B 2.40–2.90 Å, B–C 2.50–2.80 Å · 2° bins', note: null });
         // The page's own controls show it, and it computed exactly that.
         expect(select('End element A').value).toBe('Ga');
         expect(box('A-B window maximum').value).toBe('2.9');
@@ -265,6 +265,7 @@ describe('set_bond_geometry on the Bond Geometry page', () => {
         expect(result.data).toMatchObject({ applied: true, computed: true, angle_count: 0 });
         expect(checkShape(result.data, SET_BOND_GEOMETRY_SHAPE)).toEqual([]);
         expect(result.checks).toEqual([{ level: 'warn', text: 'Applied: Se–Nb–Se · 1.90–2.10 Å · 1° bins; the page found no angles in these windows: widen them.' }]);
+        expect(result.change.note).toBe('The page found no angles in these windows.');
     });
 
     it('applied, but the page could not compute it: the change stands, and the model is told why', async () => {
@@ -280,7 +281,7 @@ describe('set_bond_geometry on the Bond Geometry page', () => {
         expect(checkShape(result.data, SET_BOND_GEOMETRY_SHAPE)).toEqual([]);
         expect(result.checks).toEqual([{ level: 'warn', text: 'Applied: Se–Nb–Se · 2.00–3.00 Å · 44° bins, but the page did not compute it: the angle budget is exceeded.' }]);
         expect(box('Angle bin width in degrees').value).toBe('44');
-        expect(result.change).toMatchObject({ status: 'applied', id: 'bond-geometry-1' });
+        expect(result.change).toMatchObject({ status: 'applied', id: 'bond-geometry-1', note: 'The page did not compute it: the angle budget is exceeded.' });
     });
 
     it('a declined change returns {"declined": true} and leaves the page as it was', async () => {

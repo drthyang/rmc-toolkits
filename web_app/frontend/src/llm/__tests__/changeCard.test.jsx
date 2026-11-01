@@ -280,6 +280,36 @@ describe('a change in the dock: the approval card', () => {
         expect(button('Undo')).toBeUndefined();
     });
 
+    it('says in one short line why an applied change did not compute, and why a change was refused', async () => {
+        stubReplies([callChange(), answered(), callChange(), answered()]);
+        const notComputed = changeTool();
+        notComputed.run = vi.fn(async (args, { approve, signal }) => {
+            const { auto } = await approve({ tool: 'set_window', title: 'Change the window', line: LINE, details: DETAILS }, { signal });
+            return {
+                data: { applied: true, computed: false, not_computed: 'the angle budget is exceeded' },
+                checks: [{ level: 'warn', text: `Applied: ${LINE}, but the page did not compute it: the angle budget is exceeded.` }],
+                change: { status: 'applied', line: LINE, details: DETAILS, auto, id: 'w2', note: 'The page did not compute it: the angle budget is exceeded.' }
+            };
+        });
+        act(() => root.render(chat({ tools: [notComputed] })));
+        await openChat();
+        await ask('Set the window.');
+        act(() => button('Apply').click());
+        await settleUntil(() => container.querySelector('.llm-outcome'));
+        const lines = () => [...card().querySelectorAll('.llm-step-headline')].map((item) => item.textContent);
+        expect(lines()).toEqual(['The page did not compute it: the angle budget is exceeded.']);
+
+        // A change the tool refused before any card: its reason, capitalised.
+        const refusing = changeTool();
+        refusing.run = vi.fn(async () => { throw new Error('no run is open: open a run folder, or load the Demo'); });
+        act(() => root.render(chat({ tools: [refusing], runKey: 'run-2' })));
+        await settle();
+        await ask('Set the window.');
+        await settleUntil(() => container.querySelector('.llm-outcome'));
+        expect(card().className).toContain('is-not_applied');
+        expect(lines()).toEqual(['No run is open: open a run folder, or load the Demo']);
+    });
+
     it('marks the rail when a change waits while the Copilot is collapsed', async () => {
         stubReplies([callChange(), answered()]);
         act(() => root.render(chat({ tools: [changeTool()] })));
