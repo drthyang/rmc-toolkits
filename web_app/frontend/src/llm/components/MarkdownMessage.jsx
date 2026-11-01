@@ -10,6 +10,7 @@ import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import { CARD_SCHEME, cardIdFromHref, linkCardReferences } from '../focus/cardRefs';
+import { displayReferences, MISSING_SCHEME, missingReferenceOf } from './referenceDisplay';
 
 // Model replies render as Markdown (GitHub-flavored: tables, lists, code) via
 // react-markdown, which builds a React tree — there is no innerHTML.
@@ -39,11 +40,18 @@ import { CARD_SCHEME, cardIdFromHref, linkCardReferences } from '../focus/cardRe
 // react-markdown's URL filter and the sanitizer's protocol list, and the link
 // renders as a chip button that focuses the card — only for a card the host
 // listed; any other card: target renders as its plain label.
+//
+// Numbers by reference ({{r5.peak.significance_sigma}}, llm copilot/
+// references.js) never show raw (referenceDisplay.js): the ones the turn's
+// results fill are written in (`references`: the turn's store, also while
+// the text streams), one still being written is held back while
+// `streaming`, and any other becomes a `ref:` link drawn as a "number
+// missing" mark — a span, never a link — whose hover names the reference.
 const SANITIZE_SCHEMA = {
     ...defaultSchema,
     protocols: {
         ...defaultSchema.protocols,
-        href: [...(defaultSchema.protocols?.href || []), CARD_SCHEME.slice(0, -1)]
+        href: [...(defaultSchema.protocols?.href || []), CARD_SCHEME.slice(0, -1), MISSING_SCHEME.slice(0, -1)]
     },
     tagNames: (defaultSchema.tagNames || []).filter((tag) => tag !== 'img'),
     attributes: {
@@ -68,7 +76,9 @@ const plainText = (node) => {
 };
 
 const urlTransform = (url) => (
-    typeof url === 'string' && url.trim().toLowerCase().startsWith(CARD_SCHEME) ? url : defaultUrlTransform(url)
+    typeof url === 'string' && (url.trim().toLowerCase().startsWith(CARD_SCHEME) || url.startsWith(MISSING_SCHEME))
+        ? url
+        : defaultUrlTransform(url)
 );
 
 const TABLE = ({ node, ...props }) => <div className="llm-md-table"><table {...props} /></div>;
@@ -79,6 +89,14 @@ const TABLE = ({ node, ...props }) => <div className="llm-md-table"><table {...p
 // while hovered (onCardHover).
 const buildComponents = (cards, onCardClick, onCardHover) => ({
     a: ({ node, href, children, ...props }) => {
+        const missing = missingReferenceOf(href);
+        if (missing != null) {
+            return (
+                <span className="llm-ref-missing" title={`Not filled: the reference ${missing} names no value this question's analyses returned`}>
+                    {children}
+                </span>
+            );
+        }
         if (typeof href === 'string' && href.toLowerCase().startsWith(CARD_SCHEME)) {
             const id = cardIdFromHref(href, cards);
             if (!id || !onCardClick) return <span className="llm-card-ref">{children}</span>;
@@ -113,12 +131,17 @@ const buildComponents = (cards, onCardClick, onCardHover) => ({
 // as spans, so the math and emphasis models put there render in place.
 const INLINE_PARAGRAPH = ({ node, ...props }) => <span {...props} />;
 
-const MarkdownMessage = ({ children, cards = null, onCardClick = null, onCardHover = null, inline = false }) => {
+const MarkdownMessage = ({
+    children, cards = null, onCardClick = null, onCardHover = null, inline = false, references = null, streaming = false
+}) => {
     const components = useMemo(() => ({
         ...buildComponents(cards || [], onCardClick, onCardHover),
         ...(inline ? { p: INLINE_PARAGRAPH } : {})
     }), [cards, onCardClick, onCardHover, inline]);
-    const text = useMemo(() => linkCardReferences(children, cards || []), [children, cards]);
+    const text = useMemo(
+        () => linkCardReferences(displayReferences(children, { store: references, streaming }), cards || []),
+        [children, cards, references, streaming]
+    );
     return (
         <Markdown
             remarkPlugins={REMARK_PLUGINS}

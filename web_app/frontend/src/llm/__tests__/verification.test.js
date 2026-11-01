@@ -393,7 +393,7 @@ describe('judge: the fixed order', () => {
         const { done } = verification.judge('The value is {{r1.value}}, the list ends at {{r1.list.2}}, and the shift is {{r2.shift}} Å.');
         expect(done.text).toBe('The value is 4, the list ends at 3, and the shift is {{r2.shift}} Å.');
         expect(done.references).toEqual({ written: 3, filled: 2, unknown: ['r2.shift'] });
-        expect(done.audit).toEqual([{ rule: 'reference', text: 'The answer cites {{r2.shift}}, which names no value this question\'s analyses returned: those numbers are missing.' }]);
+        expect(done.audit).toEqual([{ rule: 'reference', text: 'The answer quotes r2.shift by reference, which names no value this question\'s analyses returned: that number is missing.' }]);
         expect(done.outcome.status).toBe('not verified');
     });
 

@@ -181,10 +181,13 @@ export const createVerification = ({
         const answer = filled.text;
         const findings = [
             ...checks(answer),
+            // Shown under the answer in the dock: the references by their
+            // paths, never in braces (the dock shows no raw {{…}}).
             ...(filled.unknown.length ? [{
                 rule: 'reference',
-                text: `The answer cites ${filled.unknown.map((name) => `{{${name}}}`).join(', ')}, which `
-                    + `${filled.unknown.length === 1 ? 'names' : 'name'} no value this question's analyses returned: those numbers are missing.`
+                text: `The answer quotes ${filled.unknown.join(', ')} by reference, which `
+                    + `${filled.unknown.length === 1 ? 'names' : 'name'} no value this question's analyses returned: `
+                    + `${filled.unknown.length === 1 ? 'that number is' : 'those numbers are'} missing.`
             }] : []),
             // With tools off (or unsupported) too: a conclusion no analysis
             // backs is not verified, whether or not one could have run.

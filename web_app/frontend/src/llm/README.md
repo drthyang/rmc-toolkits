@@ -817,8 +817,15 @@ isAnalysis(step)           // the one definition of an analysis
   cap. The loop withdraws the answer as for a send-back (a `gate` event with id `reference`,
   `REFERENCE_REPAIR`, and `missing` the references as written; the dock's footer shows its notice).
   A reference still unfilled after it stays as written and is a `reference` finding (the Outcome
-  is not verified). The dock fills the earlier text segments of a turn, and a stopped one, the same
-  way (`turnState.js`, `{{ctx.…}}` from the turn's `start.shown`).
+  is not verified; the finding names the paths, never in braces). The dock fills the earlier text
+  segments of a turn, and a stopped one, the same way (`turnState.js` `turnReferences`, `{{ctx.…}}`
+  from the turn's `start.shown`). **The dock never shows a raw `{{…}}`**
+  (`components/referenceDisplay.js`, in `MarkdownMessage`, for every text it renders): a reference
+  the turn's results fill is written in while the answer still streams (the turn view passes the
+  turn's store), one still being written is held back until its braces close, and any other becomes
+  a *number missing* mark (in prose a `ref:` link drawn as a span, never a link, whose hover names
+  the reference; `\text{…}` in math; the words in code); the screen reader's line reads it the same
+  (`plainReferences`).
 - **The computed verdict** (`verification/verdict.js`). The Outcome chip is the app's: **not verified**
   when a check contradicts the answer, a reference names nothing or a conclusion's evidence did not
   run; **not achieved** when analyses ran and none succeeded; **partial** when the turn or the

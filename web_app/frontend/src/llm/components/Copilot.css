@@ -1797,6 +1797,21 @@
     opacity: 0.75;
 }
 
+/* A number the answer quoted by a reference that names no value
+   (referenceDisplay.js): marked in place, never the raw {{…}}; the answer's
+   checks say which. */
+.llm-ref-missing {
+    padding: 0 0.35em;
+    font-size: 0.9em;
+    font-style: italic;
+    color: var(--warning, #b45309);
+    background: color-mix(in srgb, var(--warning, #b45309) 9%, transparent);
+    border-bottom: 1px dashed color-mix(in srgb, var(--warning, #b45309) 55%, transparent);
+    border-radius: 3px;
+    white-space: nowrap;
+    cursor: help;
+}
+
 /* Checks on the answer itself (answerAudit.js): where it contradicts what the
    tools or the run context established. */
 .llm-audit {
