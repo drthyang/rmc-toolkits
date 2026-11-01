@@ -1768,8 +1768,16 @@ the data that message sent (the fitted result, so a reference names what the mod
 saw). `fillReferences` replaces every `{{r<n>.<path>}}` or `{{ctx.<path>}}` (path steps `.key`,
 `.n` or `[n]`; keys may hold `<>+-`, as in `<100>`) by the value: a finite number as written in the
 data, a string as is, a boolean, or a list of scalars as `[a, b, c]`; anything else in double
-braces that does not start with `r<n>` or `ctx` (a LaTeX group) is left alone. An unfilled
-reference stays and is a `reference` finding. `{{ctx.…}}` resolves against the context as the
+braces that does not start with `r<n>` or `ctx` (a LaTeX group) is left alone. A path written
+from the tool message's root, `{{r<n>.data.<path>}}` (the message is `{"ref", "note", "checks",
+"data"}`), names the value at `<path>` (`MESSAGE_DATA_KEY`): exact, because no tool's data has a
+top-level `data` key (`toolDataShapes.test.js`), and a result that had one would be read at its own
+path first. No near miss is filled. An answer whose references still name no value goes back to
+the model once (the reference repair, `verification/repair.js`, allowed on any reply, the last
+request too), with what each path reaches (`explain`: the object named and the values it holds,
+the keys at the step that names nothing, or that no result has the ref); a reference still
+unfilled after it stays and is a `reference` finding, and the dock marks it *number missing*
+(`components/referenceDisplay.js`), never showing the raw braces. `{{ctx.…}}` resolves against the context as the
 model read it (`shownContext`: contextToJson's trimmed copy), never a value the trim removed. An
 ended or stopped turn fills the references in every text segment from its own steps (each keeps
 its `ref` and the data it sent), and `{{ctx.…}}` from its `start` event's `shown` (`turnState.js`). The `done` event carries the filled `text`, the
