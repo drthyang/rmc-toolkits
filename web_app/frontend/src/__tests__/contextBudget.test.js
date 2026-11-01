@@ -144,22 +144,26 @@ const TWO_LARGEST_SKILLS_TODAY = Object.freeze([
 // set_bond_geometry, the dock's change tool (2026-11-01), adds 721: its
 // definition with its method advice (the tools +720). The dock only: the
 // arms offer compute-only tools, so arm B's numbers are unchanged.
+// The answer's shape (ANSWER_RULES, 2026-11-01: the user's report of
+// overlong answers that dump numbers) adds 262 to the dock's system prompt
+// (5,059 → 5,321): sent with the view tools only, so arm B's numbers are
+// unchanged.
 const DOCK_WORST_TURN_TODAY = Object.freeze({
-    systemPrompt: 5059,
+    systemPrompt: 5321,
     toolJson: 8616,
     contextBlock: 2480,
     question: 70,
     skills: 12492,
     analyses: 8724,
     replyReserve: 8192,
-    firstRequest: 16224,
-    prompt: 37440,
-    needed: 45632,
-    headroom: -12864,
-    lmStudioHeadroom: -8768
+    firstRequest: 16486,
+    prompt: 37702,
+    needed: 45894,
+    headroom: -13126,
+    lmStudioHeadroom: -9030
 });
 // By how much the dock's worst turn overflows the window today.
-const DOCK_OVERFLOW_TOKENS_TODAY = 12864;
+const DOCK_OVERFLOW_TOKENS_TODAY = 13126;
 
 // Arm B's first request on each dev case is 9.7k–11.2k tokens; the largest,
 // since plan item 4.6, is the fit-data case: its fit tools (assess_convergence,
@@ -408,8 +412,9 @@ describe('the worst realistic turn in a 32,768-token window (plan 5.5)', () => {
     // The run policy's minimum for an LM Studio model (48k) holds both worst
     // turns with the full reply reserve, under both of the guard's rules
     // (planContext's, and LM Studio's prompt + LMSTUDIO_REPLY_MIN_TOKENS):
-    // the dock's with 3,520 tokens to spare, arm B's (dev-fit-unconverged since 4.6) with 7,044
-    // (4,241 and 7,044 before the dock's change tool, set_bond_geometry, which took 721 of the dock's;
+    // the dock's with 3,258 tokens to spare, arm B's (dev-fit-unconverged since 4.6) with 7,044
+    // (3,520 and 7,044 before the dock's answer shape, ANSWER_RULES, which took 262 of the dock's;
+    // 4,241 and 7,044 before the dock's change tool, set_bond_geometry, which took 721 of the dock's;
     // 4,297 and 7,101 before the FT error propagation's compare_fit description; 5,120 and 7,919 before polyhedral_distortion, which took 823 and 818 with its fact sync in
     // coordination-shells; 5,256 and 8,055 before the interview answer checks;
     // 5,685 and 8,415 before the fit-assessment interview's convergence block; 6,553 and 9,283 before the
@@ -424,6 +429,6 @@ describe('the worst realistic turn in a 32,768-token window (plan 5.5)', () => {
             expect(plan.needed).toBe(turn.numbers.needed);
             expect(turn.numbers.prompt + LMSTUDIO_REPLY_MIN_TOKENS).toBeLessThanOrEqual(window);
         }
-        expect([window - dockTurn.numbers.needed, window - armBTurn.numbers.needed]).toEqual([3520, 7044]);
+        expect([window - dockTurn.numbers.needed, window - armBTurn.numbers.needed]).toEqual([3258, 7044]);
     });
 });

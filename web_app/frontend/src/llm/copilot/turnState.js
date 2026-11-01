@@ -20,10 +20,21 @@ import { createReferenceStore, fillReferences } from './references';
 // event's `shown`): the answer arrives filled, but text written beside
 // earlier calls, or the part a Stop leaves, would show the raw references
 // otherwise.
+/**
+ * The references a turn's items can fill: each step's data under its ref,
+ * {{ctx.…}} from the context as the model read it (`shown`). What the
+ * earlier segments are filled from, and what the dock fills the text with
+ * while it streams (components/referenceDisplay.js).
+ */
+export const turnReferences = (items, shown = null) => {
+    const store = createReferenceStore({ context: shown });
+    (items || []).forEach((item) => { if (item.kind === 'tool' && item.ref) store.put(item.ref, item.data); });
+    return store;
+};
+
 const fillTexts = (items, shown = null) => {
     if (!items.some((item) => item.kind === 'text' && item.text?.includes('{{'))) return items;
-    const store = createReferenceStore({ context: shown });
-    items.forEach((item) => { if (item.kind === 'tool' && item.ref) store.put(item.ref, item.data); });
+    const store = turnReferences(items, shown);
     return items.map((item) => (item.kind === 'text' && item.text?.includes('{{')
         ? { ...item, text: fillReferences(item.text, store).text }
         : item));
@@ -129,7 +140,8 @@ export const applyTurnEvent = (turn, event, now = 0) => {
         case 'tools_unsupported':
             return { ...turn, toolsUnsupported: true };
         case 'gate':
-            // The evidence gate sent the answer back (a 'retract' follows).
+            // The verification sent the answer back, for its evidence or its
+            // references (id 'reference'): a 'retract' follows; the footer shows the notice.
             return { ...turn, gates: [...(turn.gates || []), { id: event.id, notice: event.notice, text: event.text ?? '' }] };
         case 'done': {
             // The verdict line is shown as the chip, not repeated in the text;

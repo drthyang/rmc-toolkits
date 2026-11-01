@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { contextToJson } from '../context/runContext';
 import { effectOf } from '../copilot/effects';
 import { STOPPED_BY } from '../copilot/turnPolicy';
-import { changeReply, questionReply, stepSummary } from '../copilot/turnState';
+import { changeReply, questionReply, stepSummary, turnReferences } from '../copilot/turnState';
 import { useCopilot } from '../useCopilot';
 import ChangeCard from './ChangeCard';
 import MarkdownMessage from './MarkdownMessage';
+import { answerParts } from './answerParts';
+import { plainReferences } from './referenceDisplay';
 import QuestionCard from './QuestionCard';
 import ToolStep from './ToolStep';
 import { ArrowUpIcon, ChevronIcon, StopIcon, UserGlyph, WaveMark } from './icons';
@@ -82,9 +84,20 @@ const ReasoningPanel = ({ reasoning, active, reasoningMs }) => {
     );
 };
 
-const TextSegment = ({ item, last, cardLinks }) => {
+// `references`: the turn's (turnReferences), so a reference the turn's
+// results fill shows its number while the text still streams. A long
+// finished text shows its lead — the conclusion, which the prompt asks for
+// first — with the rest behind "Show details" (answerParts.js); a text
+// still streaming shows whole.
+const TextSegment = ({ item, last, cardLinks, references }) => {
+    const [open, setOpen] = useState(false);
+    const detailsId = useId();
+    const parts = useMemo(() => (item.streaming || !item.text ? null : answerParts(item.text)), [item.streaming, item.text]);
     const thinkingOnly = item.streaming && !item.text;
     if (!item.text && !item.reasoning && !(item.streaming && last)) return null;
+    const markdown = (text) => (
+        <MarkdownMessage {...cardLinks} references={references} streaming={Boolean(item.streaming)}>{text}</MarkdownMessage>
+    );
     return (
         <>
             {item.reasoning ? (
@@ -92,8 +105,25 @@ const TextSegment = ({ item, last, cardLinks }) => {
             ) : null}
             {thinkingOnly && !item.reasoning && <ThinkingDots />}
             {item.text ? (
-                <div className={`llm-bubble is-markdown${item.streaming ? ' is-streaming' : ''}`}>
-                    <MarkdownMessage {...cardLinks}>{item.text}</MarkdownMessage>
+                <div className={`llm-bubble is-markdown${item.streaming ? ' is-streaming' : ''}${parts?.rest ? ' is-folded' : ''}`}>
+                    {parts?.rest ? (
+                        <>
+                            {markdown(parts.lead)}
+                            <button
+                                type="button"
+                                className="llm-answer-toggle"
+                                aria-expanded={open}
+                                aria-controls={detailsId}
+                                onClick={() => setOpen((value) => !value)}
+                            >
+                                {open ? 'Hide details' : 'Show details'}
+                                <span className="llm-answer-chevron" aria-hidden="true"><ChevronIcon /></span>
+                            </button>
+                            <div id={detailsId} className="llm-answer-details" hidden={!open}>
+                                {open ? markdown(parts.rest) : null}
+                            </div>
+                        </>
+                    ) : markdown(item.text)}
                     {item.streaming && <span className="llm-caret" aria-hidden="true" />}
                 </div>
             ) : null}
@@ -110,12 +140,15 @@ const groupItems = (items) => items.reduce((groups, item) => {
     return groups;
 }, []);
 
-const AssistantTurn = ({
+// One assistant turn as the dock draws it (exported for the tests that render it alone).
+export const AssistantTurn = ({
     turn, pages, onOpenPage, cardLinks, question = null, onAnswer = null, approval = null, onDecide = null, undos = null,
     onUndo = null
 }) => {
     const groups = groupItems(turn.items);
     const summary = stepSummary(turn.items);
+    // Filled numbers while streaming; never a raw {{…}} (referenceDisplay.js).
+    const references = useMemo(() => turnReferences(turn.items, turn.shown), [turn.items, turn.shown]);
     const stopNote = stopNoteFor(turn);
     // An empty reply's reason already says the length limit was reached.
     const cutNote = turn.cut && !(turn.stoppedBy === 'empty' && turn.reason);
@@ -163,7 +196,7 @@ const AssistantTurn = ({
                         {group.steps.map(stepCard)}
                     </ol>
                 ) : (
-                    <TextSegment key={index} item={group} last={turn.streaming && index === groups.length - 1} cardLinks={cardLinks} />
+                    <TextSegment key={index} item={group} last={turn.streaming && index === groups.length - 1} cardLinks={cardLinks} references={references} />
                 )))}
                 {turn.audit?.length > 0 && (
                     // Checks on the answer itself (the verification, facts.js): where it
@@ -183,7 +216,7 @@ const AssistantTurn = ({
                         <strong>{OUTCOME_TEXT[turn.outcome.status]}</strong>
                         {turn.outcome.note && (
                             // Models write math and card links in the note too.
-                            <span className="llm-outcome-note"><MarkdownMessage inline {...cardLinks}>{turn.outcome.note}</MarkdownMessage></span>
+                            <span className="llm-outcome-note"><MarkdownMessage inline {...cardLinks} references={references}>{turn.outcome.note}</MarkdownMessage></span>
                         )}
                     </div>
                 )}
@@ -231,7 +264,7 @@ const announcementFor = (turn, approval = null) => {
     if (!turn || !Array.isArray(turn.items)) return '';
     if (!turn.streaming && turn.outcome) {
         const checks = (turn.audit || []).map((finding) => ` Check: ${finding.text}`).join('');
-        return `Outcome: ${OUTCOME_TEXT[turn.outcome.status]}. ${turn.outcome.note || ''}${checks}`.trim();
+        return `Outcome: ${OUTCOME_TEXT[turn.outcome.status]}. ${plainReferences(turn.outcome.note || '')}${checks}`.trim();
     }
     const step = [...turn.items].reverse().find((item) => item.kind === 'tool');
     if (!step) return turn.streaming ? '' : 'Answer ready.';

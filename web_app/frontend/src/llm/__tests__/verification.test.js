@@ -13,7 +13,9 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { toolResult } from '../copilot/tools';
-import { createVerification, DEFAULT_MAX_SEND_BACKS, isAnalysis, shownContext } from '../copilot/verification';
+import {
+    createVerification, DEFAULT_MAX_REPAIRS, DEFAULT_MAX_SEND_BACKS, isAnalysis, REFERENCE_REPAIR, shownContext
+} from '../copilot/verification';
 
 // A step as the agent loop records it: the call's result (tools.js
 // toolResult: it ran and answered, unless said) with the tool's name and kind.
@@ -391,7 +393,7 @@ describe('judge: the fixed order', () => {
         const { done } = verification.judge('The value is {{r1.value}}, the list ends at {{r1.list.2}}, and the shift is {{r2.shift}} Å.');
         expect(done.text).toBe('The value is 4, the list ends at 3, and the shift is {{r2.shift}} Å.');
         expect(done.references).toEqual({ written: 3, filled: 2, unknown: ['r2.shift'] });
-        expect(done.audit).toEqual([{ rule: 'reference', text: 'The answer cites {{r2.shift}}, which names no value this question\'s analyses returned: those numbers are missing.' }]);
+        expect(done.audit).toEqual([{ rule: 'reference', text: 'The answer quotes r2.shift by reference, which names no value this question\'s analyses returned: that number is missing.' }]);
         expect(done.outcome.status).toBe('not verified');
     });
 
@@ -522,5 +524,76 @@ describe('errors', () => {
         for (const text of [null, 42, '{{', '{{r1.}}', '{{ctx}}', 'Outcome:', '"features": [', 'VERDICT {']) {
             expect(() => createVerification({ context: { run: 'r' } }).judge(text)).not.toThrow();
         }
+    });
+});
+
+// The reference repair (copilot/verification/repair.js): references that name
+// no value send the answer back once, with what each path reaches, whenever
+// the turn policy allows one more request (canRepair); the evidence gate
+// goes first, and the two have their own caps.
+describe('the reference repair', () => {
+    const ECHO = { name: 'echo', data: { configuration: { distortion_index: { mean: 0.0469, sd: 0.017 } }, sites: [{ shift_A: 0.065 }] } };
+
+    it('sends the answer back once, saying what each path reaches, and never fills a near miss', () => {
+        const verification = verifying({}, [ECHO]);
+        const text = 'DI {{r1.data.configuration.distortion_index}}, shift {{r1.sites.0.shift}}, peak {{r7.peak}}, {{r1.sites.0.shift_A}} Å.';
+        const { repair } = verification.judge(text, { canRepair: true, rounds: 1 });
+        expect(repair).toMatchObject({
+            id: REFERENCE_REPAIR,
+            what: '3 numbers by reference that name no value',
+            missing: ['r1.data.configuration.distortion_index', 'r1.sites.0.shift', 'r7.peak'],
+            notice: 'The answer quoted 3 numbers by reference that name no value; the app asked for them again.'
+        });
+        expect(repair.nudge.split('\n')).toEqual([
+            '(From the app, not the user.) Your answer quotes 3 numbers by reference that name no value, so the user would see them unfilled:',
+            '- {{r1.data.configuration.distortion_index}} names r1.data.configuration.distortion_index, which holds mean, sd: name one value in it.',
+            '- {{r1.sites.0.shift}} names nothing at "shift": r1.sites.0 holds shift_A.',
+            '- {{r7.peak}} names no result of this question (its results are r1).',
+            'Write the whole answer again, with each of these references the exact path of one value in that result\'s data '
+                + '(as {{r2.peak.significance_sigma}} or {{r2.data.peak.significance_sigma}}), or without the number where no result '
+                + 'holds it. Do not guess a path, and do not run an analysis for this.'
+        ]);
+        // Once a turn: the next answer stands, its references as written, a finding.
+        const { done } = verification.judge(text, { canRepair: true, rounds: 1 });
+        expect(done.text).toBe('DI {{r1.data.configuration.distortion_index}}, shift {{r1.sites.0.shift}}, peak {{r7.peak}}, 0.065 Å.');
+        expect(done.gates).toEqual([{ round: 1, id: 'reference', missing: repair.missing }]);
+        expect(done.audit.map((finding) => finding.rule)).toEqual(['reference']);
+        expect(done.outcome.status).toBe('not verified');
+    });
+
+    it('a repaired answer is verified; the repair stays in the turn\'s send-backs', () => {
+        const verification = verifying({}, [ECHO]);
+        expect(verification.judge('The value is {{r1.sites.0.shift}}.', { canRepair: true }).repair).toBeTruthy();
+        const { done } = verification.judge('The value is {{r1.data.sites.0.shift_A}}.', { canRepair: true, rounds: 1 });
+        expect(done).toMatchObject({ text: 'The value is 0.065.', audit: [], references: { written: 1, filled: 1, unknown: [] } });
+        expect(done.gates).toEqual([{ round: 0, id: 'reference', missing: ['r1.sites.0.shift'] }]);
+        expect(done.outcome.status).toBe('achieved');
+    });
+
+    it('waits for the evidence gate, which keeps its own cap; none without canRepair, or with maxRepairs 0', () => {
+        expect(DEFAULT_MAX_REPAIRS).toBe(1);
+        const text = 'Ti forms a superstructure: {{r1.sites.0.shift}} Å.';
+        const verification = verifying({}, [ECHO]);
+        expect(verification.judge(text, { canSendBack: true, canRepair: true }).sendBack.id).toBe('order-between-cells');
+        expect(verification.judge(text, { canSendBack: true, canRepair: true }).repair.id).toBe('reference');
+        const { done } = verification.judge(text, { canSendBack: true, canRepair: true });
+        expect(done.gates.map((gate) => gate.id)).toEqual(['order-between-cells', 'reference']);
+        // The repair does not use up the evidence gate's send-backs.
+        const twice = verifying({ maxSendBacks: 1 }, [ECHO]);
+        expect(twice.judge('Shift {{r1.sites.0.shift}} Å.', { canSendBack: true, canRepair: true }).repair).toBeTruthy();
+        expect(twice.judge(text, { canSendBack: true, canRepair: true }).sendBack.id).toBe('order-between-cells');
+        expect(verifying({}, [ECHO]).judge('Shift {{r1.sites.0.shift}} Å.').done).toBeDefined();
+        expect(verifying({ maxRepairs: 0 }, [ECHO]).judge('Shift {{r1.sites.0.shift}} Å.', { canRepair: true }).done).toBeDefined();
+        expect(() => createVerification({ maxRepairs: -1 })).toThrow(TypeError);
+    });
+
+    it('names no analysis, so the nudge is the same under the method \'off\'; many references are named, not all explained', () => {
+        const words = (method) => verifying({ method }, [ECHO]).judge('Shift {{r1.sites.0.shift}} Å.', { canRepair: true }).repair.nudge;
+        expect(words('off')).toBe(words('full'));
+        expect(words('full')).not.toMatch(TOOLS);
+        const many = Array.from({ length: 10 }, (_, index) => `{{r1.x${index}}}`).join(' ');
+        const nudge = verifying({}, [ECHO]).judge(many, { canRepair: true }).repair.nudge;
+        expect(nudge.split('\n').filter((line) => line.startsWith('- '))).toHaveLength(9);
+        expect(nudge).toContain('- and {{r1.x8}}, {{r1.x9}}.');
     });
 });

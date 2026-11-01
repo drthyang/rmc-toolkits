@@ -1,0 +1,14 @@
+# The reference repair in the validation harness, arms B and C (the same message), dev case dev-offcentre
+# The answer quotes list_sites (r1) by three paths that name no value; the app sends it back once.
+
+## The repair, as recorded (the model never reads the record)
+id: reference
+missing: ["r1.sites.0.kurtosis_excess","r1.data.sites.0","r2.peak.significance_sigma"]
+notice: The answer quoted 3 numbers by reference that name no value; the app asked for them again.
+
+## The request it makes (why: repair), its last message · messages[7] · user
+(From the app, not the user.) Your answer quotes 3 numbers by reference that name no value, so the user would see them unfilled:
+- {{r1.sites.0.kurtosis_excess}} names nothing at "kurtosis_excess": r1.sites.0 holds ref, site, count, U_iso_A2, rms_axes_A, anisotropy, kurtosis, kurtosis_axes, pc1_uvw, delta_A, delta_se_A.
+- {{r1.data.sites.0}} names r1.data.sites.0, which holds ref, site, count, U_iso_A2, rms_axes_A, anisotropy, kurtosis, kurtosis_axes, pc1_uvw, delta_A, delta_se_A: name one value in it.
+- {{r2.peak.significance_sigma}} names no result of this question (its results are r1).
+Write the whole answer again, with each of these references the exact path of one value in that result's data (as {{r2.peak.significance_sigma}} or {{r2.data.peak.significance_sigma}}), or without the number where no result holds it. Do not guess a path, and do not run an analysis for this.

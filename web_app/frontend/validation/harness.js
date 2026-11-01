@@ -87,6 +87,7 @@ import { READ_SKILL } from '../src/llm/copilot/skills';
 import { buildRunTools } from '../src/llm/copilot/runTools';
 import { ERROR_STATUSES } from '../src/llm/copilot/tools';
 import { runTurn } from '../src/llm/copilot/turn';
+import { REFERENCE_REPAIR } from '../src/llm/copilot/verification';
 import { HARNESS_VIEW, loadRun } from './runFolder';
 import { parseVerdict, VERDICT_INSTRUCTIONS, VERDICT_MARK, VERDICT_PHRASINGS } from './verdict';
 import { outcomeAgreement, scoreVerdict } from './scoring';
@@ -276,7 +277,24 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // { base: null, warmer_retry_min: null, sent: false }, reply_cap max_tokens
 // 8192). The local models' requests, the prompt, the tools and the scoring
 // are unchanged; arms A and A+ do not send requests.
-export const PROTOCOL_VERSION = '2026-10-24.6';
+// 2026-11-01.1: numbers by reference, after the user's report from the dock
+// (2026-11-01: "shows internal variable, not actual number") and the first
+// live runs (gemma4:26b wrote most of its references as {{rN.data.…}}, which
+// zeroed verdicts that were otherwise right). A reference written from the
+// tool message's root, {{r5.data.<path>}}, now names the value at <path> in
+// r5's data (src/llm/copilot/references.js: exact, since no tool's data has
+// a top-level `data` key); and an answer whose references still name no
+// value is sent back once (the reference repair, verification/repair.js: a
+// 'repair' request ending with what each path reaches; it names no analysis,
+// so arms B and C read the same words, and it is allowed on the last request
+// too). The record keeps the repair in `gates` (id 'reference') and its
+// withdrawn answer in `retracted` (by 'reference repair'); `evidence.gates`
+// holds only the evidence gate's, and the report counts the repairs beside
+// the references filled and unknown. The system prompt, the tools, the
+// skills and the scoring are unchanged; a run under 2026-10-24.6 whose
+// verdict held a {{rN.data.…}} reference scores differently now. Arms A, A+
+// and D send no requests and are unaffected.
+export const PROTOCOL_VERSION = '2026-11-01.1';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one
 // follows the full method.
@@ -429,15 +447,17 @@ export const runLiveCase = async ({
         else if (event.type === 'reasoning') round.reasoning += event.delta;
         else if (event.type === 'text') round.text += event.delta;
         else if (event.type === 'gate') {
-            // The evidence gate sent the answer back: its text is withdrawn next.
+            // The verification sent the answer back (the evidence gate, or the
+            // reference repair: id REFERENCE_REPAIR): its text is withdrawn next.
             gated = { round: round.index, id: event.id, what: event.what, missing: event.missing, notice: event.notice };
             record.gates.push(gated);
         } else if (event.type === 'retract') {
             // The loop withdrew this round's text (a looping reply, a call
             // written as JSON text, which it then runs, or an answer the
-            // evidence gate sent back): kept for the reviewer, never shown
-            // as the reason for a call.
-            record.retracted.push({ round: round.index, text: round.text, ...(gated ? { by: `evidence gate: ${gated.id}` } : {}) });
+            // evidence gate or the reference repair sent back): kept for the
+            // reviewer, never shown as the reason for a call.
+            const by = gated && (gated.id === REFERENCE_REPAIR ? 'reference repair' : `evidence gate: ${gated.id}`);
+            record.retracted.push({ round: round.index, text: round.text, ...(by ? { by } : {}) });
             gated = null;
             round.text = '';
         } else if (event.type === 'tool_start') {
@@ -544,9 +564,11 @@ const finishRecord = (record, built, shown, asked, startedAt, now) => {
     record.provenance.by_reference = { written: references.written, filled: references.filled, unknown: references.unknown };
 
     // THY-18: what the gate sent back, the evidence still missing at the end,
-    // and the computed verdict beside the case score.
+    // and the computed verdict beside the case score. A reference repair is
+    // no evidence send-back: it stays in record.gates (id REFERENCE_REPAIR,
+    // the references as written), which the report counts apart.
     record.evidence = {
-        gates: record.gates.map(({ round, id, missing }) => ({ round, id, missing })),
+        gates: record.gates.filter((gate) => gate.id !== REFERENCE_REPAIR).map(({ round, id, missing }) => ({ round, id, missing })),
         missing: audit.filter((finding) => finding.rule === 'evidence').map((finding) => ({ id: finding.id, missing: finding.missing }))
     };
     record.outcome_eval = outcomeAgreement(record.final?.outcome?.status ?? null, record.score.score);

@@ -1797,6 +1797,70 @@
     opacity: 0.75;
 }
 
+/* A long answer's rest, behind "Show details" (answerParts.js): the lead
+   (the conclusion) shows; every number stays one click away. */
+.llm-answer-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0.35rem 0 0;
+    padding: 0.1rem 0;
+    background: none;
+    border: none;
+    color: var(--accent, #2563eb);
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: normal;
+    cursor: pointer;
+}
+
+.llm-answer-toggle:hover:not(:disabled) {
+    background: none;
+    text-decoration: underline;
+}
+
+.llm-answer-chevron {
+    display: inline-grid;
+    place-items: center;
+    transition: transform 140ms ease;
+}
+
+.llm-answer-chevron svg {
+    width: 0.8rem;
+    height: 0.8rem;
+}
+
+.llm-answer-toggle[aria-expanded="true"] .llm-answer-chevron {
+    transform: rotate(180deg);
+}
+
+.llm-answer-details:not([hidden]) {
+    margin-top: 0.45rem;
+    padding-top: 0.45rem;
+    border-top: 1px dashed var(--border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .llm-answer-chevron {
+        transition: none;
+    }
+}
+
+/* A number the answer quoted by a reference that names no value
+   (referenceDisplay.js): marked in place, never the raw {{…}}; the answer's
+   checks say which. */
+.llm-ref-missing {
+    padding: 0 0.35em;
+    font-size: 0.9em;
+    font-style: italic;
+    color: var(--warning, #b45309);
+    background: color-mix(in srgb, var(--warning, #b45309) 9%, transparent);
+    border-bottom: 1px dashed color-mix(in srgb, var(--warning, #b45309) 55%, transparent);
+    border-radius: 3px;
+    white-space: nowrap;
+    cursor: help;
+}
+
 /* Checks on the answer itself (answerAudit.js): where it contradicts what the
    tools or the run context established. */
 .llm-audit {

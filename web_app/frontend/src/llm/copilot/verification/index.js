@@ -6,9 +6,9 @@
 // (turn.js) builds it from the run, the agent loop (agentLoop.js) records
 // each tool step the model reads and asks it to judge each answer.
 //
-//   createVerification({ context, catalog, offered, phrasings, maxSendBacks, method }) → verification
+//   createVerification({ context, catalog, offered, phrasings, maxSendBacks, maxRepairs, method }) → verification
 //   verification.record(step, show) → { ref, analysis, ...show(ref) }
-//   verification.judge(text, { canSendBack, rounds, stoppedBy, cut }) → { sendBack } | { done } | null
+//   verification.judge(text, { canSendBack, canRepair, rounds, stoppedBy, cut }) → { sendBack } | { repair } | { done } | null
 //   verification.claims → the claim rows the turn checks: [{ id, what, prompt, analyses, need }]
 //   isAnalysis(step)    → the one definition of an analysis (verdict.js)
 //   evidenceSentence(claims), promptGaps(claims), CLAIMS, FACTS   the catalogues (the binding test)
@@ -30,7 +30,8 @@
 //   phrasings     { [claim id]: { asserted?: RegExp[] (global), literal?: RegExp[] } },
 //                 added to the catalogue's own (the validation's verdict
 //                 words, validation/verdict.js VERDICT_PHRASINGS);
-//   maxSendBacks  send-backs per turn (DEFAULT_MAX_SEND_BACKS);
+//   maxSendBacks  evidence send-backs per turn (DEFAULT_MAX_SEND_BACKS);
+//   maxRepairs    reference repairs per turn (repair.js DEFAULT_MAX_REPAIRS);
 //   method        the turn's ('off': the send-back names no analysis, claims.js).
 //
 // record(step, show): once per tool step, in the order the model reads them.
@@ -58,12 +59,19 @@
 //   2. decide a send-back on the FILLED text: it needs `canSendBack`, an unmet
 //      claim (in CLAIMS order) not sent back yet this turn, and fewer than
 //      `maxSendBacks` so far; the raw text becomes the standing answer;
+//   2b. else decide a reference repair (repair.js): it needs `canRepair` (the
+//      turn policy's: one more request can be made), a reference that named
+//      no value, and fewer than `maxRepairs` so far; the answer goes back
+//      with what each such path reaches, the raw text standing. A repair
+//      waits for the claims: the answer they send back is written again;
 //   3. run the answer checks (in FACTS order);
 //   4. add the unfilled-reference finding;
 //   5. add the missing-evidence findings, tools on, off or unsupported;
 //   6. compute the Outcome (verdict.js); the model's Outcome line, read from
 //      the filled text, can only lower it.
-// `sendBack` is { id, what, missing, nudge, notice }; `done` is the turn's
+// `sendBack` and `repair` are { id, what, missing, nudge, notice } (a
+// repair's id REFERENCE_REPAIR, its `missing` the references as written);
+// both are listed in `done.gates` with the round. `done` is the turn's
 // `done` event. Blank text judges the standing answer (never sent back
 // again), or returns null when there is none.
 //
@@ -80,6 +88,7 @@ import { createReferenceStore, fillReferences } from '../references';
 import { TURN_METHODS } from '../method';
 import { RESULT_STATUSES, ran as toolRan, severityOf } from '../tools';
 import { CLAIM_IDS, claimsOf, evidenceFinding, sendBackOf } from './claims';
+import { DEFAULT_MAX_REPAIRS, REFERENCE_REPAIR, referenceRepair } from './repair';
 import { FACTS, contextAuditFacts } from './facts';
 import { parseOutcome } from './outcome';
 import { sentencesOf } from './reading';
@@ -87,6 +96,7 @@ import { computeOutcome, isAnalysis } from './verdict';
 
 export { CLAIMS, evidenceSentence, promptGaps } from './claims';
 export { FACTS } from './facts';
+export { DEFAULT_MAX_REPAIRS, REFERENCE_REPAIR } from './repair';
 export { normalizeSymbol } from './reading';
 export { isAnalysis } from './verdict';
 
@@ -128,12 +138,14 @@ const readPhrasings = (phrasings) => {
 
 /** One turn's verification (see the header). */
 export const createVerification = ({
-    context = null, catalog = null, offered = null, phrasings = null, maxSendBacks = DEFAULT_MAX_SEND_BACKS, method = 'full'
+    context = null, catalog = null, offered = null, phrasings = null, maxSendBacks = DEFAULT_MAX_SEND_BACKS,
+    maxRepairs = DEFAULT_MAX_REPAIRS, method = 'full'
 } = {}) => {
     if (offered != null && !(Array.isArray(offered) && offered.every((name) => typeof name === 'string'))) {
         invalid('offered must be an array of tool names or null');
     }
     if (!(typeof maxSendBacks === 'number' && maxSendBacks >= 0)) invalid('maxSendBacks must be a number, 0 or more');
+    if (!(typeof maxRepairs === 'number' && maxRepairs >= 0)) invalid('maxRepairs must be a number, 0 or more');
     if (!TURN_METHODS.includes(method)) invalid(`method must be one of ${TURN_METHODS.join(', ')}`);
     const extra = readPhrasings(phrasings);
     const elements = Object.keys(context?.structure?.elements || {});
@@ -141,11 +153,14 @@ export const createVerification = ({
     const references = createReferenceStore({ context: shownContext(context) });
     const auditContext = contextAuditFacts(context);
     // The turn so far: its recorded steps, its tools' facts, the claims sent
-    // back, the gate's events for `done`, the answer sent back last.
+    // back, the send-backs for `done` (the evidence gate's and the reference
+    // repairs), the answer sent back last.
     const steps = [];
     const facts = [];
     const sentBack = new Set();
     const gates = [];
+    const evidenceGates = () => gates.filter((gate) => gate.id !== REFERENCE_REPAIR).length;
+    const repairs = () => gates.filter((gate) => gate.id === REFERENCE_REPAIR).length;
     let standing = null;
     let judged = false;
 
@@ -166,10 +181,13 @@ export const createVerification = ({
         const answer = filled.text;
         const findings = [
             ...checks(answer),
+            // Shown under the answer in the dock: the references by their
+            // paths, never in braces (the dock shows no raw {{…}}).
             ...(filled.unknown.length ? [{
                 rule: 'reference',
-                text: `The answer cites ${filled.unknown.map((name) => `{{${name}}}`).join(', ')}, which `
-                    + `${filled.unknown.length === 1 ? 'names' : 'name'} no value this question's analyses returned: those numbers are missing.`
+                text: `The answer quotes ${filled.unknown.join(', ')} by reference, which `
+                    + `${filled.unknown.length === 1 ? 'names' : 'name'} no value this question's analyses returned: `
+                    + `${filled.unknown.length === 1 ? 'that number is' : 'those numbers are'} missing.`
             }] : []),
             // With tools off (or unsupported) too: a conclusion no analysis
             // backs is not verified, whether or not one could have run.
@@ -226,20 +244,29 @@ export const createVerification = ({
             return { ref, analysis: isAnalysis(entry), ...shown };
         },
 
-        judge(text, { canSendBack = false, rounds = 0, stoppedBy = 'answer', cut = false } = {}) {
+        judge(text, { canSendBack = false, canRepair = false, rounds = 0, stoppedBy = 'answer', cut = false } = {}) {
             open('judge');
             const raw = typeof text === 'string' ? text : String(text ?? '');
             const options = { rounds, stoppedBy, cut };
             // No answer: the one the gate sent back stands, if any.
             if (!raw.trim()) return standing == null ? null : { done: finish(standing, options) };
-            if (canSendBack && gates.length < maxSendBacks) {
-                // On the answer as it will read: references filled.
-                const claim = reader.unmet(fillReferences(raw, references).text, ran()).find((item) => !sentBack.has(item.id));
+            // On the answer as it will read: references filled.
+            const filled = fillReferences(raw, references);
+            if (canSendBack && evidenceGates() < maxSendBacks) {
+                const claim = reader.unmet(filled.text, ran()).find((item) => !sentBack.has(item.id));
                 if (claim) {
                     sentBack.add(claim.id);
                     gates.push({ round: rounds, id: claim.id, missing: claim.missing });
                     standing = raw;
                     return { sendBack: sendBackOf(claim, method) };
+                }
+            }
+            if (canRepair && repairs() < maxRepairs) {
+                const repair = referenceRepair(filled.unknown, references);
+                if (repair) {
+                    gates.push({ round: rounds, id: repair.id, missing: repair.missing });
+                    standing = raw;
+                    return { repair };
                 }
             }
             return { done: finish(raw, options) };
