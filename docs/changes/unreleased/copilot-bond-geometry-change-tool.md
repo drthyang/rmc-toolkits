@@ -35,11 +35,11 @@
   and the arms' requests are unchanged; the harness snapshots pass as they were, and the protocol
   version stays. The dock's worst turn takes 721 more tokens: it fits the live runs' 48k with 3,520
   to spare (was 4,241), and arm B's is unchanged at 7,044.
-- Tests: the effects list against every builder's tool and both adapters
-  (`toolEffects.test.js`, `validation/__tests__/computeOnly.test.js`); the change-tool contract in
-  the turn and the loop (`changeTools.test.js`); the strict schema (`toolCalls.test.js`); the page's
-  controller (`BondGeometryControl.test.jsx`) and inputs model (`bondGeometryInputs.test.js`); the
-  tool on the page (`copilotChangeTools.test.jsx`: schema, refusals, Ask first, Auto, a decline,
-  the stale check, the page's controls set and recomputed, Undo); the approval card through the
-  dock (`changeCard.test.jsx`); and the dock beside the page end to end
-  (`copilotChangeDock.test.jsx`).
+- Tests: the effects list against every builder's tool and both adapters (`toolEffects.test.js`,
+  `toolEffectsReaders.test.jsx`, `validation/__tests__/computeOnly.test.js`); the change-tool
+  contract in the turn and the loop (`changeTools.test.js`); the strict schema
+  (`toolCalls.test.js`); the page's controller (`BondGeometryControl.test.jsx`) and inputs model
+  (`bondGeometryInputs.test.js`); the tool on the page (`copilotChangeTools.test.jsx`: schema,
+  refusals, Ask first, Auto, a decline, the stale check, the page's controls set and recomputed,
+  every data form, Undo); the approval card through the dock (`changeCard.test.jsx`); and the dock
+  beside the page end to end (`copilotChangeDock.test.jsx`).

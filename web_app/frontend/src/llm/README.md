@@ -1489,5 +1489,6 @@ stale-state check, nothing to change; the page's own controls set and the page c
 and its refusals) and `copilotChangeDock.test.jsx` (the dock beside the page, end to end), the
 page's controller in `components/__tests__/BondGeometryControl.test.jsx`, its inputs model in
 `bondGeometryInputs.test.js`, and every tool's effect against the one list — the dock reads every
-effect, the arms compute only — in `toolEffects.test.js` and
+effect, the arms compute only — in `toolEffects.test.js`, `toolEffectsReaders.test.jsx` (both
+adapters pass their tools through `toolsWithEffects`) and
 `validation/__tests__/computeOnly.test.js`. Run everything with `npm test` (vitest).
