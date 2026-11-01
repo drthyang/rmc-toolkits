@@ -1180,6 +1180,33 @@ identical apart from protocol and commit. The test set was not run; one re-freez
 change. Approved by the user, 2026-10-24
 (`validation/findings/decisions/2026-10-24-refused-not-evidence.json`).
 
+**Protocol 2026-11-01.1 (numbers by reference that name no value).** The user tried the dock on
+2026-11-01 and saw "σ²θ = {{r5.data.average_structure.angle_variance_deg2.mean}} deg²" raw; the
+first live runs had the same failure ("number references written as `{{rN.data.…}}`, which zero
+otherwise right answers": 65 of the 111 references in gemma4:26b's dev answers had that form). The
+model reads each result as `{"ref": "r5", "checks": […], "data": {…}}` and wrote the path from that
+root; the store read it below `data`, so it named nothing. Two changes, both the turn module's, so
+the dock and the arms alike:
+- a reference written from the tool message's root, `{{r5.data.<path>}}`, names the value at
+  `<path>` in r5's data (`src/llm/copilot/references.js`). It is exact: no tool's data has a
+  top-level `data` key (`toolDataShapes.test.js`), and a result that had one would be read at its
+  own path first. No near miss is ever filled;
+- an answer whose references still name no value is sent back once (the reference repair,
+  `verification/repair.js`): a request with why `repair`, ending with each such reference and what
+  its path reaches, and the instruction to write the whole answer again with exact paths or without
+  the number (`harness/reference-repair.txt`). It names no analysis, so arms B and C read the same
+  words; it is allowed on the last request too, which keeps its tool choice. A reference still
+  unfilled after it stays a `reference` finding, and a verdict holding one still does not parse.
+
+In the record the repair is one of `gates` (id `reference`, `missing` the references as written)
+and its withdrawn answer one of `retracted` (`by: 'reference repair'`); `evidence.gates` holds the
+evidence gate's only, and the report's numbers-by-reference column counts the answers sent back
+beside the references filled and unknown (`filled / unknown / answers sent back`). The system
+prompt, the tools, the skills and the scoring are unchanged, and so is every model-visible snapshot
+but the new `harness/reference-repair.txt`. Runs under 2026-10-24.6 whose verdict held a
+`{{rN.data.…}}` reference would score otherwise now, so they are not comparable; arms A, A+ and D
+send no requests and are unaffected.
+
 ### The report beside the case score (plan item 1.6, part i)
 
 The engines alone (A+) score 0.99, because most components of a case are facts they get right every
@@ -1648,6 +1675,9 @@ folder, with no model and no network:
   advice; `harness/gate-send-back.arm-B.txt` and `.arm-C.txt`: the evidence gate's send-back on
   the same case (a first answer that concludes "no order" with no analysis run), the message each
   arm's model receives, beside the rule and the missing analyses the record keeps;
+  `harness/reference-repair.txt`: the reference repair on the same case (an answer that quotes
+  `list_sites` by three paths that name no value), the one message both arms receive, beside the
+  references the record keeps (protocol 2026-11-01.1);
 - `tool-results/<tool>.json`: one result of every run tool and engine tool on the Demo, plus an
   `ask_user` answer, a `read_skill` and a window that cuts the Ta–Se shell, as the `tool` message
   the agent loop appends (budget applied, checks, `ref`, note); `*.method-off.json`: the Demo's

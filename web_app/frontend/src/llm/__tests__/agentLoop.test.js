@@ -762,15 +762,41 @@ describe('evidence, numbers by reference and the computed verdict (THY-18)', () 
         expect(done.outcome.status).toBe('not verified');
     });
 
-    it('a reference that names nothing is a finding, and the number stays missing', async () => {
-        const { callModel } = scriptedModel([
+    it('a reference that names nothing goes back once; still unfilled, it is a finding and the number stays missing', async () => {
+        const unfilled = 'The value is {{r1.value}}, the list ends at {{r1.list.2}}, and the shift is {{r2.shift}} Å.';
+        const { callModel, requests } = scriptedModel([
             { calls: [{ name: 'echo', args: { value: 4 } }] },
-            { text: 'The value is {{r1.value}}, the list ends at {{r1.list.2}}, and the shift is {{r2.shift}} Å.' }
+            { text: unfilled },
+            { text: unfilled }
         ]);
-        const done = (await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool()] }))).at(-1);
+        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool()] }));
+        const done = events.at(-1);
+        // The repair: the answer withdrawn, the model told what r2.shift reaches.
+        const gate = events.find((event) => event.type === 'gate');
+        expect(gate).toMatchObject({ id: 'reference', missing: ['r2.shift'], text: unfilled });
+        expect(events.filter((event) => event.type === 'request').map((event) => event.why)).toEqual(['first', 'tools', 'repair']);
+        expect(requests[2].messages.at(-1).content).toContain('- {{r2.shift}} names no result of this question (its results are r1).');
         expect(done.text).toBe('The value is 4, the list ends at 3, and the shift is {{r2.shift}} Å.');
         expect(done.references).toEqual({ written: 3, filled: 2, unknown: ['r2.shift'] });
+        expect(done.gates).toEqual([{ round: 1, id: 'reference', missing: ['r2.shift'] }]);
         expect(done.audit).toEqual([{ rule: 'reference', text: 'The answer cites {{r2.shift}}, which names no value this question\'s analyses returned: those numbers are missing.' }]);
         expect(done.outcome.status).toBe('not verified');
+    });
+
+    it('a repaired answer stands, filled and verified; the repair is listed with the turn\'s send-backs', async () => {
+        const { callModel, requests } = scriptedModel([
+            { calls: [{ name: 'echo', args: { value: 4 } }] },
+            { text: 'The value is {{r1.data.value}} and {{r1.valu}}.' },
+            { text: 'The value is {{r1.data.value}}, and the list ends at {{r1.list.2}}.' }
+        ]);
+        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool()] }));
+        const done = events.at(-1);
+        expect(requests[2].messages.at(-2)).toEqual({ role: 'assistant', content: 'The value is {{r1.data.value}} and {{r1.valu}}.' });
+        expect(requests[2].messages.at(-1).content).toContain('- {{r1.valu}} names nothing at "valu": r1 holds value, list.');
+        expect(events.filter((event) => event.type === 'retract')).toHaveLength(1);
+        expect(done.text).toBe('The value is 4, and the list ends at 3.');
+        expect(done.references).toEqual({ written: 2, filled: 2, unknown: [] });
+        expect(done.gates).toEqual([{ round: 1, id: 'reference', missing: ['r1.valu'] }]);
+        expect(done.audit).toEqual([]);
     });
 });

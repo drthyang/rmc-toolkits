@@ -468,8 +468,9 @@ stoppedByFailure(error)  // a turn that threw: 'stopped' for an AbortError, else
   allowed; the loop fills them from `DEFAULT_LIMITS`); `clock.now()` — the turn starts when the
   policy is created, and a Workbench question before the first request is a wait; `tools`, whether
   the first request carries tools; `judge`, the verification's (*Evidence, …*). The policy decides
-  when: whether a send-back is allowed, the `stoppedBy` an answer is judged under, which answer
-  stands. The verification decides what, and caps its own send-backs (`maxSendBacks`).
+  when: whether a send-back (for evidence) or a repair (for references that name no value) is
+  allowed, the `stoppedBy` an answer is judged under, which answer stands. The verification decides
+  what, and caps its own send-backs (`maxSendBacks`) and repairs (`maxRepairs`).
 - **Events**, in order: `start`, then each request's `reply`, followed by a `round` when it had
   calls, or `no_tools` when the model refused its tools.
 
@@ -483,7 +484,7 @@ stoppedByFailure(error)  // a turn that threw: 'stopped' for an AbortError, else
 
   | Step | The loop |
   | --- | --- |
-  | `{ next: 'ask', round, why, toolChoice, retry, notes, sendBack }` | adds the `notes` (`addNote`), then asks: `why` is `first`, `tools`, `reminder`, `gate`, `final` or `no_tools`; `toolChoice` `'auto'`, `'none'` (the request that asks for the answer) or undefined (no tools); `retry` `'warmer'` or null. With a `sendBack` (the verification's), it first withdraws the reply (`gate`, `retract`) and sends the nudge |
+  | `{ next: 'ask', round, why, toolChoice, retry, notes, sendBack }` | adds the `notes` (`addNote`), then asks: `why` is `first`, `tools`, `reminder`, `gate`, `repair`, `final` or `no_tools`; `toolChoice` `'auto'`, `'none'` (the request that asks for the answer) or undefined (no tools); `retry` `'warmer'` or null. With a `sendBack` (the verification's send-back or repair), it first withdraws the reply (`gate`, `retract`) and sends the nudge |
   | `{ next: 'run' }` | runs the reply's calls, then reports their `round` |
   | `{ next: 'end', done, say }` | yields `say` as text when there is one, then `done` |
 - **The one `done` shape**, built only here: `{ type: 'done', text, rawText, outcome, rounds,
@@ -515,12 +516,14 @@ stoppedByFailure(error)  // a turn that threw: 'stopped' for an AbortError, else
   turn; after a looping reply every later request is asked warmer. Turn time = now − start − the
   waits reported, read at most once per event and never in round 0. In a reply without calls the
   order is: the reminder, then the answer the gate withdrew stands, then the empty endings, then
-  the judge. The judge gets only non-empty text, and the withdrawn answer with `canSendBack` false.
-  `canSendBack` = tools on, this request not the last, and turn time left (and the verification's
-  own cap). Exactly one `end` a turn.
+  the judge. The judge gets only non-empty text, and the withdrawn answer with `canSendBack` and
+  `canRepair` false. `canSendBack` = tools on, this request not the last, and turn time left (and
+  the verification's own cap). `canRepair` = a reply to judge, on any request — the last one and a
+  turn without tools included, since rewriting a reference needs no tool —, asked with that
+  request's own tool choice (and the verification's own cap, one a turn). Exactly one `end` a turn.
 - **Errors.** A TypeError for bad configuration, an event out of order or malformed (calls on a
-  request that allowed none, `no_tools` after tools ran), a send-back the policy did not allow, or a
-  judge that answers otherwise than `{ sendBack }`, `{ done }` or null. The judge's own errors
+  request that allowed none, `no_tools` after tools ran), a send-back or repair the policy did not
+  allow, or a judge that answers otherwise than `{ sendBack }`, `{ repair }`, `{ done }` or null. The judge's own errors
   propagate (the turn's `failed`); a judge returning null gives the empty ending.
 - **What stays in the loop.** The calls per round and the questions (`maxCallsPerRound`,
   `maxQuestions`: they refuse a call and never end a turn), the per-call time, the stall clock and
@@ -694,9 +697,9 @@ them, the verification (`copilot/verification/`, architecture candidate #4): it 
 answer verified?", one verification per turn.
 
 ```js
-createVerification({ context, catalog, offered, phrasings, maxSendBacks = 2, method = 'full' }) → verification
+createVerification({ context, catalog, offered, phrasings, maxSendBacks = 2, maxRepairs = 1, method = 'full' }) → verification
 verification.record(step, show) → { ref, analysis, ...show(ref) }
-verification.judge(text, { canSendBack, rounds, stoppedBy, cut }) → { sendBack } | { done } | null
+verification.judge(text, { canSendBack, canRepair, rounds, stoppedBy, cut }) → { sendBack } | { repair } | { done } | null
 verification.claims        // the claim rows the turn checks: [{ id, what, prompt, analyses, need }]
 isAnalysis(step)           // the one definition of an analysis
 ```
@@ -721,13 +724,16 @@ isAnalysis(step)           // the one definition of an analysis
 - **judge(text, …), in a fixed order.** 1. fill the references; 2. decide a send-back on the
   FILLED text: it needs `canSendBack` (tools can still run: not the final round, the turn's time
   not spent), an unmet claim not sent back yet this turn, in CLAIMS order, and fewer than
-  `maxSendBacks` send-backs so far — the raw text becomes the standing answer; 3. run the checks on
+  `maxSendBacks` send-backs so far — the raw text becomes the standing answer; 2b. else decide a
+  reference repair (*Numbers by reference* below): it needs `canRepair`, a reference that named no
+  value, and fewer than `maxRepairs` (1) so far — the raw text stands; 3. run the checks on
   the answer, in FACTS order; 4. add the unfilled-reference finding; 5. add the missing-evidence
   findings, whether tools were on, off or unsupported; 6. compute the Outcome, which the model's
   Outcome line (read from the filled text) can only lower. Blank text judges the standing answer
   (never sent back again), or gives null when there is none; the turn policy never sends blank text
-  (it keeps the withdrawn answer and judges it with `canSendBack` false), and the empty endings are
-  its own. `sendBack` is `{ id, what, missing, nudge, notice }`; `done` is the turn's `done` event. One
+  (it keeps the withdrawn answer and judges it with `canSendBack` and `canRepair` false), and the
+  empty endings are its own. `sendBack` and `repair` are `{ id, what, missing, nudge, notice }`, both
+  listed in `done.gates` with their round; `done` is the turn's `done` event. One
   verification serves one turn: record or judge after `done` throws. A phrasing for an unknown
   claim, or an `asserted` pattern that is not a global RegExp, is a TypeError; model text and tool
   facts never throw.
@@ -799,9 +805,20 @@ isAnalysis(step)           // the one definition of an analysis
   keeps the tool's rounding, a list of scalars reads `[a, b, c]`. A reference that names nothing is
   never filled with a near miss (a similar key, the mean of an object named whole); the store's
   `explain(path)` says what the path reaches (`no_result`, `no_key` with the keys there,
-  `not_a_value` with what the object holds). It stays as written and is a `reference` finding. The
-  dock fills the earlier text segments of a turn, and a stopped one, the same way (`turnState.js`,
-  `{{ctx.…}}` from the turn's `start.shown`).
+  `not_a_value` with what the object holds). **The reference repair** (`verification/repair.js`):
+  an answer with such a reference goes back to the model once a turn (`DEFAULT_MAX_REPAIRS` = 1),
+  before anyone reads it, with each reference and what its path reaches ("… names
+  r5.data.average_structure.angle_variance_deg2, which holds mean, sd: name one value in it"; "…
+  names nothing at "shift": r1.sites.0 holds …"; "… names no result of this question") and the
+  instruction to write the whole answer again with exact paths, or without the number, guessing no
+  path and running no analysis. It names no analysis, so arm C reads the same words. The turn policy
+  allows it on any reply (`canRepair`: the last request and a turn without tools included; the
+  request keeps its tool choice, `why: 'repair'`); the evidence gate goes first and keeps its own
+  cap. The loop withdraws the answer as for a send-back (a `gate` event with id `reference`,
+  `REFERENCE_REPAIR`, and `missing` the references as written; the dock's footer shows its notice).
+  A reference still unfilled after it stays as written and is a `reference` finding (the Outcome
+  is not verified). The dock fills the earlier text segments of a turn, and a stopped one, the same
+  way (`turnState.js`, `{{ctx.…}}` from the turn's `start.shown`).
 - **The computed verdict** (`verification/verdict.js`). The Outcome chip is the app's: **not verified**
   when a check contradicts the answer, a reference names nothing or a conclusion's evidence did not
   run; **not achieved** when analyses ran and none succeeded; **partial** when the turn or the

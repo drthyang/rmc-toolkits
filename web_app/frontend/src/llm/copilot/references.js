@@ -19,8 +19,9 @@
 // rounded otherwise than the engine rounds it, or invented. A reference that
 // names nothing the turn has is never filled with a near miss (a key of a
 // similar name, the mean of an object named whole); `explain` says what its
-// path reaches. It stays as written in the text and is a finding on the
-// answer, which the computed verdict counts (verification/: the turn's
+// path reaches, and the verification sends the answer back once with that
+// (verification/repair.js). Still unfilled, it stays as written in the text
+// and is a finding on the answer, which the computed verdict counts (verification/: the turn's
 // store, filled before the answer is judged; turnState.js fills the earlier
 // text segments and a stopped turn's from the steps it shows).
 //
@@ -75,8 +76,8 @@ const holds = (value) => {
  * was shown under its ref; `resolve(path)` gives the value text or null;
  * `explain(path)` says, for a path that gives no value, what it reaches —
  * `{ reason, at, keys }`: 'no_result' (no result has that ref; `keys` the refs
- * there are), 'no_key' (the step after `at` names nothing; `keys` what the
- * value at `at` holds), 'not_a_value' (the path ends at an object or a list
+ * there are), 'no_key' (the step after `at`, `missing`, names nothing; `keys`
+ * what the value at `at` holds), 'not_a_value' (the path ends at an object or a list
  * that is no list of scalars; `keys` what it holds) or 'not_a_reference' (no
  * reference's grammar) — and null for a path that gives one. `at` is the
  * path as far as it led, as the model wrote it. `context` is what {{ctx.…}}
@@ -84,11 +85,11 @@ const holds = (value) => {
  */
 export const createReferenceStore = ({ context = null } = {}) => {
     const results = new Map();
-    // Where a path leads: { found, value, at, keys } (or { missing: true }
-    // for a ref with no result).
+    // Where a path leads: { found, value, at, keys, missing } (or
+    // { noResult: true } for a ref with no result).
     const walk = (path) => {
         const [root, ...rest] = steps(path);
-        if (root !== 'ctx' && !results.has(root)) return { missing: true };
+        if (root !== 'ctx' && !results.has(root)) return { noResult: true };
         const base = root === 'ctx' ? context : results.get(root);
         // The message-root form ({{r2.data.x}}), unless the data has a `data` key of its own.
         const fromMessage = root !== 'ctx' && rest[0] === MESSAGE_DATA_KEY
@@ -97,7 +98,7 @@ export const createReferenceStore = ({ context = null } = {}) => {
         const at = fromMessage ? [root, MESSAGE_DATA_KEY] : [root];
         let value = base;
         for (const key of keys) {
-            if (!isRecord(value) || !Object.hasOwn(value, key)) return { found: false, at, keys: holds(value) };
+            if (!isRecord(value) || !Object.hasOwn(value, key)) return { found: false, at, keys: holds(value), missing: key };
             value = value[key];
             at.push(key);
         }
@@ -115,8 +116,8 @@ export const createReferenceStore = ({ context = null } = {}) => {
         explain: (path) => {
             if (!NAME_ONLY.test(path)) return { reason: 'not_a_reference', at: '', keys: [] };
             const reached = walk(path);
-            if (reached.missing) return { reason: 'no_result', at: '', keys: [...results.keys()] };
-            if (!reached.found) return { reason: 'no_key', at: pathText(reached.at), keys: reached.keys };
+            if (reached.noResult) return { reason: 'no_result', at: '', keys: [...results.keys()] };
+            if (!reached.found) return { reason: 'no_key', at: pathText(reached.at), keys: reached.keys, missing: reached.missing };
             if (formatReferenceValue(reached.value) == null) return { reason: 'not_a_value', at: pathText(reached.at), keys: reached.keys };
             return null;
         },

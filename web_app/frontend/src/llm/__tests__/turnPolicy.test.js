@@ -64,7 +64,7 @@ describe('the turn policy: events → steps', () => {
         const { policy, judge } = policyOf();
         const [first, end] = drive(policy, [START, reply('The value is 4.')]);
         expect(first).toEqual({ next: 'ask', round: 0, why: 'first', toolChoice: 'auto', retry: null, notes: [], sendBack: null });
-        expect(judge).toHaveBeenCalledWith('The value is 4.', { canSendBack: true, rounds: 0, stoppedBy: 'answer', cut: false });
+        expect(judge).toHaveBeenCalledWith('The value is 4.', { canSendBack: true, canRepair: true, rounds: 0, stoppedBy: 'answer', cut: false });
         expect(end).toEqual({
             next: 'end',
             say: null,
@@ -90,7 +90,7 @@ describe('the turn policy: events → steps', () => {
         const steps = drive(policy, [START, reply('', { calls: CALLS }), round(), reply('Best effort.')]);
         expect(steps[2]).toEqual({ next: 'ask', round: 1, why: 'final', toolChoice: 'none', retry: null, notes: [toolBudgetNote(1)], sendBack: null });
         // No send-back on the last request: the answer is judged as it stands.
-        expect(judge).toHaveBeenLastCalledWith('Best effort.', { canSendBack: false, rounds: 1, stoppedBy: 'max_rounds', cut: false });
+        expect(judge).toHaveBeenLastCalledWith('Best effort.', { canSendBack: false, canRepair: true, rounds: 1, stoppedBy: 'max_rounds', cut: false });
         expect(steps.at(-1).done).toMatchObject({ stoppedBy: 'max_rounds', rounds: 1 });
     });
 
@@ -258,7 +258,7 @@ describe('the turn policy: events → steps', () => {
         expect(steps[1]).toEqual({ next: 'ask', round: 0, why: 'gate', toolChoice: 'auto', retry: null, notes: [], sendBack });
         // The reminder first, then the withdrawn answer stands.
         expect(steps[2]).toMatchObject({ why: 'reminder' });
-        expect(judge).toHaveBeenLastCalledWith('The clusters breathe.', { canSendBack: false, rounds: 0, stoppedBy: 'answer', cut: false });
+        expect(judge).toHaveBeenLastCalledWith('The clusters breathe.', { canSendBack: false, canRepair: false, rounds: 0, stoppedBy: 'answer', cut: false });
         expect(steps[3].done).toEqual({
             type: 'done', text: '[The clusters breathe.]', rawText: '[The clusters breathe.]', outcome: null,
             rounds: 0, stoppedBy: 'answer', cut: false, reason: null, audit: [], references: null, gates: []
@@ -268,12 +268,46 @@ describe('the turn policy: events → steps', () => {
         expect(drive(early.policy, [START, reply(''), reply('The clusters breathe.'), reply('')]).at(-1).done.text).toBe('The clusters breathe.');
     });
 
+    // References that name no value (verification/repair.js): rewriting them
+    // needs no tool, so a repair is allowed on any request with a reply, the
+    // last one and a turn without tools included; never on the withdrawn answer.
+    it('a reference repair: allowed on every reply, the last request too, asked with that request\'s tool choice', () => {
+        const repair = { id: 'reference', what: '1 number by reference that names no value', missing: ['r1.x'], notice: 'n', nudge: 'Write it again.' };
+        const once = () => {
+            let asked = false;
+            return stubJudge((text, options) => {
+                if (options.canRepair && !asked) {
+                    asked = true;
+                    return { repair };
+                }
+                return { done: { text: `[${text}]`, outcome: null, gates: asked ? [{ round: 0, id: 'reference', missing: ['r1.x'] }] : [] } };
+            });
+        };
+        // The last request (the round budget used): the repair keeps tool_choice none.
+        const last = policyOf({ judge: once(), limits: { maxRounds: 1 } });
+        const steps = drive(last.policy, [START, reply('', { calls: CALLS }), round(), reply('{{r1.x}}'), reply('4.')]);
+        expect(steps[2]).toMatchObject({ next: 'ask', why: 'final', toolChoice: 'none' });
+        expect(steps[3]).toEqual({ next: 'ask', round: 1, why: 'repair', toolChoice: 'none', retry: null, notes: [], sendBack: repair });
+        expect(steps[4].done).toMatchObject({ text: '[4.]', stoppedBy: 'max_rounds', gates: [{ id: 'reference' }] });
+        expect(last.judge.mock.calls.map(([, { canSendBack, canRepair }]) => [canSendBack, canRepair])).toEqual([[false, true], [false, true]]);
+        // Tools off: no tool choice at all.
+        const off = policyOf({ judge: once(), tools: false });
+        expect(drive(off.policy, [START, reply('{{r1.x}}')]).at(-1)).toMatchObject({ why: 'repair', toolChoice: undefined, sendBack: repair });
+        // The repaired reply blank: the withdrawn answer stands, never repaired again.
+        const blank = policyOf({ judge: once() });
+        expect(drive(blank.policy, [START, reply('{{r1.x}}'), reply(''), reply('')]).at(-1).done.text).toBe('[{{r1.x}}]');
+        expect(blank.judge).toHaveBeenLastCalledWith('{{r1.x}}', { canSendBack: false, canRepair: false, rounds: 0, stoppedBy: 'answer', cut: false });
+        // A repair the policy did not allow is the judge's error.
+        const rogue = policyOf({ judge: stubJudge(() => ({ repair })) });
+        expect(() => drive(rogue.policy, [START, reply('A.'), reply(''), reply('')])).toThrow(/a repair when none was allowed/);
+    });
+
     it('a model that refuses tools: no_tools makes the retry without them; every later request has none', () => {
         const { policy, judge } = policyOf();
         const steps = drive(policy, [START, { kind: 'no_tools' }, reply(''), reply('Plain answer.')]);
         expect(steps[1]).toEqual({ next: 'ask', round: 0, why: 'no_tools', toolChoice: undefined, retry: null, notes: [], sendBack: null });
         expect(steps[2]).toMatchObject({ why: 'reminder', toolChoice: undefined });
-        expect(judge).toHaveBeenCalledWith('Plain answer.', { canSendBack: false, rounds: 0, stoppedBy: 'answer', cut: false });
+        expect(judge).toHaveBeenCalledWith('Plain answer.', { canSendBack: false, canRepair: true, rounds: 0, stoppedBy: 'answer', cut: false });
         // A request with no tools has no last request: never 'final', never a budget note.
         const off = policyOf({ tools: false, limits: { maxRounds: 0 } }).policy;
         expect(off.next(START)).toEqual({ next: 'ask', round: 0, why: 'first', toolChoice: undefined, retry: null, notes: [], sendBack: null });

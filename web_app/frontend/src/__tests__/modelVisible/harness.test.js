@@ -183,3 +183,48 @@ describe(`the evidence gate's send-back in the harness (${CASE})`, () => {
         await expect(render(c, 'C', 'no method')).toMatchFileSnapshot('__snapshots__/harness/gate-send-back.arm-C.txt');
     });
 });
+
+// The reference repair (src/llm/copilot/verification/repair.js), as the model
+// receives it: the answer quotes a result by a path that names no value, and
+// the next request ends with the app's message saying what each path reaches.
+// It names no analysis, so arms B and C read the same words.
+//
+//   harness/reference-repair.txt   the message (both arms)
+describe(`the reference repair in the harness (${CASE})`, () => {
+    const repair = async (arm) => {
+        const model = recordingModel([
+            { calls: [['list_sites', {}]] },
+            { text: 'Site 1 is anisotropic ({{r1.data.sites.0.anisotropy}}), kurtosis {{r1.sites.0.kurtosis_excess}}, '
+                + 'shift {{r1.data.sites.0}} Å, peak {{r2.peak.significance_sigma}}σ.\n\nOutcome: recorded.' },
+            { text: 'Recorded.\n\nOutcome: a recorded request.' }
+        ]);
+        const record = await runLiveCase({
+            built: buildCase(DEV_CASES.find((item) => item.id === CASE)), arm, model: MODEL,
+            port: model.port, skills: arm === 'B' ? loadSkills() : null
+        });
+        expect(record.error).toBeNull();
+        expect(record.requests.map((request) => request.why)).toEqual(['first', 'tools', 'repair']);
+        return { record, request: model.requests[2] };
+    };
+
+    it('says what each path reaches, the same words under either method', async () => {
+        const [b, c] = [await repair('B'), await repair('C')];
+        const [gate] = b.record.gates;
+        expect(gate).toMatchObject({ id: 'reference', missing: ['r1.sites.0.kurtosis_excess', 'r1.data.sites.0', 'r2.peak.significance_sigma'] });
+        const message = b.request.messages.at(-1);
+        expect(c.request.messages.at(-1)).toEqual(message);
+        await expect([
+            `# The reference repair in the validation harness, arms B and C (the same message), dev case ${CASE}`,
+            '# The answer quotes list_sites (r1) by three paths that name no value; the app sends it back once.',
+            '',
+            '## The repair, as recorded (the model never reads the record)',
+            `id: ${gate.id}`,
+            `missing: ${JSON.stringify(gate.missing)}`,
+            `notice: ${gate.notice}`,
+            '',
+            `## The request it makes (why: repair), its last message · messages[${b.request.messages.length - 1}] · ${message.role}`,
+            message.content,
+            ''
+        ].join('\n')).toMatchFileSnapshot('__snapshots__/harness/reference-repair.txt');
+    });
+});

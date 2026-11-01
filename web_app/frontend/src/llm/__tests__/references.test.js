@@ -94,12 +94,12 @@ describe('explain: what a reference that names no value reaches', () => {
         expect(store.explain('r1.data.configuration.distortion_index.mean')).toBeNull();
         expect(store.explain('r4.peak')).toEqual({ reason: 'no_result', at: '', keys: ['r1'] });
         expect(store.explain('r1.data.configuration.distortion_idx.mean'))
-            .toEqual({ reason: 'no_key', at: 'r1.data.configuration', keys: ['distortion_index'] });
+            .toEqual({ reason: 'no_key', at: 'r1.data.configuration', keys: ['distortion_index'], missing: 'distortion_idx' });
         expect(store.explain('r1.configuration.distortion_index'))
             .toEqual({ reason: 'not_a_value', at: 'r1.configuration.distortion_index', keys: ['mean', 'sd'] });
         expect(store.explain('r1.sites')).toEqual({ reason: 'not_a_value', at: 'r1.sites', keys: ['0…1'] });
-        expect(store.explain('r1.sites.2.ref')).toEqual({ reason: 'no_key', at: 'r1.sites', keys: ['0…1'] });
-        expect(store.explain('ctx.symmetry.point_group')).toEqual({ reason: 'no_key', at: 'ctx.symmetry', keys: ['space_group'] });
+        expect(store.explain('r1.sites.2.ref')).toEqual({ reason: 'no_key', at: 'r1.sites', keys: ['0…1'], missing: '2' });
+        expect(store.explain('ctx.symmetry.point_group')).toEqual({ reason: 'no_key', at: 'ctx.symmetry', keys: ['space_group'], missing: 'point_group' });
         expect(store.explain('r1.sites["<100>"]').reason).toBe('not_a_reference');
     });
 });

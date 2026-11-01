@@ -7,7 +7,8 @@ import { toolBudgetNote } from '../prompts/copilot';
 // owns every counter that decides when a turn ends — the rounds of tools, the
 // turn's time, the rounds that added nothing, the one reminder and the warmer
 // retry, the last-request note, the answer the evidence gate withdrew — and the
-// order of the steps, behind one event-driven interface:
+// order of the steps, behind one event-driven interface (and when the
+// verification may send an answer back for its evidence or its references):
 //
 //   createTurnPolicy({ limits, clock, tools, judge }) → { next(event) → step }
 //   STOPPED_BY               the one set of endings: whether each cut the analyses
@@ -31,9 +32,11 @@ import { toolBudgetNote } from '../prompts/copilot';
 //            reported by `start`.
 //   tools    whether the first request carries tools.
 //   judge    the verification's judge (verification/): (text, { canSendBack,
-//            rounds, stoppedBy, cut }) → { sendBack } | { done } | null. The
-//            policy decides WHEN — whether a send-back is allowed, the stoppedBy
-//            an answer is judged under, which answer stands — and the
+//            canRepair, rounds, stoppedBy, cut }) → { sendBack } | { repair } |
+//            { done } | null. The policy decides WHEN — whether a send-back
+//            (for evidence: tools must still run) or a repair (for the
+//            references: one more request, tools or not) is allowed, the
+//            stoppedBy an answer is judged under, which answer stands — and the
 //            verification WHAT.
 //
 // Events (the loop's), in order: start, then for each request a reply, which
@@ -56,12 +59,12 @@ import { toolBudgetNote } from '../prompts/copilot';
 // Steps:
 //   { next: 'ask', round, why, toolChoice, retry, notes, sendBack }
 //       make a model request. why: 'first' | 'tools' | 'reminder' | 'gate' |
-//       'final' | 'no_tools'; toolChoice: 'auto', 'none' (the request that asks
-//       for the answer) or undefined (no tools); retry: 'warmer' | null (the
-//       model port's); notes: the messages to add (addNote), in order; sendBack:
-//       the verification's send-back for the reply just judged ({ id, what,
-//       missing, notice, nudge }: the loop withdraws the reply and sends the
-//       nudge) or null
+//       'repair' | 'final' | 'no_tools'; toolChoice: 'auto', 'none' (the
+//       request that asks for the answer) or undefined (no tools); retry:
+//       'warmer' | null (the model port's); notes: the messages to add
+//       (addNote), in order; sendBack: the verification's send-back or repair
+//       for the reply just judged ({ id, what, missing, notice, nudge }: the
+//       loop withdraws the reply and sends the nudge) or null
 //   { next: 'run' }                               run the reply's calls, then
 //                                                 report the round
 //   { next: 'end', done, say }                    yield `say` as text when it is
@@ -89,14 +92,19 @@ import { toolBudgetNote } from '../prompts/copilot';
 //     event; round 0 is never out of time;
 //   - in a reply without calls the order is: the reminder, then the answer the
 //     gate withdrew stands, then the empty endings, then the judge;
-//   - judge gets only non-empty text; the withdrawn answer with canSendBack false;
+//   - judge gets only non-empty text; the withdrawn answer with canSendBack
+//     and canRepair false;
 //   - canSendBack = tools on ∧ this request is not the last ∧ turn time left
 //     (and the verification's own cap);
+//   - canRepair = a reply to judge (not the withdrawn answer), on any request,
+//     the last included: rewriting its references needs no tool, so the
+//     repair is asked with the request's own tool choice (and the
+//     verification's own cap, one a turn);
 //   - exactly one 'end' a turn.
 // Errors: a TypeError for bad configuration, or for an event out of order or
 // malformed (calls on a request that allowed none, no_tools after tools ran),
-// a send-back the policy did not allow, or a judge that answers otherwise than
-// { sendBack }, { done } or null; judge's own errors propagate (the turn ends
+// a send-back or repair the policy did not allow, or a judge that answers
+// otherwise than { sendBack }, { repair }, { done } or null; judge's own errors propagate (the turn ends
 // as `failed`); judge returning null gives the empty ending. Pure, no React.
 
 /** The endings a turn can have: every `stoppedBy` the dock and the harness read. */
@@ -188,8 +196,8 @@ export const createTurnPolicy = ({ limits, clock, tools, judge } = {}) => {
     let finalNoted = false;
     // Whether the request in flight is the last: it asks for the answer.
     let final = false;
-    // The answer the evidence gate sent back last: it stands if the model
-    // then writes nothing.
+    // The answer the verification sent back last (for its evidence or its
+    // references): it stands if the model then writes nothing.
     let withdrawn = null;
 
     // The next request, from the event's one reading of the turn's time.
@@ -260,19 +268,27 @@ export const createTurnPolicy = ({ limits, clock, tools, judge } = {}) => {
         const stoppedBy = final ? (stalled ? 'no_progress' : 'max_rounds') : 'answer';
         // An answer is judged as it will read: a conclusion whose analysis
         // did not run may go back to the model while tools can still run in
-        // the next round. No answer: the one the gate withdrew stands.
+        // the next round, and references that name no value while one more
+        // request can be made. No answer: the one the verification withdrew
+        // stands.
         const judged = blank ? withdrawn : text;
         if (judged === null) return emptyEnding(why, stoppedBy, cut);
         const canSendBack = !blank && toolsOn && !final && !outOfTime();
-        const verdict = judge(judged, { canSendBack, rounds: round, stoppedBy, cut });
+        const canRepair = !blank;
+        const verdict = judge(judged, { canSendBack, canRepair, rounds: round, stoppedBy, cut });
         if (verdict == null) return emptyEnding(why, stoppedBy, cut);
-        if (!isObject(verdict)) invalid('judge must return { sendBack }, { done } or null');
+        if (!isObject(verdict)) invalid('judge must return { sendBack }, { repair }, { done } or null');
         if (verdict.sendBack) {
             if (!canSendBack) invalid('judge sent an answer back when no send-back was allowed');
             withdrawn = text;
             return ask('gate', outOfTime, { sendBack: verdict.sendBack });
         }
-        if (!isObject(verdict.done)) invalid('judge must return { sendBack }, { done } or null');
+        if (verdict.repair) {
+            if (!canRepair) invalid('judge asked for a repair when none was allowed');
+            withdrawn = text;
+            return ask('repair', outOfTime, { sendBack: verdict.repair });
+        }
+        if (!isObject(verdict.done)) invalid('judge must return { sendBack }, { repair }, { done } or null');
         // rawText only when the references changed the text (the verification's).
         const { text: answer = judged, rawText, outcome, audit, references, gates } = verdict.done;
         return end(doneEvent({ text: answer, rawText, outcome, stoppedBy, cut, audit, references, gates }));

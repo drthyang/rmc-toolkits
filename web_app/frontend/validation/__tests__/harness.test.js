@@ -169,8 +169,38 @@ describe('the live harness, scripted model', () => {
         expect(transcript).toMatch(/outcome \(computed\): achieved · against the score: earned/);
         expect(transcript).toMatch(/Numbers by reference: 1 of 1 filled from the analyses/);
         const report = renderReport([record]);
-        expect(report).toMatch(/\| scripted · B \| 1 \/ 0 of 1 \| 1 \/ 0 \| 1 \/ 0 \/ 0 \/ 0 \|/);
+        expect(report).toMatch(/\| scripted · B \| 1 \/ 0 of 1 \| 1 \/ 0 \/ 0 \| 1 \/ 0 \/ 0 \/ 0 \|/);
         await pinRecord('harness.gate-split-site', record);
+    });
+
+    // A reference that names no value (verification/repair.js): the answer
+    // goes back once, with what the path reaches; the record keeps it among
+    // its send-backs, apart from the evidence gate's, and the report counts it.
+    it('a verdict whose reference names no value is sent back once; the repaired one is scored, the repair counted', async () => {
+        const verdict = (shift) => `VERDICT {"features": [{"kind": "symmetry_lowering", "element": "Ta", "direction_uvw": [0, 0, 1], `
+            + `"magnitude_A": ${shift}, "q": null}], "space_group": "P4mm", "chiral": false, "centrosymmetric": false, "polar": true}`;
+        const record = await runLiveCase({
+            built: built('dev-symmetry-lowering'), arm: 'B', model: MODEL, skills,
+            port: scripted([
+                { calls: [['measure_symmetry_lowering', {}]] },
+                { text: `Ta is shifted {{r1.sites.0.shift}} Å along c.\n\nOutcome: the shift.\n\n${verdict('{{r1.sites.0.shift}}')}` },
+                { text: `Ta is shifted {{r1.data.sites.0.shift_A}} Å along c.\n\nOutcome: the shift.\n\n${verdict('{{r1.data.sites.0.shift_A}}')}` }
+            ])
+        });
+        expect(record.gates).toEqual([expect.objectContaining({ id: 'reference', missing: ['r1.sites.0.shift'] })]);
+        expect(record.retracted).toEqual([expect.objectContaining({ by: 'reference repair' })]);
+        expect(record.requests.map((request) => request.why)).toEqual(['first', 'tools', 'repair']);
+        const nudge = record.requests[2].sent.messages.at(-1).content;
+        expect(nudge).toMatch(/^\(From the app, not the user\.\) Your answer quotes 1 number by reference that names no value/);
+        expect(nudge).toMatch(/- \{\{r1\.sites\.0\.shift\}\} names nothing at "shift": r1\.sites\.0 holds [\w, ]*shift_A/);
+        expect(record.final.text).toMatch(/^Ta is shifted 0\.0\d+ Å along c\./);
+        expect(record.score.score).toBe(1);
+        expect(record.provenance.by_reference).toEqual({ written: 2, filled: 2, unknown: [] });
+        // No evidence send-back: the repair is counted apart.
+        expect(record.evidence.gates).toEqual([]);
+        expect(renderTranscript(record)).toMatch(/- Reference repair, round 1: The answer quoted 1 number by reference that names no value; the app asked for it again\./);
+        expect(renderReport([record])).toMatch(/\| scripted · B \| 0 \/ 0 of 1 \| 2 \/ 0 \/ 1 \|/);
+        await pinRecord('harness.reference-repair', record);
     });
 
     it('THY-18: a verdict written by reference is scored on the engine\'s numbers', async () => {

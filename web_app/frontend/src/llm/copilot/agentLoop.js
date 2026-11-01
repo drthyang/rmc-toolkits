@@ -39,7 +39,9 @@ import { createVerification } from './verification';
 //                                                  prepare), before its reply; why: 'first',
 //                                                  'tools' (results of the round before),
 //                                                  'reminder' (after an empty or looping
-//                                                  reply), 'gate' (an answer sent back),
+//                                                  reply), 'gate' (an answer sent back for its
+//                                                  evidence), 'repair' (sent back for references
+//                                                  that name no value),
 //                                                  'final' (the budget is used: tool_choice
 //                                                  'none'), 'no_tools' (the retry without tools).
 //                                                  A request the port refuses in prepare (the
@@ -78,8 +80,11 @@ import { createVerification } from './verification';
 //                                                  (verification isAnalysis; the footer counts these)
 //   { type: 'tools_unsupported', error }           the port's ToolsUnsupportedError on the
 //                                                  first request: retried without tools
-//   { type: 'gate', id, what, missing, notice }    the evidence gate sent the answer back
-//                                                  (a 'retract' withdraws its text)
+//   { type: 'gate', id, what, missing, notice }    the verification sent the answer back
+//                                                  (a 'retract' withdraws its text): the
+//                                                  evidence gate (id a claim's), or the
+//                                                  reference repair (id 'reference', missing
+//                                                  the references as written)
 //   { type: 'done', text, rawText, outcome, rounds, stoppedBy, cut, reason, audit, references, gates }
 //                                                  the turn policy's, one shape on every path;
 //                                                  stoppedBy: 'answer' | 'max_rounds' |
@@ -129,9 +134,10 @@ import { createVerification } from './verification';
 // which names the step's `ref` (r1, r2, …: the model quotes values by it,
 // {{r2.peak.significance_sigma}}) and keeps the data the message carries.
 // The policy asks it to judge each answer (its `judge`): whether a send-back
-// is allowed is the policy's (only while tools can still run), the send-back
+// is allowed is the policy's (for evidence only while tools can still run; a
+// repair of references that name no value on any request), the send-back
 // the verification's (the gate: once per claim, at most its maxSendBacks times
-// a turn); otherwise the `done` — the answer with its references filled, its
+// a turn; the repair once a turn); otherwise the `done` — the answer with its references filled, its
 // findings and the Outcome computed from the checks; the model's Outcome line
 // only explains it.
 //
@@ -430,8 +436,9 @@ export async function* runCopilotTurn({
         const after = policy.next({ kind: 'reply', text, calls, looped, cut: finishReason === 'length' });
         if (after.next !== 'run') {
             if (after.sendBack) {
-                // The evidence gate sent the answer back: it is withdrawn, and
-                // the model reads it with the app's note.
+                // The verification sent the answer back (the evidence gate, or
+                // the reference repair): it is withdrawn, and the model reads
+                // it with the app's note.
                 const { id, what, missing, notice, nudge } = after.sendBack;
                 yield { type: 'gate', id, what, missing, notice, text };
                 yield { type: 'retract' };

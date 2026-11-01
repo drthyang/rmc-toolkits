@@ -11,6 +11,7 @@
 // Before the appendix, what a comparison across models also compares: the
 // columns' run policies (runPolicy.js) side by side, and what no policy sets.
 
+import { REFERENCE_REPAIR } from '../src/llm/copilot/verification';
 import { reproducibility } from './scoring';
 import { finalRoundSummary, limitsSummary, SERVER_LABELS, temperatureSummary, windowSummary } from './runPolicy';
 import { columnOf, renderComparison } from './comparison';
@@ -43,6 +44,8 @@ export const aggregate = (records) => {
         missing: group.runs.filter((run) => run.evidence?.missing?.length).length,
         refsFilled: group.runs.reduce((sum, run) => sum + (run.provenance?.by_reference?.filled || 0), 0),
         refsUnknown: group.runs.reduce((sum, run) => sum + (run.provenance?.by_reference?.unknown?.length || 0), 0),
+        // The answers sent back for references that named no value (the reference repair).
+        refsSentBack: group.runs.reduce((sum, run) => sum + (run.gates || []).filter((gate) => gate.id === REFERENCE_REPAIR).length, 0),
         verdicts: group.runs.map((run) => run.outcome_eval?.agreement ?? 'none')
     }));
     return cells;
@@ -201,7 +204,7 @@ export const renderReport = (records, { title = 'Copilot validation runs' } = {}
         });
         lines.push('');
         renderJudgment(inSplit).forEach((line) => lines.push(line));
-        lines.push('| Column | Evidence gate: send-backs / runs still missing evidence | Numbers by reference: filled / unknown | Computed verdict: earned / over / under / held |');
+        lines.push('| Column | Evidence gate: send-backs / runs still missing evidence | Numbers by reference: filled / unknown / answers sent back | Computed verdict: earned / over / under / held |');
         lines.push('| --- | --- | --- | --- |');
         columns.forEach((column) => {
             const mine = inSplit.filter((cell) => cell.column === column);
@@ -209,7 +212,8 @@ export const renderReport = (records, { title = 'Copilot validation runs' } = {}
             const verdicts = mine.flatMap((cell) => cell.verdicts);
             const count = (kind) => verdicts.filter((value) => value === kind).length;
             lines.push(`| ${column} | ${mine.reduce((sum, cell) => sum + cell.gates, 0)} / ${mine.reduce((sum, cell) => sum + cell.missing, 0)} of ${runs} | `
-                + `${mine.reduce((sum, cell) => sum + cell.refsFilled, 0)} / ${mine.reduce((sum, cell) => sum + cell.refsUnknown, 0)} | `
+                + `${mine.reduce((sum, cell) => sum + cell.refsFilled, 0)} / ${mine.reduce((sum, cell) => sum + cell.refsUnknown, 0)} / `
+                + `${mine.reduce((sum, cell) => sum + cell.refsSentBack, 0)} | `
                 + `${count('earned')} / ${count('over')} / ${count('under')} / ${count('held')} |`);
         });
         lines.push('');

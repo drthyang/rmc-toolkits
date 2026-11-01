@@ -9,6 +9,7 @@
 // numbered: a finding's `step` is that number (0 = the question). The header
 // also states the run policy the run ran under (runPolicy.js).
 
+import { REFERENCE_REPAIR } from '../src/llm/copilot/verification';
 import { policyLines } from './runPolicy';
 
 const fence = (value) => `\`\`\`json\n${JSON.stringify(value, null, 1)}\n\`\`\``;
@@ -94,7 +95,7 @@ export const renderTranscript = (record) => {
             : `*Round ${item.round}: the loop withdrew the text below (a looping reply, or a call written as text):*\n`);
         lines.push(`${quote(clip(item.text || '(empty)', 1500))}\n`);
     });
-    (record.gates || []).forEach((gate) => lines.push(`- Evidence gate, round ${gate.round}: ${gate.notice}`));
+    (record.gates || []).forEach((gate) => lines.push(`- ${gate.id === REFERENCE_REPAIR ? 'Reference repair' : 'Evidence gate'}, round ${gate.round}: ${gate.notice}`));
     if (record.gates?.length) lines.push('');
     if (record.final) {
         const outcome = record.final.outcome;
