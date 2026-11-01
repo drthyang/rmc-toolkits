@@ -18,6 +18,12 @@
 // runtimes) or via /api/triplets for a typed backend directory — identical
 // payloads either way (source of truth: rmc_toolkits/triplets.py; port:
 // workers/triplets.js).
+//
+// The AI Copilot's change tool (set_bond_geometry) reaches the inputs only
+// through the controller the page registers while mounted
+// (bondGeometryControl.js): it reads the boxes and the result shown, and
+// applies a change the user approved through the page's own setters, then
+// computes as the Compute button does.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
@@ -35,6 +41,8 @@ import ModelSummary from './ModelSummary';
 import FoldedCellPanel from './FoldedCellPanel';
 import useSiteCloud from '../useSiteCloud';
 import { tripletInputsFromRequest, tripletRequestFromInputs } from '../workers/triplets';
+import { registerBondGeometry } from '../bondGeometryControl';
+import { BOND_GEOMETRY_LIMITS, DEFAULT_INPUTS, sameRequest } from '../bondGeometryInputs';
 import AppFooter from './AppFooter';
 import './BondGeometryPage.css';
 
@@ -56,10 +64,13 @@ const ANGLE_AXIS = {
     yMin: 0
 };
 
-// The request fields a result depends on: a shown result whose fields differ
-// from the current inputs is stale ("inputs changed", Compute reads Update).
-const REQUEST_KEYS = ['end1', 'apex', 'end2', 'r12Min', 'r12Max', 'r23Min', 'r23Max', 'binWidth'];
-const sameRequest = (one, two) => Boolean(one && two) && REQUEST_KEYS.every((key) => one[key] === two[key]);
+// A shown result whose request differs from the current inputs' is stale
+// ("inputs changed", Compute reads Update): sameRequest (bondGeometryInputs.js).
+
+// The boxes' ranges (their min/max), shared with the Copilot's change tool.
+const { windowMinA, windowMaxA, windowStepA, binMinDeg, binMaxDeg, binStepDeg } = BOND_GEOMETRY_LIMITS;
+const windowRange = { step: String(windowStepA), min: String(windowMinA), max: String(windowMaxA) };
+const binRange = { step: String(binStepDeg), min: String(binMinDeg), max: String(binMaxDeg) };
 
 // The input a validation error names (tripletRequestFromInputs starts its
 // message with the field's label), so that field can be marked and focused.
@@ -145,9 +156,9 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
     // Triplet selection: A–B–C with B central. Initialized per dataset once
     // the element list arrives; RMCProfile-style, ends default to the last
     // element (commonly the anion) around the first differing central one.
-    const [end1, setEnd1] = useState('');
-    const [apex, setApex] = useState('');
-    const [end2, setEnd2] = useState('');
+    const [end1, setEnd1] = useState(DEFAULT_INPUTS.end1);
+    const [apex, setApex] = useState(DEFAULT_INPUTS.apex);
+    const [end2, setEnd2] = useState(DEFAULT_INPUTS.end2);
     // Seed once per *sites payload* (not per dataset key): on a dataset
     // switch the new key arrives while the previous run's sites are still in
     // state, so keying on the data itself waits for the real element list —
@@ -175,12 +186,12 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
 
     // Bond windows (Å, inclusive). The B–C window follows A–B unless split.
     // String state: a cleared box stays empty and is an error, never 0.
-    const [r12Min, setR12Min] = useState('2.00');
-    const [r12Max, setR12Max] = useState('3.00');
-    const [split23, setSplit23] = useState(false);
-    const [r23Min, setR23Min] = useState('2.00');
-    const [r23Max, setR23Max] = useState('3.00');
-    const [binWidth, setBinWidth] = useState('1.0');
+    const [r12Min, setR12Min] = useState(DEFAULT_INPUTS.r12Min);
+    const [r12Max, setR12Max] = useState(DEFAULT_INPUTS.r12Max);
+    const [split23, setSplit23] = useState(DEFAULT_INPUTS.split23);
+    const [r23Min, setR23Min] = useState(DEFAULT_INPUTS.r23Min);
+    const [r23Max, setR23Max] = useState(DEFAULT_INPUTS.r23Max);
+    const [binWidth, setBinWidth] = useState(DEFAULT_INPUTS.binWidth);
 
     const [result, setResult] = useState(null);
     // The request the shown result was computed from (stale check).
@@ -215,6 +226,15 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
     // Whether a computed angle distribution is on screen (read by the
     // configuration-change effect below without making it a dependency).
     const hasResult = useRef(false);
+    // A Copilot change waiting for the page to compute it (the controller's
+    // apply, below): { request, compute, resolve }. Another run, a new
+    // configuration or the page closing settles it as not computed.
+    const pendingApply = useRef(null);
+    const settlePending = useCallback((reason) => {
+        const pending = pendingApply.current;
+        pendingApply.current = null;
+        pending?.resolve({ computed: false, reason });
+    }, []);
     // The configuration the page last saw: the Flask Live Data epoch and a
     // browser-loaded run's .rmc6f text (null while a new file is being read).
     const seenConfig = useRef({ epoch: dataEpoch, text: null });
@@ -229,7 +249,8 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
         // `finally` will not clear the busy state: clear it here.
         setComputing(false);
         setConfigChanged(false);
-    }, [datasetKey]);
+        settlePending('another run opened');
+    }, [datasetKey, settlePending]);
     // A new .rmc6f saved under the same run (Live Data) reloads the element
     // list, the Model information card and the partials in place, keeping
     // the triplet and the typed windows. The angle distribution is computed
@@ -248,7 +269,8 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
         setResultRequest(null);
         setResultError(null);
         setComputing(false);
-    }, [dataEpoch, rmc6fText]);
+        settlePending('a new configuration of the run was saved');
+    }, [dataEpoch, rmc6fText, settlePending]);
 
     // The request the current inputs would send, or null while one is invalid.
     const currentRequest = useMemo(() => {
@@ -261,6 +283,8 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
     // While a compute runs the badge says so; the stale cues wait for it.
     const stale = Boolean(result) && !computing && !sameRequest(resultRequest, currentRequest);
 
+    // Resolves with how it went (the Copilot's change waits on it; the
+    // Compute button ignores it): { ok: true, result } or { ok: false, error }.
     const compute = useCallback(async () => {
         const epoch = runEpoch.current;
         setConfigChanged(false);
@@ -279,18 +303,18 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
             const field = fieldOfError(error.message);
             setInvalidField(field);
             fieldRefs[field]?.current?.focus();
-            return;
+            return { ok: false, error: error.message };
         }
         setInvalidField(null);
         setComputing(true);
         setResultError(null);
         try {
             const data = await requestPca('triplets', params);
-            if (runEpoch.current === epoch) {
-                hasResult.current = true;
-                setResult(data);
-                setResultRequest(params);
-            }
+            if (runEpoch.current !== epoch) return { ok: false, error: 'another run or configuration opened before it finished' };
+            hasResult.current = true;
+            setResult(data);
+            setResultRequest(params);
+            return { ok: true, result: data };
         } catch (error) {
             if (runEpoch.current === epoch) {
                 hasResult.current = false;
@@ -298,6 +322,7 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
                 setResultRequest(null);
                 setResultError(error.message);
             }
+            return { ok: false, error: error.message };
         } finally {
             if (runEpoch.current === epoch) setComputing(false);
         }
@@ -344,6 +369,83 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
         pendingRequest.current = null;
         compute();
     }, [canCompute, currentRequest, compute]);
+
+    // --- The AI Copilot's change tool (bondGeometryControl.js) ---------------
+    // A change the user approved (or Undo) sets the boxes through the page's
+    // own setters, as typing would, then computes once the boxes hold exactly
+    // those inputs and the page can, as the Compute button would. `applySeq`
+    // re-runs the effect for a change that leaves the boxes as they were.
+    const [applySeq, setApplySeq] = useState(0);
+    useEffect(() => {
+        const pending = pendingApply.current;
+        if (!pending) return;
+        if (!pending.compute) {
+            pendingApply.current = null;
+            pending.resolve({ computed: false, reason: null });
+            return;
+        }
+        // The boxes moved on before the page could compute (the user typed).
+        if (!sameRequest(pending.request, currentRequest)) {
+            settlePending('the inputs changed on the page before it computed');
+            return;
+        }
+        if (!canCompute) return;
+        pendingApply.current = null;
+        compute().then((outcome) => pending.resolve(outcome.ok
+            ? { computed: true, result: outcome.result }
+            : { computed: false, error: outcome.error }));
+    }, [applySeq, canCompute, currentRequest, compute, settlePending]);
+    // The page as the controller reads it, refreshed every render.
+    const live = useRef(null);
+    live.current = {
+        noRun,
+        ready: !noRun && ready && elements.length > 0 && Boolean(end1 && apex && end2),
+        sitesError: sitesError || null,
+        elements,
+        inputs: { end1, apex, end2, r12Min, r12Max, split23, r23Min, r23Max, binWidth },
+        computing,
+        shown: resultRequest,
+        result: result ? { angleCount: result.angleCount, apexCount: result.apexCount } : null,
+        epoch: runEpoch.current
+    };
+    const controller = useMemo(() => ({
+        state: () => ({ ...live.current, inputs: { ...live.current.inputs } }),
+        stamp: () => {
+            const { epoch, inputs, shown, computing: busy } = live.current;
+            return JSON.stringify({ epoch, inputs, shown, computing: busy });
+        },
+        apply: (inputs, { compute: computeAfter = true, clear = false } = {}) => new Promise((resolve) => {
+            settlePending('a newer change replaced it');
+            setEnd1(inputs.end1);
+            setApex(inputs.apex);
+            setEnd2(inputs.end2);
+            setR12Min(inputs.r12Min);
+            setR12Max(inputs.r12Max);
+            setSplit23(Boolean(inputs.split23));
+            setR23Min(inputs.r23Min);
+            setR23Max(inputs.r23Max);
+            setBinWidth(inputs.binWidth);
+            setInvalidField(null);
+            setResultError(null);
+            if (clear) {
+                hasResult.current = false;
+                setResult(null);
+                setResultRequest(null);
+                setConfigChanged(false);
+            }
+            let request = null;
+            try {
+                request = tripletRequestFromInputs(inputs);
+            } catch {
+                request = null;
+            }
+            pendingApply.current = { request, compute: computeAfter && request != null, resolve };
+            setApplySeq((count) => count + 1);
+        })
+    }), [settlePending]);
+    useEffect(() => registerBondGeometry(controller), [controller]);
+    // The page closing settles a change still waiting to compute.
+    useEffect(() => () => settlePending('the page closed'), [settlePending]);
 
     // Editing the field an error named clears the mark and the message.
     const edit = (key, setter) => (event) => {
@@ -785,7 +887,7 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
                                 unit={ANGSTROM}
                                 invalid={invalidField === 'r12Min'}
                                 inputProps={{
-                                    ref: fieldRefs.r12Min, type: 'number', inputMode: 'decimal', step: '0.05', min: '0', max: '15',
+                                    ref: fieldRefs.r12Min, type: 'number', inputMode: 'decimal', ...windowRange,
                                     value: r12Min, onChange: edit('r12Min', setR12Min), 'aria-label': 'A-B window minimum',
                                     'aria-invalid': invalidField === 'r12Min' || undefined
                                 }}
@@ -795,7 +897,7 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
                                 unit={ANGSTROM}
                                 invalid={invalidField === 'r12Max'}
                                 inputProps={{
-                                    ref: fieldRefs.r12Max, type: 'number', inputMode: 'decimal', step: '0.05', min: '0', max: '15',
+                                    ref: fieldRefs.r12Max, type: 'number', inputMode: 'decimal', ...windowRange,
                                     value: r12Max, onChange: edit('r12Max', setR12Max), 'aria-label': 'A-B window maximum',
                                     'aria-invalid': invalidField === 'r12Max' || undefined
                                 }}
@@ -823,7 +925,7 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
                                     unit={ANGSTROM}
                                     invalid={invalidField === 'r23Min'}
                                     inputProps={{
-                                        ref: fieldRefs.r23Min, type: 'number', inputMode: 'decimal', step: '0.05', min: '0', max: '15',
+                                        ref: fieldRefs.r23Min, type: 'number', inputMode: 'decimal', ...windowRange,
                                         value: r23Min, onChange: edit('r23Min', setR23Min), 'aria-label': 'B-C window minimum',
                                         'aria-invalid': invalidField === 'r23Min' || undefined
                                     }}
@@ -833,7 +935,7 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
                                     unit={ANGSTROM}
                                     invalid={invalidField === 'r23Max'}
                                     inputProps={{
-                                        ref: fieldRefs.r23Max, type: 'number', inputMode: 'decimal', step: '0.05', min: '0', max: '15',
+                                        ref: fieldRefs.r23Max, type: 'number', inputMode: 'decimal', ...windowRange,
                                         value: r23Max, onChange: edit('r23Max', setR23Max), 'aria-label': 'B-C window maximum',
                                         'aria-invalid': invalidField === 'r23Max' || undefined
                                     }}
@@ -849,7 +951,7 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
                             unit={DEGREES}
                             invalid={invalidField === 'binWidth'}
                             inputProps={{
-                                ref: fieldRefs.binWidth, type: 'number', inputMode: 'decimal', step: '0.5', min: '0.1', max: '45',
+                                ref: fieldRefs.binWidth, type: 'number', inputMode: 'decimal', ...binRange,
                                 value: binWidth, onChange: edit('binWidth', setBinWidth), 'aria-label': 'Angle bin width in degrees',
                                 'aria-invalid': invalidField === 'binWidth' || undefined
                             }}
