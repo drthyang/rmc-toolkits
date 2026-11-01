@@ -148,10 +148,30 @@ export const VIEW_RULES = [
     'is enough: point at what matters.'
 ].join(' ');
 
+// The answer's shape, with the view tools: the user reads it in the dock,
+// where every analysis the turn ran sits above the answer as a step card
+// holding all of its numbers (components/ToolStep.jsx). The user's report of
+// 2026-11-01 ("overwhelmingly long … dumping numbers") traced to the rules
+// above asking for numbers to be quoted and the skills' Report sections
+// listing every item, with nothing on the answer's shape. Sent with the
+// view tools only, so the validation's arms (compute-only tools, no view
+// tools) read the prompt they always read. Conduct, so under either method.
+export const ANSWER_RULES = [
+    'Write the answer for the user reading the dock, and keep it short: first',
+    'the conclusion, in one or two plain sentences; then only the few numbers',
+    'that carry it (at most five, unless the user asks for more), each with its',
+    'unit, and its window for a coordination number or an angle; then, in one',
+    'sentence, the caveats that change the reading. Do not restate a result',
+    'field by field, give every statistic of a distribution (mean, sd, p10,',
+    'median, p90) or put results in a table unless the user asks for one: the',
+    'step card of each analysis, above the answer, holds all its numbers for',
+    'the user to open. Of a skill\'s Report, give what bears on the conclusion.'
+].join(' ');
+
 export const COPILOT_PROMPT = `${SYSTEM_PROMPT} ${TOOL_RULES} ${REFERENCE_RULES} ${EVIDENCE_RULES} ${COMPUTE_ONLY} ${OUTCOME_RULE}`;
 // With the view tools: the same rules, pointing at the page instead of the
-// compute-only sentence.
-export const COPILOT_PROMPT_VIEW = `${SYSTEM_PROMPT} ${TOOL_RULES} ${REFERENCE_RULES} ${EVIDENCE_RULES} ${VIEW_RULES} ${OUTCOME_RULE}`;
+// compute-only sentence, and the answer's shape for the dock.
+export const COPILOT_PROMPT_VIEW = `${SYSTEM_PROMPT} ${TOOL_RULES} ${REFERENCE_RULES} ${EVIDENCE_RULES} ${VIEW_RULES} ${ANSWER_RULES} ${OUTCOME_RULE}`;
 // For a model that cannot call tools, or with the tools switched off.
 export const COPILOT_PROMPT_NO_TOOLS = `${SYSTEM_PROMPT} ${OUTCOME_RULE}`;
 
@@ -181,8 +201,8 @@ export const skillsBlock = (index) => [
 /**
  * The system prompt for the tools the turn offers: the tool rules, the ask
  * rules when ask_user is among them, the skills' index when read_skill is,
- * then pointing (view tools) or the compute-only sentence, then the Outcome
- * rule. With method 'off' (copilot/method.js) the rules lose their method
+ * then pointing and the answer's shape (view tools: the dock) or the
+ * compute-only sentence, then the Outcome rule. With method 'off' (copilot/method.js) the rules lose their method
  * sentences, the domain rules their inference parts (system.js), and
  * EVIDENCE_RULES and the skills' index are not sent. With tools off the
  * prompt is the no-tools one: the domain rules, under the same method, and
@@ -199,7 +219,7 @@ export const copilotSystemPrompt = ({ toolsEnabled = true, viewTools = false, as
         full ? EVIDENCE_RULES : null,
         askUser ? ruleText(ASK_RULE_SENTENCES, method) : null,
         full && skills ? skillsBlock(skills) : null,
-        viewTools ? VIEW_RULES : COMPUTE_ONLY,
+        viewTools ? `${VIEW_RULES} ${ANSWER_RULES}` : COMPUTE_ONLY,
         OUTCOME_RULE
     ].filter(Boolean).join(' ');
 };

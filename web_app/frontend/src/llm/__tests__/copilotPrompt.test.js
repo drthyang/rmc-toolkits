@@ -8,6 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+    ANSWER_RULES,
     COPILOT_PROMPT,
     COPILOT_PROMPT_NO_TOOLS,
     COPILOT_PROMPT_VIEW,
@@ -42,6 +43,23 @@ describe('the Copilot prompt', () => {
         expect(COPILOT_PROMPT).toContain('Tools only compute: they never change what the user sees.');
         // Tools off: no view rules either.
         expect(copilotSystemPrompt({ toolsEnabled: false, viewTools: true })).toBe(COPILOT_PROMPT_NO_TOOLS);
+    });
+
+    // The user's report of 2026-11-01: answers overwhelmingly long, dumping
+    // numbers. The answer's shape goes with the view tools (the dock, whose
+    // step cards hold every number), before the Outcome line; the arms'
+    // compute-only prompt (no view tools) is the one they always read.
+    it('with the view tools, asks for the conclusion first and only the numbers that carry it', () => {
+        expect(ANSWER_RULES).toMatch(/^Write the answer for the user reading the dock, and keep it short: first the conclusion/);
+        expect(ANSWER_RULES).toContain('(at most five, unless the user asks for more)');
+        expect(ANSWER_RULES).toContain('step card of each analysis');
+        expect(COPILOT_PROMPT_VIEW).toContain(`${ANSWER_RULES} Finish every answer with one final line`);
+        for (const method of ['full', 'off']) {
+            expect(copilotSystemPrompt({ viewTools: true, askUser: true, method })).toContain(ANSWER_RULES);
+            expect(copilotSystemPrompt({ viewTools: false, askUser: true, method })).not.toContain('reading the dock');
+        }
+        expect(COPILOT_PROMPT).not.toContain('reading the dock');
+        expect(COPILOT_PROMPT_NO_TOOLS).not.toContain('reading the dock');
     });
 
     it('explains the budget note', () => {
