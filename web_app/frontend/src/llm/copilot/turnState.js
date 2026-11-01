@@ -140,7 +140,8 @@ export const applyTurnEvent = (turn, event, now = 0) => {
         case 'tools_unsupported':
             return { ...turn, toolsUnsupported: true };
         case 'gate':
-            // The evidence gate sent the answer back (a 'retract' follows).
+            // The verification sent the answer back, for its evidence or its
+            // references (id 'reference'): a 'retract' follows; the footer shows the notice.
             return { ...turn, gates: [...(turn.gates || []), { id: event.id, notice: event.notice, text: event.text ?? '' }] };
         case 'done': {
             // The verdict line is shown as the chip, not repeated in the text;

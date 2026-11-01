@@ -13,7 +13,8 @@
 // tools offered (the caller's, then ask_user, then read_skill), the system
 // prompt for those tools, the history window, the Workbench's own questions
 // (clarify.js), the verification (verification/: the evidence gate, the
-// checks on the answer, numbers by reference and the computed Outcome), the
+// checks on the answer, numbers by reference and their repair, and the
+// computed Outcome), the
 // loop (agentLoop.js) with its model calls through the model port
 // (provider/model.js), and one terminal event that says how the turn ended.
 // The dock and the harness are its two adapters; neither builds any of this.
@@ -99,7 +100,8 @@
 //                                              land here
 // Order: start; a Workbench question (a tool_start/tool_end pair, `app`);
 // then per request: round, request, text/reasoning deltas, tool_start/tool_end
-// pairs (sharing an id); a gate is always followed by a retract;
+// pairs (sharing an id); a gate (the evidence gate's send-back, or the
+// reference repair: id 'reference') is always followed by a retract;
 // tools_unsupported at most once, before any tool step, followed by a new
 // round and request under the no-tools prompt.
 //
