@@ -3,7 +3,7 @@
 
    Bond Geometry page layout. The look (controls bar, cards, headers, KPI
    rail, chips, prompt, overlays, unit fields) is the UI kit's; this file
-   places the three cards and sizes the plots. */
+   places the two cards and sizes the plots. */
 
 .geom-layout {
     /* The grid takes the page height left under the model card and the
@@ -12,26 +12,18 @@
        one row down to 1440 px). The floor keeps the plots readable on short
        windows — the page scrolls there, as at 1280 × 800 — and the cap keeps
        them sane on tall ones: 60rem, or 45vw on a 4K screen, where the rem
-       cap alone would stop the grid ~450px short of the footer. The angle distribution is the hero (7 of 12
-       columns, full height); the folded cell and the partial g(r) stack on
-       the right in equal rows, so the g(r) — read for the first-shell peak —
-       keeps a usable height near the floor. */
+       cap alone would stop the grid ~450px short of the footer. The hero
+       (7 of 12 columns, full height) holds the angle distribution and, as
+       its third tab, the partial g(r); the folded cell takes the right
+       column at full height, so the bonds read at a useful size. */
     flex: 1 1 0;
     min-height: 32rem;
     max-height: max(60rem, 45vw);
     display: grid;
     grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-areas:
-        "hero cell"
-        "hero pdf";
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: "hero cell";
     gap: 0.85rem;
-}
-
-/* No partials file: the g(r) card is a slim header row and the folded cell
-   takes the height. */
-.geom-layout--no-helper {
-    grid-template-rows: minmax(0, 1fr) auto;
 }
 
 .geom-hero {
@@ -42,10 +34,6 @@
     grid-area: cell;
     min-width: 0;
     min-height: 0;
-}
-
-.geom-helper {
-    grid-area: pdf;
 }
 
 .geom-layout .pca-structure {
@@ -70,6 +58,11 @@
     min-height: 0;
     display: flex;
     padding: 0.2rem 0.6rem 0.6rem;
+}
+
+/* The inactive tab panel (display: flex above would override [hidden]). */
+.geom-plot[hidden] {
+    display: none;
 }
 
 /* The busy badge sits centred over the plot (where the prompt was), clear of
@@ -111,17 +104,15 @@
     aspect-ratio: auto;
 }
 
-/* Below 16:9-ish desktop widths everything stacks in one column — hero,
-   folded cell, partial g(r) — each card at its own height. */
+/* Below 16:9-ish desktop widths both cards stack in one column — hero, then
+   the folded cell — each at its own height. */
 @container workbench (max-width: 1100px) {
-    .geom-layout,
-    .geom-layout--no-helper {
+    .geom-layout {
         grid-template-columns: minmax(0, 1fr);
         grid-template-rows: none;
         grid-template-areas:
             "hero"
-            "cell"
-            "pdf";
+            "cell";
         flex: none;
         min-height: 0;
         max-height: none;
@@ -133,13 +124,5 @@
 
     .geom-layout .pca-unitcell-panel {
         height: 24rem;
-    }
-
-    .geom-helper {
-        height: 18rem;
-    }
-
-    .geom-layout--no-helper .geom-helper {
-        height: auto;
     }
 }

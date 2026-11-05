@@ -8,10 +8,11 @@
 //
 // Layout: the controls bar is a form (Enter in any field computes); below it
 // the angle distribution is the hero card, with the headline results in a KPI
-// rail under its header, and the folded cell and the partial g(r) stack on
-// the right. The cards keep their skeleton before and after Compute: the
-// hero shows a ghost of the angle axis with a prompt until the first result.
-// One colour system runs through the three cards: element colours for atoms,
+// rail under its header and the partial g(r) window helper as its third tab
+// (sin-corrected | density | g(r)), and the folded cell on the right. The
+// cards keep their skeleton before and after Compute: the hero shows a ghost
+// of the angle axis with a prompt until the first result.
+// One colour system runs through the two cards: element colours for atoms,
 // BOND_COLORS for the A–B / B–C bond roles, neutral grey for references.
 //
 // The engine runs in the shared worker for browser-loaded runs (both
@@ -32,7 +33,7 @@ import { isStaticMode, readAndParseLocalPlotFile } from '../browserData';
 import { buildElementColors, speciesCounts } from '../atomColors';
 import { BOND_COLORS, PLOT_PALETTE } from '../plotPalette';
 import {
-    BondDash, Card, CardHeader, CardMeta, Chip, Control, ControlGroup, ControlsBar, ElementChip, Hint, Kpi,
+    BondDash, Card, CardHeader, Chip, Control, ControlGroup, ControlsBar, ElementChip, Hint, Kpi,
     KpiRail, Page, PageIssues, PrimaryButton, Segmented, SegmentedButton, Switch, ToolButton, UnitField, useIssue,
 } from '../ui';
 import InfoBadge from '../ui/InfoBadge';
@@ -43,6 +44,8 @@ import useSiteCloud from '../useSiteCloud';
 import { tripletInputsFromRequest, tripletRequestFromInputs } from '../workers/triplets';
 import { registerBondGeometry } from '../bondGeometryControl';
 import { BOND_GEOMETRY_LIMITS, DEFAULT_INPUTS, sameRequest } from '../bondGeometryInputs';
+import { grTabForFocus } from '../bondGeometryTabs';
+import { FOCUS_ATTR } from '../llm/focus/focus';
 import AppFooter from './AppFooter';
 import './BondGeometryPage.css';
 
@@ -63,6 +66,14 @@ const ANGLE_AXIS = {
     xGrid: true,
     yMin: 0
 };
+
+// The hero card's tabs (bondGeometryTabs.js): the angle distribution in its
+// two normalizations, then the partial g(r) window helper.
+const HERO_TABS = [
+    { id: 'sin', label: 'sin-corrected' },
+    { id: 'raw', label: 'density' },
+    { id: 'gr', label: 'g(r)' }
+];
 
 // A shown result whose request differs from the current inputs' is stale
 // ("inputs changed", Compute reads Update): sameRequest (bondGeometryInputs.js).
@@ -138,6 +149,29 @@ const useDebounced = (value, delay = 400) => {
     return debounced;
 };
 
+// The g(r) tab's help (exported for the help-text test: the tab renders it
+// only while it shows).
+export const PartialGrHelp = () => (
+    <InfoBadge label="About the partial g(r)">
+        <p>
+            The A{'–'}B partial pair distribution from the run's{' '}
+            <code>PDFpartials.csv</code>. Set the bond window to bracket
+            the first-shell peak; the dashed guides track the current
+            bounds.
+        </p>
+        <p>
+            A second partial is drawn whenever A{'–'}B and B{'–'}C are
+            different pair types (Ga{'–'}Nb{'–'}Se: Ga{'–'}Nb and Nb{'–'}Se),
+            whether or not <b>Distinct B{'–'}C</b> is on; a same-type
+            triplet such as Se{'–'}Nb{'–'}Se has one shell and one curve.
+            The switch governs the guides: off, one neutral pair covers
+            both bonds; on, each window gets its own labelled pair
+            (A{'–'}B, B{'–'}C), colored like its shell's curve when the
+            two bonds are different types.
+        </p>
+    </InfoBadge>
+);
+
 export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, request = null }) {
     const {
         sites,
@@ -204,6 +238,12 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
     // shown result was computed from (see below); cleared by Compute.
     const [configChanged, setConfigChanged] = useState(false);
     const [angleView, setAngleView] = useState('sin');
+    // The hero card's tabs: the angle view (sin-corrected by default, or
+    // density) or the partial g(r). The angle view is kept while the g(r)
+    // shows, so going back returns to it.
+    const [showGr, setShowGr] = useState(false);
+    const heroRef = useRef(null);
+    const grPanelRef = useRef(null);
 
     const staticMode = isStaticMode();
     const noRun = staticMode && !localFile;
@@ -776,14 +816,75 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
         : null;
 
     const noHelper = !partialSeries && !partialsLoading;
-    // The helper plot's Save (and Reset zoom) live in its card header: the
-    // title's chips already name the curves, so the plot drops its legend
-    // row and keeps that height for the g(r) (InteractivePlot actionsTarget).
-    const [helperActions, setHelperActions] = useState(null);
+    // The hero's tabs. The g(r) tab is a live helper (it follows the current
+    // picks); the angle tabs show the computed result.
+    const heroTab = showGr ? 'gr' : angleView;
+    const selectTab = (tab) => {
+        if (tab === 'gr') {
+            setShowGr(true);
+        } else {
+            setAngleView(tab);
+            setShowGr(false);
+        }
+    };
+    // Arrow keys move along the tabs (the ARIA tabs pattern).
+    const onTabKey = (event) => {
+        const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
+        if (!step) return;
+        event.preventDefault();
+        const ids = HERO_TABS.map((tab) => tab.id);
+        const next = ids[(ids.indexOf(heroTab) + step + ids.length) % ids.length];
+        selectTab(next);
+        event.currentTarget.parentElement?.querySelector(`#geom-tab-${next}`)?.focus();
+    };
+
+    // A Copilot highlight on 'bond-windows' (the g(r) panel) or on the card
+    // ('bond-angles') brings its tab forward (bondGeometryTabs.js); the focus
+    // controller then finds the panel shown and scrolls to it.
+    useEffect(() => {
+        const card = heroRef.current;
+        const panel = grPanelRef.current;
+        if (!card || !panel || typeof MutationObserver === 'undefined') return undefined;
+        const follow = () => {
+            const wantGr = grTabForFocus({
+                card: card.getAttribute(FOCUS_ATTR),
+                panel: panel.getAttribute(FOCUS_ATTR)
+            });
+            if (wantGr !== null) setShowGr(wantGr);
+        };
+        follow();
+        const observer = new MutationObserver(follow);
+        observer.observe(card, { attributes: true, attributeFilter: [FOCUS_ATTR] });
+        observer.observe(panel, { attributes: true, attributeFilter: [FOCUS_ATTR] });
+        return () => observer.disconnect();
+    }, []);
     const ghost = !result;
     const dimmed = ghost || noAngles || computing;
     const showPrompt = ghost && !computing && elements.length > 0 && hasTriplet && !noRun;
     const showNoAngles = noAngles && !computing;
+
+    // The g(r) tab's window chip and its line when there is no curve.
+    // Split: one chip for both windows, each led by its bond-role dash (the
+    // guides' colours), so the header keeps one row.
+    const windowChip = split23
+        ? (
+            <Chip title="A–B window (the blue guides), B–C window (the orange guides)">
+                <BondDash color={BOND_COLORS.ab} lead text="A–B " />
+                {typed(guideMin)}{'–'}{typed(guideMax)}{'\u2003'}
+                <BondDash color={BOND_COLORS.bc} lead text="B–C " />
+                {typed(guide23Min)}{'–'}{typed(guide23Max)} {ANGSTROM}
+            </Chip>
+        )
+        : (
+            <Chip title="Bond window (the dashed guides)">
+                {typed(guideMin)}{'–'}{typed(guideMax)} {ANGSTROM}
+            </Chip>
+        );
+    const noHelperLine = noRun
+        ? 'Open a run folder first.'
+        : partials
+            ? <>No {end1}{'–'}{apex} partial in <code>PDFpartials.csv</code>.</>
+            : <>No <code>PDFpartials.csv</code> in this run.</>;
 
     const runButtonProps = {
         run: true,
@@ -872,7 +973,7 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
                                     <p>
                                         Two atoms are bonded when their distance falls inside the window
                                         (inclusive). Read the window off the first-shell peak of the
-                                        partial g(r) — the partial g(r) card marks the current bounds
+                                        partial g(r) — its g(r) tab marks the current bounds
                                         with dashed guides once a partials file is in the run folder.
                                     </p>
                                     <p>
@@ -970,12 +1071,16 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
 
             {noRun && <Hint>Open a run folder with an <code>.rmc6f</code> file.</Hint>}
 
-            <div className={noHelper ? 'geom-layout geom-layout--no-helper' : 'geom-layout'}>
-                <Card roundEnds className="geom-hero" data-copilot-card="bond-angles">
+            <div className="geom-layout">
+                <Card roundEnds className="geom-hero" data-copilot-card="bond-angles" ref={heroRef}>
                     <CardHeader
                         wrap
-                        title={<>{heroChain}{heroChain && ' '}<span>{heroChain ? 'bond angles' : 'Bond-angle distribution'}</span></>}
-                        help={(
+                        title={showGr
+                            ? (pairChain
+                                ? <><TripletLabel {...pairChain} colors={elementColors} /> <span>partial g(r)</span></>
+                                : 'Partial g(r)')
+                            : <>{heroChain}{heroChain && ' '}<span>{heroChain ? 'bond angles' : 'Bond-angle distribution'}</span></>}
+                        help={showGr ? <PartialGrHelp /> : (
                             <InfoBadge label="About the plot and the angle count">
                                 <p>
                                     <b>Angle count</b> — not an angle: how many
@@ -1012,23 +1117,34 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
                         )}
                         actions={(
                             <>
-                                {stale && (
+                                {!showGr && stale && (
                                     <Chip tone="warn" title="The plot is from other inputs: Update to recompute.">
                                         inputs changed
                                     </Chip>
                                 )}
-                                {configChanged && !result && (
+                                {!showGr && configChanged && !result && (
                                     <Chip tone="warn" title="A new configuration of this run was saved.">
                                         new configuration
                                     </Chip>
                                 )}
-                                <Segmented role="group" aria-label="Angle normalization">
-                                    <SegmentedButton type="button" active={angleView === 'sin'} onClick={() => setAngleView('sin')}>
-                                        sin-corrected
-                                    </SegmentedButton>
-                                    <SegmentedButton type="button" active={angleView === 'raw'} onClick={() => setAngleView('raw')}>
-                                        density
-                                    </SegmentedButton>
+                                {showGr && !noHelper && windowChip}
+                                <Segmented role="tablist" aria-label="Plot">
+                                    {HERO_TABS.map((tab) => (
+                                        <SegmentedButton
+                                            key={tab.id}
+                                            type="button"
+                                            role="tab"
+                                            id={`geom-tab-${tab.id}`}
+                                            aria-selected={heroTab === tab.id}
+                                            aria-controls={tab.id === 'gr' ? 'geom-panel-gr' : 'geom-panel-angles'}
+                                            tabIndex={heroTab === tab.id ? 0 : -1}
+                                            active={heroTab === tab.id}
+                                            onClick={() => selectTab(tab.id)}
+                                            onKeyDown={onTabKey}
+                                        >
+                                            {tab.label}
+                                        </SegmentedButton>
+                                    ))}
                                 </Segmented>
                             </>
                         )}
@@ -1091,59 +1207,93 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
                             );
                         })}
                     </KpiRail>
-                    <div className="geom-plot">
-                        <div className={dimmed ? 'geom-plot__frame ui-dim' : 'geom-plot__frame'} inert={dimmed || undefined}>
-                            <InteractivePlot
-                                file={{ path: `geometry:angles:${datasetKey}`, name: (anglePlot ?? ghostPlot).title }}
-                                plotData={anglePlot ?? ghostPlot}
-                                variant="fit"
-                            />
-                        </div>
-                        {computing && !result && <div className="ui-shimmer" aria-hidden="true" />}
-                        {computing && (
-                            <span className="ui-overlay-badge" role="status">Computing {end1}–{apex}–{end2}…</span>
-                        )}
-                        {showPrompt && (
-                            <div className="ui-overlay-center">
-                                <div className="ui-prompt">
-                                    <div className="ui-prompt__row">
-                                        {heroChain}
-                                        <Chip title="Bond window">{windowText}</Chip>
-                                    </div>
-                                    {resultError
-                                        ? <p className="ui-prompt__error" role="alert">{resultError}</p>
-                                        : <p>{configChanged ? 'New configuration — Compute again.' : 'Pick a triplet, then Compute.'}</p>}
-                                    <PrimaryButton type="button" onClick={compute} {...runButtonProps}>
-                                        Compute
-                                    </PrimaryButton>
-                                    <div className="ui-prompt__row">
-                                        {apexAtoms > 0 && (
-                                            <Chip
-                                                title={`The angle at ${apex} between two bonds, over all ${apexAtoms.toLocaleString()} ${apex}`
-                                                    + `${box ? ` in the ${box} box` : ''}; periodic images included, exact.`}
-                                            >
-                                                {apexAtoms.toLocaleString()} {apex}
-                                            </Chip>
-                                        )}
-                                        {box && <Chip title="Supercell">{box}</Chip>}
-                                        <Chip title={runtime === 'browser' ? 'Runs in your browser' : 'Runs on the server'}>
-                                            {runtime}
-                                        </Chip>
-                                    </div>
+                    <div
+                        className="geom-plot"
+                        id="geom-panel-angles"
+                        role="tabpanel"
+                        aria-labelledby={`geom-tab-${angleView}`}
+                        hidden={showGr || undefined}
+                    >
+                        {!showGr && (
+                            <>
+                                <div className={dimmed ? 'geom-plot__frame ui-dim' : 'geom-plot__frame'} inert={dimmed || undefined}>
+                                    <InteractivePlot
+                                        file={{ path: `geometry:angles:${datasetKey}`, name: (anglePlot ?? ghostPlot).title }}
+                                        plotData={anglePlot ?? ghostPlot}
+                                        variant="fit"
+                                    />
                                 </div>
-                            </div>
-                        )}
-                        {showNoAngles && (
-                            <div className="ui-overlay-center">
-                                <div className="ui-prompt">
-                                    <div className="ui-prompt__row">
-                                        {heroChain}
-                                        <Chip title="The bond windows this result used">{resultWindowText}</Chip>
+                                {computing && !result && <div className="ui-shimmer" aria-hidden="true" />}
+                                {computing && (
+                                    <span className="ui-overlay-badge" role="status">Computing {end1}–{apex}–{end2}…</span>
+                                )}
+                                {showPrompt && (
+                                    <div className="ui-overlay-center">
+                                        <div className="ui-prompt">
+                                            <div className="ui-prompt__row">
+                                                {heroChain}
+                                                <Chip title="Bond window">{windowText}</Chip>
+                                            </div>
+                                            {resultError
+                                                ? <p className="ui-prompt__error" role="alert">{resultError}</p>
+                                                : <p>{configChanged ? 'New configuration — Compute again.' : 'Pick a triplet, then Compute.'}</p>}
+                                            <PrimaryButton type="button" onClick={compute} {...runButtonProps}>
+                                                Compute
+                                            </PrimaryButton>
+                                            <div className="ui-prompt__row">
+                                                {apexAtoms > 0 && (
+                                                    <Chip
+                                                        title={`The angle at ${apex} between two bonds, over all ${apexAtoms.toLocaleString()} ${apex}`
+                                                            + `${box ? ` in the ${box} box` : ''}; periodic images included, exact.`}
+                                                    >
+                                                        {apexAtoms.toLocaleString()} {apex}
+                                                    </Chip>
+                                                )}
+                                                {box && <Chip title="Supercell">{box}</Chip>}
+                                                <Chip title={runtime === 'browser' ? 'Runs in your browser' : 'Runs on the server'}>
+                                                    {runtime}
+                                                </Chip>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <p>No {result.triplet.join('–')} triplets in these windows.</p>
-                                </div>
-                            </div>
+                                )}
+                                {showNoAngles && (
+                                    <div className="ui-overlay-center">
+                                        <div className="ui-prompt">
+                                            <div className="ui-prompt__row">
+                                                {heroChain}
+                                                <Chip title="The bond windows this result used">{resultWindowText}</Chip>
+                                            </div>
+                                            <p>No {result.triplet.join('–')} triplets in these windows.</p>
+                                        </div>
+                                    </div>
+                                )}
+                            </>
                         )}
+                    </div>
+                    {/* The partial g(r) window helper. Its own Copilot card id
+                        ('bond-windows'): a highlight on it brings this tab
+                        forward (the observer above). */}
+                    <div
+                        ref={grPanelRef}
+                        className="geom-plot"
+                        id="geom-panel-gr"
+                        role="tabpanel"
+                        aria-labelledby="geom-tab-gr"
+                        data-copilot-card="bond-windows"
+                        hidden={!showGr || undefined}
+                    >
+                        {showGr && (noHelper
+                            ? <p className="ui-placeholder">{noHelperLine}</p>
+                            : helperPlot
+                                ? (
+                                    <InteractivePlot
+                                        file={{ path: `geometry:partial:${datasetKey}`, name: 'partial-gr' }}
+                                        plotData={helperPlot}
+                                        variant="fit"
+                                    />
+                                )
+                                : <p className="ui-placeholder">Looking for a partials file…</p>)}
                     </div>
                 </Card>
 
@@ -1172,82 +1322,6 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
                             <span className="ui-legend__item is-muted">Compute to draw bonds</span>
                         )}
                 />
-
-                <Card roundEnds className="geom-helper" data-copilot-card="bond-windows">
-                    <CardHeader
-                        wrap
-                        title={pairChain
-                            ? <><TripletLabel {...pairChain} colors={elementColors} /> <span>partial g(r)</span></>
-                            : 'Partial g(r)'}
-                        help={(
-                            <InfoBadge label="About the partial g(r)" side="above">
-                                <p>
-                                    The A{'–'}B partial pair distribution from the run's{' '}
-                                    <code>PDFpartials.csv</code>. Set the bond window to bracket
-                                    the first-shell peak; the dashed guides track the current
-                                    bounds.
-                                </p>
-                                <p>
-                                    A second partial is drawn whenever A{'–'}B and B{'–'}C are
-                                    different pair types (Ga{'–'}Nb{'–'}Se: Ga{'–'}Nb and Nb{'–'}Se),
-                                    whether or not <b>Distinct B{'–'}C</b> is on; a same-type
-                                    triplet such as Se{'–'}Nb{'–'}Se has one shell and one curve.
-                                    The switch governs the guides: off, one neutral pair covers
-                                    both bonds; on, each window gets its own labelled pair
-                                    (A{'–'}B, B{'–'}C), colored like its shell's curve when the
-                                    two bonds are different types.
-                                </p>
-                            </InfoBadge>
-                        )}
-                        actions={noHelper
-                            ? (
-                                <CardMeta>
-                                    {noRun
-                                        ? '—'
-                                        : partials
-                                            ? <>No {end1}{'–'}{apex} partial in <code>PDFpartials.csv</code>.</>
-                                            : <>No <code>PDFpartials.csv</code> in this run.</>}
-                                </CardMeta>
-                            )
-                            : (
-                                <>
-                                    {/* Split: one chip for both windows, each led by its
-                                        bond-role dash (the guides' colours), so the
-                                        header keeps one row with the Save beside it. */}
-                                    {split23
-                                        ? (
-                                            <Chip title="A–B window (the blue guides), B–C window (the orange guides)">
-                                                <BondDash color={BOND_COLORS.ab} lead text="A–B " />
-                                                {typed(guideMin)}{'–'}{typed(guideMax)}{'\u2003'}
-                                                <BondDash color={BOND_COLORS.bc} lead text="B–C " />
-                                                {typed(guide23Min)}{'–'}{typed(guide23Max)} {ANGSTROM}
-                                            </Chip>
-                                        )
-                                        : (
-                                            <Chip title="Bond window (the dashed guides)">
-                                                {typed(guideMin)}{'–'}{typed(guideMax)} {ANGSTROM}
-                                            </Chip>
-                                        )}
-                                    <span className="ui-card__cluster" ref={setHelperActions} />
-                                </>
-                            )}
-                    />
-                    {!noHelper && (
-                        <div className="geom-plot">
-                            {helperPlot
-                                ? (
-                                    <InteractivePlot
-                                        file={{ path: `geometry:partial:${datasetKey}`, name: 'partial-gr' }}
-                                        plotData={helperPlot}
-                                        variant="fit"
-                                        legend={false}
-                                        actionsTarget={helperActions}
-                                    />
-                                )
-                                : <p className="ui-placeholder">Looking for a partials file…</p>}
-                        </div>
-                    )}
-                </Card>
             </div>
 
             <AppFooter tight />

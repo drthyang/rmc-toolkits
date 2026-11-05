@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BOND_COLORS } from '../../plotPalette';
+import { isCardShown } from '../../llm/focus/focus';
 
 const state = vi.hoisted(() => ({ requests: [], plots: {}, plotProps: {}, cell: null, partials: true, zeroAngles: false }));
 
@@ -174,6 +175,11 @@ describe('BondGeometryPage presentation (Phase 1)', () => {
         sub: tile.querySelector('.ui-kpi__sub').textContent,
     }));
     const heading = (selector) => container.querySelector(`${selector} h3 .ui-card__label`).textContent;
+    const tab = (label) => [...container.querySelectorAll('.geom-hero [role="tab"]')]
+        .find((button) => button.textContent.trim() === label);
+    const openTab = async (label) => {
+        await act(async () => { tab(label).click(); });
+    };
 
     it('the controls are a form: submitting it (Enter in a field) runs Compute', async () => {
         await render();
@@ -304,6 +310,7 @@ describe('BondGeometryPage presentation (Phase 1)', () => {
 
     it('one colour system: 3D bonds, window guides and curves wear BOND_COLORS', async () => {
         await render();
+        await openTab('g(r)');
         // A lone window: neutral guides (no colour of their own), out of the legend.
         let guides = state.plots.partial.series.filter((series) => series.role === 'guide');
         expect(guides.map((guide) => guide.x[0])).toEqual([2, 3]);
@@ -319,7 +326,7 @@ describe('BondGeometryPage presentation (Phase 1)', () => {
         expect(guides.map((guide) => guide.color)).toEqual([BOND_COLORS.ab, BOND_COLORS.ab, BOND_COLORS.bc, BOND_COLORS.bc]);
         // One header chip names both windows, each led by its bond-role dash
         // (whose hidden text names the role for a screen reader).
-        const chips = container.querySelectorAll('.geom-helper h3 .ui-chip');
+        const chips = container.querySelectorAll('.geom-hero h3 .ui-chip');
         expect(chips).toHaveLength(1);
         expect(chips[0].textContent).toBe('A–B 2.00–3.00\u2003B–C 2.00–3.00 Å');
         expect([...chips[0].querySelectorAll('.ui-bond-dash')].map((dash) => dash.style.getPropertyValue('--bond')))
@@ -334,16 +341,16 @@ describe('BondGeometryPage presentation (Phase 1)', () => {
     it('names the cards for the triplet, as element chips that read as text', async () => {
         await render();
         expect(heading('.geom-hero')).toMatch(/^Se–Nb–Se bond angles/);
-        expect(heading('.geom-helper')).toMatch(/^Nb–Se partial g\(r\)/);
         expect(container.querySelector('.mock-cell').textContent).toBe('Nb–Se bonds');
-        // The central atom is ringed; the window chip follows the inputs.
+        // The central atom is ringed.
         expect(container.querySelector('.geom-hero h3 .ui-element-chip--central').textContent).toBe('Nb');
-        expect(container.querySelector('.geom-helper h3 .ui-chip').textContent).toBe('2.00–3.00 Å');
-        // The g(r) title names its curves, so the plot drops its legend row and
-        // its Save goes to the card header; the hero keeps its legend.
-        expect(state.plotProps.partial.legend).toBe(false);
-        expect(state.plotProps.partial.actionsTarget).toBe(container.querySelector('.geom-helper h3 .ui-card__cluster'));
         expect(state.plotProps.angles).toEqual({ legend: undefined, actionsTarget: undefined });
+        // The g(r) tab names its pair and its window chip follows the inputs;
+        // its plot keeps its own legend row and Save, as the angle plot does.
+        await openTab('g(r)');
+        expect(heading('.geom-hero')).toMatch(/^Nb–Se partial g\(r\)/);
+        expect(container.querySelector('.geom-hero h3 .ui-chip').textContent).toBe('2.00–3.00 Å');
+        expect(state.plotProps.partial).toEqual({ legend: undefined, actionsTarget: undefined });
         // Before Compute the 3D legend says what Compute adds.
         expect(state.cell.bondSets).toBeNull();
     });
@@ -358,12 +365,69 @@ describe('BondGeometryPage presentation (Phase 1)', () => {
         expect(select('End element C').value).toBe('Ga');
     });
 
-    it('without a partials file the g(r) card is a slim row and the 3D card takes the height', async () => {
+    it('without a partials file the g(r) tab says so in one line', async () => {
         state.partials = false;
         await render();
-        expect(container.querySelector('.geom-layout').className).toContain('geom-layout--no-helper');
-        const helper = container.querySelector('.geom-helper');
-        expect(helper.children).toHaveLength(1);
-        expect(helper.textContent).toContain('No PDFpartials.csv in this run.');
+        await openTab('g(r)');
+        const panel = container.querySelector('#geom-panel-gr');
+        expect(panel.textContent).toBe('No PDFpartials.csv in this run.');
+        expect(state.plots.partial).toBeUndefined();
+        expect(container.querySelector('.geom-hero h3 .ui-chip')).toBeNull();
+    });
+
+    it('the g(r) is a tab of the angle card: sin-corrected first, one panel at a time', async () => {
+        await render();
+        await submit();
+        // Two cards: the hero (angles + g(r) tabs) and the folded cell.
+        expect(container.querySelectorAll('.geom-layout > .ui-card, .geom-layout > .mock-cell')).toHaveLength(2);
+        const tabs = [...container.querySelectorAll('.geom-hero [role="tablist"] [role="tab"]')];
+        expect(tabs.map((button) => button.textContent)).toEqual(['sin-corrected', 'density', 'g(r)']);
+        expect(tabs.map((button) => button.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false']);
+        const angles = container.querySelector('#geom-panel-angles');
+        const gr = container.querySelector('#geom-panel-gr');
+        expect([angles.hidden, gr.hidden]).toEqual([false, true]);
+        expect(state.plots.partial).toBeUndefined();
+
+        await openTab('g(r)');
+        expect(tab('g(r)').getAttribute('aria-selected')).toBe('true');
+        expect([angles.hidden, gr.hidden]).toEqual([true, false]);
+        expect(state.plots.partial.title).toBe('Nb-Se partial g(r)');
+        // The KPI rail stays; the stale chip belongs to the angle tabs.
+        expect(kpis()[0].value).toBe('15.0\u2009per Nb');
+        await type('A-B window maximum', '2.9');
+        expect(container.querySelector('.geom-hero h3').textContent).not.toContain('inputs changed');
+
+        // Back to the angles: the view it left (density here) is kept.
+        await openTab('density');
+        await openTab('g(r)');
+        await act(async () => {
+            tab('g(r)').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        });
+        expect(tab('sin-corrected').getAttribute('aria-selected')).toBe('true');
+        expect(state.plots.angles.yLabel).toBe('sin-corrected (random = 1)');
+        expect([angles.hidden, gr.hidden]).toEqual([false, true]);
+        expect(container.querySelector('.geom-hero h3').textContent).toContain('inputs changed');
+    });
+
+    it('Copilot highlights still land: bond-windows opens the g(r) tab, bond-angles the angles', async () => {
+        await render();
+        const card = container.querySelector('[data-copilot-card="bond-angles"]');
+        const panel = container.querySelector('[data-copilot-card="bond-windows"]');
+        expect(card.contains(panel)).toBe(true);
+        expect(isCardShown(panel)).toBe(false);
+        // The focus controller sets the attribute; the page brings the tab forward.
+        await act(async () => { panel.setAttribute('data-copilot-focus', 'primary'); });
+        expect(isCardShown(panel)).toBe(true);
+        expect(tab('g(r)').getAttribute('aria-selected')).toBe('true');
+        // A running analysis on the angle card does not switch.
+        await act(async () => {
+            panel.removeAttribute('data-copilot-focus');
+            card.setAttribute('data-copilot-focus', 'running');
+        });
+        expect(tab('g(r)').getAttribute('aria-selected')).toBe('true');
+        // Pointing at the angle card brings the angles back.
+        await act(async () => { card.setAttribute('data-copilot-focus', 'primary'); });
+        expect(tab('sin-corrected').getAttribute('aria-selected')).toBe('true');
+        expect(isCardShown(card)).toBe(true);
     });
 });
