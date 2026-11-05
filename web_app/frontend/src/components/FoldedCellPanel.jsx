@@ -5,11 +5,14 @@
 // cloud is the same one the Atomic Density page shows — every atom in the
 // supercell folded back into a single cell, so the spread around each site is
 // the thermal cloud itself rather than a fitted ellipsoid. Bonds come from the
-// triplet windows and are drawn as thin transparent lines so a full network
-// reads as a framework instead of hiding the cloud behind it. The element key
-// sits inside the canvas, as a pill at the bottom left.
+// triplet windows (bondNetwork.js) and are drawn as shaded tubes in their
+// bond-role colours, one instanced mesh (one draw call) per window; the
+// clouds of elements outside the bonds fade, so the selected triplet stands
+// out. A large cell draws at most MAX_DRAWN_BONDS, those nearest the centre,
+// and the legend says so. The element key sits inside the canvas, as a pill
+// at the bottom left.
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { DEFAULT_ELEMENT_COLOR, elementColorNote } from '../atomColors';
@@ -18,6 +21,7 @@ import { Card, CardHeader, CardMeta, ToolButton } from '../ui';
 import InfoBadge from '../ui/InfoBadge';
 import SaveMenu from '../ui/SaveMenu';
 import { buildCrystalAxes } from './sceneAxes';
+import { bondRadius, buildBondNetwork, cloudOpacity, MAX_DRAWN_BONDS } from '../bondNetwork';
 import useCopilotViewer from '../useCopilotViewer';
 import './UnitCellPanel.css';
 
@@ -58,6 +62,19 @@ const FoldedCellPanel = ({
     const mountRef = useRef(null);
     const sceneRef = useRef(null);
 
+    // The bonds to draw, from the average sites of one unit cell.
+    const network = useMemo(() => {
+        const unit = unitVectorsOf(structure) || unitVectorsOf(sites);
+        if (!unit || !bondSets?.length || !sites?.sites?.length) return null;
+        const center = [0, 1, 2].map((axis) => 0.5 * (unit[0][axis] + unit[1][axis] + unit[2][axis]));
+        const atoms = sites.sites.map((site) => ({
+            referenceNumber: site.referenceNumber,
+            element: site.element,
+            siteFractional: site.siteFractional
+        }));
+        return buildBondNetwork(atoms, unit, bondSets, { center });
+    }, [structure, sites, bondSets]);
+
     // Scene, camera and controls are built once and kept; only the contents of
     // the groups below are rebuilt when the data changes.
     useEffect(() => {
@@ -83,6 +100,13 @@ const FoldedCellPanel = ({
         const cellGroup = new THREE.Group();
         const cellAxesGroup = new THREE.Group();
         scene.add(cloudGroup, bondsGroup, cellGroup, cellAxesGroup);
+        // The bond tubes are shaded (the clouds are points, unlit): a soft
+        // ambient plus a key light that rides with the camera, so the tubes
+        // read as round from every side.
+        const keyLight = new THREE.DirectionalLight(0xffffff, 1.6);
+        keyLight.position.set(1, 1.5, 2);
+        camera.add(keyLight);
+        scene.add(camera, new THREE.AmbientLight(0xffffff, 1.1));
 
         let frame = 0;
         const renderLoop = () => {
@@ -137,6 +161,7 @@ const FoldedCellPanel = ({
                 child.geometry?.dispose();
                 child.material?.map?.dispose();
                 child.material?.dispose();
+                if (child.isInstancedMesh) child.dispose();
                 group.remove(child);
             }
         };
@@ -204,66 +229,42 @@ const FoldedCellPanel = ({
                 size: 0.02 * edgeLength,
                 sizeAttenuation: true,
                 transparent: true,
-                opacity: 0.55
+                opacity: cloudOpacity(element, network?.sets)
             })));
         });
 
-        // --- Detected bonds between the average sites, periodic images included
-        // (a bond may reach a neighbouring cell's image just outside the box —
-        // that is the real coordination). Thin transparent lines, so the network
-        // sits over the cloud rather than hiding it.
-        if (bondSets?.length && sites?.sites?.length) {
-            const positions = sites.sites.map((site) => ({
-                ref: site.referenceNumber,
-                el: site.element,
-                frac: site.siteFractional,
-                pos: new THREE.Vector3(...toCartesian(site.siteFractional))
-            }));
-            bondSets.forEach((set) => {
-                const [elementA, elementB] = set.elements;
-                const sameElement = elementA === elementB;
-                const [rmin, rmax] = set.window;
-                const segments = [];
-                positions.forEach((from) => {
-                    if (from.el !== elementA) return;
-                    positions.forEach((to) => {
-                        if (to.el !== elementB) return;
-                        for (let mx = -1; mx <= 1; mx += 1) {
-                            for (let my = -1; my <= 1; my += 1) {
-                                for (let mz = -1; mz <= 1; mz += 1) {
-                                    const inCell = mx === 0 && my === 0 && mz === 0;
-                                    if (inCell && to.ref === from.ref) continue;
-                                    // Same-element in-cell pairs would double-draw.
-                                    if (sameElement && inCell && to.ref < from.ref) continue;
-                                    const delta = [
-                                        to.frac[0] + mx - from.frac[0],
-                                        to.frac[1] + my - from.frac[1],
-                                        to.frac[2] + mz - from.frac[2]
-                                    ];
-                                    const cart = toCartesian(delta);
-                                    const length = Math.hypot(...cart);
-                                    if (length < rmin || length > rmax || length === 0) continue;
-                                    segments.push(
-                                        from.pos.clone(),
-                                        from.pos.clone().add(new THREE.Vector3(...cart))
-                                    );
-                                }
-                            }
-                        }
-                    });
-                });
-                if (segments.length) {
-                    bondsGroup.add(new THREE.LineSegments(
-                        new THREE.BufferGeometry().setFromPoints(segments),
-                        new THREE.LineBasicMaterial({
-                            color: set.color,
-                            transparent: true,
-                            opacity: 0.45
-                        })
-                    ));
-                }
-            });
-        }
+        // --- Detected bonds (bondNetwork.js): one instanced tube mesh per
+        // window, in its bond-role colour, opaque over the translucent cloud.
+        network?.sets.forEach((set) => {
+            const count = set.segments.length / 6;
+            if (!count) return;
+            const radius = bondRadius(set.window, edgeLength);
+            const mesh = new THREE.InstancedMesh(
+                new THREE.CylinderGeometry(1, 1, 1, 8, 1, true),
+                new THREE.MeshLambertMaterial({ color: set.color }),
+                count
+            );
+            const up = new THREE.Vector3(0, 1, 0);
+            const start = new THREE.Vector3();
+            const end = new THREE.Vector3();
+            const direction = new THREE.Vector3();
+            const rotation = new THREE.Quaternion();
+            const scale = new THREE.Vector3();
+            const matrix = new THREE.Matrix4();
+            for (let i = 0; i < count; i += 1) {
+                start.fromArray(set.segments, i * 6);
+                end.fromArray(set.segments, i * 6 + 3);
+                direction.subVectors(end, start);
+                const length = direction.length();
+                rotation.setFromUnitVectors(up, direction.divideScalar(length));
+                scale.set(radius, length, radius);
+                matrix.compose(start.add(end).multiplyScalar(0.5), rotation, scale);
+                mesh.setMatrixAt(i, matrix);
+            }
+            mesh.instanceMatrix.needsUpdate = true;
+            mesh.computeBoundingSphere();
+            bondsGroup.add(mesh);
+        });
 
         // Frame the cell once per rebuild: the camera keeps whatever the user
         // dragged it to only while the data is unchanged.
@@ -281,7 +282,7 @@ const FoldedCellPanel = ({
         // at the origin.
         controls.saveState();
         handle.resize();
-    }, [structure, sites, bondSets, elementColors, showCellAxes]);
+    }, [structure, sites, network, elementColors, showCellAxes]);
 
     const resetView = useCallback(() => {
         const handle = sceneRef.current;
@@ -346,10 +347,12 @@ const FoldedCellPanel = ({
                         </p>
                         {bondSets?.length ? (
                             <p>
-                                The lines are the analysis' <em>detected bonds</em>: average
-                                site pairs whose distance falls inside the bond window,
-                                periodic images included, so a bond may reach an image just
-                                outside the box.
+                                The tubes are the analysis' <em>detected bonds</em>, colored by
+                                bond window: average site pairs whose distance falls inside the
+                                window, periodic images included, so a bond may reach an image
+                                just outside the box. Elements outside the bonds are faded. A
+                                large cell draws at most {MAX_DRAWN_BONDS.toLocaleString()} bonds,
+                                those nearest its centre.
                             </p>
                         ) : null}
                     </InfoBadge>
@@ -392,6 +395,16 @@ const FoldedCellPanel = ({
                             </span>
                         ))}
                         {legendExtras}
+                        {network?.limited && (
+                            <span
+                                className="ui-legend__item is-muted"
+                                title={`The ${network.shown.toLocaleString()} bonds nearest the cell centre`
+                                    + ` of ${network.total.toLocaleString()}: a large cell draws at most`
+                                    + ` ${MAX_DRAWN_BONDS.toLocaleString()}.`}
+                            >
+                                {network.shown.toLocaleString()} of {network.total.toLocaleString()} bonds shown
+                            </span>
+                        )}
                     </div>
                 )}
             </div>

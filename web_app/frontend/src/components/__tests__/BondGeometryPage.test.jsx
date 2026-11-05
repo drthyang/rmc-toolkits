@@ -5,10 +5,12 @@
 
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import BondGeometryPage from '../BondGeometryPage';
+import BondGeometryPage, { PartialGrHelp } from '../BondGeometryPage';
 
 const html = renderToStaticMarkup(<BondGeometryPage directory="." localRun={null} />);
-const text = html.replace(/<[^>]+>/g, '').replace(/&#x27;/g, "'").replace(/\s+/g, ' ');
+// The g(r) tab's help renders while that tab shows: read it on its own too.
+const plain = (markup) => markup.replace(/<[^>]+>/g, '').replace(/&#x27;/g, "'").replace(/\s+/g, ' ');
+const text = plain(html) + plain(renderToStaticMarkup(<PartialGrHelp />));
 
 describe('Bond Geometry help text (triplets.physics.10 / physics.23 / numerics.33)', () => {
     it('the window helper marks the window with dashed guides; nothing is shaded', () => {
