@@ -136,6 +136,8 @@
   --h-menu-item: 1.85rem;
   --h-pill: 1.7rem;
   --h-chip: 1.5rem;
+  /* A fingertip's tap target (Apple's 44pt): touch controls and hit areas. */
+  --h-touch: 44px;
   /* type sizes, named by hundredths of a rem */
   --fs-62: 0.62rem;
   --fs-64: 0.64rem;
@@ -176,13 +178,13 @@
 }
 
 /* Touch screens (iPhone, iPad): controls tall enough to hit with a finger —
-   fields, selects and header buttons 44px (2.9333rem at the 15px root these
-   screens keep); smaller buttons take a 44px hit area in ui.css. */
+   fields, selects and header buttons --h-touch tall; smaller buttons take a
+   --h-touch hit area in ui.css. */
 @media (pointer: coarse) {
   :root {
-    --h-control: 2.9333rem;
-    --h-row: 2.9333rem;
-    --h-menu-btn: 2.9333rem;
+    --h-control: var(--h-touch);
+    --h-row: var(--h-touch);
+    --h-menu-btn: var(--h-touch);
     --h-pill-md: 2.2rem;
     --h-menu-item: 2.4rem;
     --h-pill: 2rem;

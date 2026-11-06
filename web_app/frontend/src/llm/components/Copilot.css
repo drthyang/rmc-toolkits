@@ -1299,11 +1299,11 @@
     .llm-send::after {
         content: '';
         position: absolute;
-        inset: min(0px, calc((100% - 44px) / 2));
+        inset: min(0px, calc((100% - var(--h-touch, 44px)) / 2));
     }
 
     .llm-suggestion {
-        min-height: 44px;
+        min-height: var(--h-touch, 44px);
     }
 
     .llm-context-inspector summary {

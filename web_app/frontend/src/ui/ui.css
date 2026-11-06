@@ -3181,8 +3181,8 @@ input.ui-range::-moz-range-track {
     .ui-pill::after {
         content: '';
         position: absolute;
-        top: min(0px, calc((100% - 44px) / 2));
-        bottom: min(0px, calc((100% - 44px) / 2));
+        top: min(0px, calc((100% - var(--h-touch)) / 2));
+        bottom: min(0px, calc((100% - var(--h-touch)) / 2));
         left: 0;
         right: 0;
     }
@@ -3194,20 +3194,20 @@ input.ui-range::-moz-range-track {
 
     .ui-seg__btn,
     .ui-seg--frame button {
-        min-width: 2.9333rem;
+        min-width: var(--h-touch);
     }
 
     /* The page tabs scroll sideways on a phone, where a hit area past their
        row would make it scroll up and down too: the tabs themselves are 44px. */
     .ui-seg--nav button {
-        min-height: 44px;
+        min-height: var(--h-touch);
     }
 
     /* The footer's links: a 44px-tall hit strip, the line unmoved. */
     .ui-footer a {
         display: inline-block;
-        padding-block: 15px;
-        margin-block: -15px;
+        padding-block: calc((var(--h-touch) - 1em * 1.2) / 2);
+        margin-block: calc((var(--h-touch) - 1em * 1.2) / -2);
     }
 
     select.ui-select,
@@ -3221,7 +3221,7 @@ input.ui-range::-moz-range-track {
     }
 
     input.ui-range {
-        height: 44px;
+        height: var(--h-touch);
         border-radius: 0;
         background: linear-gradient(var(--border-strong), var(--border-strong)) center / 100% 4px no-repeat;
     }
