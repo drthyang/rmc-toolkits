@@ -435,7 +435,12 @@ The same engine backs the **Bond Geometry** page, through the Flask `/api/triple
 line-for-line port parity-tested against Python goldens (exact integer histograms, 1e-9 float
 agreement). `bond_angle_summary` is the payload contract shared by all three. The page adds a
 partial-$g(r)$ window helper and the folded-cell bond view on top of that payload; it computes no
-geometry of its own.
+geometry of its own. Its angle-range highlight (`angleHighlight.js`, browser runs only) walks the
+engine's own triplet loop (`visitAngleTriplets`, the loop `bondAngleSummary` histograms) and folds
+each triplet onto the average sites: apex site in the cell, each end at its site's image
+$\mathbf m = \operatorname{round}(\Delta\mathbf u - (\mathbf f_e - \mathbf f_a))$, with
+$\Delta\mathbf u$ the bond in unit-cell fractions. A range covers whole bins, so its count is the
+histogram's; the page drops an answer whose per-bin counts differ from the payload's.
 
 ### Test suites
 

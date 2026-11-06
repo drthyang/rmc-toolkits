@@ -44,6 +44,9 @@
        (InteractivePlot.jsx → finishDrag). */
     touch-action: pan-y pinch-zoom;
     aspect-ratio: 8 / 5;
+    /* A drag (box zoom, an x range) must not select the tick labels. */
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .interactive-plot--wide svg {

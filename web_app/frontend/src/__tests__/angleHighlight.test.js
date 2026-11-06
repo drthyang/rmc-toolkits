@@ -343,6 +343,7 @@ describe('the hovered bin and its legend line', () => {
         expect(highlightLabel({ shown: 830, total: 830, lo: 88, hi: 89 })).toBe('830 angles at 88–89°');
         expect(highlightLabel({ shown: 12, total: 830, lo: 88, hi: 89 })).toBe('12 of 830 angles at 88–89° shown');
         expect(highlightLabel({ shown: 1, total: 1, lo: 88.5, hi: 89 })).toBe('1 angle at 88.5–89°');
+        expect(highlightLabel({ shown: 0, total: 0, lo: 59, hi: 60 })).toBe('No angles at 59–60°');
         expect(highlightLabel({ shown: 1200, total: 15000, lo: 0.25, hi: 0.5 })).toBe('1,200 of 15,000 angles at 0.25–0.5° shown');
     });
 });

@@ -650,14 +650,17 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
             }
             return;
         }
-        if (!current.moved && Math.abs(event.clientX - current.clientX) <= (current.touch ? TOUCH_SWIPE_PX : 4)) return;
+        // A finger's new range waits for a swipe (a tap previews a bin); a
+        // grabbed edge or band follows at once.
+        const still = current.touch && current.zone === 'new' ? TOUCH_SWIPE_PX : 3;
+        if (!current.moved && Math.abs(event.clientX - current.clientX) <= still) return;
         current.moved = true;
         const at = clampRangeX(xInvert(clampPlotX(x)));
         const [lo0, hi0] = current.start ?? [current.anchor, current.anchor];
         let next;
         if (current.zone === 'new') {
-            const lo = snapRange(Math.min(current.anchor, at), Math.floor);
-            next = [lo, Math.max(snapRange(Math.max(current.anchor, at), Math.ceil), lo + rangeUnit)];
+            const lo = snapRange(Math.min(current.anchor, at));
+            next = [lo, Math.max(snapRange(Math.max(current.anchor, at)), lo + rangeUnit)];
         } else if (current.zone === 'lo') {
             next = [Math.min(snapRange(at), hi0 - rangeUnit), hi0];
         } else if (current.zone === 'hi') {

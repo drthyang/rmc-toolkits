@@ -191,6 +191,7 @@ export const rangeText = (lo, hi) => `${degrees(lo)}–${degrees(hi)}°`;
 export const highlightLabel = ({ shown, total, lo, hi, range = false }) => {
     const where = `${range ? 'in' : 'at'} ${rangeText(lo, hi)}`;
     const noun = total === 1 ? 'angle' : 'angles';
+    if (!total) return `No angles ${where}`;
     return shown < total
         ? `${shown.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} ${noun} ${where} shown`
         : `${total.toLocaleString('en-US')} ${noun} ${where}`;
