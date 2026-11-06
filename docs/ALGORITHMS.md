@@ -445,7 +445,10 @@ $n_t(b)$ and its total $N_t=\sum_b n_t(b)$; a range $R$ draws it with share
 $s_t=\sum_{b\in R} n_t(b)/N_t$ (a hovered bin: $R$ one bin), at strength $\sqrt{s_t}$ (opacity and
 radius), not at all when $s_t<0.02$ (`MIN_HIGHLIGHT_SHARE`; still counted). A site bond takes the
 largest $s_t$ of the drawn triplets using it; past 750 triplets the largest shares are kept (ties
-nearest the cell centre).
+nearest the cell centre). Each drawn triplet's angle is also an arc at its apex, from one bond to
+the other, of radius 0.35 × its shorter bond (`components/angleArcs.js`; the same triplets and $s_t$,
+one arc per angle, opacity $\sqrt{s_t}$); a straight angle, which has no plane, bends towards the
+cell axis least along its bonds.
 
 ### Test suites
 

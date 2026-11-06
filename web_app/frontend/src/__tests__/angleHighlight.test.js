@@ -556,6 +556,45 @@ describe('a cell with a known subset of distorted octahedra', () => {
         expect(highlight.shown).toBe(highlight.total);
     });
 
+    it('marks only the distorted octahedron\'s angles in the range strongly', () => {
+        const atDistorted = (arc) => [0, 1, 2].every((axis) => Math.abs(arc.apex[axis] - apexAt[axis]) < 1e-9);
+        [[[78, 85], 81.2], [[95, 102], 98.8]].forEach(([range, at]) => {
+            const [lo, hi] = binsOfRange(range, data.binWidth, data.nbins);
+            const arcs = arcList(highlightForBins(data, lo, hi, siteFractional, cell, { range: true }));
+            const strong = arcs.filter((arc) => highlightStrength(arc.share) >= 0.85);
+            // Its four ~81° (or ~99°) angles, between the shifted Ti and its
+            // four equatorial O.
+            expect(strong).toHaveLength(4);
+            strong.forEach((arc) => {
+                expect(atDistorted(arc)).toBe(true);
+                expect(Math.abs(arcDegrees(arc) - at)).toBeLessThan(1);
+            });
+            // The rest are the tails of ~89–90° angles, faint.
+            arcs.filter((arc) => !strong.includes(arc)).forEach((arc) => {
+                expect(Math.abs(arcDegrees(arc) - 89.5)).toBeLessThan(1.5);
+                expect(highlightStrength(arc.share)).toBeLessThan(0.4);
+            });
+        });
+    });
+
+    it('with little thermal spread, gives arcs to its in-range angles only', () => {
+        const still = parse(rmc6fText({ basis, unit, supercell: [5, 5, 5], jitter: 0.002 }));
+        const stillCell = unitCellOf(still.parsed.latticeVectors, still.parsed.supercell);
+        const stillData = siteAngleTriplets(still.atoms, still.parsed.latticeVectors, still.parsed.supercell, still.siteFractional, options);
+        const [lo, hi] = binsOfRange([78, 85], stillData.binWidth, stillData.nbins);
+        const arcs = arcList(highlightForBins(stillData, lo, hi, still.siteFractional, stillCell, { range: true }));
+        const shifted = still.parsed.sites.find((site) => site.element === 'Ti' && site.siteFractional[2] > 0.55);
+        const shiftedAt = pointKey([0, 1, 2].map((axis) => [0, 1, 2].reduce(
+            (sum, k) => sum + shifted.siteFractional[k] * stillCell[k][axis], 0
+        )));
+        expect(arcs).toHaveLength(4);
+        arcs.forEach((arc) => {
+            expect(pointKey(arc.apex)).toBe(shiftedAt);
+            expect(Math.abs(arcDegrees(arc) - 81.2)).toBeLessThan(0.5);
+            expect(arc.share).toBe(1);
+        });
+    });
+
     it('where an unweighted highlight lit the regular octahedra as brightly', () => {
         // Every site triplet with any count in the range (the old rule):
         // the regular octahedra have angles there too.
@@ -566,5 +605,156 @@ describe('a cell with a known subset of distorted octahedra', () => {
             });
         }
         expect(touched.size).toBe(3);
+    });
+});
+
+// The arcs (`arcs`, nine numbers each: apex, A end, C end) mark each drawn
+// triplet's angle at its apex; they are the highlight's own triplets.
+const arcList = (highlight) => Array.from(highlight.arcShare, (share, index) => ({
+    apex: [...highlight.arcs.subarray(index * 9, index * 9 + 3)],
+    a: [...highlight.arcs.subarray(index * 9 + 3, index * 9 + 6)],
+    c: [...highlight.arcs.subarray(index * 9 + 6, index * 9 + 9)],
+    share
+}));
+const arcDegrees = ({ apex, a, c }) => {
+    const p = a.map((value, axis) => value - apex[axis]);
+    const q = c.map((value, axis) => value - apex[axis]);
+    return Math.acos((p[0] * q[0] + p[1] * q[1] + p[2] * q[2]) / (Math.hypot(...p) * Math.hypot(...q))) * 180 / Math.PI;
+};
+const pointKey = (p) => p.map((value) => value.toFixed(6)).join();
+
+// Every drawn bond (apex → end) of a highlight, with its share.
+const drawnBonds = (highlight) => {
+    const bonds = new Map();
+    [[highlight.ab, highlight.abShare], [highlight.bc, highlight.bcShare]].forEach(([segments, shares]) => {
+        for (let s = 0; s < segments.length; s += 6) {
+            const from = pointKey([...segments.subarray(s, s + 3)]);
+            const to = pointKey([...segments.subarray(s + 3, s + 6)]);
+            bonds.set(`${from}|${to}`, shares[s / 6]);
+        }
+    });
+    return bonds;
+};
+
+describe('the angle arcs', () => {
+    it('mark each drawn triplet once, at its share, the largest first', () => {
+        const siteFractional = new Map([[1, [0, 0, 0]], [2, [2, 0, 0]], [3, [0, 3, 0]], [4, [0, 0, 4]], [5, [0, 5, 0]]]);
+        const unit = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+        const t = (id, ab, bc, count) => ({ id, apex: 1, ab: [ab, 0, 0, 0], bc: [bc, 0, 0, 0], count, d: 0 });
+        const data = {
+            binWidth: 1,
+            sharedEnds: false,
+            bins: [{ total: 11, triplets: [t(1, 2, 4, 2), t(0, 2, 3, 8), t(2, 5, 4, 1)] }],
+            tripletTotals: [10, 40, 100]
+        };
+        const arcs = arcList(highlightForBin(data, 0, siteFractional, unit));
+        // id 0 (0.8) then id 1 (0.05); id 2 (0.01) is under the threshold.
+        expect(arcs.map((arc) => arc.share)).toEqual([0.8, 0.05]);
+        expect(arcs[0]).toEqual({ apex: [0, 0, 0], a: [2, 0, 0], c: [0, 3, 0], share: 0.8 });
+        expect(arcs[1]).toEqual({ apex: [0, 0, 0], a: [2, 0, 0], c: [0, 0, 4], share: 0.05 });
+        // Capped: only the kept triplets have arcs.
+        expect(arcList(highlightForBin(data, 0, siteFractional, unit, { max: 1 })).map((arc) => arc.share)).toEqual([0.8]);
+        // id 3 is id 0's two bonds in the other windows' order, the same
+        // angle: one arc, at the larger share (0.8, then its own 1).
+        data.bins[0].triplets.push(t(3, 3, 2, 1));
+        data.tripletTotals.push(2);
+        expect(arcList(highlightForBin(data, 0, siteFractional, unit)).map((arc) => arc.share)).toEqual([0.8, 0.05]);
+        data.tripletTotals[3] = 1;
+        expect(arcList(highlightForBin(data, 0, siteFractional, unit)).map((arc) => arc.share)).toEqual([1, 0.05]);
+    });
+
+    it('are exactly the triplets whose bonds are drawn, on a capped cell', () => {
+        // A P1 box of 6×6×6 perovskite cells (one site per atom).
+        const n = 6;
+        const basis = [];
+        for (let i = 0; i < n; i += 1) {
+            for (let j = 0; j < n; j += 1) {
+                for (let k = 0; k < n; k += 1) {
+                    PEROVSKITE.basis.forEach(([element, f]) => basis.push([element, [(i + f[0]) / n, (j + f[1]) / n, (k + f[2]) / n]]));
+                }
+            }
+        }
+        const unitOfBox = PEROVSKITE.unit.map((row) => row.map((value) => value * n));
+        const { parsed, atoms, siteFractional } = parse(rmc6fText({ basis, unit: unitOfBox, supercell: [1, 1, 1], jitter: 0.004 }));
+        const unit = unitCellOf(parsed.latticeVectors, parsed.supercell);
+        const options = tripletOptionsFromRequest({ end1: 'O', apex: 'Ti', end2: 'O', r12Min: 1.6, r12Max: 2.4, binWidth: 1 });
+        const data = siteAngleTriplets(atoms, parsed.latticeVectors, parsed.supercell, siteFractional, options);
+        const [first, last] = binsOfRange([86, 94], data.binWidth, data.nbins);
+        const highlight = highlightForBins(data, first, last, siteFractional, unit, { range: true });
+
+        // The reference: the bins' site triplets by share, capped, thresholded.
+        const counts = new Map();
+        for (let bin = first; bin <= last; bin += 1) {
+            data.bins[bin].triplets.forEach(({ id, count }) => counts.set(id, (counts.get(id) ?? 0) + count));
+        }
+        const shares = [...counts].map(([id, count]) => count / data.tripletTotals[id]).sort((p, q) => q - p);
+        expect(shares.length).toBeGreaterThan(MAX_HIGHLIGHT_TRIPLETS);
+        const drawn = shares.slice(0, MAX_HIGHLIGHT_TRIPLETS).filter((share) => share >= MIN_HIGHLIGHT_SHARE);
+        const arcs = arcList(highlight);
+        expect(arcs.map((arc) => arc.share)).toEqual(drawn);
+
+        // Each arc's two legs are drawn bonds, and each bond's share is the
+        // largest of the arcs that use it.
+        const bonds = drawnBonds(highlight);
+        const largest = new Map();
+        arcs.forEach((arc) => [arc.a, arc.c].forEach((end) => {
+            const key = `${pointKey(arc.apex)}|${pointKey(end)}`;
+            expect(bonds.has(key)).toBe(true);
+            largest.set(key, Math.max(largest.get(key) ?? 0, arc.share));
+        }));
+        expect(largest).toEqual(bonds);
+        // Cis angles only: every arc is near 90°.
+        arcs.forEach((arc) => expect(Math.abs(arcDegrees(arc) - 90)).toBeLessThan(4));
+    });
+
+    it('tell on the demo which angles at each Ta are in the range', () => {
+        const text = readFileSync(resolve(process.cwd(), 'public/demo/GTS_250K.rmc6f'), 'utf8');
+        const { parsed, atoms, siteFractional } = parse(text);
+        const unit = unitCellOf(parsed.latticeVectors, parsed.supercell);
+        const options = tripletOptionsFromRequest({ end1: 'Se', apex: 'Ta', end2: 'Se', r12Min: 2.0, r12Max: 3.0, binWidth: 1 });
+        const data = siteAngleTriplets(atoms, parsed.latticeVectors, parsed.supercell, siteFractional, options);
+        // Per range: per Ta site (16), its arcs by angle, strong (strength
+        // ≥ 0.9) or faint.
+        const arcsIn = (range) => {
+            const [first, last] = binsOfRange(range, data.binWidth, data.nbins);
+            const arcs = arcList(highlightForBins(data, first, last, siteFractional, unit, { range: true }));
+            const apexes = new Map();
+            arcs.forEach((arc) => {
+                const key = pointKey(arc.apex);
+                if (!apexes.has(key)) apexes.set(key, []);
+                apexes.get(key).push(arc);
+            });
+            expect(apexes.size).toBe(16);
+            return { arcs, apexes: [...apexes.values()] };
+        };
+        const strong = (arc) => highlightStrength(arc.share) >= 0.9;
+
+        // 80–100°: each Ta's six ~88.5° cis angles are strong; its three ~75°
+        // and three ~104° ones only faint (their spreads' tails).
+        const cis = arcsIn([80, 100]);
+        cis.apexes.forEach((arcs) => {
+            expect(arcs).toHaveLength(12);
+            const bright = arcs.filter(strong);
+            expect(bright).toHaveLength(6);
+            bright.forEach((arc) => expect(arcDegrees(arc)).toBeGreaterThan(87));
+            bright.forEach((arc) => expect(arcDegrees(arc)).toBeLessThan(90));
+            arcs.filter((arc) => !strong(arc)).forEach((arc) => {
+                expect(Math.abs(arcDegrees(arc) - 88.5)).toBeGreaterThan(10);
+                expect(highlightStrength(arc.share)).toBeLessThan(0.45);
+            });
+        });
+        // 70–80° and 100–110°: the three ~75° and the three ~104° angles.
+        [[[70, 80], 75.5], [[100, 110], 104]].forEach(([range, at]) => {
+            arcsIn(range).apexes.forEach((arcs) => {
+                expect(arcs).toHaveLength(3);
+                arcs.forEach((arc) => {
+                    expect(Math.abs(arcDegrees(arc) - at)).toBeLessThan(1.5);
+                    expect(highlightStrength(arc.share)).toBeGreaterThan(0.85);
+                });
+            });
+        });
+        // Where the bonds could not tell: 80–100° lights all 96 Ta–Se bonds.
+        const [first, last] = binsOfRange([80, 100], data.binWidth, data.nbins);
+        expect(highlightForBins(data, first, last, siteFractional, unit, { range: true }).ab.length).toBe(96 * 6);
     });
 });
