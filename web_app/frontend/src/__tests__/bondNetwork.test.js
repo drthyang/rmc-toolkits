@@ -156,7 +156,7 @@ describe('buildBondNetwork: what the 3D view draws', () => {
     });
 
     it('no sets, no bonds', () => {
-        expect(buildBondNetwork([], [[1, 0, 0], [0, 1, 0], [0, 0, 1]], null)).toEqual({ sets: [], shown: 0, total: 0, limited: false });
+        expect(buildBondNetwork([], [[1, 0, 0], [0, 1, 0], [0, 0, 1]], null)).toEqual({ sets: [], shown: 0, total: 0, limited: false, center: [0, 0, 0], radiusSq: null });
     });
 });
 

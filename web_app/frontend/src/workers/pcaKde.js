@@ -826,9 +826,11 @@ const sitesByClustering = (atoms, latticeVectors, supercell, thresholdA) => {
     }));
 
     const elements = [...new Set(folded.map((atom) => atom.element))].sort();
-    const clusters = [];   // { element, members: [uf, ...], centroid: [x,y,z] }
+    const clusters = [];   // { element, members: [uf, ...], centroid: [x,y,z], atoms: [row, ...] }
     elements.forEach((element) => {
-        const pts = folded.filter((atom) => atom.element === element).map((atom) => atom.uf);
+        const rows = [];
+        folded.forEach((atom, row) => { if (atom.element === element) rows.push(row); });
+        const pts = rows.map((row) => folded[row].uf);
         clusterPeriodic(pts, unitVec, thresholdA).forEach((indices) => {
             const members = indices.map((i) => pts[i]);
             // Unwrap into the frame centred on the cluster's CIRCULAR mean per axis, not
@@ -846,7 +848,7 @@ const sitesByClustering = (atoms, latticeVectors, supercell, thresholdA) => {
             });
             const unwrapped = members.map((uf) => uf.map((v, i) => { let d = v - centre[i]; d -= Math.round(d); return centre[i] + d; }));
             const centroid = [0, 1, 2].map((i) => unwrapped.reduce((s, uf) => s + uf[i], 0) / unwrapped.length);
-            clusters.push({ element, unwrapped, centroid });
+            clusters.push({ element, unwrapped, centroid, atoms: indices.map((i) => rows[i]) });
         });
     });
 
@@ -864,7 +866,10 @@ const sitesByClustering = (atoms, latticeVectors, supercell, thresholdA) => {
         const atomElements = offsets.map(() => cluster.element);
         return buildSite(index + 1, atomElements, offsets, latticeVectors, supercell, copiesPerCell);
     });
-    return { referenceNumbers: sites.map((site) => site.referenceNumber), sites };
+    // Each atom's synthetic reference number (its cluster's), in file order.
+    const atomSites = new Array(atoms.length).fill(null);
+    clusters.forEach((cluster, index) => cluster.atoms.forEach((row) => { atomSites[row] = index + 1; }));
+    return { referenceNumbers: sites.map((site) => site.referenceNumber), sites, atomSites };
 };
 
 /**
@@ -898,7 +903,7 @@ export const siteDisplacementsFromRmc6f = (text, {
     // otherwise reconstruct sites by folding every atom into one cell and clustering.
     const tagged = atoms.filter((atom) => atom.referenceNumber !== null && atom.cellIndices !== null);
     const useReferenceNumbers = tagged.length > atoms.length / 2;
-    const { referenceNumbers, sites } = useReferenceNumbers
+    const { referenceNumbers, sites, atomSites = null } = useReferenceNumbers
         ? sitesByReferenceNumber(tagged, latticeVectors, supercell)
         : sitesByClustering(atoms, latticeVectors, supercell, clusterThreshold);
 
@@ -906,9 +911,15 @@ export const siteDisplacementsFromRmc6f = (text, {
     // site extraction above discards absolute positions, but the triplets
     // (bond-angle) request needs every atom's identity and position; keeping
     // them here rides the same parse cache with no second pass over the text.
+    // `sites`: each atom's reference number (its site), null for an untagged
+    // stray the site table dropped — what the Bond Geometry hover highlight
+    // folds a triplet onto the average sites with.
     const atomList = {
         elements: atoms.map((atom) => atom.element),
-        fractional: atoms.map((atom) => atom.coords)
+        fractional: atoms.map((atom) => atom.coords),
+        sites: atomSites ?? atoms.map((atom) => (
+            atom.referenceNumber !== null && atom.cellIndices !== null ? atom.referenceNumber : null
+        ))
     };
 
     return {

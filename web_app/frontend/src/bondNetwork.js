@@ -138,12 +138,15 @@ export const findSiteBonds = (sites, unit, set) => {
  * choice is deterministic).
  *
  * @returns {{ sets: Array<{color, elements, window, segments: Float64Array}>,
- *             shown: number, total: number, limited: boolean }}
+ *             shown: number, total: number, limited: boolean,
+ *             center: number[], radiusSq: number|null }}
+ *   radiusSq: when limited, the squared distance from `center` of the
+ *   furthest kept bond's midpoint — the drawn region (null: everything drawn).
  */
 export const buildBondNetwork = (sites, unit, bondSets, { center = [0, 0, 0], maxBonds = MAX_DRAWN_BONDS } = {}) => {
     const found = (bondSets ?? []).map((set) => ({ ...set, segments: findSiteBonds(sites ?? [], unit, set) }));
     const total = found.reduce((sum, set) => sum + set.segments.length / 6, 0);
-    if (total <= maxBonds) return { sets: found, shown: total, total, limited: false };
+    if (total <= maxBonds) return { sets: found, shown: total, total, limited: false, center, radiusSq: null };
 
     const ranked = [];
     found.forEach((set, setIndex) => {
@@ -164,7 +167,7 @@ export const buildBondNetwork = (sites, unit, bondSets, { center = [0, 0, 0], ma
         picked.forEach((b, i) => segments.set(set.segments.subarray(b * 6, b * 6 + 6), i * 6));
         return { ...set, segments };
     });
-    return { sets, shown: maxBonds, total, limited: true };
+    return { sets, shown: maxBonds, total, limited: true, center, radiusSq: ranked[maxBonds - 1].d };
 };
 
 /**
