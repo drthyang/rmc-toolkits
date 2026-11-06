@@ -142,7 +142,10 @@ supported — use it for every height budget instead of `100vh`) and the
 safe-area insets `--safe-top` / `--safe-right` / `--safe-bottom` /
 `--safe-left` (0 except on notched / rounded screens with
 `viewport-fit=cover`). On touch screens (`pointer: coarse`) the `--h-*`
-control heights are larger.
+control heights are larger: fields, selects and header buttons are `--h-touch`
+(44px, a fingertip's target), and the kit's small buttons (tool, save, toggle,
+pill, "?") keep their look but take taps on a 44px strip, an invisible
+`::after` — so those classes keep `::after` free.
 
 The root type size is fluid (15px up to a 1080p-class window, 17px at 1440p,
 21px at 2160p; see `index.css`), so every rem grows on 2K / 4K monitors. Size
@@ -244,13 +247,16 @@ case to `__tests__/markup.test.jsx`.
 
 - `npm test` (includes the kit markup tests), `npx eslint src`, `npm run build`.
 - Layout changes: load the Demo run and walk every page at the browser content
-  sizes of the target devices (window chrome subtracted): iPhone 17 Pro
-  402 × 874 and landscape 874 × 402, iPhone 17 Pro Max 440 × 956, iPad Air 11"
-  820 × 1110, iPad Pro 13" 1032 × 1310 and 1376 × 970, MacBook Air 13"
+  sizes of the target devices (window chrome subtracted): iPhone 17 / 18 Pro
+  402 × 874 and landscape 874 × 402, iPhone 17 / 18 Pro Max 440 × 956 and
+  956 × 440, iPad Air 11" 820 × 1110, iPad Pro 11" 834 × 1210 and 1210 × 834,
+  iPad Pro 13" 1032 × 1310 and 1376 × 970, a 360px phone, MacBook Air 13"
   1470 × 840, MacBook Pro 14" 1512 × 870, MacBook Pro 16" 1728 × 1000, a
   1366 × 650 laptop, 1080p 1920 × 960, 1440p 2560 × 1310 and 4K 3840 × 2030
   (emulate touch for the phones and iPads). Check that the header keeps its
-  tier, no page scrolls sideways, and the fill-height pages end at the footer.
+  tier, no page scrolls sideways, the fill-height pages end at the footer, and
+  on touch every control answers a tap 22px above, below and beside its centre
+  (`document.elementFromPoint`).
 - Compare computed styles before/after on every page and breakpoint (the tag +
   index path of each element → its computed style, `::before`/`::after`
   included) — a class rename with identical styling must produce an identical
