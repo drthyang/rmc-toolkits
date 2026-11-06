@@ -237,7 +237,9 @@ const bondKey = (apex, [end, ...image]) => {
  * (with one shared window, all in `ab`), each site bond once, with the
  * largest share of the drawn triplets that use it (`abShare` / `bcShare`,
  * one per segment). A site triplet in several of the bins counts once, its
- * counts summed.
+ * counts summed. `arcs` marks each drawn triplet's angle: nine numbers per
+ * triplet (apex, A end, C end; Cartesian Å), with its share in `arcShare`,
+ * largest first.
  *
  * @param {object} data     siteAngleTriplets' result
  * @param {number} first    first bin
@@ -293,6 +295,30 @@ export const highlightForBins = (data, first, last, siteFractional, unit, { max 
     };
     const [ab, abShare] = segmentsOf(roles[0]);
     const [bc, bcShare] = segmentsOf(roles[1]);
+
+    // One arc per drawn triplet, at its apex between its two bonds, in the
+    // same order (largest share first). The same two site bonds from one apex
+    // are one angle whichever window each took, so they make one arc, at the
+    // larger share (the first one met).
+    const arcByKey = new Map();
+    kept.forEach((triplet) => {
+        if (triplet.share < MIN_HIGHLIGHT_SHARE) return;
+        const key = `${triplet.apex}|${[triplet.ab.join(), triplet.bc.join()].sort().join('|')}`;
+        if (!arcByKey.has(key)) arcByKey.set(key, triplet);
+    });
+    const arcList = [...arcByKey.values()];
+    const arcs = new Float64Array(arcList.length * 9);
+    const arcShare = new Float64Array(arcList.length);
+    const endAt = ([end, ...image]) => {
+        const fe = siteFractional.get(end);
+        return fracToCartesian(unit, [fe[0] + image[0], fe[1] + image[1], fe[2] + image[2]]);
+    };
+    arcList.forEach((triplet, index) => {
+        arcs.set(fracToCartesian(unit, siteFractional.get(triplet.apex)), index * 9);
+        arcs.set(endAt(triplet.ab), index * 9 + 3);
+        arcs.set(endAt(triplet.bc), index * 9 + 6);
+        arcShare[index] = triplet.share;
+    });
     return {
         first,
         last,
@@ -304,7 +330,9 @@ export const highlightForBins = (data, first, last, siteFractional, unit, { max 
         ab,
         bc,
         abShare,
-        bcShare
+        bcShare,
+        arcs,
+        arcShare
     };
 };
 

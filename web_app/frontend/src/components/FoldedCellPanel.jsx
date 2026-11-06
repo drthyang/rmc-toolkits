@@ -31,6 +31,7 @@ import { buildCrystalAxes } from './sceneAxes';
 import { bondRadius, cloudOpacity, foldedCellNetwork, MAX_DRAWN_BONDS, unitVectorsOf } from '../bondNetwork';
 import { highlightLabel, highlightStrength, MAX_HIGHLIGHT_TRIPLETS, MIN_HIGHLIGHT_SHARE } from '../angleHighlight';
 import { bondMaterial, renderQuality, tubeMesh } from './bondTubes';
+import { arcMesh } from './angleArcs';
 import useCopilotViewer from '../useCopilotViewer';
 import './UnitCellPanel.css';
 
@@ -54,6 +55,12 @@ const DIMMED_BOND_OPACITY = 0.14;
 const HIGHLIGHT_RADIUS = 1.15;
 const HIGHLIGHT_RADIUS_GAIN = 0.65;
 const HIGHLIGHT_OPACITY = 0.3;
+// Each highlighted triplet's angle is marked by an arc at its apex
+// (angleArcs.js), ARC_RADIUS + ARC_RADIUS_GAIN·s of the bond tube's radius
+// thick and of opacity s: no floor, so an angle the range reaches only with
+// its tail stays plainly fainter than one wholly inside.
+const ARC_RADIUS = 0.35;
+const ARC_RADIUS_GAIN = 0.55;
 
 const disposeGroup = (group) => {
     while (group.children.length) {
@@ -314,6 +321,18 @@ const FoldedCellPanel = ({
             mesh.renderOrder = 1;
             highlightGroup.add(mesh);
         });
+        // The angle of each drawn triplet, as an arc at its apex.
+        if (highlight.arcs?.length) {
+            const strengths = Array.from(highlight.arcShare, highlightStrength);
+            const arcs = arcMesh(highlight.arcs, BOND_RADIUS_SCALE * bondRadius(first.window, edgeLength), {
+                scales: strengths.map((s) => ARC_RADIUS + ARC_RADIUS_GAIN * s),
+                opacities: strengths
+            });
+            if (arcs) {
+                arcs.renderOrder = 2;
+                highlightGroup.add(arcs);
+            }
+        }
     }, [highlight, network, structure, sites, elementColors, showCellAxes]);
 
     const resetView = useCallback(() => {
