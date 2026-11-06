@@ -662,9 +662,10 @@ web_app/frontend/src/
   code that draws in CSS px multiplies by `uiScale()` (`uiScale.js`: StructurePage canvas text,
   InteractivePlot `fit`). Viewport heights go through `--viewport-h` (100dvh where supported) and
   edges that can meet a notch or home indicator add `--safe-top/right/bottom/left`
-  (`viewport-fit=cover`). The header tiers live in `App.css` (≥ 1600 full row; 1041–1599 one
-  tightened row, sized for MacBook Air 13" / Pro 14" and iPad Pro 13" landscape; 761–1040 two
-  rows; ≤ 760 three rows). The tiers above 760 (the header's 1599/1040, the pages' 980/1100/1200,
+  (`viewport-fit=cover`). The header tiers live in `App.css` (≥ 1600 full row; 1320–1599 one
+  tightened row, sized for MacBook Air 13" / Pro 14", a 1366 laptop and iPad Pro 13" landscape;
+  761–1319 two rows; ≤ 760 three rows). The tiers above 760 (the header's 1599/1319, the pages'
+  980/1100/1200, PCA's 1099/1279 statistics and Directions' 940–1200 two-up,
   the 1500 three-column dashboard, the footer, `.ui-kbd`) are **container queries** on
   `.main-content` (`container: workbench`), because the docked AI Copilot takes width from the
   pages: write new content-width rules as `@container workbench (…)`, nest an aspect-ratio or
@@ -678,8 +679,9 @@ web_app/frontend/src/
   pixel size never props a panel open. Stat rails never wrap raggedly: on a phone they are a
   two-column grid, and wider up `StatRail` measures whether its stats fit on one line and, if
   not, breaks at the bands a page marks with `<Stat band>` (`ui/statRows.js`; Model information
-  marks the atom counts and the move counters). Touch screens (`pointer: coarse`) get taller `--h-*`
-  controls and range thumbs; phones and portrait tablets get 16px field text (iOS focus zoom).
+  marks the atom counts and the move counters). Touch screens (`pointer: coarse`) get `--h-touch`
+  (44px) fields, selects, header buttons and tabs, a 44px invisible hit area (`::after`) on the
+  kit's small buttons, and bigger range thumbs on a 44px-tall range box; phones and portrait tablets get 16px field text (iOS focus zoom).
   Check a layout change at the device content sizes listed in `src/ui/README.md` ("Verifying a
   change").
 - **One UI kit; page CSS only places.** Every border, colour, radius, shadow, type size and

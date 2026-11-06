@@ -13,7 +13,7 @@ import CopilotView from './CopilotView';
 import {
     DOCK_QUERY, DOCK_STORAGE_KEY, SHEET_MAX, SHEET_MIN,
     clampDockWidth, clampSheet, defaultDockWidth, dragDockWidth, dragSheet, keyResize, maxDockWidth,
-    readDockState, sheetForCard, writeDockState, DOCK_MIN
+    readDockState, sheetForCard, sheetHeightCss, writeDockState, DOCK_MIN
 } from './dockLayout';
 import { ChevronIcon, CloseIcon, WaveMark } from './icons';
 import './Copilot.css';
@@ -41,6 +41,10 @@ import './CopilotChat.css';
 // `runKey` names the open run (another one restarts the conversation) and
 // `configKey` its configuration (a new one, from a Live Data save, ends the
 // earlier answers with a divider and keeps them out of the model's memory).
+
+// The open sheet's height, from its live fraction (a drag restyles
+// --llm-sheet-f) with the floor that keeps the composer on screen.
+const SHEET_HEIGHT = sheetHeightCss('var(--llm-sheet-f, 0.46)');
 
 // The rail's label for what arrived while it was collapsed.
 const RAIL_LABELS = Object.freeze({
@@ -388,7 +392,7 @@ const CopilotChat = ({
     }, []);
 
     useEffect(() => {
-        onLayoutChange?.({ mode, open, width, sheet });
+        onLayoutChange?.({ mode, open, width, sheet, sheetHeight: sheetHeightCss(sheet) });
     }, [onLayoutChange, mode, open, width, sheet]);
 
     const resize = useCallback(({ width: nextWidth, sheet: nextSheet }) => {
@@ -431,7 +435,7 @@ const CopilotChat = ({
             data-mode={mode}
             data-open={open ? 'true' : 'false'}
             aria-label="AI Copilot"
-            style={{ '--llm-dock-w': `${width}px`, '--llm-sheet-f': String(sheet) }}
+            style={{ '--llm-dock-w': `${width}px`, '--llm-sheet-f': String(sheet), '--llm-sheet-h': SHEET_HEIGHT }}
             onKeyDown={(event) => {
                 if (event.key === 'Escape' && open && !event.defaultPrevented) {
                     event.stopPropagation();

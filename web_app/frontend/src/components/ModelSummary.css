@@ -123,6 +123,18 @@
     }
 }
 
+/* Touch screens: bricks a fingertip can pick (the ladder clips its bricks,
+   so they grow rather than take an invisible hit area). */
+@media (pointer: coarse) {
+    .sym-ladder {
+        height: calc(var(--h-touch) + 2px);
+    }
+
+    .sym-brick {
+        min-height: var(--h-touch);
+    }
+}
+
 .sym-brick:last-child {
     border-right: 0;
 }

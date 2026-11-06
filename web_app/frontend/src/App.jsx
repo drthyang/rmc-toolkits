@@ -158,7 +158,7 @@ function App() {
       : layout
   )), []);
   const copilotSheetHeight = copilotLayout?.mode === 'sheet'
-    ? (copilotLayout.open ? `calc(${copilotLayout.sheet} * var(--viewport-h))` : '2.75rem')
+    ? (copilotLayout.open ? copilotLayout.sheetHeight : '2.75rem')
     : '0px';
 
   useEffect(() => {

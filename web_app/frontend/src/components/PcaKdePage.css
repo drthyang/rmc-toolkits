@@ -162,3 +162,77 @@
         padding-top: 0.6rem;
     }
 }
+
+/* Portrait tablets (an iPad's 744–980px): the two 3D views side by side, so
+   the page is not one long column with the views a screen below the
+   statistics (which go 2 × 2, below). */
+@container workbench (min-width: 700px) and (max-width: 980px) {
+    .pca-layout {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-areas:
+            "stats    stats"
+            "viewport unitcell";
+    }
+
+    /* A half-width 3D card: its tools wrap under the title, as on a phone,
+       instead of squeezing the title onto three lines. */
+    .pca-viewport .ui-card__header {
+        flex-wrap: wrap;
+        row-gap: 0.4rem;
+    }
+
+    .pca-viewport .ui-card__actions {
+        flex: 1 1 auto;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+}
+
+/* 700–1099px (iPad 11" portrait, iPad 13" portrait): four columns would
+   squeeze the principal axes and the crystal orientation into sideways
+   scrolls, one column leaves half-empty rows — a 2 × 2 grid instead (summary
+   and covariance, then the principal axes and the crystal orientation; the
+   axes take the row without the orientation). */
+@container workbench (min-width: 700px) and (max-width: 1099px) {
+    .pca-stats-grid,
+    .pca-stats-grid.has-crystal {
+        /* Equal halves: each holds a table of ~300px (the principal axes
+           under the summary, the crystal orientation under the covariance),
+           which a phone in landscape, inside its notch insets, still fits. */
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        column-gap: 1.6rem;
+        row-gap: 0.6rem;
+    }
+
+    .pca-stats-grid:not(.has-crystal) .pca-stats-col:nth-child(3) {
+        grid-column: 1 / -1;
+    }
+
+    .pca-stats-col:nth-child(n + 3) {
+        border-top: 1px solid var(--border);
+        padding-top: 0.6rem;
+    }
+
+    .pca-stats-col:nth-child(2) {
+        border-top: 0;
+        padding-top: 0;
+    }
+
+    .pca-stats-col:nth-child(odd)::before {
+        display: none;
+    }
+
+    .pca-stats-col:nth-child(2n)::before {
+        display: block;
+        left: -0.8rem;
+    }
+}
+
+/* 1100–1279px (iPad 11" landscape, beside the Copilot rail): the four
+   columns sized to their tables' needs (~160 : 180 : 295 : 310px), so the
+   crystal orientation fits without a sideways scroll. */
+@container workbench (min-width: 1100px) and (max-width: 1279px) {
+    .pca-stats-grid.has-crystal {
+        grid-template-columns: 0.75fr 0.85fr 1.35fr 1.4fr;
+    }
+}

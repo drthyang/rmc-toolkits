@@ -1127,20 +1127,6 @@ input.ui-range::-moz-range-track {
     }
 }
 
-/* Phones and portrait tablets: iOS Safari zooms the page into any field whose
-   text is under 16px when it takes focus, and does not zoom back out. */
-@media (hover: none) and (pointer: coarse) and (max-width: 1040px),
-    (hover: none) and (pointer: coarse) and (max-height: 540px) {
-    select.ui-select,
-    select.ui-select-native,
-    input.ui-input,
-    input.ui-input-compact,
-    input.ui-input-strong,
-    .ui-fieldbar input {
-        font-size: max(16px, 1em);
-    }
-}
-
 /* Label-over-input field. */
 .ui-field {
     display: flex;
@@ -3159,5 +3145,107 @@ input.ui-range::-moz-range-track {
 @media (prefers-reduced-motion: reduce) {
     .ui-reveal {
         animation: none;
+    }
+}
+
+/* Touch screens: a fingertip's 44px. Small buttons keep their look and get
+   an invisible hit area 44px tall (the ::after; the kit's small buttons draw
+   nothing with it), centred on the button; narrow ones in a segmented row
+   widen instead, so a neighbour's hit area never lands on them. The "?"
+   badge widens its hit area by 7px a side only: further would take taps off
+   the field beside it. A range takes taps on a 44px-tall strip, its track
+   painted in the middle (its own box was the 4px track). */
+@media (pointer: coarse) {
+    .ui-info__trigger,
+    .ui-tool-btn,
+    .ui-seg__btn,
+    .ui-seg--frame button,
+    .ui-save__trigger,
+    .ui-pill {
+        position: relative;
+    }
+
+    /* Over the card body below (a 3D stage is positioned too); the stage's
+       own overlay controls stay above. */
+    .ui-tool-btn,
+    .ui-save__trigger,
+    .ui-seg--frame button {
+        z-index: 1;
+    }
+
+    .ui-info__trigger::after,
+    .ui-tool-btn::after,
+    .ui-seg__btn::after,
+    .ui-seg--frame button::after,
+    .ui-save__trigger::after,
+    .ui-pill::after {
+        content: '';
+        position: absolute;
+        top: min(0px, calc((100% - var(--h-touch)) / 2));
+        bottom: min(0px, calc((100% - var(--h-touch)) / 2));
+        left: 0;
+        right: 0;
+    }
+
+    .ui-info__trigger::after {
+        left: -7px;
+        right: -7px;
+    }
+
+    .ui-seg__btn,
+    .ui-seg--frame button {
+        min-width: var(--h-touch);
+    }
+
+    /* The page tabs scroll sideways on a phone, where a hit area past their
+       row would make it scroll up and down too: the tabs themselves are 44px. */
+    .ui-seg--nav button {
+        min-height: var(--h-touch);
+    }
+
+    /* The footer's links: a 44px-tall hit strip, the line unmoved. */
+    .ui-footer a {
+        display: inline-block;
+        padding-block: calc((var(--h-touch) - 1em * 1.2) / 2);
+        margin-block: calc((var(--h-touch) - 1em * 1.2) / -2);
+    }
+
+    select.ui-select,
+    .ui-unit-field,
+    .ui-btn-primary {
+        min-height: var(--h-control);
+    }
+
+    input.ui-unit-field__input {
+        align-self: stretch;
+    }
+
+    input.ui-range {
+        height: var(--h-touch);
+        border-radius: 0;
+        background: linear-gradient(var(--border-strong), var(--border-strong)) center / 100% 4px no-repeat;
+    }
+}
+
+/* Phones and portrait tablets: iOS Safari zooms the page into any field whose
+   text is under 16px when it takes focus, and does not zoom back out. Last in
+   the file: these selectors tie the fields' own rules on specificity, so
+   source order decides (above the field bar's and the unit field's base rules
+   they lost, and the run-folder and bond-window fields zoomed). */
+@media (hover: none) and (pointer: coarse) and (max-width: 1040px),
+    (hover: none) and (pointer: coarse) and (max-height: 540px) {
+    select.ui-select,
+    select.ui-select-native,
+    input.ui-input,
+    input.ui-input-compact,
+    input.ui-input-strong,
+    input.ui-unit-field__input,
+    .ui-fieldbar input {
+        font-size: max(16px, 1em);
+    }
+
+    /* Room for four digits and a point at 16px. */
+    input.ui-unit-field__input {
+        width: 4rem;
     }
 }

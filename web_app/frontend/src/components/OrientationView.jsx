@@ -49,6 +49,10 @@ import {
 } from './sceneAxes';
 import useCopilotViewer from '../useCopilotViewer';
 import './OrientationView.css';
+import { tooltipPlace } from './tooltipPlace';
+
+// A touch that moves further than this (CSS px) orbits the view, not a tap.
+const TAP_SLOP_PX = 8;
 
 const SAVE_OPTIONS = [
     { id: 'png', label: 'Standard PNG', hint: '1×' },
@@ -361,7 +365,7 @@ export default function OrientationView({
         const raycaster = new THREE.Raycaster();
         const pointer = new THREE.Vector2();
         let lastCell = null;
-        const onPointerMove = (event) => {
+        const readout = (event) => {
             const rect = renderer.domElement.getBoundingClientRect();
             pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
             pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -369,15 +373,43 @@ export default function OrientationView({
             const hit = raycaster.intersectObjects(meshGroup.children, false)[0];
             const cell = hit ? hit.object.userData.triangleCell[hit.faceIndex] : null;
             const map = resultRef.current;
+            const at = { x: event.clientX - rect.left, y: event.clientY - rect.top, w: rect.width };
             if (cell !== lastCell) {
                 lastCell = cell;
-                setHover(cell == null ? null : { cell, x: event.clientX - rect.left, y: event.clientY - rect.top, map });
+                setHover(cell == null ? null : { cell, ...at, map });
             } else if (cell != null) {
-                setHover({ cell, x: event.clientX - rect.left, y: event.clientY - rect.top, map });
+                setHover({ cell, ...at, map });
             }
         };
-        const onPointerLeave = () => { lastCell = null; setHover(null); };
+        const clearReadout = () => { lastCell = null; setHover(null); };
+        // Touch has no hover: a tap reads out the cell under it (a tap off the
+        // sphere clears it), and it stays until the next tap or a drag, which
+        // orbits the view instead.
+        let touchStart = null;
+        const onPointerDown = (event) => {
+            if (event.pointerType === 'touch') touchStart = { x: event.clientX, y: event.clientY };
+        };
+        const onPointerMove = (event) => {
+            if (event.pointerType !== 'touch') {
+                readout(event);
+                return;
+            }
+            if (touchStart && Math.hypot(event.clientX - touchStart.x, event.clientY - touchStart.y) > TAP_SLOP_PX) {
+                touchStart = null;
+                clearReadout();
+            }
+        };
+        const onPointerUp = (event) => {
+            if (event.pointerType !== 'touch' || !touchStart) return;
+            touchStart = null;
+            readout(event);
+        };
+        const onPointerLeave = (event) => {
+            if (event.pointerType !== 'touch') clearReadout();
+        };
+        renderer.domElement.addEventListener('pointerdown', onPointerDown);
         renderer.domElement.addEventListener('pointermove', onPointerMove);
+        renderer.domElement.addEventListener('pointerup', onPointerUp);
         renderer.domElement.addEventListener('pointerleave', onPointerLeave);
 
         let animationId = 0;
@@ -419,7 +451,9 @@ export default function OrientationView({
         return () => {
             cancelAnimationFrame(animationId);
             resizeObserver.disconnect();
+            renderer.domElement.removeEventListener('pointerdown', onPointerDown);
             renderer.domElement.removeEventListener('pointermove', onPointerMove);
+            renderer.domElement.removeEventListener('pointerup', onPointerUp);
             renderer.domElement.removeEventListener('pointerleave', onPointerLeave);
             controls.dispose();
             // This component unmounts with its page — release the last-built
@@ -683,7 +717,7 @@ export default function OrientationView({
                         <div className="ui-overlay-badge">{loadingSites ? 'Loading sites…' : 'No site selected.'}</div>
                     )}
                     {hoverCell != null && result && (
-                        <div className="orient-tooltip" style={{ left: hover.x + 14, top: hover.y + 12 }}>
+                        <div className="orient-tooltip" style={tooltipPlace(hover)}>
                             <div>{formatDirection(result.centers[hoverCell])}</div>
                             <div>{numberFormat(result.enhancement[hoverCell], 2)}× isotropic</div>
                             <div>

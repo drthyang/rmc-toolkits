@@ -12,10 +12,10 @@
    - ≥ 1600: one header row at full spacing (1080p / 1440p / 4K monitors,
      MacBook Pro 16", MacBook Air 15", iMac, Studio / Pro Display). The UI
      itself grows on 2K / 4K through the root type size (index.css).
-   - 1041–1599: one header row, tightened (MacBook Air 13", MacBook Pro 14",
+   - 1320–1599: one header row, tightened (MacBook Air 13", MacBook Pro 14",
      iPad Pro 13" landscape, 1366-wide laptops).
-   - 761–1040: two rows — brand + data source, then the tabs (iPad portrait,
-     iPhone landscape).
+   - 761–1319: two rows — brand + data source, then the tabs (iPad portrait,
+     iPad 11" landscape, iPhone landscape: one row does not fit).
    - ≤ 760: three rows — brand + Live Data + Demo, the run-folder field,
      tabs (iPhone portrait).
    - ≤ 760 wide or ≤ 540 tall (phones, short windows): the whole shell
@@ -221,10 +221,11 @@
   }
 }
 
-/* One tightened row: the full header needs ~1535px; this one ~1365px, so it
-   stays on one line on every current MacBook at its default scaling and on an
-   iPad Pro 13" in landscape. */
-@container workbench (min-width: 1041px) and (max-width: 1599px) {
+/* One tightened row: the full header needs ~1535px; this one ~1310px (the
+   run-folder field; ~1270 with the local-run bar), so it stays on one line on
+   every current MacBook at its default scaling, a 1366 laptop and an iPad
+   Pro 13" in landscape, beside the Copilot's rail. */
+@container workbench (min-width: 1320px) and (max-width: 1599px) {
   .app-header {
     padding-inline: calc(1rem + var(--safe-left)) calc(1rem + var(--safe-right));
     column-gap: 0.75rem;
@@ -247,10 +248,12 @@
   }
 }
 
-/* Tablets and phones: a grid. Brand and the data-source cluster share the first
-   row; the tabs take a full-width row of their own last (the row the header
-   pins by when it scrolls away), scrolling sideways when they do not fit. */
-@container workbench (max-width: 1040px) {
+/* Tablets, phones and any width the one row does not fit: a grid. Brand and
+   the data-source cluster share the first row; the tabs take a full-width row
+   of their own last (the row the header pins by when it scrolls away),
+   scrolling sideways when they do not fit. (Below 1320 the flex row would
+   wrap instead, leaving the data source alone at the right of a second row.) */
+@container workbench (max-width: 1319px) {
   .app-header {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);

@@ -16,7 +16,8 @@ It is **docked beside the pages**, not over them, and it **points at the page** 
   760 px. On tablets in portrait, phones and short windows it is a **bottom sheet** in its own grid row,
   resized from its top edge; when the agent brings a card on screen, the sheet comes down until the
   card fits whole above it (to at most 50 % of the window while a card is in focus, never below
-  28 %). Collapsed (the chevron, or Esc inside it) it is a slim **rail** at the
+  28 %), and an open sheet is never shorter than 19rem (up to 72 % of a short window, such as a
+  phone in landscape), so its composer stays on screen. Collapsed (the chevron, or Esc inside it) it is a slim **rail** at the
   right edge, or a bar at the bottom, with a red dot when an answer arrived while it was
   collapsed. The open state, the width and the sheet height are remembered
   (`localStorage` `rmc-llm-dock-v1`).
@@ -1184,7 +1185,9 @@ describe the screen and declare none yet.
   run tools read (a plot kind, `r_value`, `symmetry`, `model`), so `assess_convergence`,
   `find_gr_peaks`, `compare_fit` and `read_run_data` breathe the right card while they run.
 - `onMarks({ [cardId]: [{ x, label }] })` hands the host the marks to draw inside a plot card.
-- `onLayoutChange({ mode, open, width, sheet })` reports where the dock sits; `className` and
+- `onLayoutChange({ mode, open, width, sheet, sheetHeight })` reports where the dock sits;
+  `sheetHeight` is the open sheet's CSS height (`dockLayout.sheetHeightCss`), for the host to take
+  off its pages; `className` and
   `storageKey` are the host's.
 
 In this repository the host tools live in `src/copilotTools.js`:
@@ -1359,7 +1362,8 @@ This module is designed to be lifted into its own repository:
   keeps its old literal as a fallback (`var(--warning, #b45309)`). It uses exactly one host UI-kit
   class, **by class name only** and never kit JS (see `src/ui/README.md`): `ui-pill`, on a step's
   Show in / Open button. An extracted copy needs a host stylesheet that defines it. The sheet's
-  height is a share of `--viewport-h` (100vh without it).
+  height is a share of `--viewport-h` (100vh without it), at least 19rem. On a touch screen its
+  icon and send buttons take taps on a 44px square (`--h-touch`, 44px without it).
 
 To extract: copy `src/llm/`, give your app grid a column and a row for the dock, render
 `CopilotChat` once with props from your own data source, tag your cards with
