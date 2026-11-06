@@ -440,7 +440,12 @@ engine's own triplet loop (`visitAngleTriplets`, the loop `bondAngleSummary` his
 each triplet onto the average sites: apex site in the cell, each end at its site's image
 $\mathbf m = \operatorname{round}(\Delta\mathbf u - (\mathbf f_e - \mathbf f_a))$, with
 $\Delta\mathbf u$ the bond in unit-cell fractions. A range covers whole bins, so its count is the
-histogram's; the page drops an answer whose per-bin counts differ from the payload's.
+histogram's; the page drops an answer whose per-bin counts differ from the payload's. Each site triplet $t$ keeps its count per bin
+$n_t(b)$ and its total $N_t=\sum_b n_t(b)$; a range $R$ draws it with share
+$s_t=\sum_{b\in R} n_t(b)/N_t$ (a hovered bin: $R$ one bin), at strength $\sqrt{s_t}$ (opacity and
+radius), not at all when $s_t<0.02$ (`MIN_HIGHLIGHT_SHARE`; still counted). A site bond takes the
+largest $s_t$ of the drawn triplets using it; past 750 triplets the largest shares are kept (ties
+nearest the cell centre).
 
 ### Test suites
 

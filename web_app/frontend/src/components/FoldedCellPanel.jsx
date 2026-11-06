@@ -6,16 +6,18 @@
 // supercell folded back into a single cell, so the spread around each site is
 // the thermal cloud itself rather than a fitted ellipsoid. Bonds come from the
 // triplet windows (bondNetwork.js) and are drawn as shaded tubes in their
-// bond-role colours, one instanced mesh (one draw call) per window; the
+// bond-role colours (bondTubes.js: lit, round-ended, stopping at the edge of
+// each site's cloud), one instanced mesh (one draw call) per window; the
 // clouds of elements outside the bonds fade, so the selected triplet stands
 // out. A large cell draws at most MAX_DRAWN_BONDS, those nearest the centre,
 // and the legend says so. The element key sits inside the canvas, as a pill
 // at the bottom left.
 //
-// `highlight` (angleHighlight.js highlightForBin: the triplets of the angle
-// bin under the pointer) draws those triplets' bonds as thicker tubes of
-// their own and dims the other bonds; the legend names the bin. It has its
-// own group, so a hover never rebuilds the cloud.
+// `highlight` (angleHighlight.js highlightForBins: the triplets of the angle
+// range, or of the bin under the pointer) draws those triplets' bonds as
+// thicker tubes of their own, each as strong as its share, and dims the
+// other bonds; the legend names the range. It has its own group, so a hover
+// never rebuilds the cloud.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
@@ -27,7 +29,8 @@ import InfoBadge from '../ui/InfoBadge';
 import SaveMenu from '../ui/SaveMenu';
 import { buildCrystalAxes } from './sceneAxes';
 import { bondRadius, cloudOpacity, foldedCellNetwork, MAX_DRAWN_BONDS, unitVectorsOf } from '../bondNetwork';
-import { highlightLabel } from '../angleHighlight';
+import { highlightLabel, highlightStrength, MAX_HIGHLIGHT_TRIPLETS, MIN_HIGHLIGHT_SHARE } from '../angleHighlight';
+import { bondMaterial, renderQuality, tubeMesh } from './bondTubes';
 import useCopilotViewer from '../useCopilotViewer';
 import './UnitCellPanel.css';
 
@@ -41,36 +44,16 @@ const SAVE_OPTIONS = [
 // on 10×10×10 models while leaving the shape of every site's cloud intact.
 const MAX_CLOUD_POINTS = 120000;
 
-// While a highlight is shown, the other bonds fade to this opacity and the
-// highlighted ones are drawn this much thicker.
-const DIMMED_BOND_OPACITY = 0.18;
-const HIGHLIGHT_RADIUS = 1.7;
-
-// One instanced tube mesh for a list of segments (six numbers each).
-const tubeMesh = (segments, radius, material) => {
-    const count = segments.length / 6;
-    const mesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1, 8, 1, true), material, count);
-    const up = new THREE.Vector3(0, 1, 0);
-    const start = new THREE.Vector3();
-    const end = new THREE.Vector3();
-    const direction = new THREE.Vector3();
-    const rotation = new THREE.Quaternion();
-    const scale = new THREE.Vector3();
-    const matrix = new THREE.Matrix4();
-    for (let i = 0; i < count; i += 1) {
-        start.fromArray(segments, i * 6);
-        end.fromArray(segments, i * 6 + 3);
-        direction.subVectors(end, start);
-        const length = direction.length();
-        rotation.setFromUnitVectors(up, direction.divideScalar(length));
-        scale.set(radius, length, radius);
-        matrix.compose(start.add(end).multiplyScalar(0.5), rotation, scale);
-        mesh.setMatrixAt(i, matrix);
-    }
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.computeBoundingSphere();
-    return mesh;
-};
+// The tubes are drawn this much thinner than bondNetwork's bondRadius.
+const BOND_RADIUS_SCALE = 0.8;
+// While a highlight is shown, the other bonds fade to this opacity; a
+// highlighted bond of strength s (highlightStrength: the square root of its
+// share) is drawn HIGHLIGHT_RADIUS + HIGHLIGHT_RADIUS_GAIN·s times thicker,
+// at opacity HIGHLIGHT_OPACITY + (1 − HIGHLIGHT_OPACITY)·s.
+const DIMMED_BOND_OPACITY = 0.14;
+const HIGHLIGHT_RADIUS = 1.15;
+const HIGHLIGHT_RADIUS_GAIN = 0.65;
+const HIGHLIGHT_OPACITY = 0.3;
 
 const disposeGroup = (group) => {
     while (group.children.length) {
@@ -124,12 +107,13 @@ const FoldedCellPanel = ({
 
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 5000);
+        const quality = renderQuality();
         const renderer = new THREE.WebGLRenderer({
-            antialias: true,
+            antialias: quality.antialias,
             alpha: true,
             preserveDrawingBuffer: true
         });
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality.maxPixelRatio));
         mount.replaceChildren(renderer.domElement);
 
         const controls = new OrbitControls(camera, renderer.domElement);
@@ -143,12 +127,12 @@ const FoldedCellPanel = ({
         const cellAxesGroup = new THREE.Group();
         scene.add(cloudGroup, bondsGroup, highlightGroup, cellGroup, cellAxesGroup);
         // The bond tubes are shaded (the clouds are points, unlit): a soft
-        // ambient plus a key light that rides with the camera, so the tubes
-        // read as round from every side.
-        const keyLight = new THREE.DirectionalLight(0xffffff, 1.6);
+        // sky/ground fill plus a key light that rides with the camera, so the
+        // tubes read as round from every side.
+        const keyLight = new THREE.DirectionalLight(0xffffff, 1.7);
         keyLight.position.set(1, 1.5, 2);
         camera.add(keyLight);
-        scene.add(camera, new THREE.AmbientLight(0xffffff, 1.1));
+        scene.add(camera, new THREE.HemisphereLight(0xffffff, 0x9aa3b0, 1.25));
 
         let frame = 0;
         const renderLoop = () => {
@@ -271,8 +255,8 @@ const FoldedCellPanel = ({
             if (!set.segments.length) return;
             bondsGroup.add(tubeMesh(
                 set.segments,
-                bondRadius(set.window, edgeLength),
-                new THREE.MeshLambertMaterial({ color: set.color })
+                BOND_RADIUS_SCALE * bondRadius(set.window, edgeLength),
+                bondMaterial({ color: set.color })
             ));
         });
         handle.edgeLength = edgeLength;
@@ -295,9 +279,10 @@ const FoldedCellPanel = ({
         handle.resize();
     }, [structure, sites, network, elementColors, showCellAxes]);
 
-    // The hovered bin's triplets: their bonds as thicker tubes in their
-    // bond-role colours (A–B, then B–C), the other bonds dimmed. Rebuilds only
-    // this group; runs after the scene rebuild above, which it follows.
+    // The range's (or hovered bin's) triplets: their bonds as thicker tubes in
+    // their bond-role colours (A–B, then B–C), each as thick and opaque as its
+    // share, the other bonds dimmed. Rebuilds only this group; runs after the
+    // scene rebuild above, which it follows.
     useEffect(() => {
         const handle = sceneRef.current;
         if (!handle) return;
@@ -312,13 +297,22 @@ const FoldedCellPanel = ({
         });
         if (!on || !edgeLength) return;
         const [first, second = first] = network.sets;
-        [[highlight.ab, first], [highlight.bc, second]].forEach(([segments, set]) => {
+        [[highlight.ab, highlight.abShare, first], [highlight.bc, highlight.bcShare, second]].forEach(([segments, shares, set]) => {
             if (!segments?.length) return;
-            highlightGroup.add(tubeMesh(
+            const strengths = Array.from(shares ?? [], highlightStrength);
+            const mesh = tubeMesh(
                 segments,
-                HIGHLIGHT_RADIUS * bondRadius(set.window, edgeLength),
-                new THREE.MeshLambertMaterial({ color: set.color, emissive: set.color, emissiveIntensity: 0.25 })
-            ));
+                BOND_RADIUS_SCALE * bondRadius(set.window, edgeLength),
+                bondMaterial({ color: set.color, emissiveIntensity: 0.2, transparent: true }),
+                {
+                    scales: shares && strengths.map((s) => HIGHLIGHT_RADIUS + HIGHLIGHT_RADIUS_GAIN * s),
+                    opacities: shares && strengths.map((s) => HIGHLIGHT_OPACITY + (1 - HIGHLIGHT_OPACITY) * s)
+                }
+            );
+            // Drawn after the dimmed bonds; strongest first (the segments come
+            // in that order), so a faint tube never hides a strong one behind it.
+            mesh.renderOrder = 1;
+            highlightGroup.add(mesh);
         });
     }, [highlight, network, structure, sites, elementColors, showCellAxes]);
 
@@ -402,9 +396,18 @@ const FoldedCellPanel = ({
                                 range, pointing at a bin (tapping it on a touch screen) previews
                                 that bin. The range moves in whole bins, so its count is the
                                 histogram's. In a large cell only the triplets inside the drawn
-                                bonds are shown, and the legend says how many. For a run opened
+                                bonds are shown, the largest shares first, and the legend says how
+                                many. For a run opened
                                 in the browser (the Demo or a picked folder), not yet a server
                                 folder.
+                            </p>
+                        ) : null}
+                        {bondSets?.length ? (
+                            <p>
+                                <b>Brightness</b> — the share of a triplet's angles that fall in the
+                                range: bright when nearly all of them do, faint when only the tail
+                                of its spread reaches it, not drawn under {Math.round(MIN_HIGHLIGHT_SHARE * 100)}%. A bond shared by
+                                several triplets shows the brightest.
                             </p>
                         ) : null}
                     </InfoBadge>
@@ -451,7 +454,9 @@ const FoldedCellPanel = ({
                             <span
                                 className="ui-legend__item is-highlight"
                                 data-testid="angle-highlight"
-                                title="The triplets of the hovered angle bin, on the average sites."
+                                title={'The triplets of the angle range, on the average sites; each bond as strong as'
+                                    + ' the share of its angles in the range. A large cell draws at most'
+                                    + ` ${MAX_HIGHLIGHT_TRIPLETS.toLocaleString()} triplets, the largest shares first.`}
                             >
                                 {highlightLabel(highlight)}
                             </span>
