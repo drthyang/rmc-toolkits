@@ -66,3 +66,20 @@
         height: clamp(18rem, 45vh, 30rem);
     }
 }
+
+/* Landscape 11" and portrait 13" iPads (940–1200px): the sphere and the site
+   picker side by side at equal height, the axis views a row under both. */
+@container workbench (min-width: 940px) and (max-width: 1200px) {
+    .orient-layout {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .orient-main-panel,
+    .orient-layout .pca-unitcell-panel {
+        height: clamp(22rem, calc(var(--viewport-h) - 22rem), 36rem);
+    }
+
+    .orient-mini-panel {
+        grid-column: 1 / -1;
+    }
+}
