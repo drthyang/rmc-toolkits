@@ -31,6 +31,13 @@
     padding-right: var(--safe-right, 0px);
 }
 
+/* Touch screens: a rail a fingertip can take (44px). */
+@media (pointer: coarse) {
+    .llm-dock.is-docked.is-collapsed {
+        width: calc(var(--h-touch, 44px) + var(--safe-right, 0px));
+    }
+}
+
 .llm-dock.is-sheet {
     border-top: 1px solid var(--border, #d9dee5);
     box-shadow: 0 -6px 18px rgba(16, 24, 40, 0.08);
