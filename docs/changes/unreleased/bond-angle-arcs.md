@@ -10,3 +10,6 @@
   by share), so they no longer hide the arcs where they meet.
 - The arcs are the highlight's own triplets, with the same 750 cap, largest shares first, and
   the same 2% threshold. All arcs are one draw call. The "?" help says what an arc means.
+- With a GPU, frame time and time to highlight are unchanged (Demo and an 8,000-site cell). On a
+  software renderer, an 8,000-site cell showing 750 arcs turns at about 30 frames a second
+  instead of 40; the Demo is unchanged.
