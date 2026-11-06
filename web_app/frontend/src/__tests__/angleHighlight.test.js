@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
+/* global process */
 
 // The angle-histogram hover highlight (angleHighlight.js): the triplets it
 // walks are exactly the ones the histogram counts — checked against an
@@ -241,7 +242,7 @@ describe('siteAngleTriplets folds them onto the average sites', () => {
     });
 
     it('agrees with the histogram on the demo run, every angle shown', () => {
-        const text = readFileSync(resolve(__dirname, '../../public/demo/GTS_250K.rmc6f'), 'utf8');
+        const text = readFileSync(resolve(process.cwd(), 'public/demo/GTS_250K.rmc6f'), 'utf8');
         const { parsed, atoms, siteFractional } = parse(text);
         const options = tripletOptionsFromRequest({ end1: 'Se', apex: 'Ta', end2: 'Se', r12Min: 2.3, r12Max: 2.9, binWidth: 1 });
         const data = siteAngleTriplets(atoms, parsed.latticeVectors, parsed.supercell, siteFractional, options);

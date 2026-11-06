@@ -432,6 +432,12 @@
     font-weight: 500;
 }
 
+/* The live item (the hovered angle bin in the Bond Geometry 3D view). */
+.ui-legend__item.is-highlight {
+    color: var(--text-strong);
+    font-weight: 650;
+}
+
 /* The legend as a pill inside a canvas, bottom-left (Bond Geometry 3D). */
 .ui-legend--overlay {
     position: absolute;

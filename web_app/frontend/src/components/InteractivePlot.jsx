@@ -55,6 +55,11 @@ const isExperimental = (label) => /exp/i.test(label);
 //                       a short card gives that height to the plot. While the
 //                       prop is present but null (the slot not mounted yet)
 //                       the actions render nowhere, never inline.
+//   onHoverX            (x | null) => void: told the snapped x of the readout
+//                       whenever it moves to another point, and null when it
+//                       goes. With it a step series' hovered bin is shaded,
+//                       and on touch a tap pins the readout until a tap on
+//                       the same point or anywhere off the chart clears it.
 //   ribbon              { series, sigma, label }: a ±σ band around the series
 //                       labelled `series` (sigma[i] at its x[i]; a non-finite
 //                       σ or y is a gap), drawn under it in its colour and
@@ -194,7 +199,7 @@ const ribbonPath = (series, sigma, xDomain, sx, sy) => {
     }).join(' ');
 };
 
-const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, actionsTarget, marks = null, ribbon = null }) => {
+const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, actionsTarget, marks = null, ribbon = null, onHoverX = null }) => {
     const wide = variant === 'wide';
     // 'fit' takes its viewBox from the rendered box instead of a fixed aspect,
     // so the drawing fills the card rather than letterboxing inside it. Opt-in:
@@ -549,7 +554,7 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
     const clampPlotX = (x) => Math.max(view.left, Math.min(view.width - view.right, x));
     const clampPlotY = (y) => Math.max(view.top, Math.min(view.height - view.bottom, y));
 
-    const nearestHover = (event) => {
+    const nearestHover = (event, { unpinX = null } = {}) => {
         const hoverSeries = visibleSeries.filter((series) => !series.guide);
         if (!effectivePlot || !hoverSeries.length) return;
         const x = pointerToViewX(event);
@@ -567,6 +572,10 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
             return {
                 label: series.label,
                 color: series.color,
+                // A step series' bin, shaded under the readout (onHoverX).
+                bin: series.curve === 'step'
+                    ? (series.binWidth ?? Math.abs((series.x[1] ?? series.x[0] + 1) - series.x[0]))
+                    : null,
                 x: series.x[best],
                 y: series.y[best],
                 sigma: Number.isFinite(sigma) ? sigma : null,
@@ -578,11 +587,17 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
             setHover(null);
             return;
         }
-        setHover({ x: values[0].x, px: xScale(values[0].x), values });
+        // A tap on the pinned point clears it (onHoverX).
+        if (unpinX !== null && values[0].x === unpinX) {
+            setHover(null);
+            return;
+        }
+        setHover({ x: values[0].x, px: xScale(values[0].x), values, touch: event.pointerType === 'touch' });
     };
 
     const startDrag = (event) => {
         // Any press clears the readout; on touch, that is how a tap's goes.
+        const pinnedX = onHoverX && hover?.touch ? hover.x : null;
         setHover(null);
         const { x, y } = pointerToView(event);
         if (x < view.left || x > view.width - view.right) return;
@@ -595,7 +610,7 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
         const touch = event.pointerType === 'touch';
         const y0 = touch ? view.top : clampPlotY(y);
         const y1 = touch ? view.top + plotHeight : y0;
-        setDrag({ x0: clampPlotX(x), y0, x1: clampPlotX(x), y1, touch, clientX: event.clientX });
+        setDrag({ x0: clampPlotX(x), y0, x1: clampPlotX(x), y1, touch, clientX: event.clientX, pinnedX });
     };
 
     const moveDrag = (event) => {
@@ -619,7 +634,7 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
         if (drag.touch) {
             // A finger zooms x only, and y re-fits to the new range; a tap
             // shows the readout, which stays until the next press.
-            if (Math.abs(event.clientX - drag.clientX) <= TOUCH_SWIPE_PX) nearestHover(event);
+            if (Math.abs(event.clientX - drag.clientX) <= TOUCH_SWIPE_PX) nearestHover(event, { unpinX: drag.pinnedX ?? null });
             else if (xHi - xLo > 8) setXDomain([xInvert(xLo), xInvert(xHi)]);
         } else {
             // Zoom whichever dimension(s) the drag actually spans (> 8px): a real box
@@ -670,6 +685,27 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
         zoomRef.current = zoom;
     });
     const hasPlot = Boolean(effectivePlot);
+
+    // onHoverX hears the readout's point, once per change.
+    const onHoverXRef = useRef(onHoverX);
+    useEffect(() => {
+        onHoverXRef.current = onHoverX;
+    });
+    const hoverX = hover ? hover.x : null;
+    useEffect(() => {
+        onHoverXRef.current?.(hoverX);
+    }, [hoverX]);
+    useEffect(() => () => onHoverXRef.current?.(null), []);
+    // A pinned (tapped) readout goes with a tap anywhere off the chart.
+    const pinned = Boolean(onHoverX && hover?.touch);
+    useEffect(() => {
+        if (!pinned) return undefined;
+        const clear = (event) => {
+            if (!svgRef.current?.contains(event.target)) setHover(null);
+        };
+        document.addEventListener('pointerdown', clear, true);
+        return () => document.removeEventListener('pointerdown', clear, true);
+    }, [pinned]);
     useEffect(() => {
         const svg = svgRef.current;
         if (!svg) return undefined;
@@ -886,6 +922,15 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
                     <AxisLabel label={effectivePlot.yLabel} x={18} y={view.top + plotHeight / 2} rotate />
                     {hover && (
                         <g clipPath={`url(#${clipId})`} data-export="omit">
+                            {onHoverX && hover.values[0].bin > 0 && (
+                                <rect
+                                    className="hover-bin"
+                                    x={Math.min(xScale(hover.x - hover.values[0].bin / 2), xScale(hover.x + hover.values[0].bin / 2))}
+                                    y={view.top}
+                                    width={Math.abs(xScale(hover.x + hover.values[0].bin / 2) - xScale(hover.x - hover.values[0].bin / 2))}
+                                    height={plotHeight}
+                                />
+                            )}
                             <line className="hover-line" x1={hover.px} x2={hover.px} y1={view.top} y2={view.top + plotHeight} />
                             {hover.values.map((value) => (
                                 <circle key={value.label} className="hover-dot" cx={value.cx} cy={value.cy} r="3.6" fill={value.color} />

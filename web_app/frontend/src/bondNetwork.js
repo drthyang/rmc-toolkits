@@ -170,6 +170,29 @@ export const buildBondNetwork = (sites, unit, bondSets, { center = [0, 0, 0], ma
     return { sets, shown: maxBonds, total, limited: true, center, radiusSq: ranked[maxBonds - 1].d };
 };
 
+// Unit-cell vectors = supercell vectors divided by the supercell counts.
+export const unitVectorsOf = (source) => {
+    if (!source?.latticeVectors || !source?.supercell) return null;
+    return source.latticeVectors.map((row, i) => row.map((v) => v / (source.supercell[i] || 1)));
+};
+
+/**
+ * The folded cell's bond network from the page's data: the average sites of
+ * one unit cell (the 'sites' payload) and its cell (the structure's, else the
+ * sites'), centred on the cell; null without bonds to draw.
+ */
+export const foldedCellNetwork = (structure, sites, bondSets) => {
+    const unit = unitVectorsOf(structure) || unitVectorsOf(sites);
+    if (!unit || !bondSets?.length || !sites?.sites?.length) return null;
+    const center = [0, 1, 2].map((axis) => 0.5 * (unit[0][axis] + unit[1][axis] + unit[2][axis]));
+    const atoms = sites.sites.map((site) => ({
+        referenceNumber: site.referenceNumber,
+        element: site.element,
+        siteFractional: site.siteFractional
+    }));
+    return { ...buildBondNetwork(atoms, unit, bondSets, { center }), unit };
+};
+
 /**
  * The drawn radius of a bond set's tubes (Å): a fraction of the bond length,
  * with a floor tied to the cell so a large cell's bonds stay visible when the
