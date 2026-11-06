@@ -1283,10 +1283,32 @@
     border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
 }
 
-/* Touch screens: a finger-sized target. */
+/* Touch screens: a finger-sized target. The icon buttons and the send
+   button keep their size and take taps on a 44px square around it. */
 @media (pointer: coarse) {
     .llm-ask-option {
         min-height: 2.9rem;
+    }
+
+    .llm-icon-btn,
+    .llm-send {
+        position: relative;
+    }
+
+    .llm-icon-btn::after,
+    .llm-send::after {
+        content: '';
+        position: absolute;
+        inset: min(0px, calc((100% - 44px) / 2));
+    }
+
+    .llm-suggestion {
+        min-height: 44px;
+    }
+
+    .llm-context-inspector summary {
+        padding-block: 14px;
+        margin-block: -14px;
     }
 }
 
