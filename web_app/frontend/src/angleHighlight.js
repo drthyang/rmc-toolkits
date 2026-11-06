@@ -11,10 +11,19 @@
 // histogram, bin by bin) and folds each supercell triplet onto the average
 // sites the folded cell draws: the central atom's site in the cell, each end
 // at the image of its site that the bond reaches. Many supercell triplets
-// fold onto one site triplet; each keeps its count. highlightForBins runs on
-// hover, or as the angle range on the plot is dragged: the site triplets of
-// those bins (whole bins: the range's edges are bin edges) as tube
-// segments, at most MAX_HIGHLIGHT_TRIPLETS of them, nearest the cell centre.
+// fold onto one site triplet; each keeps its count per bin and its total
+// over all bins. highlightForBins runs on hover, or as the angle range on the
+// plot is dragged: the site triplets of those bins (whole bins: the range's
+// edges are bin edges), each weighted by its share — the part of its angles
+// that fall in the bins — as tube segments, one per site bond, at most
+// MAX_HIGHLIGHT_TRIPLETS triplets, the largest shares first.
+//
+// A site triplet whose angles all lie in the range has share 1; one that
+// only reaches it with the tail of its spread has a small share. An
+// octahedron's twelve cis angles all sit near 90°, so a range there holds
+// every bond; the share tells which triplets the range is about. A bond
+// several drawn triplets use takes the largest of their shares, and a triplet
+// below MIN_HIGHLIGHT_SHARE is counted, not drawn.
 //
 // A large cell draws only the bonds nearest its centre (bondNetwork.js), and
 // the highlight keeps to that region: a triplet is kept when both its tubes'
@@ -30,12 +39,26 @@ export const MAX_HIGHLIGHT_TRIPLETS = 750;
 // Site triplets the worker stores per bin; the angles of any further ones
 // are counted, not stored, so memory stays bounded on any cell.
 export const MAX_BIN_TRIPLETS = 20000;
+// A site triplet with less of its angles in the range than this is counted
+// in the legend but not drawn: a tail, not what the range picks out.
+export const MIN_HIGHLIGHT_SHARE = 0.02;
+
+/**
+ * How strongly a share draws, 0..1: its square root, so a single bin of a
+ * spread-out angle (a share of ~0.1–0.2) still reads, and the order of the
+ * shares is kept. Zero below MIN_HIGHLIGHT_SHARE.
+ */
+export const highlightStrength = (share) => (
+    share >= MIN_HIGHLIGHT_SHARE ? Math.sqrt(Math.min(share, 1)) : 0
+);
 
 const fracToCartesian = (unit, f) => [0, 1, 2].map(
     (axis) => f[0] * unit[0][axis] + f[1] * unit[1][axis] + f[2] * unit[2][axis]
 );
 
 const byDistance = (p, q) => p.d - q.d || p.id - q.id;
+// The largest shares first; ties nearest the centre, then in the order found.
+const byShare = (p, q) => q.share - p.share || byDistance(p, q);
 
 const distanceSq = (p, q) => (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 + (p[2] - q[2]) ** 2;
 
@@ -54,11 +77,12 @@ export const unitCellOf = (latticeVectors, supercell) => latticeVectors.map(
  * @param {object} options the engine options (triplets.js tripletOptionsFromRequest)
  * @param {{ center: number[], radiusSq: number|null }|null} region the drawn
  *   region (Cartesian Å; bondNetwork's center / radiusSq), null: the whole cell
- * @returns {{ nbins, binWidth, triplet, sharedEnds, bins: Array<{ total, triplets }> }}
+ * @returns {{ nbins, binWidth, triplet, sharedEnds, bins: Array<{ total, triplets }>, tripletTotals }}
  *   per bin: `total` angles (the histogram's count) and its site triplets
  *   { id, apex, ab, bc, count, d }, nearest the centre first (d: the apex
  *   site's squared distance from it; id: the same site triplet in every
- *   bin). ab / bc are
+ *   bin). tripletTotals[id]: that site triplet's angles over all bins (also
+ *   those of a bin that stored more than maxPerBin). ab / bc are
  *   [end site, image a, image b, image c]: the end at its site's position
  *   plus that whole-cell image; the apex sits at its own site in the cell.
  */
@@ -103,9 +127,12 @@ export const siteAngleTriplets = (atoms, latticeVectors, supercell, siteFraction
         return id;
     };
 
-    // Per bin: A–B site bond → B–C site bond → angle count.
+    // One id per site triplet (A–B site bond → B–C site bond → id), in the
+    // order first found, with its angles over all bins; per bin, id → count.
+    const pairIds = new Map();
+    const tripletBonds = [];
+    const tripletTotals = [];
     const binMaps = [];
-    const sizes = [];
     const totals = [];
     const info = visitAngleTriplets(atoms.fractional, atoms.elements, latticeVectors, options, (bin, apexRow, one, two) => {
         totals[bin] += 1;
@@ -115,40 +142,32 @@ export const siteAngleTriplets = (atoms, latticeVectors, supercell, siteFraction
         // One shared window: the two bonds are interchangeable, so the
         // unordered pair is the triplet.
         const [x, y] = sharedEnds && bc < ab ? [bc, ab] : [ab, bc];
-        let inner = binMaps[bin].get(x);
-        const count = inner?.get(y);
-        if (count !== undefined) {
-            inner.set(y, count + 1);
-            return;
-        }
-        if (sizes[bin] >= maxPerBin) return;
+        let inner = pairIds.get(x);
         if (!inner) {
             inner = new Map();
-            binMaps[bin].set(x, inner);
+            pairIds.set(x, inner);
         }
-        inner.set(y, 1);
-        sizes[bin] += 1;
+        let id = inner.get(y);
+        if (id === undefined) {
+            id = tripletBonds.length;
+            inner.set(y, id);
+            tripletBonds.push([x, y]);
+            tripletTotals.push(0);
+        }
+        tripletTotals[id] += 1;
+        const map = binMaps[bin];
+        const count = map.get(id);
+        if (count !== undefined) map.set(id, count + 1);
+        else if (map.size < maxPerBin) map.set(id, 1);
     }, (start) => {
         wrapped = start.wrapped;
         sharedEnds = start.sharedEnds;
         for (let bin = 0; bin < start.nbins; bin += 1) {
             binMaps.push(new Map());
-            sizes.push(0);
             totals.push(0);
         }
     });
 
-    // One id per site triplet across the bins, in the order first found.
-    const tripletIds = new Map();
-    const tripletId = (abId, bcId) => {
-        const key = abId * (siteBonds.length + 1) + bcId;
-        let id = tripletIds.get(key);
-        if (id === undefined) {
-            id = tripletIds.size;
-            tripletIds.set(key, id);
-        }
-        return id;
-    };
     const apexDistance = new Map();
     const distanceOf = (apex) => {
         if (!apexDistance.has(apex)) apexDistance.set(apex, distanceSq(fracToCartesian(unit, siteFractional.get(apex)), center));
@@ -156,18 +175,20 @@ export const siteAngleTriplets = (atoms, latticeVectors, supercell, siteFraction
     };
     const bins = binMaps.map((map, bin) => {
         const found = [];
-        map.forEach((inner, abId) => inner.forEach((count, bcId) => {
-            const ab = siteBonds[abId];
-            const bc = siteBonds[bcId];
+        map.forEach((count, id) => {
+            const ab = siteBonds[tripletBonds[id][0]];
+            const bc = siteBonds[tripletBonds[id][1]];
             found.push({
-                id: tripletId(abId, bcId), apex: ab.apex, ab: [ab.end, ...ab.image], bc: [bc.end, ...bc.image], count, d: distanceOf(ab.apex)
+                id, apex: ab.apex, ab: [ab.end, ...ab.image], bc: [bc.end, ...bc.image], count, d: distanceOf(ab.apex)
             });
-        }));
+        });
         // Nearest the centre first; ties in the order first found.
         found.sort(byDistance);
         return { total: totals[bin], triplets: found };
     });
-    return { nbins: info.nbins, binWidth: info.binWidth, triplet: info.triplet, sharedEnds: info.sharedEnds, bins };
+    return {
+        nbins: info.nbins, binWidth: info.binWidth, triplet: info.triplet, sharedEnds: info.sharedEnds, bins, tripletTotals
+    };
 };
 
 /** The bin a hovered x (a bin centre, or anywhere in the bin) falls in. */
@@ -197,13 +218,26 @@ export const highlightLabel = ({ shown, total, lo, hi, range = false }) => {
         : `${total.toLocaleString('en-US')} ${noun} ${where}`;
 };
 
+// One key per site bond, the same from either end: apex → end + image, or
+// end → apex − image (a homonuclear bond seen from both its atoms).
+const bondKey = (apex, [end, ...image]) => {
+    const there = `${apex}|${end}|${image.join()}`;
+    const back = `${end}|${apex}|${image.map((value) => -value || 0).join()}`;
+    return there < back ? there : back;
+};
+
 /**
- * The highlight of bins first..last (inclusive): their site triplets as tube
- * segments (six numbers each, apex → end, Cartesian Å), the A–B and B–C
- * bonds apart (with one shared window, all in `ab`), at most `max` triplets
- * — those nearest the cell centre. A site triplet in several of the bins is
- * drawn once, with their counts summed. `total` is the bins' angle count
- * (the histogram's); `shown` counts the angles the drawn triplets carry.
+ * The highlight of bins first..last (inclusive). Each site triplet in them
+ * gets its share: its angles in the bins over its angles in all bins
+ * (tripletTotals). At most `max` triplets are kept, the largest shares first
+ * (ties nearest the cell centre); `shown` counts the angles they carry and
+ * `total` is the bins' angle count (the histogram's). The kept triplets of
+ * share MIN_HIGHLIGHT_SHARE or more are drawn: their bonds as tube segments
+ * (six numbers each, apex → end, Cartesian Å), the A–B and B–C bonds apart
+ * (with one shared window, all in `ab`), each site bond once, with the
+ * largest share of the drawn triplets that use it (`abShare` / `bcShare`,
+ * one per segment). A site triplet in several of the bins counts once, its
+ * counts summed.
  *
  * @param {object} data     siteAngleTriplets' result
  * @param {number} first    first bin
@@ -214,46 +248,51 @@ export const highlightLabel = ({ shown, total, lo, hi, range = false }) => {
 export const highlightForBins = (data, first, last, siteFractional, unit, { max = MAX_HIGHLIGHT_TRIPLETS, range = false } = {}) => {
     if (!data?.bins || !(first >= 0) || !(last >= first) || last >= data.bins.length) return null;
     let total = 0;
-    let merged;
-    if (first === last) {
-        total = data.bins[first].total;
-        merged = data.bins[first].triplets;
-    } else {
-        const byId = new Map();
-        for (let bin = first; bin <= last; bin += 1) {
-            total += data.bins[bin].total;
-            data.bins[bin].triplets.forEach((triplet) => {
-                const seen = byId.get(triplet.id);
-                if (seen) seen.count += triplet.count;
-                else byId.set(triplet.id, { ...triplet });
-            });
-        }
-        merged = [...byId.values()].sort(byDistance);
+    const byId = new Map();
+    for (let bin = first; bin <= last; bin += 1) {
+        total += data.bins[bin].total;
+        data.bins[bin].triplets.forEach((triplet) => {
+            const seen = byId.get(triplet.id);
+            if (seen) seen.count += triplet.count;
+            else byId.set(triplet.id, { ...triplet });
+        });
     }
-    const drawn = merged.slice(0, max);
-    const ab = new Float64Array(drawn.length * 6 * (data.sharedEnds ? 2 : 1));
-    const bc = new Float64Array(data.sharedEnds ? 0 : drawn.length * 6);
-    let shown = 0;
-    let abAt = 0;
-    let bcAt = 0;
-    const put = (out, at, apex, [end, ...image]) => {
-        const fe = siteFractional.get(end);
-        out.set(apex, at);
-        out.set(fracToCartesian(unit, [fe[0] + image[0], fe[1] + image[1], fe[2] + image[2]]), at + 3);
-    };
-    drawn.forEach((triplet) => {
-        const apex = fracToCartesian(unit, siteFractional.get(triplet.apex));
-        put(ab, abAt, apex, triplet.ab);
-        abAt += 6;
-        if (data.sharedEnds) {
-            put(ab, abAt, apex, triplet.bc);
-            abAt += 6;
-        } else {
-            put(bc, bcAt, apex, triplet.bc);
-            bcAt += 6;
-        }
-        shown += triplet.count;
+    const merged = [...byId.values()];
+    merged.forEach((triplet) => {
+        const all = data.tripletTotals?.[triplet.id];
+        triplet.share = all > 0 ? Math.min(1, triplet.count / all) : 1;
     });
+    merged.sort(byShare);
+    const kept = merged.slice(0, max);
+    const shown = kept.reduce((sum, triplet) => sum + triplet.count, 0);
+
+    // Each site bond once, at the largest share of the triplets using it.
+    const roles = [new Map(), data.sharedEnds ? null : new Map()];
+    const addBond = (role, apex, end, share) => {
+        const key = bondKey(apex, end);
+        const seen = role.get(key);
+        if (!seen) role.set(key, { apex, end, share });
+        else if (share > seen.share) seen.share = share;
+    };
+    kept.forEach((triplet) => {
+        if (triplet.share < MIN_HIGHLIGHT_SHARE) return;
+        addBond(roles[0], triplet.apex, triplet.ab, triplet.share);
+        addBond(roles[1] ?? roles[0], triplet.apex, triplet.bc, triplet.share);
+    });
+    const segmentsOf = (role) => {
+        const bonds = role ? [...role.values()] : [];
+        const segments = new Float64Array(bonds.length * 6);
+        const shares = new Float64Array(bonds.length);
+        bonds.forEach(({ apex, end: [end, ...image], share }, index) => {
+            const fe = siteFractional.get(end);
+            segments.set(fracToCartesian(unit, siteFractional.get(apex)), index * 6);
+            segments.set(fracToCartesian(unit, [fe[0] + image[0], fe[1] + image[1], fe[2] + image[2]]), index * 6 + 3);
+            shares[index] = share;
+        });
+        return [segments, shares];
+    };
+    const [ab, abShare] = segmentsOf(roles[0]);
+    const [bc, bcShare] = segmentsOf(roles[1]);
     return {
         first,
         last,
@@ -263,7 +302,9 @@ export const highlightForBins = (data, first, last, siteFractional, unit, { max 
         total,
         shown,
         ab,
-        bc
+        bc,
+        abShare,
+        bcShare
     };
 };
 
