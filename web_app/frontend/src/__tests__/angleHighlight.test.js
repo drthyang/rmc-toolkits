@@ -6,14 +6,16 @@
 // walks are exactly the ones the histogram counts — checked against an
 // independent all-pairs search over every periodic image, bin by bin — they
 // fold onto the right average sites and images, and a large cell keeps to the
-// drawn region and says how many it shows.
+// drawn region and says how many it shows. Each site triplet is weighted by
+// its share (its angles in the range over all of its angles): a cell whose
+// distorted octahedra are known shows exactly those in the distorted range.
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-    binIndexOf, binsOfRange, highlightForBin, highlightForBins, highlightLabel, MAX_HIGHLIGHT_TRIPLETS, rangeText,
-    siteAngleTriplets, unitCellOf
+    binIndexOf, binsOfRange, highlightForBin, highlightForBins, highlightLabel, highlightStrength, MAX_HIGHLIGHT_TRIPLETS,
+    MIN_HIGHLIGHT_SHARE, rangeText, siteAngleTriplets, unitCellOf
 } from '../angleHighlight';
 import { buildBondNetwork } from '../bondNetwork';
 import { siteDisplacementsFromRmc6f } from '../workers/pcaKde';
@@ -301,15 +303,18 @@ describe('a large cell keeps to the drawn region', () => {
         expect(highlightLabel(highlight)).toMatch(/^[\d,]+ of [\d,]+ angles at \d+–\d+° shown$/);
     });
 
-    it('draws at most MAX_HIGHLIGHT_TRIPLETS, nearest the centre first', () => {
+    it('keeps at most MAX_HIGHLIGHT_TRIPLETS, equal shares nearest the centre first', () => {
         const { parsed, atoms, siteFractional } = big;
         const unit = unitCellOf(parsed.latticeVectors, parsed.supercell);
         const options = tripletOptionsFromRequest({ end1: 'O', apex: 'Ti', end2: 'O', r12Min: 1.6, r12Max: 2.4, binWidth: 180 });
         const data = siteAngleTriplets(atoms, parsed.latticeVectors, parsed.supercell, siteFractional, options);
         expect(data.bins[0].triplets.length).toBeGreaterThan(MAX_HIGHLIGHT_TRIPLETS);
         const highlight = highlightForBin(data, 0, siteFractional, unit);
-        // One shared window: both tubes of a triplet are A–B.
-        expect(highlight.ab.length).toBe(MAX_HIGHLIGHT_TRIPLETS * 12);
+        // One bin holds every angle: every share is 1. One shared window:
+        // both tubes of a triplet are A–B, each Ti–O bond drawn once (750
+        // triplets: 50 whole octahedra, 300 bonds).
+        expect(highlight.ab.length).toBe(300 * 6);
+        expect([...highlight.abShare].every((share) => share === 1)).toBe(true);
         expect(highlight.bc.length).toBe(0);
         expect(highlight.shown).toBe(data.bins[0].triplets.slice(0, MAX_HIGHLIGHT_TRIPLETS).reduce((s, t) => s + t.count, 0));
         const distances = data.bins[0].triplets.map((triplet) => {
@@ -327,6 +332,8 @@ describe('a large cell keeps to the drawn region', () => {
         const data = siteAngleTriplets(atoms, parsed.latticeVectors, parsed.supercell, siteFractional, options, null, { maxPerBin: 100 });
         expect(data.bins[0].triplets).toHaveLength(100);
         expect(data.bins[0].total).toBe(histogramOf(atoms, parsed.latticeVectors, options)[0]);
+        // A triplet's total counts the angles of a full bin too.
+        expect(data.tripletTotals.reduce((a, b) => a + b, 0)).toBe(data.bins[0].total);
     });
 });
 
@@ -372,8 +379,10 @@ describe('an angle range', () => {
 
     it('draws a site triplet found in several of its bins once, its counts summed', () => {
         const highlight = highlightForBins(data, 0, data.nbins - 1, siteFractional, unit, { range: true });
-        // One Ti site, six O neighbours: 15 site triplets in all.
-        expect(highlight.ab.length).toBe(15 * 12);
+        // One Ti site, six O neighbours: 15 site triplets over 6 bonds, each
+        // bond drawn once, every share 1 (the range is the whole histogram).
+        expect(highlight.ab.length).toBe(6 * 6);
+        expect([...highlight.abShare]).toEqual([1, 1, 1, 1, 1, 1]);
         expect(highlight.total).toBe(counts.reduce((a, b) => a + b, 0));
         expect(highlight.shown).toBe(highlight.total);
         // A single bin is the hovered one's highlight.
@@ -391,3 +400,171 @@ describe('an angle range', () => {
     });
 });
 
+
+describe('the share weighting', () => {
+    // Hand-made: sites on a line, unit cell 1 Å, two bins. Site 1 is the
+    // apex; ends 2, 3, 4 sit at x = 2, 3, 4; distinct windows (A–B, B–C).
+    const siteFractional = new Map([[1, [0, 0, 0]], [2, [2, 0, 0]], [3, [3, 0, 0]], [4, [4, 0, 0]], [5, [0, 5, 0]]]);
+    const unit = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+    const t = (id, ab, bc, count, d) => ({ id, apex: 1, ab: [ab, 0, 0, 0], bc: [bc, 0, 0, 0], count, d });
+    // id 0: 8 of its 10 angles in bin 0 (share 0.8), far from the centre.
+    // id 1: 2 of 40 (0.05), nearest the centre, shares the A–B bond 1→2.
+    // id 2: 1 of 100 (0.01), below MIN_HIGHLIGHT_SHARE.
+    const data = {
+        binWidth: 1,
+        sharedEnds: false,
+        bins: [
+            { total: 11, triplets: [t(1, 2, 4, 2, 0), t(0, 2, 3, 8, 9), t(2, 5, 4, 1, 1)] },
+            { total: 140, triplets: [t(0, 2, 3, 2, 9), t(1, 2, 4, 38, 0), t(2, 5, 4, 99, 1)] }
+        ],
+        tripletTotals: [10, 40, 100]
+    };
+    const segmentEnds = (segments) => {
+        const ends = [];
+        for (let s = 0; s < segments.length; s += 6) ends.push(segments[s + 3] || segments[s + 4]);
+        return ends;
+    };
+
+    it('weights each site triplet by its angles in the range over all its angles', () => {
+        const highlight = highlightForBin(data, 0, siteFractional, unit);
+        // The A–B bond 1→2 is used by id 0 (0.8) and id 1 (0.05): the larger.
+        expect(segmentEnds(highlight.ab)).toEqual([2]);
+        expect([...highlight.abShare]).toEqual([0.8]);
+        expect(segmentEnds(highlight.bc)).toEqual([3, 4]);
+        expect([...highlight.bcShare]).toEqual([0.8, 0.05]);
+        // The legend counts are the histogram's, faint and undrawn included.
+        expect(highlight.total).toBe(11);
+        expect(highlight.shown).toBe(11);
+        expect(highlightLabel(highlight)).toBe('11 angles at 0–1°');
+    });
+
+    it('does not draw a triplet below the threshold, but counts it', () => {
+        const highlight = highlightForBin(data, 0, siteFractional, unit);
+        // id 2's bonds (1→5 A–B, 1→4 B–C at 0.01) add nothing: 1→4 keeps id 1's 0.05.
+        expect(segmentEnds(highlight.ab)).not.toContain(5);
+        expect(MIN_HIGHLIGHT_SHARE).toBeGreaterThan(0.01);
+        expect(MIN_HIGHLIGHT_SHARE).toBeLessThanOrEqual(0.05);
+    });
+
+    it('sums a range\'s bins before dividing, so the whole histogram is share 1', () => {
+        const highlight = highlightForBins(data, 0, 1, siteFractional, unit, { range: true });
+        expect([...highlight.abShare]).toEqual([1, 1]);
+        expect(highlight.total).toBe(151);
+        const second = highlightForBin(data, 1, siteFractional, unit);
+        // Bin 1: id 2 at 0.99 now leads; id 1 at 0.95, id 0 at 0.2.
+        expect(segmentEnds(second.ab)).toEqual([5, 2]);
+        expect([...second.abShare]).toEqual([0.99, 0.95]);
+    });
+
+    it('keeps the largest shares when capped, not the nearest the centre', () => {
+        const highlight = highlightForBin(data, 0, siteFractional, unit, { max: 1 });
+        expect(highlight.shown).toBe(8);
+        expect(highlightLabel(highlight)).toBe('8 of 11 angles at 0–1° shown');
+        expect(segmentEnds(highlight.bc)).toEqual([3]);
+        // Equal shares: nearest the centre first, as before.
+        const even = { ...data, tripletTotals: [8, 2, 1] };
+        expect(segmentEnds(highlightForBin(even, 0, siteFractional, unit, { max: 1 }).bc)).toEqual([4]);
+    });
+
+    it('draws a share by its square root, nothing below the threshold', () => {
+        expect(highlightStrength(1)).toBe(1);
+        expect(highlightStrength(0.25)).toBe(0.5);
+        expect(highlightStrength(0.04)).toBeCloseTo(0.2, 12);
+        expect(highlightStrength(MIN_HIGHLIGHT_SHARE / 2)).toBe(0);
+        expect(highlightStrength(1.2)).toBe(1);
+    });
+
+    it('draws a homonuclear bond seen from both its atoms once', () => {
+        const line = new Map([[1, [0, 0, 0]], [2, [0.5, 0, 0]], [3, [0, 0.5, 0]]]);
+        const both = {
+            binWidth: 1,
+            sharedEnds: true,
+            bins: [{ total: 2, triplets: [
+                { id: 0, apex: 1, ab: [2, 0, 0, 0], bc: [3, 0, 0, 0], count: 1, d: 0 },
+                { id: 1, apex: 2, ab: [1, 0, 0, 0], bc: [3, 0, 0, 0], count: 1, d: 0 }
+            ] }],
+            tripletTotals: [1, 4]
+        };
+        // id 1's first bond, 2 → 1 at image 0, is 1 → 2 at image 0 seen
+        // from site 2: one tube, at the larger share (id 0's 1, not 0.25).
+        const shared = highlightForBin(both, 0, line, unit);
+        expect(shared.ab.length).toBe(3 * 6);
+        expect(shared.abShare[0]).toBe(1);
+        // 2 → 1 at image (1,0,0) is another bond (0.5 → 1 along a).
+        both.bins[0].triplets[1].ab = [1, 1, 0, 0];
+        expect(highlightForBin(both, 0, line, unit).ab.length).toBe(4 * 6);
+    });
+
+    it('agrees with each triplet\'s own bins on the demo run', () => {
+        const text = readFileSync(resolve(process.cwd(), 'public/demo/GTS_250K.rmc6f'), 'utf8');
+        const { parsed, atoms, siteFractional } = parse(text);
+        const options = tripletOptionsFromRequest({ end1: 'Se', apex: 'Ta', end2: 'Se', r12Min: 2.3, r12Max: 2.9, binWidth: 1 });
+        const data = siteAngleTriplets(atoms, parsed.latticeVectors, parsed.supercell, siteFractional, options);
+        const perTriplet = new Map();
+        data.bins.forEach((bin) => bin.triplets.forEach(({ id, count }) => perTriplet.set(id, (perTriplet.get(id) ?? 0) + count)));
+        perTriplet.forEach((count, id) => expect(data.tripletTotals[id]).toBe(count));
+        // 16 Ta sites × 15 Se pairs.
+        expect(data.tripletTotals).toHaveLength(240);
+    });
+});
+
+describe('a cell with a known subset of distorted octahedra', () => {
+    // Four Ti sites in a 2×2×1 perovskite cell; Ti site 1 sits 0.3 Å off
+    // its octahedron's centre along c, so four of its cis angles open to
+    // ~99° and four close to ~81°. The other three are regular (90°).
+    const shift = 0.3 / 3.95;
+    const basis = [];
+    [[0, 0], [1, 0], [0, 1], [1, 1]].forEach(([i, j], n) => {
+        const at = (f) => [(i + f[0]) / 2, (j + f[1]) / 2, f[2]];
+        basis.push(['Ti', at([0.5, 0.5, 0.5 + (n === 0 ? shift : 0)])]);
+        basis.push(['Sr', at([0, 0, 0])], ['O', at([0.5, 0.5, 0])], ['O', at([0.5, 0, 0.5])], ['O', at([0, 0.5, 0.5])]);
+    });
+    const unit = [[7.8, 0, 0], [0, 7.8, 0], [0, 0, 3.95]];
+    const { parsed, atoms, siteFractional } = parse(rmc6fText({ basis, unit, supercell: [5, 5, 5], jitter: 0.012 }));
+    const cell = unitCellOf(parsed.latticeVectors, parsed.supercell);
+    const options = tripletOptionsFromRequest({ end1: 'O', apex: 'Ti', end2: 'O', r12Min: 1.6, r12Max: 2.4, binWidth: 1 });
+    const data = siteAngleTriplets(atoms, parsed.latticeVectors, parsed.supercell, siteFractional, options);
+    const distortedApex = parsed.sites.find((site) => site.element === 'Ti' && site.siteFractional[2] > 0.55);
+    const cart = (f) => [0, 1, 2].map((axis) => f[0] * cell[0][axis] + f[1] * cell[1][axis] + f[2] * cell[2][axis]);
+    const apexAt = cart(distortedApex.siteFractional);
+    // Per drawn bond, its share: on the distorted octahedron (its apex end) or not.
+    const split = (highlight) => {
+        const out = { distorted: [], regular: [] };
+        for (let s = 0; s < highlight.ab.length; s += 6) {
+            const fromDistorted = [0, 1, 2].every((axis) => Math.abs(highlight.ab[s + axis] - apexAt[axis]) < 1e-9);
+            out[fromDistorted ? 'distorted' : 'regular'].push(highlight.abShare[s / 6]);
+        }
+        return out;
+    };
+    const mean = (values) => values.reduce((a, b) => a + b, 0) / values.length;
+    const [first, last] = binsOfRange([78, 85], data.binWidth, data.nbins);
+
+    it('draws the distorted octahedron strongly, the regular ones faintly at most', () => {
+        expect(distortedApex).toBeTruthy();
+        const highlight = highlightForBins(data, first, last, siteFractional, cell, { range: true });
+        const { distorted, regular } = split(highlight);
+        // Its four equatorial bonds and the short apical one: the four ~81°
+        // angles lie (almost) wholly in the range; the long apical bond
+        // takes part only in ~99° and 180° angles, so it is not drawn.
+        expect(distorted).toHaveLength(5);
+        expect(Math.min(...distorted)).toBeGreaterThan(0.8);
+        // The regular octahedra reach 78–85° only with their tails.
+        expect(Math.max(...regular)).toBeLessThan(0.1);
+        expect(mean(distorted) / mean(regular)).toBeGreaterThan(10);
+        // As drawn (square root): at least three times brighter.
+        expect(Math.min(...distorted.map(highlightStrength)) / Math.max(...regular.map(highlightStrength))).toBeGreaterThan(3);
+        expect(highlight.shown).toBe(highlight.total);
+    });
+
+    it('where an unweighted highlight lit the regular octahedra as brightly', () => {
+        // Every site triplet with any count in the range (the old rule):
+        // the regular octahedra have angles there too.
+        const touched = new Set();
+        for (let bin = first; bin <= last; bin += 1) {
+            data.bins[bin].triplets.forEach((triplet) => {
+                if (triplet.apex !== distortedApex.referenceNumber) touched.add(triplet.apex);
+            });
+        }
+        expect(touched.size).toBe(3);
+    });
+});
