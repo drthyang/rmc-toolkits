@@ -37,7 +37,7 @@
 }
 
 .llm-dock.is-sheet.is-open {
-    height: calc(var(--llm-sheet-f, 0.46) * var(--viewport-h, 100vh));
+    height: var(--llm-sheet-h, calc(var(--llm-sheet-f, 0.46) * var(--viewport-h, 100vh)));
 }
 
 /* --- the rail (collapsed) ------------------------------------------------- */

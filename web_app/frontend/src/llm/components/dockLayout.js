@@ -29,6 +29,11 @@ export const SHEET_MIN = 0.28;
 export const SHEET_MAX = 0.72;
 export const SHEET_DEFAULT = 0.46;
 export const SHEET_STEP = 0.05;
+// The least height an open sheet takes, whatever its fraction: its head, the
+// connection row, the composer with its hint and a few lines of conversation
+// (rem). On a phone in landscape (~400px tall) a fraction alone would clip
+// the composer; there the sheet takes up to SHEET_MAX of the window instead.
+export const SHEET_FLOOR_REM = 19;
 // While a card is in focus on a sheet layout, the page keeps at least this
 // share of the window above the sheet.
 export const SHEET_FOCUS_MAX = 0.5;
@@ -61,6 +66,17 @@ export const clampSheet = (fraction) => {
     const value = finite(fraction) ? fraction : SHEET_DEFAULT;
     return Math.round(Math.min(SHEET_MAX, Math.max(SHEET_MIN, value)) * 1000) / 1000;
 };
+
+/**
+ * The open sheet's CSS height: `fraction` of the window (a number, or a CSS
+ * expression such as `var(--llm-sheet-f)` so a drag can restyle it live), but
+ * at least SHEET_FLOOR_REM — never more than SHEET_MAX of the window for it.
+ * CopilotChat sizes the sheet with it and reports it to the host, which takes
+ * the same height off the pages.
+ */
+export const sheetHeightCss = (fraction, viewport = 'var(--viewport-h, 100vh)') => (
+    `max(calc(${fraction} * ${viewport}), min(${SHEET_FLOOR_REM}rem, calc(${SHEET_MAX} * ${viewport})))`
+);
 
 /** The persisted state, validated: `{ open, width, sheet }` (null width = default). */
 export const readDockState = (storage, key = DOCK_STORAGE_KEY) => {

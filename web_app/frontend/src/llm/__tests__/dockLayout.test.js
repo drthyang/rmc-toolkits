@@ -7,9 +7,9 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-    DOCK_MAX, DOCK_MIN, DOCK_QUERY, PAGE_MIN, SHEET_DEFAULT, SHEET_MAX, SHEET_MIN,
+    DOCK_MAX, DOCK_MIN, DOCK_QUERY, PAGE_MIN, SHEET_DEFAULT, SHEET_FLOOR_REM, SHEET_MAX, SHEET_MIN,
     clampDockWidth, clampSheet, defaultDockWidth, dragDockWidth, dragSheet, keyResize, maxDockWidth,
-    readDockState, writeDockState
+    readDockState, sheetHeightCss, writeDockState
 } from '../components/dockLayout';
 
 const memoryStorage = () => {
@@ -23,6 +23,24 @@ const memoryStorage = () => {
 describe('dock layout', () => {
     it('docks from 1080 × 541 up: the narrowest panel beside pages of 760px', () => {
         expect(DOCK_QUERY).toBe('(min-width: 1080px) and (min-height: 541px)');
+    });
+
+    it('keeps an open sheet tall enough for its composer, up to SHEET_MAX of a short window', () => {
+        expect(SHEET_FLOOR_REM).toBe(19);
+        expect(sheetHeightCss(0.46)).toBe(
+            'max(calc(0.46 * var(--viewport-h, 100vh)), min(19rem, calc(0.72 * var(--viewport-h, 100vh))))'
+        );
+        // The live fraction a drag writes, against the host's own viewport var.
+        expect(sheetHeightCss('var(--llm-sheet-f)', 'var(--viewport-h)')).toBe(
+            'max(calc(var(--llm-sheet-f) * var(--viewport-h)), min(19rem, calc(0.72 * var(--viewport-h))))'
+        );
+        // What that resolves to: a phone in landscape (402px tall at 15px/rem)
+        // gets 285px, not 46 % (185px); a phone in portrait keeps its fraction.
+        const resolve = (fraction, vh, rem = 15) => Math.max(fraction * vh, Math.min(SHEET_FLOOR_REM * rem, SHEET_MAX * vh));
+        expect(resolve(SHEET_DEFAULT, 402)).toBe(285);
+        expect(resolve(SHEET_DEFAULT, 874)).toBeCloseTo(402.04);
+        expect(resolve(SHEET_MIN, 874)).toBe(285);
+        expect(resolve(SHEET_DEFAULT, 360)).toBeCloseTo(259.2);
     });
 
     it('defaults to 28 % of the window within 23–30rem', () => {
