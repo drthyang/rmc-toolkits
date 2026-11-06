@@ -378,6 +378,8 @@ const tripletCore = (fractional, elements, latticeVectors,
 
   return {
     triplet: [end1, apex, end2],
+    wrapped,
+    apexRows,
     window12,
     window23,
     sharedEnds,
@@ -393,7 +395,12 @@ const tripletCore = (fractional, elements, latticeVectors,
 
 // Visit every angle (degrees) of a core in the engine's deterministic order,
 // without storing any: the histogram and moments accumulate as it streams.
-const forEachAngle = (core, visit) => {
+// visit(angle, center, one, two): `center` indexes core.apexRows, `one` and
+// `two` are the angle's bonds from it (A–B first; with the same end element,
+// the pair as listed — either may be the B–C one). The Bond Geometry page's
+// hover highlight (visitAngleTriplets) walks this same loop, so it finds
+// exactly the triplets the histogram counts.
+const forEachTriplet = (core, visit) => {
   const { sameEnd, bit23, both, bonds12, bonds23 } = core;
   for (let center = 0; center < core.apexCount; center += 1) {
     const first = sameEnd ? both[center] : bonds12[center];
@@ -412,10 +419,50 @@ const forEachAngle = (core, visit) => {
         }
         const cosine = (one.vx * two.vx + one.vy * two.vy + one.vz * two.vz)
           / (one.length * two.length);
-        visit(Math.acos(Math.min(1, Math.max(-1, cosine))) * toDegrees);
+        visit(Math.acos(Math.min(1, Math.max(-1, cosine))) * toDegrees, center, one, two);
       }
     }
   }
+};
+
+const forEachAngle = (core, visit) => forEachTriplet(core, (angle) => visit(angle));
+
+const binCountOf = (binWidth) => {
+  if (!Number.isFinite(binWidth) || binWidth <= 0 || binWidth > 180) {
+    throw new Error(`binWidth must be in (0, 180], got ${binWidth}`);
+  }
+  // Math.round is floor(x + 0.5) for positives — the same half-up rule the
+  // Python engine's _bin_count uses, so both build identical bin counts.
+  return Math.max(1, Math.round(180 / binWidth));
+};
+
+/**
+ * Every triplet bondAngleSummary counts, with the bin it counts it in: the
+ * same core, loop and bin rule, so the two cannot disagree. Calls
+ * visit(bin, apexRow, one, two) per angle — apexRow the central atom's row in
+ * `fractional`, `one`/`two` its bonds ({ row, ix, iy, iz, vx, vy, vz, length,
+ * member }, image shifts in supercell periods). `one` is the A–B bond and
+ * `two` the B–C one; with the same end element and two windows the pair is
+ * put in that order (bit 0 of `member` = A–B window). Returns
+ * { nbins, binWidth, triplet, sharedEnds, wrapped } (wrapped: the folded
+ * fractional coordinates the bond images refer to), also handed to
+ * onStart(info) before the first angle. Engine-internal: not
+ * part of the /api/triplets contract.
+ */
+export const visitAngleTriplets = (fractional, elements, latticeVectors, options, visit, onStart = null) => {
+  const nbins = binCountOf(options.binWidth ?? 1.0);
+  const width = 180 / nbins;
+  const core = tripletCore(fractional, elements, latticeVectors, options);
+  const { sameEnd, sharedEnds, bit23, apexRows } = core;
+  const info = { nbins, binWidth: width, triplet: core.triplet, sharedEnds, wrapped: core.wrapped };
+  onStart?.(info);
+  forEachTriplet(core, (angle, center, one, two) => {
+    // Same end, two windows: the pair is kept when either assignment puts
+    // one bond in each window; name the A–B one first.
+    const swap = sameEnd && !sharedEnds && !((one.member & 1) && (two.member & bit23));
+    visit(angleBin(angle, nbins, width), apexRows[center], swap ? two : one, swap ? one : two);
+  });
+  return info;
 };
 
 // Bond-length histogram of one window. `count` is the number of B-centred
@@ -450,6 +497,54 @@ const lengthHistogram = (perCenter, [lo, hi], homonuclear) => {
     uniqueBonds: homonuclear ? total / 2 : total,
     meanLength: total ? sum / total : null
   };
+};
+
+/**
+ * A flat 'triplets' request → the engine's options ({ triplet, bond12,
+ * bond23, binWidth }), with the request caps of the Flask route. The page's
+ * hover highlight (angleTripletsWorker.js) reads its request through this
+ * too, so it searches exactly the windows the histogram did.
+ */
+export const tripletOptionsFromRequest = (data) => {
+  // Flat scalar params (end1/apex/end2, r12Min...) so the identical
+  // request shape works as an HTTP query string against /api/triplets.
+  // Same request caps as the Flask route (the engine is unrestricted;
+  // both copies are pinned by the request contract,
+  // fixtures/analysis_requests.json):
+  // rmax <= 15 A bounds the neighbour search, binWidth >= 0.05 deg the
+  // response, and the shared APP_MAX_ANGLES budget the pairing work —
+  // the angle count grows ~rmax^6, so without it a window well inside
+  // the rmax cap would freeze the shared worker (the 'triplets' handler
+  // of pcaKdeWorker.js adds that budget).
+  // A null/''/blank bound is *missing* — the same errors as the Flask
+  // route — never Number()'d into 0, which silently widened a window
+  // with a cleared rmin box down to 0 A. Bounds then go to the engine
+  // unconverted; its validateWindow rejects anything non-numeric.
+  const window = (minKey, maxKey, fallback) => {
+    const missing = [minKey, maxKey].filter((key) => isBlankValue(data[key]));
+    if (missing.length === 2 && fallback !== undefined) return fallback;
+    if (missing.length) {
+      throw new Error(`${minKey}/${maxKey} are required together; missing ${missing[0]}`);
+    }
+    return [data[minKey], data[maxKey]];
+  };
+  const bond12 = window('r12Min', 'r12Max');
+  const bond23 = window('r23Min', 'r23Max', null);
+  // Absent → the 1° default (as the route's query default); present
+  // but blank → an error, never a 0-degree bin width.
+  if (typeof data.binWidth === 'string' && isBlankValue(data.binWidth)) {
+    throw new Error(`binWidth must be a number, got '${data.binWidth}'`);
+  }
+  const binWidth = data.binWidth == null ? 1.0 : Number(data.binWidth);
+  if (binWidth < 0.05) {
+    throw new Error(`binWidth is capped at >= 0.05 deg, got ${binWidth}`);
+  }
+  for (const [key, raw] of [['r12Max', data.r12Max], ['r23Max', data.r23Max]]) {
+    if (!isBlankValue(raw) && Number(raw) > 15) {
+      throw new Error(`${key} is capped at 15 A, got ${raw}`);
+    }
+  }
+  return { triplet: [data.end1, data.apex, data.end2], bond12, bond23, binWidth };
 };
 
 /**
@@ -543,14 +638,9 @@ export const coordinationSummaryOf = (coordination) => {
  */
 export const bondAngleSummary = (fractional, elements, latticeVectors, options = {}) => {
   const { binWidth = 1.0, collectAngles = false } = options;
-  if (!Number.isFinite(binWidth) || binWidth <= 0 || binWidth > 180) {
-    throw new Error(`binWidth must be in (0, 180], got ${binWidth}`);
-  }
+  const nbins = binCountOf(binWidth);
   const core = tripletCore(fractional, elements, latticeVectors, options);
 
-  // Math.round is floor(x + 0.5) for positives — the same half-up rule the
-  // Python engine's _bin_count uses, so both build identical bin counts.
-  const nbins = Math.max(1, Math.round(180 / binWidth));
   const width = 180 / nbins;
   const counts = new Array(nbins).fill(0);
   const collected = collectAngles ? [] : null;

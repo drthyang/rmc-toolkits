@@ -44,6 +44,9 @@
        (InteractivePlot.jsx → finishDrag). */
     touch-action: pan-y pinch-zoom;
     aspect-ratio: 8 / 5;
+    /* A drag (box zoom, an x range) must not select the tick labels. */
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .interactive-plot--wide svg {
@@ -161,6 +164,38 @@
     stroke: var(--chart-hover);
     stroke-width: 1;
     stroke-dasharray: 3 4;
+}
+
+.hover-bin {
+    fill: var(--accent-soft);
+    stroke: var(--accent);
+    stroke-width: 1;
+    stroke-opacity: 0.55;
+    vector-effect: non-scaling-stroke;
+    pointer-events: none;
+}
+
+/* A picked x range (onRangeChange): the Slab In Cell band's look. */
+.plot-range {
+    pointer-events: none;
+}
+
+.plot-range__band {
+    fill: rgba(79, 140, 255, 0.18);
+    stroke: none;
+}
+
+.plot-range__edge line {
+    stroke: #74a7ff;
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+}
+
+.plot-range__edge rect {
+    fill: #74a7ff;
+    stroke: var(--canvas-bg, #fff);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
 }
 
 .hover-dot {

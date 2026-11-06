@@ -138,12 +138,15 @@ export const findSiteBonds = (sites, unit, set) => {
  * choice is deterministic).
  *
  * @returns {{ sets: Array<{color, elements, window, segments: Float64Array}>,
- *             shown: number, total: number, limited: boolean }}
+ *             shown: number, total: number, limited: boolean,
+ *             center: number[], radiusSq: number|null }}
+ *   radiusSq: when limited, the squared distance from `center` of the
+ *   furthest kept bond's midpoint — the drawn region (null: everything drawn).
  */
 export const buildBondNetwork = (sites, unit, bondSets, { center = [0, 0, 0], maxBonds = MAX_DRAWN_BONDS } = {}) => {
     const found = (bondSets ?? []).map((set) => ({ ...set, segments: findSiteBonds(sites ?? [], unit, set) }));
     const total = found.reduce((sum, set) => sum + set.segments.length / 6, 0);
-    if (total <= maxBonds) return { sets: found, shown: total, total, limited: false };
+    if (total <= maxBonds) return { sets: found, shown: total, total, limited: false, center, radiusSq: null };
 
     const ranked = [];
     found.forEach((set, setIndex) => {
@@ -164,7 +167,30 @@ export const buildBondNetwork = (sites, unit, bondSets, { center = [0, 0, 0], ma
         picked.forEach((b, i) => segments.set(set.segments.subarray(b * 6, b * 6 + 6), i * 6));
         return { ...set, segments };
     });
-    return { sets, shown: maxBonds, total, limited: true };
+    return { sets, shown: maxBonds, total, limited: true, center, radiusSq: ranked[maxBonds - 1].d };
+};
+
+// Unit-cell vectors = supercell vectors divided by the supercell counts.
+export const unitVectorsOf = (source) => {
+    if (!source?.latticeVectors || !source?.supercell) return null;
+    return source.latticeVectors.map((row, i) => row.map((v) => v / (source.supercell[i] || 1)));
+};
+
+/**
+ * The folded cell's bond network from the page's data: the average sites of
+ * one unit cell (the 'sites' payload) and its cell (the structure's, else the
+ * sites'), centred on the cell; null without bonds to draw.
+ */
+export const foldedCellNetwork = (structure, sites, bondSets) => {
+    const unit = unitVectorsOf(structure) || unitVectorsOf(sites);
+    if (!unit || !bondSets?.length || !sites?.sites?.length) return null;
+    const center = [0, 1, 2].map((axis) => 0.5 * (unit[0][axis] + unit[1][axis] + unit[2][axis]));
+    const atoms = sites.sites.map((site) => ({
+        referenceNumber: site.referenceNumber,
+        element: site.element,
+        siteFractional: site.siteFractional
+    }));
+    return { ...buildBondNetwork(atoms, unit, bondSets, { center }), unit };
 };
 
 /**

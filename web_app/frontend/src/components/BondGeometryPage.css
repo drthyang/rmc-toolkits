@@ -126,3 +126,10 @@
         height: 24rem;
     }
 }
+
+/* The picked angle range in the angle card's header: "85–95°" and Clear. */
+.geom-range {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}

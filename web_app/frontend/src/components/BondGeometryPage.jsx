@@ -40,6 +40,9 @@ import InfoBadge from '../ui/InfoBadge';
 import InteractivePlot from './InteractivePlot';
 import ModelSummary from './ModelSummary';
 import FoldedCellPanel from './FoldedCellPanel';
+import { foldedCellNetwork } from '../bondNetwork';
+import useAngleHighlight from '../useAngleHighlight';
+import { rangeText } from '../angleHighlight';
 import useSiteCloud from '../useSiteCloud';
 import { tripletInputsFromRequest, tripletRequestFromInputs } from '../workers/triplets';
 import { registerBondGeometry } from '../bondGeometryControl';
@@ -170,6 +173,12 @@ export const PartialGrHelp = () => (
             two bonds are different types.
         </p>
     </InfoBadge>
+);
+
+// The hover highlight's own worker (useAngleHighlight).
+const createAngleTripletsWorker = () => new Worker(
+    new URL('../workers/angleTripletsWorker.js', import.meta.url),
+    { type: 'module' }
 );
 
 export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, request = null }) {
@@ -768,6 +777,22 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
         return sets;
     }, [result]);
 
+    // The folded cell's bonds, and the hovered angle bin's triplets among
+    // them (useAngleHighlight: a run opened in the browser only).
+    const network = useMemo(() => foldedCellNetwork(structure, sites, bondSets), [structure, sites, bondSets]);
+    // The angle range dragged on the plot (degrees, at bin edges); a new
+    // result starts without one.
+    const [angleRange, setAngleRange] = useState(null);
+    const [rangeResult, setRangeResult] = useState(result);
+    if (rangeResult !== result) {
+        setRangeResult(result);
+        setAngleRange(null);
+    }
+    const { highlight, onHoverX } = useAngleHighlight({
+        rmc6fText, result, request: resultRequest, network, sites, range: angleRange,
+        createWorker: createAngleTripletsWorker
+    });
+
     // What the cards name: the computed triplet while a result is shown (the
     // plot and the 3D bonds are that result's), else the current picks.
     const hasTriplet = Boolean(end1 && apex && end2);
@@ -1117,6 +1142,16 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
                         )}
                         actions={(
                             <>
+                                {!showGr && anglePlot && angleRange && (
+                                    <span className="geom-range">
+                                        <strong className="ui-card__readout" title="The angle range picked on the plot: its triplets are drawn in the folded cell.">
+                                            {rangeText(...angleRange)}
+                                        </strong>
+                                        <ToolButton onClick={() => setAngleRange(null)} aria-label="Clear the angle range">
+                                            Clear
+                                        </ToolButton>
+                                    </span>
+                                )}
                                 {!showGr && stale && (
                                     <Chip tone="warn" title="The plot is from other inputs: Update to recompute.">
                                         inputs changed
@@ -1221,6 +1256,10 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
                                         file={{ path: `geometry:angles:${datasetKey}`, name: (anglePlot ?? ghostPlot).title }}
                                         plotData={anglePlot ?? ghostPlot}
                                         variant="fit"
+                                        onHoverX={anglePlot ? onHoverX : null}
+                                        range={anglePlot ? angleRange : null}
+                                        onRangeChange={anglePlot ? setAngleRange : null}
+                                        rangeStep={result?.binWidth}
                                     />
                                 </div>
                                 {computing && !result && <div className="ui-shimmer" aria-hidden="true" />}
@@ -1310,6 +1349,8 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
                     elementColors={elementColors}
                     loading={loadingSites}
                     bondSets={bondSets}
+                    network={network}
+                    highlight={highlight}
                     legendEmphasis={hasTriplet || result ? shownTriplet : null}
                     legendExtras={bondSets
                         ? bondSets.map((set) => (

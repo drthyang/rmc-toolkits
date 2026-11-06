@@ -31,7 +31,7 @@ import {
     siteSpecies
 } from './pcaKde.js';
 import { siteOrientationHistogram } from './orientation.js';
-import { APP_MAX_ANGLES, bondAngleSummary, isBlankValue } from './triplets.js';
+import { APP_MAX_ANGLES, bondAngleSummary, isBlankValue, tripletOptionsFromRequest } from './triplets.js';
 import { clusterDistortion } from './clusters.js';
 import { displacementModulations } from './modulations.js';
 import { APP_MAX_BONDS, polyhedralDistortion } from './distortion.js';
@@ -139,54 +139,11 @@ export const handlePcaMessage = async (data, getText) => {
     }
 
     if (kind === 'triplets') {
-        // Flat scalar params (end1/apex/end2, r12Min...) so the identical
-        // request shape works as an HTTP query string against /api/triplets.
-        // Same request caps as the Flask route (the engine is unrestricted;
-        // both copies are pinned by the request contract,
-        // fixtures/analysis_requests.json):
-        // rmax <= 15 A bounds the neighbour search, binWidth >= 0.05 deg the
-        // response, and the shared APP_MAX_ANGLES budget the pairing work —
-        // the angle count grows ~rmax^6, so without it a window well inside
-        // the rmax cap would freeze the shared worker.
-        // A null/''/blank bound is *missing* — the same errors as the Flask
-        // route — never Number()'d into 0, which silently widened a window
-        // with a cleared rmin box down to 0 A. Bounds then go to the engine
-        // unconverted; its validateWindow rejects anything non-numeric.
-        const window = (minKey, maxKey, fallback) => {
-            const missing = [minKey, maxKey].filter((key) => isBlankValue(data[key]));
-            if (missing.length === 2 && fallback !== undefined) return fallback;
-            if (missing.length) {
-                throw new Error(`${minKey}/${maxKey} are required together; missing ${missing[0]}`);
-            }
-            return [data[minKey], data[maxKey]];
-        };
-        const bond12 = window('r12Min', 'r12Max');
-        const bond23 = window('r23Min', 'r23Max', null);
-        // Absent → the 1° default (as the route's query default); present
-        // but blank → an error, never a 0-degree bin width.
-        if (typeof data.binWidth === 'string' && isBlankValue(data.binWidth)) {
-            throw new Error(`binWidth must be a number, got '${data.binWidth}'`);
-        }
-        const binWidth = data.binWidth == null ? 1.0 : Number(data.binWidth);
-        if (binWidth < 0.05) {
-            throw new Error(`binWidth is capped at >= 0.05 deg, got ${binWidth}`);
-        }
-        for (const [key, raw] of [['r12Max', data.r12Max], ['r23Max', data.r23Max]]) {
-            if (!isBlankValue(raw) && Number(raw) > 15) {
-                throw new Error(`${key} is capped at 15 A, got ${raw}`);
-            }
-        }
         const summary = bondAngleSummary(
             parsed.atomList.fractional,
             parsed.atomList.elements,
             parsed.latticeVectors,
-            {
-                triplet: [data.end1, data.apex, data.end2],
-                bond12,
-                bond23,
-                binWidth,
-                maxAngles: APP_MAX_ANGLES
-            }
+            { ...tripletOptionsFromRequest(data), maxAngles: APP_MAX_ANGLES }
         );
         // Atom lines the shared .rmc6f grammar skipped, or null -- the same
         // text as /api/triplets' parseWarning (bond_angle_summary_from_file).
