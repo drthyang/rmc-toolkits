@@ -60,6 +60,15 @@ const isExperimental = (label) => /exp/i.test(label);
 //                       goes. With it a step series' hovered bin is shaded,
 //                       and on touch a tap pins the readout until a tap on
 //                       the same point or anywhere off the chart clears it.
+//   range, onRangeChange, rangeStep
+//                       an x range to pick (the Bond Geometry angle range):
+//                       with onRangeChange a drag on the plot sets it, its
+//                       edges and the whole band drag (by touch too), a
+//                       double-click clears it, and it is drawn as a shaded
+//                       band with grips — the Slab In Cell band's look. Edges
+//                       snap to multiples of rangeStep (the bin width), so a
+//                       bin is wholly in or out. The box zoom gives way to it;
+//                       ⌘/ctrl + wheel still zooms. `range` is [lo, hi] or null.
 //   ribbon              { series, sigma, label }: a ±σ band around the series
 //                       labelled `series` (sigma[i] at its x[i]; a non-finite
 //                       σ or y is a gap), drawn under it in its colour and
@@ -199,7 +208,8 @@ const ribbonPath = (series, sigma, xDomain, sx, sy) => {
     }).join(' ');
 };
 
-const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, actionsTarget, marks = null, ribbon = null, onHoverX = null }) => {
+const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, actionsTarget, marks = null, ribbon = null, onHoverX = null,
+    range = null, onRangeChange = null, rangeStep = null }) => {
     const wide = variant === 'wide';
     // 'fit' takes its viewBox from the rendered box instead of a fixed aspect,
     // so the drawing fills the card rather than letterboxing inside it. Opt-in:
@@ -595,7 +605,90 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
         setHover({ x: values[0].x, px: xScale(values[0].x), values, touch: event.pointerType === 'touch' });
     };
 
+    // --- The x range (onRangeChange): drag to set, edges and band drag. ----
+    const rangeMode = typeof onRangeChange === 'function';
+    const rangeDragRef = useRef(null);
+    const [rangeCursor, setRangeCursor] = useState(null);
+    const rangeUnit = rangeStep > 0 ? rangeStep : (domains.baseX[1] - domains.baseX[0]) / 1000;
+    const clampRangeX = (value) => Math.min(domains.baseX[1], Math.max(domains.baseX[0], value));
+    const snapRange = (value, round = Math.round) => clampRangeX(round(value / rangeUnit) * rangeUnit);
+    // Which part of the band a pointer at view x is on: an edge (a finger
+    // gets a wider grip), the band itself, or neither.
+    const rangeZone = (px, pointerType) => {
+        if (!range) return null;
+        const slop = pointerType === 'touch' ? 22 : 8;
+        const toLo = Math.abs(px - xScale(range[0]));
+        const toHi = Math.abs(px - xScale(range[1]));
+        if (toLo <= slop || toHi <= slop) return toLo <= toHi ? 'lo' : 'hi';
+        return px > xScale(range[0]) && px < xScale(range[1]) ? 'move' : null;
+    };
+    const ZONE_CURSORS = { lo: 'ew-resize', hi: 'ew-resize', move: 'grab' };
+    const startRange = (event) => {
+        const pinnedX = onHoverX && hover?.touch ? hover.x : null;
+        setHover(null);
+        const { x } = pointerToView(event);
+        if (x < view.left || x > view.width - view.right) return;
+        try {
+            event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+            // Pointer capture is best-effort.
+        }
+        const zone = rangeZone(x, event.pointerType) ?? 'new';
+        rangeDragRef.current = {
+            zone, anchor: xInvert(x), start: range, clientX: event.clientX, moved: false, pinnedX,
+            touch: event.pointerType === 'touch'
+        };
+        if (zone === 'move') setRangeCursor('grabbing');
+    };
+    const moveRange = (event) => {
+        const current = rangeDragRef.current;
+        const { x } = pointerToView(event);
+        if (!current) {
+            if (event.pointerType !== 'touch') {
+                nearestHover(event);
+                setRangeCursor(ZONE_CURSORS[rangeZone(x, event.pointerType)] ?? null);
+            }
+            return;
+        }
+        if (!current.moved && Math.abs(event.clientX - current.clientX) <= (current.touch ? TOUCH_SWIPE_PX : 4)) return;
+        current.moved = true;
+        const at = clampRangeX(xInvert(clampPlotX(x)));
+        const [lo0, hi0] = current.start ?? [current.anchor, current.anchor];
+        let next;
+        if (current.zone === 'new') {
+            const lo = snapRange(Math.min(current.anchor, at), Math.floor);
+            next = [lo, Math.max(snapRange(Math.max(current.anchor, at), Math.ceil), lo + rangeUnit)];
+        } else if (current.zone === 'lo') {
+            next = [Math.min(snapRange(at), hi0 - rangeUnit), hi0];
+        } else if (current.zone === 'hi') {
+            next = [lo0, Math.max(snapRange(at), lo0 + rangeUnit)];
+        } else {
+            const width = hi0 - lo0;
+            const lo = Math.min(Math.max(lo0 + Math.round((at - current.anchor) / rangeUnit) * rangeUnit,
+                domains.baseX[0]), domains.baseX[1] - width);
+            next = [lo, lo + width];
+        }
+        if (!range || next[0] !== range[0] || next[1] !== range[1]) onRangeChange(next);
+    };
+    const finishRange = (event) => {
+        const current = rangeDragRef.current;
+        rangeDragRef.current = null;
+        try {
+            event.currentTarget.releasePointerCapture?.(event.pointerId);
+        } catch {
+            // No capture was held for this pointer.
+        }
+        if (!current) return;
+        setRangeCursor(current.zone === 'move' ? 'grab' : null);
+        // A tap (no drag) on touch shows, or clears, the readout.
+        if (!current.moved && current.touch) nearestHover(event, { unpinX: current.pinnedX ?? null });
+    };
+
     const startDrag = (event) => {
+        if (rangeMode) {
+            startRange(event);
+            return;
+        }
         // Any press clears the readout; on touch, that is how a tap's goes.
         const pinnedX = onHoverX && hover?.touch ? hover.x : null;
         setHover(null);
@@ -614,6 +707,10 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
     };
 
     const moveDrag = (event) => {
+        if (rangeMode) {
+            moveRange(event);
+            return;
+        }
         if (!drag) {
             // Touch has no hover: a tap shows the readout (finishDrag).
             if (event.pointerType !== 'touch') nearestHover(event);
@@ -624,6 +721,10 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
     };
 
     const finishDrag = (event) => {
+        if (rangeMode) {
+            finishRange(event);
+            return;
+        }
         if (!drag) return;
         const { x, y } = pointerToView(event);
         const xLo = Math.min(drag.x0, clampPlotX(x));
@@ -655,6 +756,7 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
     // A finger leaves as it lifts, which would take a tap's readout at once.
     const leavePlot = (event) => {
         if (event.pointerType !== 'touch') setHover(null);
+        if (!rangeDragRef.current) setRangeCursor(null);
     };
 
     const zoom = (event) => {
@@ -816,9 +918,15 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
                     onPointerDown={startDrag}
                     onPointerMove={moveDrag}
                     onPointerUp={finishDrag}
-                    onPointerCancel={() => setDrag(null)}
+                    onPointerCancel={() => { setDrag(null); rangeDragRef.current = null; }}
                     onPointerLeave={leavePlot}
+                    style={rangeCursor ? { cursor: rangeCursor } : undefined}
                     onDoubleClick={() => {
+                        // A double-click clears a picked range first.
+                        if (rangeMode && range) {
+                            onRangeChange(null);
+                            return;
+                        }
                         const atDefault = !xDomain && !yDomain;
                         setXDomain(null);
                         setYDomain(null);
@@ -920,6 +1028,23 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
                     <rect className="plot-frame" x={view.left} y={view.top} width={plotWidth} height={plotHeight} />
                     <AxisLabel label={effectivePlot.xLabel} x={view.left + plotWidth / 2} y={view.height - 10} />
                     <AxisLabel label={effectivePlot.yLabel} x={18} y={view.top + plotHeight / 2} rotate />
+                    {rangeMode && range && (
+                        <g className="plot-range" clipPath={`url(#${clipId})`} data-export="omit" aria-label="Picked range">
+                            <rect
+                                className="plot-range__band"
+                                x={xScale(range[0])}
+                                y={view.top}
+                                width={Math.max(0, xScale(range[1]) - xScale(range[0]))}
+                                height={plotHeight}
+                            />
+                            {range.map((edge) => (
+                                <g key={edge} className="plot-range__edge">
+                                    <line x1={xScale(edge)} x2={xScale(edge)} y1={view.top} y2={view.top + plotHeight} />
+                                    <rect x={xScale(edge) - 3} y={view.top + plotHeight / 2 - 12} width="6" height="24" rx="3" />
+                                </g>
+                            ))}
+                        </g>
+                    )}
                     {hover && (
                         <g clipPath={`url(#${clipId})`} data-export="omit">
                             {onHoverX && hover.values[0].bin > 0 && (

@@ -395,12 +395,16 @@ const FoldedCellPanel = ({
                         ) : null}
                         {bondSets?.length ? (
                             <p>
-                                Point at the angle plot (tap it on a touch screen) to pick out the
-                                triplets of that bin: their two bonds, drawn between average sites,
-                                so a drawn angle is the sites' average one. In a large cell only
-                                those inside the drawn bonds are shown, and the legend says how
-                                many. For a run opened in the browser (the Demo or a picked folder),
-                                not yet a server folder.
+                                Drag across the angle plot to pick a range of angles: its triplets
+                                are drawn here, their two bonds thicker, between average sites (so
+                                a drawn angle is the sites' average one). Drag the band or its
+                                edges to move it; double-click or Clear removes it. Without a
+                                range, pointing at a bin (tapping it on a touch screen) previews
+                                that bin. The range moves in whole bins, so its count is the
+                                histogram's. In a large cell only the triplets inside the drawn
+                                bonds are shown, and the legend says how many. For a run opened
+                                in the browser (the Demo or a picked folder), not yet a server
+                                folder.
                             </p>
                         ) : null}
                     </InfoBadge>

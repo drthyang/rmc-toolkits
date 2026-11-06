@@ -87,6 +87,17 @@ describe('useAngleHighlight', () => {
         expect(probe.current.highlight).toBeNull();
     });
 
+    it('highlights a picked range over the hovered bin, with the range\'s count', () => {
+        render({ range: [85, 95] });
+        act(() => fakeWorkers[0].answer());
+        act(() => probe.current.onHoverX(30.5));
+        const inRange = result.counts.slice(85, 95).reduce((a, b) => a + b, 0);
+        expect(probe.current.highlight.total).toBe(inRange);
+        expect(probe.current.highlight.range).toBe(true);
+        render({ range: null });
+        expect(probe.current.highlight.total).toBe(result.counts[30]);
+    });
+
     it('never shows an answer whose counts are not the histogram\'s', () => {
         render();
         act(() => fakeWorkers[0].answer((data) => ({ ...data, bins: data.bins.map((bin, i) => (i === 90 ? { ...bin, total: bin.total + 1 } : bin)) })));

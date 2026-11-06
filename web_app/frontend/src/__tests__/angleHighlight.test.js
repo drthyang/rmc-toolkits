@@ -12,7 +12,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-    binIndexOf, highlightForBin, highlightLabel, MAX_HIGHLIGHT_TRIPLETS, siteAngleTriplets, unitCellOf
+    binIndexOf, binsOfRange, highlightForBin, highlightForBins, highlightLabel, MAX_HIGHLIGHT_TRIPLETS, rangeText,
+    siteAngleTriplets, unitCellOf
 } from '../angleHighlight';
 import { buildBondNetwork } from '../bondNetwork';
 import { siteDisplacementsFromRmc6f } from '../workers/pcaKde';
@@ -345,3 +346,47 @@ describe('the hovered bin and its legend line', () => {
         expect(highlightLabel({ shown: 1200, total: 15000, lo: 0.25, hi: 0.5 })).toBe('1,200 of 15,000 angles at 0.25–0.5° shown');
     });
 });
+
+describe('an angle range', () => {
+    const { parsed, atoms, siteFractional } = parse(rmc6fText({ ...PEROVSKITE, supercell: [3, 3, 3], jitter: 0.03 }));
+    const unit = unitCellOf(parsed.latticeVectors, parsed.supercell);
+    const request = { end1: 'O', apex: 'Ti', end2: 'O', r12Min: 1.6, r12Max: 2.4, binWidth: 1 };
+    const options = tripletOptionsFromRequest(request);
+    const data = siteAngleTriplets(atoms, parsed.latticeVectors, parsed.supercell, siteFractional, options);
+    const counts = histogramOf(atoms, parsed.latticeVectors, options);
+
+    it('holds exactly the triplets whose angle bins fall inside it, edges at bin edges', () => {
+        const [first, last] = binsOfRange([85, 95], data.binWidth, data.nbins);
+        expect([first, last]).toEqual([85, 94]);
+        const inside = bruteForceTriplets(atoms, parsed.latticeVectors, options)
+            .filter((key) => { const bin = Number(key.split('|')[0]); return bin >= first && bin <= last; });
+        const highlight = highlightForBins(data, first, last, siteFractional, unit, { range: true });
+        expect(inside.length).toBeGreaterThan(0);
+        expect(highlight.total).toBe(inside.length);
+        expect(highlight.total).toBe(counts.slice(85, 95).reduce((a, b) => a + b, 0));
+        expect(highlight.shown).toBe(highlight.total);
+        expect([highlight.lo, highlight.hi]).toEqual([85, 95]);
+        expect(highlightLabel(highlight)).toBe(`${highlight.total.toLocaleString('en-US')} angles in 85–95°`);
+    });
+
+    it('draws a site triplet found in several of its bins once, its counts summed', () => {
+        const highlight = highlightForBins(data, 0, data.nbins - 1, siteFractional, unit, { range: true });
+        // One Ti site, six O neighbours: 15 site triplets in all.
+        expect(highlight.ab.length).toBe(15 * 12);
+        expect(highlight.total).toBe(counts.reduce((a, b) => a + b, 0));
+        expect(highlight.shown).toBe(highlight.total);
+        // A single bin is the hovered one's highlight.
+        expect(highlightForBins(data, 90, 90, siteFractional, unit)).toEqual(highlightForBin(data, 90, siteFractional, unit));
+    });
+
+    it('maps a range to whole bins, off-grid edges to the nearest edge', () => {
+        expect(binsOfRange([85, 95], 1, 180)).toEqual([85, 94]);
+        expect(binsOfRange([85.2, 94.8], 1, 180)).toEqual([85, 94]);
+        expect(binsOfRange([0, 180], 0.5, 360)).toEqual([0, 359]);
+        expect(binsOfRange([90, 90.2], 1, 180)).toBe(null);
+        expect(binsOfRange(null, 1, 180)).toBe(null);
+        expect(rangeText(85, 95)).toBe('85–95°');
+        expect(highlightLabel({ shown: 40, total: 2310, lo: 85, hi: 95, range: true })).toBe('40 of 2,310 angles in 85–95° shown');
+    });
+});
+

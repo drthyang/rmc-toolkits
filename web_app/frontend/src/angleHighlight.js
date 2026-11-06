@@ -11,9 +11,10 @@
 // histogram, bin by bin) and folds each supercell triplet onto the average
 // sites the folded cell draws: the central atom's site in the cell, each end
 // at the image of its site that the bond reaches. Many supercell triplets
-// fold onto one site triplet; each keeps its count. highlightForBin runs on
-// hover: the bin's site triplets as tube segments, at most
-// MAX_HIGHLIGHT_TRIPLETS of them, nearest the cell centre.
+// fold onto one site triplet; each keeps its count. highlightForBins runs on
+// hover, or as the angle range on the plot is dragged: the site triplets of
+// those bins (whole bins: the range's edges are bin edges) as tube
+// segments, at most MAX_HIGHLIGHT_TRIPLETS of them, nearest the cell centre.
 //
 // A large cell draws only the bonds nearest its centre (bondNetwork.js), and
 // the highlight keeps to that region: a triplet is kept when both its tubes'
@@ -34,6 +35,8 @@ const fracToCartesian = (unit, f) => [0, 1, 2].map(
     (axis) => f[0] * unit[0][axis] + f[1] * unit[1][axis] + f[2] * unit[2][axis]
 );
 
+const byDistance = (p, q) => p.d - q.d || p.id - q.id;
+
 const distanceSq = (p, q) => (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 + (p[2] - q[2]) ** 2;
 
 export const unitCellOf = (latticeVectors, supercell) => latticeVectors.map(
@@ -53,7 +56,9 @@ export const unitCellOf = (latticeVectors, supercell) => latticeVectors.map(
  *   region (Cartesian Å; bondNetwork's center / radiusSq), null: the whole cell
  * @returns {{ nbins, binWidth, triplet, sharedEnds, bins: Array<{ total, triplets }> }}
  *   per bin: `total` angles (the histogram's count) and its site triplets
- *   { apex, ab, bc, count }, nearest the centre first. ab / bc are
+ *   { id, apex, ab, bc, count, d }, nearest the centre first (d: the apex
+ *   site's squared distance from it; id: the same site triplet in every
+ *   bin). ab / bc are
  *   [end site, image a, image b, image c]: the end at its site's position
  *   plus that whole-cell image; the apex sits at its own site in the cell.
  */
@@ -133,25 +138,34 @@ export const siteAngleTriplets = (atoms, latticeVectors, supercell, siteFraction
         }
     });
 
-    const order = (p, q) => p.d - q.d || p.abId - q.abId || p.bcId - q.bcId;
+    // One id per site triplet across the bins, in the order first found.
+    const tripletIds = new Map();
+    const tripletId = (abId, bcId) => {
+        const key = abId * (siteBonds.length + 1) + bcId;
+        let id = tripletIds.get(key);
+        if (id === undefined) {
+            id = tripletIds.size;
+            tripletIds.set(key, id);
+        }
+        return id;
+    };
+    const apexDistance = new Map();
+    const distanceOf = (apex) => {
+        if (!apexDistance.has(apex)) apexDistance.set(apex, distanceSq(fracToCartesian(unit, siteFractional.get(apex)), center));
+        return apexDistance.get(apex);
+    };
     const bins = binMaps.map((map, bin) => {
         const found = [];
         map.forEach((inner, abId) => inner.forEach((count, bcId) => {
             const ab = siteBonds[abId];
-            const d = distanceSq(fracToCartesian(unit, siteFractional.get(ab.apex)), center);
-            found.push({ abId, bcId, count, d });
+            const bc = siteBonds[bcId];
+            found.push({
+                id: tripletId(abId, bcId), apex: ab.apex, ab: [ab.end, ...ab.image], bc: [bc.end, ...bc.image], count, d: distanceOf(ab.apex)
+            });
         }));
-        // Nearest the centre first; ties in the order the bonds were found.
-        found.sort(order);
-        return {
-            total: totals[bin],
-            triplets: found.map(({ abId, bcId, count }) => ({
-                apex: siteBonds[abId].apex,
-                ab: [siteBonds[abId].end, ...siteBonds[abId].image],
-                bc: [siteBonds[bcId].end, ...siteBonds[bcId].image],
-                count
-            }))
-        };
+        // Nearest the centre first; ties in the order first found.
+        found.sort(byDistance);
+        return { total: totals[bin], triplets: found };
     });
     return { nbins: info.nbins, binWidth: info.binWidth, triplet: info.triplet, sharedEnds: info.sharedEnds, bins };
 };
@@ -166,30 +180,56 @@ export const binIndexOf = (x, binWidth, nbins) => {
 // A bin edge as the legend prints it: whole degrees, else up to two decimals.
 const degrees = (value) => String(Number(value.toFixed(2)));
 
-/** The legend line of a highlight: "830 angles at 88–89°" or "12 of 830 … shown". */
-export const highlightLabel = ({ shown, total, lo, hi }) => {
-    const range = `${degrees(lo)}–${degrees(hi)}°`;
+/** An angle range as one plain line: "85–95°". */
+export const rangeText = (lo, hi) => `${degrees(lo)}–${degrees(hi)}°`;
+
+/**
+ * The legend line of a highlight: "830 angles at 88–89°" for one hovered bin,
+ * "2,310 angles in 85–95°" for a range; "12 of 830 … shown" when the drawn
+ * triplets carry fewer than all of them.
+ */
+export const highlightLabel = ({ shown, total, lo, hi, range = false }) => {
+    const where = `${range ? 'in' : 'at'} ${rangeText(lo, hi)}`;
     const noun = total === 1 ? 'angle' : 'angles';
     return shown < total
-        ? `${shown.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} ${noun} at ${range} shown`
-        : `${total.toLocaleString('en-US')} ${noun} at ${range}`;
+        ? `${shown.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} ${noun} ${where} shown`
+        : `${total.toLocaleString('en-US')} ${noun} ${where}`;
 };
 
 /**
- * One bin's highlight: its site triplets as tube segments (six numbers each,
- * apex → end, Cartesian Å), the A–B and B–C bonds apart (with one shared
- * window, all in `ab`), at most `max` triplets — the first ones, nearest the
- * cell centre. `shown` counts the angles those triplets carry.
+ * The highlight of bins first..last (inclusive): their site triplets as tube
+ * segments (six numbers each, apex → end, Cartesian Å), the A–B and B–C
+ * bonds apart (with one shared window, all in `ab`), at most `max` triplets
+ * — those nearest the cell centre. A site triplet in several of the bins is
+ * drawn once, with their counts summed. `total` is the bins' angle count
+ * (the histogram's); `shown` counts the angles the drawn triplets carry.
  *
  * @param {object} data     siteAngleTriplets' result
- * @param {number} bin
+ * @param {number} first    first bin
+ * @param {number} last     last bin (>= first)
  * @param {Map<number, number[]>} siteFractional site → in-cell fractional position
  * @param {number[][]} unit unit-cell vectors (rows, Å)
  */
-export const highlightForBin = (data, bin, siteFractional, unit, { max = MAX_HIGHLIGHT_TRIPLETS } = {}) => {
-    const entry = data?.bins?.[bin];
-    if (!entry) return null;
-    const drawn = entry.triplets.slice(0, max);
+export const highlightForBins = (data, first, last, siteFractional, unit, { max = MAX_HIGHLIGHT_TRIPLETS, range = false } = {}) => {
+    if (!data?.bins || !(first >= 0) || !(last >= first) || last >= data.bins.length) return null;
+    let total = 0;
+    let merged;
+    if (first === last) {
+        total = data.bins[first].total;
+        merged = data.bins[first].triplets;
+    } else {
+        const byId = new Map();
+        for (let bin = first; bin <= last; bin += 1) {
+            total += data.bins[bin].total;
+            data.bins[bin].triplets.forEach((triplet) => {
+                const seen = byId.get(triplet.id);
+                if (seen) seen.count += triplet.count;
+                else byId.set(triplet.id, { ...triplet });
+            });
+        }
+        merged = [...byId.values()].sort(byDistance);
+    }
+    const drawn = merged.slice(0, max);
     const ab = new Float64Array(drawn.length * 6 * (data.sharedEnds ? 2 : 1));
     const bc = new Float64Array(data.sharedEnds ? 0 : drawn.length * 6);
     let shown = 0;
@@ -214,12 +254,31 @@ export const highlightForBin = (data, bin, siteFractional, unit, { max = MAX_HIG
         shown += triplet.count;
     });
     return {
-        bin,
-        lo: bin * data.binWidth,
-        hi: (bin + 1) * data.binWidth,
-        total: entry.total,
+        first,
+        last,
+        range,
+        lo: first * data.binWidth,
+        hi: (last + 1) * data.binWidth,
+        total,
         shown,
         ab,
         bc
     };
+};
+
+/** One bin's highlight (the hovered one): highlightForBins of that bin alone. */
+export const highlightForBin = (data, bin, siteFractional, unit, options) => (
+    highlightForBins(data, bin, bin, siteFractional, unit, options)
+);
+
+/**
+ * An angle range [lo, hi] (degrees) → its bins. The range's edges are bin
+ * edges (the plot snaps them), so each bin is wholly in or out; an edge off
+ * the grid rounds to the nearest edge. Null when it covers no bin.
+ */
+export const binsOfRange = (range, binWidth, nbins) => {
+    if (!range || !(binWidth > 0)) return null;
+    const first = Math.max(0, Math.round(range[0] / binWidth));
+    const last = Math.min(nbins - 1, Math.round(range[1] / binWidth) - 1);
+    return last >= first ? [first, last] : null;
 };
