@@ -15,8 +15,9 @@
 //
 // `highlight` (angleHighlight.js highlightForBins: the triplets of the angle
 // range, or of the bin under the pointer) draws those triplets' bonds as
-// thicker tubes of their own, each as strong as its share, and dims the
-// other bonds; the legend names the range. It has its own group, so a hover
+// tubes of their own, each as strong as its share, marks each triplet's angle
+// with an arc at its central atom (angleArcs.js), and dims the other bonds;
+// the legend names the range. It has its own group, so a hover
 // never rebuilds the cloud.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -50,10 +51,12 @@ const BOND_RADIUS_SCALE = 0.8;
 // While a highlight is shown, the other bonds fade to this opacity; a
 // highlighted bond of strength s (highlightStrength: the square root of its
 // share) is drawn HIGHLIGHT_RADIUS + HIGHLIGHT_RADIUS_GAIN·s times thicker,
-// at opacity HIGHLIGHT_OPACITY + (1 − HIGHLIGHT_OPACITY)·s.
+// at opacity HIGHLIGHT_OPACITY + (1 − HIGHLIGHT_OPACITY)·s. Only a little
+// thicker: the angle arcs at the apex carry the detail, and thick bonds hid
+// them where they meet.
 const DIMMED_BOND_OPACITY = 0.14;
-const HIGHLIGHT_RADIUS = 1.15;
-const HIGHLIGHT_RADIUS_GAIN = 0.65;
+const HIGHLIGHT_RADIUS = 1.0;
+const HIGHLIGHT_RADIUS_GAIN = 0.2;
 const HIGHLIGHT_OPACITY = 0.3;
 // Each highlighted triplet's angle is marked by an arc at its apex
 // (angleArcs.js), ARC_RADIUS + ARC_RADIUS_GAIN·s of the bond tube's radius
@@ -286,9 +289,9 @@ const FoldedCellPanel = ({
         handle.resize();
     }, [structure, sites, network, elementColors, showCellAxes]);
 
-    // The range's (or hovered bin's) triplets: their bonds as thicker tubes in
-    // their bond-role colours (A–B, then B–C), each as thick and opaque as its
-    // share, the other bonds dimmed. Rebuilds only this group; runs after the
+    // The range's (or hovered bin's) triplets: their bonds as tubes in their
+    // bond-role colours (A–B, then B–C), each as thick and opaque as its
+    // share, and their angles as arcs; the other bonds dimmed. Rebuilds only this group; runs after the
     // scene rebuild above, which it follows.
     useEffect(() => {
         const handle = sceneRef.current;
@@ -409,7 +412,7 @@ const FoldedCellPanel = ({
                         {bondSets?.length ? (
                             <p>
                                 Drag across the angle plot to pick a range of angles: its triplets
-                                are drawn here, their two bonds thicker, between average sites (so
+                                are drawn here, their two bonds brought forward, between average sites (so
                                 a drawn angle is the sites' average one). Drag the band or its
                                 edges to move it; double-click or Clear removes it. Without a
                                 range, pointing at a bin (tapping it on a touch screen) previews
@@ -427,6 +430,12 @@ const FoldedCellPanel = ({
                                 range: bright when nearly all of them do, faint when only the tail
                                 of its spread reaches it, not drawn under {Math.round(MIN_HIGHLIGHT_SHARE * 100)}%. A bond shared by
                                 several triplets shows the brightest.
+                            </p>
+                        ) : null}
+                        {bondSets?.length ? (
+                            <p>
+                                <b>Arcs</b> — each arc spans one angle in the range, at its central
+                                atom, as bright as its triplet.
                             </p>
                         ) : null}
                     </InfoBadge>
