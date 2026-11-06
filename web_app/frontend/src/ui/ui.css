@@ -1127,20 +1127,6 @@ input.ui-range::-moz-range-track {
     }
 }
 
-/* Phones and portrait tablets: iOS Safari zooms the page into any field whose
-   text is under 16px when it takes focus, and does not zoom back out. */
-@media (hover: none) and (pointer: coarse) and (max-width: 1040px),
-    (hover: none) and (pointer: coarse) and (max-height: 540px) {
-    select.ui-select,
-    select.ui-select-native,
-    input.ui-input,
-    input.ui-input-compact,
-    input.ui-input-strong,
-    .ui-fieldbar input {
-        font-size: max(16px, 1em);
-    }
-}
-
 /* Label-over-input field. */
 .ui-field {
     display: flex;
@@ -3159,5 +3145,28 @@ input.ui-range::-moz-range-track {
 @media (prefers-reduced-motion: reduce) {
     .ui-reveal {
         animation: none;
+    }
+}
+
+/* Phones and portrait tablets: iOS Safari zooms the page into any field whose
+   text is under 16px when it takes focus, and does not zoom back out. Last in
+   the file: these selectors tie the fields' own rules on specificity, so
+   source order decides (above the field bar's and the unit field's base rules
+   they lost, and the run-folder and bond-window fields zoomed). */
+@media (hover: none) and (pointer: coarse) and (max-width: 1040px),
+    (hover: none) and (pointer: coarse) and (max-height: 540px) {
+    select.ui-select,
+    select.ui-select-native,
+    input.ui-input,
+    input.ui-input-compact,
+    input.ui-input-strong,
+    input.ui-unit-field__input,
+    .ui-fieldbar input {
+        font-size: max(16px, 1em);
+    }
+
+    /* Room for four digits and a point at 16px. */
+    input.ui-unit-field__input {
+        width: 4rem;
     }
 }
