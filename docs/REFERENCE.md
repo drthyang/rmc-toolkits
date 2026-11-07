@@ -14,9 +14,12 @@ see [ALGORITHMS.md](ALGORITHMS.md).
 | `web_app/backend/app.py` | Flask API server with data-root guarding. |
 | `web_app/frontend/` | React + Vite single-page app. |
 | `web_app/frontend/public/demo/` | Bundled GaTa₄Se₈ 250 K demo run (the app's **Demo** button). |
+| `web_app/frontend/src/llm/` | The AI Copilot module ([its guide](../web_app/frontend/src/llm/README.md)). |
+| `web_app/frontend/validation/` | The Copilot's validation harness ([protocol and results](algorithms/copilot-validation.md)). |
+| `.claude/skills/` | The Copilot's skills (written methods), shared with Claude Code. |
 | `src/` | Original standalone CLI/desktop scripts. |
 | `tests/` | `unittest` suite for the package and backend. |
-| `docs/` | Changelog, roadmap, architecture notes. |
+| `docs/` | Changelog, roadmap, architecture notes, the Demo QA and the [demo script](demo-script.md). |
 | `docs/ALGORITHMS.md` + `docs/algorithms/` | Per-page math reference: every operation, anchored to the code. |
 
 ## Setup

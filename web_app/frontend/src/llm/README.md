@@ -43,7 +43,7 @@ It is **docked beside the pages**, not over them, and it **points at the page** 
   option the user picks. Where the run data show that such a choice changes the result, the
   Workbench asks itself, before the model guesses. See *Asking the user* below.
 - **It follows skills** (`read_skill`): written methods for the questions it gets, shared with
-  Claude Code (`.claude/skills/`), drafts awaiting the user's interview. See *Skills* below.
+  Claude Code (`.claude/skills/`), each interviewed with the user. See *Skills* below.
 - **Its answers are checked.** Where an answer contradicts what the analyses or the run context
   established, a **Check** line says so under it and the Outcome chip drops to **Not verified**,
   whatever the model said of its own answer. See *Checks on the answer* below.
@@ -860,10 +860,10 @@ window gets no polyhedron reading (its CN 3.9 is not a tetrahedron).
 ## Skills
 
 **Skills** are Claude Code skills at the repository root, `.claude/skills/<name>/SKILL.md` (front
-matter `name` and `description`), so the in-app agent and Claude Code read the same text. Four are
-drafted, each opening with **"Draft: awaiting the user's interview"**, with its order of steps,
-judgment calls marked "(to confirm with the user)", an acceptance checklist and known failure modes
-from the spot check and the review:
+matter `name` and `description`), so the in-app agent and Claude Code read the same text. There
+are five, each with its order of steps, an acceptance checklist and known failure modes from the
+spot check and the review; all five were interviewed with the user (2026-10-24,
+`docs/SKILL_INTERVIEWS.md`), which removed their draft status:
 
 | Skill | For | Its firm rules in code |
 |---|---|---|
@@ -888,7 +888,7 @@ from the spot check and the review:
   Demo run with the real engines; the skill's right behaviour passes, and the old wrong one
   (a cut window, "converged — a plateau", "P-42₁m is chiral and centrosymmetry is lost", a
   preferred Ga direction) is refused or flagged.
-- **Interviews** turn the drafts into the user's method: `docs/SKILL_INTERVIEWS.md`.
+- **Interviews** turned the drafts into the user's method: `docs/SKILL_INTERVIEWS.md`.
 
 ## The context window: never cut silently
 
@@ -1259,7 +1259,13 @@ terminates. A server folder goes to Flask with the request cancelled on abort.
 
   ```bash
   OLLAMA_ORIGINS="https://drthyang.github.io" ollama serve
+  # or, for the macOS menu-bar app (then quit and reopen Ollama; resets on logout):
+  launchctl setenv OLLAMA_ORIGINS "https://drthyang.github.io"
   ```
+
+  Chrome also asks, the first time, whether the site may access devices on the local network;
+  allow it. A local build on `http://localhost` needs neither step (Ollama allows localhost
+  origins by default).
 
   The Copilot sets the context length of its own requests through Ollama's native API (*The
   context window* above), so `OLLAMA_CONTEXT_LENGTH` is not needed for it.
@@ -1277,8 +1283,10 @@ pick a provider, press **Test**, then choose a model. Settings
 persist in `localStorage` (`rmc-llm-settings-v1`; the analyses switch is `copilotTools`).
 
 HTTPS pages may call `http://localhost` in Chrome, Edge and Firefox (the trustworthy-origin
-exemption); Safari may block it. Running the app locally (`npm run dev`, or the Flask/Docker mode)
-always works with local providers.
+exemption; Chrome asks the user's permission for local-network access); Safari may block it.
+Running the app locally (`npm run dev`, a static build with `npm run preview`, or the Flask/Docker
+mode) always works with local providers. If **Test** fails, the drawer says why (the server is not
+running, or CORS blocks the page).
 
 ## Tested with real models
 
