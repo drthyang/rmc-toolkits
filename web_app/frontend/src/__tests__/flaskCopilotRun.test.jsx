@@ -83,6 +83,7 @@ const {
 } = await import('../browserData');
 const { readRunFolder } = await import('../openRunFolder');
 const { copilotRun, DEFAULT_VIEW } = await import('../copilotRun');
+const { flaskRipplesSource } = await import('../ripplesFlask');
 const { buildCopilotCards } = await import('../copilotCards');
 const { buildRunContext, contextToJson } = await import('../llm/context/runContext');
 const { buildRunTools } = await import('../llm/copilot/runTools');
@@ -296,9 +297,11 @@ describe('Flask mode: the Copilot gets the run a picked folder gives it', () => 
         ));
         await flush();
     };
+    // The ripple source useCopilotRun gives a server folder: Flask's /api/ripples
+    // (check_ripples' definition is the browser's; no call is made here).
     const flaskRun = () => copilotRun({
         name: FOLDER, files: published.files, structure: published.structure,
-        structurePath: published.structurePath, settings: null, engine: ENGINE,
+        structurePath: published.structurePath, settings: null, engine: ENGINE, ripples: flaskRipplesSource(),
     }, DEFAULT_VIEW);
     const browserRun = () => copilotRun({ ...browserLoaded, name: FOLDER, engine: ENGINE }, DEFAULT_VIEW);
     const callsFor = (name) => state.dataCalls.filter((path) => path.endsWith(`/${name}`)).length;
@@ -312,7 +315,7 @@ describe('Flask mode: the Copilot gets the run a picked folder gives it', () => 
         const names = flask.tools.map((tool) => tool.name);
         expect(names).toEqual(browser.tools.map((tool) => tool.name));
         expect(names).toEqual(expect.arrayContaining(['assess_convergence', 'find_gr_peaks', 'compare_fit', 'read_run_data']));
-        expect(names).toHaveLength(12);
+        expect(names).toHaveLength(13);
         expect(definitions(flask.tools)).toEqual(definitions(browser.tools));
         expect(flask.cards).toEqual(browser.cards);
 

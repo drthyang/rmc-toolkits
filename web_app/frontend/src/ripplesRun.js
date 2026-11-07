@@ -111,8 +111,15 @@ const remember = (key, value) => {
     return value;
 };
 
+// The datasets' analyses by file versions and the caller's transform.
+const MAX_ANALYSED = 4;
+const analysed = new Map();
+
 /** Forget every kept result (tests). */
-export const clearRipplesCache = () => cache.clear();
+export const clearRipplesCache = () => {
+    cache.clear();
+    analysed.clear();
+};
 
 /**
  * assessRun for a run's fit files (`fitFiles`, each { name, path, sourceFile,
@@ -139,6 +146,13 @@ export const ripplesForRun = async (fitFiles, runFiles, args = {}) => {
             .map(versionOf).sort()];
     const key = JSON.stringify([versions, features, rRange, split, pair, qmax, qmin, window]);
     if (cache.has(key)) return cache.get(key);
+    // The datasets' analyses depend on the files and the caller's transform
+    // only: a call that asks about other features reuses them.
+    const datasetsKey = JSON.stringify([versions, pair, qmax, qmin, window]);
+    if (analysed.has(datasetsKey)) {
+        const { payloads, pairSeries } = analysed.get(datasetsKey);
+        return remember(key, assessRun(payloads, { features, rRange, split, pair: pair !== null ? pairSeries : null }));
+    }
 
     const memo = new Map();
     const once = (id, make) => {
@@ -202,6 +216,17 @@ export const ripplesForRun = async (fitFiles, runFiles, args = {}) => {
             payloads.push(failed(file, info, error));
         }
     }
+    analysed.set(datasetsKey, { payloads, pairSeries });
+    while (analysed.size > MAX_ANALYSED) analysed.delete(analysed.keys().next().value);
     const result = assessRun(payloads, { features, rRange, split, pair: pair !== null ? pairSeries : null });
     return remember(key, result);
+};
+
+/**
+ * The run's ripple source over its files (copilotRun.js LoadedRun `ripples`):
+ * (paths, args) → ripplesForRun of the fit files at those paths.
+ */
+export const ripplesSource = (runFiles) => {
+    const byPath = new Map((runFiles || []).map((file) => [file.path || file.name, file]));
+    return (paths, args = {}) => ripplesForRun((paths || []).map((path) => byPath.get(path)).filter(Boolean), runFiles, args);
 };

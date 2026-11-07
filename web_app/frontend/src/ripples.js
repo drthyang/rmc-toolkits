@@ -1086,6 +1086,9 @@ export const assessDataset = ({
     };
     if (kind === 'xpdf' && dataset && !dataset.realSpaceFit) {
         payload.fit = { ...payload.fit, fitSpace: 'reciprocal', risk: 'none', because: 'fitted-in-q' };
+    } else if (kind === 'xpdf' && !dataset) {
+        // No .dat to say whether the transform is fitted: either way no ripple is fitted.
+        payload.fit = { ...payload.fit, fitSpace: 'unknown', because: 'same-transform-no-dat' };
     }
     const x = Float64Array.from(xIn);
     const data = Float64Array.from(dataIn);

@@ -1,0 +1,101 @@
+{
+  "tool": "check_ripples",
+  "arguments": {
+    "r_min": 2,
+    "r_max": 6
+  },
+  "content_chars": 2878,
+  "content": {
+    "ref": "r1",
+    "checks": [
+      {
+        "level": "ok",
+        "text": "No real-space fit asks the box to make ripples (each model is truncated as its data are); not ripples: r = 2.14, 2.8, 3.18, 4.14, 4.35, 4.6, 4.85, 5.84 Å."
+      },
+      {
+        "level": "note",
+        "text": "xray_sq: fitted in Q: the box is not asked to make ripples (a G(r) transformed from these data still shows them)."
+      },
+      {
+        "level": "note",
+        "text": "xpdf: fitted in r, but RMCProfile transforms the model F(Q) exactly as the data: both carry the same ripples, so the box is not asked to make them."
+      },
+      {
+        "level": "note",
+        "text": "xpdf: below the first distance (0.01–2.06 Å) the data's rms about the baseline is 6.6× the ripples the strong peaks predict there (the model, transformed alike, shows 1.2× the prediction there): noise or processing errors dominate the low r."
+      },
+      {
+        "level": "note",
+        "text": "r = 2.14 Å: in xpdf larger than the ripple predicted there: more than termination (a weaker peak, the strong peak's own shape, or noise)."
+      },
+      {
+        "level": "note",
+        "text": "r = 2.8 Å: in xpdf larger than the ripple predicted there: more than termination (a weaker peak, the strong peak's own shape, or noise)."
+      },
+      {
+        "level": "note",
+        "text": "r = 3.18 Å: in xpdf larger than the ripple predicted there: more than termination (a weaker peak, the strong peak's own shape, or noise)."
+      },
+      {
+        "level": "note",
+        "text": "r = 4.14 Å: in xpdf no ripple of its sign is predicted there: not termination (a weaker peak, the strong peak's own shape, or noise)."
+      },
+      {
+        "level": "note",
+        "text": "r = 4.35 Å: in xpdf no ripple of its sign is predicted there: not termination (a weaker peak, the strong peak's own shape, or noise)."
+      },
+      {
+        "level": "note",
+        "text": "r = 4.6 Å: in xpdf larger than the ripple predicted there: more than termination (a weaker peak, the strong peak's own shape, or noise)."
+      },
+      {
+        "level": "note",
+        "text": "r = 4.85 Å: in xpdf no ripple of its sign is predicted there: not termination (a weaker peak, the strong peak's own shape, or noise)."
+      },
+      {
+        "level": "note",
+        "text": "r = 5.84 Å: in xpdf no ripple of its sign is predicted there: not termination (a weaker peak, the strong peak's own shape, or noise)."
+      }
+    ],
+    "data": {
+      "datasets": [
+        {
+          "dataset": "xray_sq",
+          "file": "GTS_250K_FQ1.csv",
+          "status": "assessed",
+          "fitted_in": "Q",
+          "risk": "none",
+          "Q_A": [0.8, 26.98],
+          "Q_from": "this file's Q grid",
+          "resolution_A": {
+            "fwhm": 0.138,
+            "nyquist": 0.116,
+            "ripple_period": 0.233
+          }
+        }
+      ],
+      "features": [
+        {
+          "r": 2.14,
+          "in": [
+            {
+              "dataset": "xpdf",
+              "class": "larger-than-ripple",
+              "at_A": 2.14,
+              "size": -0.98,
+              "ripple_A": 2.09,
+              "ripple_size": -0.22,
+              "from_peak_A": 0.369,
+              "below_resolution": false
+            }
+          ]
+        }
+      ],
+      "found": true,
+      "verdict": "No real-space fit asks the box to make ripples (each model is truncated as its data are); not ripples: r = 2.14, 2.8, 3.18, 4.14, 4.35, 4.6, 4.85, 5.84 Å.",
+      "next": ["One G(r) only: add a dataset with a different Q_max (X-ray beside neutron) to tell a ripple, which moves with Q_max, from a feature, which stays."],
+      "features_omitted": 7,
+      "datasets_omitted": 1
+    }
+  }
+}

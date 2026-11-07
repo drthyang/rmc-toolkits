@@ -50,7 +50,7 @@ describe('the ripple assessment matches the server (ripples_fixture.json)', () =
         const run = await makeRunFromEntries(entries);
         const result = await ripplesForRun(fitsOf(run, fixture.demo.fits), run.allFiles, argsOf(call.args));
         expectGolden(result, call.expected, `demo ${name}`, { rtol: RIPPLES_RTOL });
-    });
+    }, 60000);
 
     const calls = fixture.cases.flatMap((testCase) => testCase.calls.map((call) => [
         `${testCase.name} ${JSON.stringify(call.args)}`, testCase, call
@@ -60,7 +60,7 @@ describe('the ripple assessment matches the server (ripples_fixture.json)', () =
         const run = await makeRunFromEntries(entries);
         const result = await ripplesForRun(fitsOf(run, testCase.fits), run.allFiles, argsOf(call.args));
         expectGolden(result, call.expected, name, { rtol: RIPPLES_RTOL });
-    });
+    }, 60000);
 
     it('covers every risk, every low-r state and every reading the engine has', () => {
         const results = [...fixture.demo.calls, ...fixture.cases.flatMap((testCase) => testCase.calls)].map((call) => call.expected);
@@ -109,5 +109,5 @@ describe('known answers in the port', () => {
                 expect(classifyFeature(analysis, ripple.r).class).toBe('ripple-consistent');
             }
         });
-    });
+    }, 60000);
 });

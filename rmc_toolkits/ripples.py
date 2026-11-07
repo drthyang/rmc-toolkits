@@ -1368,6 +1368,10 @@ def assess_dataset(*, name: str, kind: str, number: int, settings: Optional[dict
     }
     if kind == "xpdf" and dataset is not None and not dataset.get("realSpaceFit"):
         payload["fit"] = {**payload["fit"], "fitSpace": "reciprocal", "risk": "none", "because": "fitted-in-q"}
+    elif kind == "xpdf" and dataset is None:
+        # No .dat to say whether the transform is fitted: if it is, the model is
+        # transformed alike; if not, the fit is in Q. Either way no ripple is fitted.
+        payload["fit"] = {**payload["fit"], "fitSpace": "unknown", "because": "same-transform-no-dat"}
     x = np.asarray(x, dtype=float)
     data = np.asarray(data, dtype=float)
     if not real:
