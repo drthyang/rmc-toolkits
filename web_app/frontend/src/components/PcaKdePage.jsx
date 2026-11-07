@@ -31,6 +31,7 @@ import { siteLabel } from '../siteLabel';
 import AppFooter from './AppFooter';
 import useCopilotViewer from '../useCopilotViewer';
 import './PcaKdePage.css';
+import { isDisplayed } from './pageVisibility';
 
 // The main viewport exports as PNG at native or 3× resolution, matching the
 // KDE / 3D page's save options.
@@ -801,8 +802,11 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
 
         let animationId = 0;
         const animate = () => {
-            controls.update();
-            renderer.render(scene, camera);
+            // A page the app keeps mounted but hidden draws nothing.
+            if (isDisplayed(renderer.domElement)) {
+                controls.update();
+                renderer.render(scene, camera);
+            }
             animationId = requestAnimationFrame(animate);
         };
         animate();

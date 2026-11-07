@@ -35,6 +35,7 @@ import { bondMaterial, renderQuality, tubeMesh } from './bondTubes';
 import { arcMesh } from './angleArcs';
 import useCopilotViewer from '../useCopilotViewer';
 import './UnitCellPanel.css';
+import { isDisplayed } from './pageVisibility';
 
 const SAVE_OPTIONS = [
     { id: 'png', label: 'Standard PNG', hint: '1×' },
@@ -146,8 +147,11 @@ const FoldedCellPanel = ({
 
         let frame = 0;
         const renderLoop = () => {
-            controls.update();
-            renderer.render(scene, camera);
+            // A page the app keeps mounted but hidden draws nothing.
+            if (isDisplayed(renderer.domElement)) {
+                controls.update();
+                renderer.render(scene, camera);
+            }
             frame = requestAnimationFrame(renderLoop);
         };
         renderLoop();

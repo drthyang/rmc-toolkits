@@ -50,6 +50,7 @@ import {
 import useCopilotViewer from '../useCopilotViewer';
 import './OrientationView.css';
 import { tooltipPlace } from './tooltipPlace';
+import { isDisplayed } from './pageVisibility';
 
 // A touch that moves further than this (CSS px) orbits the view, not a tap.
 const TAP_SLOP_PX = 8;
@@ -422,8 +423,11 @@ export default function OrientationView({
 
         let animationId = 0;
         const animate = () => {
-            controls.update();
-            renderer.render(scene, camera);
+            // A page the app keeps mounted but hidden draws nothing.
+            if (isDisplayed(renderer.domElement)) {
+                controls.update();
+                renderer.render(scene, camera);
+            }
             animationId = requestAnimationFrame(animate);
         };
         animate();
