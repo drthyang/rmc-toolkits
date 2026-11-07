@@ -13,7 +13,7 @@ is known.
 | Sites | the deployed site (GitHub Pages, 0.8.0) and a local production build of this branch (`VITE_STATIC_MODE=true`, `vite preview`, the same `/rmc-toolkits/` base) |
 | Browsers | Chromium 149 and WebKit 26.5 (Safari's engine), driven by Playwright; Chromium on the Apple GPU (ANGLE Metal) |
 | Sizes | desktop 1440 × 900; iPhone Pro 402 × 874 (touch, ×3); iPad Pro 1024 × 1366 (touch, ×2, WebKit) |
-| Copilot | gemma4:26b on a local Ollama 0.40 (free, nothing sent to a paid API), one question at a time with a 6-minute limit and 30 minutes for the whole Copilot QA (it took about 19); a scripted LM-Studio-like server (fixed replies, no model) for the context meter, the change card on every size and the refusal |
+| Copilot | gemma4:26b on a local Ollama 0.40 (free, nothing sent to a paid API), one question at a time with a 6-minute limit and 30 minutes for the whole Copilot QA (it took about 21); a scripted LM-Studio-like server (fixed replies, no model) for the context meter, the change card on every size and the refusal |
 | Data | the bundled public Demo run only |
 
 Timings are from an Apple-silicon laptop. Under a software renderer (headless Chromium without a
@@ -100,9 +100,9 @@ Chromium, local build unless noted; the longest main-thread task in each step.
 | Step | Time |
 |---|---|
 | Page load (network idle) | 0.8 s local, 1.1 s deployed |
-| Demo button → first plot drawn | 0.27 s desktop, 0.95 s phone; longest task 120–150 ms |
+| Demo button → first plot drawn | 0.27–0.42 s desktop, 0.9–0.95 s phone; longest task 120–180 ms |
 | First visit: Atomic Density / PCA Ellipsoid / Displacement Directions | longest task ≤ 240 / 380 / 460 ms (the deployed site's first visits the slowest) |
-| Bond Geometry Compute (236,431 angles, in its worker) | 0.25–1.0 s wall, no long task |
+| Bond Geometry Compute (236,431 angles, in its worker) | 0.14–1.0 s wall, no long task |
 | Angle range drag | one task ≤ 200 ms |
 | KDE element, normal, grid and slice changes | no task over 250 ms |
 | Main thread kept busy on the Dashboard after visiting every page (per 5 s) | ~570 ms before, ~100 ms after the fix |
