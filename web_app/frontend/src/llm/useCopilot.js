@@ -69,6 +69,17 @@ export const SUMMARY_ANSWER_CHARS = 600;
 // (provider/sampling.js: Claude) is given `temperature: null`, so none of its
 // requests carries one, the warmer retry included (copilotModel).
 //
+// `meter` is the context meter's reading (provider/contextMeter.js): the
+// guard's count of the running answer's latest request, or between questions
+// the larger of the next question's first request (turn.js requestPreview) and
+// the last answer's largest, or a request the guard refused, against the window
+// the guard refuses at (read with its probes, `connected` only, and from each
+// request's plan); and the cost so far on a priced cloud model. `summarize()`
+// (Summarize and continue) re-sends the answers so far within
+// SUMMARY_ANSWER_CHARS from the next question on; `summarizedAt` is where the
+// dock draws its divider. Each answer's `memory` says what its history leaves
+// out that the last one sent (the oldest questions, a shortened answer).
+//
 // `offered` and `skillsError` describe what the Copilot can run on this run
 // with its analyses on (describeTurn): the composer's status line and the
 // tool list. Whether a question uses them is the analyses switch
