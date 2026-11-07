@@ -32,9 +32,13 @@ Edge, Arc, Opera) or through the local Flask backend.
 
 🤖 **AI Copilot (beta).** Ask about the open run in plain language. The Copilot runs the
 Workbench's analyses, shows each one as a step card with deterministic checks, points at the cards
-and plot peaks it explains, and asks you when a choice would change the result. It works with a
+and plot peaks it explains, and asks you when a choice would change the result. It can set up the
+Bond Geometry page for you, after you approve the change, and you can undo it. It works with a
 local model (Ollama, LM Studio; nothing leaves your machine) or, with your key, a cloud one
 (OpenAI, Gemini, Anthropic).
+
+📱 **Phones and tablets.** The pages fit iPhone and iPad screens in both orientations, with
+touch-sized controls and the Copilot as a bottom sheet.
 
 📖 **New here?** Start with [QuickStart.md](QuickStart.md).
 
@@ -46,7 +50,10 @@ local model (Ollama, LM Studio; nothing leaves your machine) or, with your key, 
 - **Atomic Density:** KDE density slices (WebGPU with a CPU fallback), a draggable slab-in-cell
   projection and a 3D folded unit cell of the `.rmc6f` structure.
 - **Bond Geometry:** bond-angle distributions the RMCProfile `triplets` way (an A–B–C triplet with
-  B central), with bond windows bracketed against the run's partial g(r).
+  B central), with bond windows bracketed against the run's partial g(r) (sin-corrected, density
+  and g(r) tabs). Drag an angle range on the distribution to see its triplets in the 3D cell:
+  bonds brighten by the share of their angles in the range, and an arc at the central atom marks
+  each angle.
 - **PCA Ellipsoid:** per-site thermal ellipsoids from the displacement clouds, with a 3D KDE
   isosurface and each principal axis in the crystallographic frame, after Maksim Eremenko's
   [PCA_KDE utilities](https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE).
@@ -75,8 +82,15 @@ provider, press **Test** and choose a model. The run's metrics, symmetry and con
 travel with every question; when they are not enough, the Copilot runs an analysis and shows it as
 a step card you can expand to see the exact numbers the model read. **Show in** loads the same
 analysis on its page, beside the chat. Every answer ends with an **Outcome** chip, and an answer
-the checks contradict is marked **Not verified**. How it works, its tools, privacy and provider
-setup: the [Copilot guide](web_app/frontend/src/llm/README.md).
+the checks contradict is marked **Not verified**. The numbers it quotes by reference are filled
+in from the analyses it ran.
+
+It can also set the Bond Geometry inputs (triplet, bond windows, bin width) when you ask it to set
+up an analysis. A card shows the change first; nothing changes until you press **Apply** (or
+choose **Auto** in the settings), and **Undo** puts the old inputs back. A **Context** meter by the
+chat box shows how full the model's context window is, and the chat says whenever earlier
+conversation stops being sent in full. How it works, its tools, privacy and provider setup: the
+[Copilot guide](web_app/frontend/src/llm/README.md).
 
 ## Run it locally (optional)
 
@@ -95,8 +109,8 @@ Self-hosting, the backend API, file patterns and the Python package:
 
 ## Status
 
-Beta: version 0.7.0, with unreleased changes on main ([changelog](docs/CHANGELOG.md)). The AI
-Copilot is experimental: trust its step cards' checks over its own verdict.
+Beta: version 0.8.0 ([changelog](docs/CHANGELOG.md)). Python 3.10 or newer. The AI Copilot is
+experimental: trust its step cards' checks over its own verdict.
 
 ## Documentation
 
@@ -106,8 +120,8 @@ Copilot is experimental: trust its step cards' checks over its own verdict.
 - [docs/ALGORITHMS.md](docs/ALGORITHMS.md): the math of every page, anchored to the code, with the
   approximations stated.
 - [AI Copilot guide](web_app/frontend/src/llm/README.md): how it works, its tools, privacy, setup.
-- [docs/AGENT_PLAN.md](docs/AGENT_PLAN.md): the Copilot's architecture, tool and skill plan before
-  the validation's live runs (waiting for the user's decisions).
+- [docs/AGENT_PLAN.md](docs/AGENT_PLAN.md): the Copilot's architecture, tool and skill plan; how
+  it is validated: [copilot-validation.md](docs/algorithms/copilot-validation.md).
 - [docs/ROADMAP.md](docs/ROADMAP.md) · [docs/CHANGELOG.md](docs/CHANGELOG.md) · [AGENTS.md](AGENTS.md)
   (contributor guide).
 

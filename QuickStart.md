@@ -42,7 +42,12 @@ After loading, use:
   directions binned on a hex-tiled sphere, highlighting preferred hop directions and ±u asymmetry
   the ellipsoid can't show.
 - `Bond Geometry` for bond angles: pick an A–B–C triplet with B central, bound the two bond
-  lengths, and press `Compute` for the angle distribution over the periodic configuration.
+  lengths, and press `Compute` for the angle distribution over the periodic configuration. The
+  angle card's tabs switch between the sin-corrected distribution, the raw density and the
+  partial g(r) with your bond window marked. Drag across the distribution to pick an angle range
+  (drag its edges or the whole band; double-click or `Clear` removes it): the 3D cell brightens
+  the bonds by the share of their angles in the range and draws an arc at the central atom for
+  each angle. Hovering one bin previews it; on a phone or tablet, tap a bin.
 
 ## 3. Live Data (Auto-Refresh)
 
@@ -104,10 +109,19 @@ What the Copilot can do:
 - It points at what it explains: the cards it talks about breathe a blue edge, it marks the peaks
   it names, its answers cite cards as chips you can click, and it turns a 3D view to look down
   the direction it describes. A click on the page ends the highlight.
-- The analyses only compute and the view tools only change what is on screen: your data and files
-  are never changed. Turn the analyses off in the settings drawer (*Let the Copilot run
-  analyses*).
-- Drag its edge to resize it; it remembers its width and whether it was open.
+- Ask it to set up an analysis and it can set the Bond Geometry inputs (triplet, bond windows,
+  bin width). A card shows the change first and nothing changes until you press `Apply`;
+  `Decline` leaves the page as it was, and `Undo` on the applied card puts the old inputs back.
+  `Changes: Ask first | Auto` in the settings drawer chooses whether it asks; Auto resets to Ask
+  first when the page reloads.
+- Apart from that one tool, the analyses only compute and the view tools only change what is on
+  screen. Your data and files are never changed. Turn the analyses off in the settings drawer
+  (*Let the Copilot run analyses*).
+- The `Context` meter by the chat box shows how full the model's context window is (amber from
+  70 %, red above 90 %, details behind `?`). At amber it offers `Start fresh` or `Summarize and
+  continue`, and the chat says whenever earlier questions or results stop being sent in full.
+- Drag its edge to resize it; it remembers its width and whether it was open. On a phone it opens
+  as a bottom sheet.
 - Other models answer from the run summary only.
 
 Because the hosted dashboard is served over HTTPS, a **local** model server must allow this page's
