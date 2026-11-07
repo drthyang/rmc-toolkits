@@ -2969,6 +2969,13 @@ input.ui-range::-moz-range-track {
         max-width: none;
         margin-top: 1.5rem;
     }
+
+    /* One that opens upward sits at the screen's foot instead: fixed, its
+       `bottom: 100%` put it above the top of the screen. */
+    .ui-info__popover--above {
+        bottom: calc(0.75rem + var(--safe-bottom));
+        margin-top: 0;
+    }
 }
 
 .ui-info__popover p {
