@@ -131,3 +131,17 @@ describe('a step keeps its result: the status, the note, the choice', () => {
         expect(questionReply(question({ data: { answer: 'A', skipped: true }, choice: { source: 'option', index: 0, confirmed: null } })).state).toBe('answered');
     });
 });
+
+describe('earlier results sent shortened', () => {
+    it('counts each compacted event on the turn, for the footer\'s note', () => {
+        const turn = fold([
+            { type: 'round', round: 0 },
+            ...tool('a'),
+            { type: 'compacted', count: 1 },
+            ...tool('b'),
+            { type: 'compacted', count: 2 }
+        ]);
+        expect(turn.compacted).toBe(3);
+        expect(fold([{ type: 'round', round: 0 }, ...tool('a')]).compacted).toBeUndefined();
+    });
+});

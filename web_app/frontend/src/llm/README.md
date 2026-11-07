@@ -268,7 +268,9 @@ validation's live arms are offered compute-only tools: no view or change tool re
       `configKey` it was asked under: after a new configuration the history holds only the
       questions asked under the current one, and `configurationBreaks` says where the dock draws
       its divider. It describes the turn
-      (`describeTurn`) for the composer's status line and the tool list.
+      (`describeTurn`) for the composer's status line and the tool list, and keeps the context
+      meter's numbers (`meter`; *The context meter*), Summarize and continue (`summarize`) and each
+      answer's memory note.
     - `CopilotChat` is the dock (`components/dockLayout.js` holds its pure size rules): the rail,
       then the panel, and the resize handle. The panel mounts on first open, so nothing is fetched
       before that, and stays mounted while collapsed, so a running answer continues. It composes
@@ -953,6 +955,40 @@ each analysis adds up to 3,000 characters more.
   (`validation/runPolicy.js`; [copilot-validation.md](../../../../docs/algorithms/copilot-validation.md),
   *The run policy*).
 
+### The context meter (THY-76)
+
+`components/ContextMeter.jsx`, beside the composer: "Context 62%", neutral below 70 %, amber from
+70 % to 90 %, red above; at amber or red, Start fresh and (when it would shrink the next request)
+Summarize and continue; the details behind "?"; on a phone, folded away until amber. Its numbers are
+the guard's (`provider/contextMeter.js`), never a second count:
+
+- **A request** is `estimatePromptTokens` of what is sent plus the guard's reply reserve for that
+  server (`REPLY_RESERVE_TOKENS`, 8,192; LM Studio `LMSTUDIO_REPLY_MIN_TOKENS`, 4,096).
+- **The window** is the line the guard refuses at (`meterLimits`): Ollama's maximum for the model
+  (`/api/show`; the guard sizes `num_ctx` up to it and refuses above), LM Studio's loaded context,
+  or a Claude model's published window (`CLOUD_MODELS`, with its prices). 100 % is the refusal line;
+  `contextMeter.test.js` pins it against `planContext` and `planCopilotChat`. Unknown: tokens only.
+- **Which request.** While a turn runs, its latest `request` event (the plan's own estimate on
+  Ollama and LM Studio). Between questions, the larger of the next question's first request
+  (`turn.js` `requestPreview`: the messages and tools the turn would send first, the same as its
+  first `request` event) and the last answer's largest request. After a ContextLimitError, the
+  refused request (`needed` / `available`). The window is read with the guard's probes before the
+  first question (`probeLimits`, local servers only) and after each answer, and from each request's
+  plan.
+- **Accuracy.** The estimate errs high on purpose (2.5 characters a token, 1.4 for tool results and
+  arguments): about 32 % above gemma4's real count on the Demo's first request. The meter reads
+  high, never low. Cost (Claude models only) is the same count at the published price, the reply
+  estimated from what streamed back; thinking the provider bills but does not return is not in it.
+- **Summarize and continue** (`useCopilot.js` `summarize`, `turnHistory`'s `summarizedAt`): the
+  answers so far are re-sent as `compactAnswer(answer, SUMMARY_ANSWER_CHARS)` (600: the sentences
+  with numbers and the Outcome line). No model call writes it, so no number can change. The chat
+  draws a divider where it was done. Start fresh is a new conversation.
+- **Never silently.** `historyWindow(history)` says what the prompt's window of `HISTORY_MESSAGES`
+  leaves out; the dock puts a memory note on the answer whose request first drops a question or
+  shortens the last answer, and the agent loop's `compacted` event (earlier results shortened to
+  their checks to fit `turnCharBudget`) becomes a line in the answer's footer. None of this changes
+  what is sent.
+
 ## Robust on local models
 
 A local model can stall, loop or reply with nothing: qwen3.8-27b, a dense reasoning model, took 1–5
@@ -1402,6 +1438,11 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   a stall is `'error'` and Stop `'stopped'` in both, and the empty paths' `record.final` is pinned.
 - **Streaming:** SSE parsing, including tool-call fragments split mid-arguments and Gemini-style
   whole calls with `extra_content`; tool-call assembly and argument validation.
+- **The context meter** (`contextMeter.test.js`, `contextMeterDock.test.jsx`): 100 % is the
+  guard's refusal line on Ollama and LM Studio; the levels; the Claude windows and prices; the
+  previewed request is the turn's first; the history window's counts and the chat's notes; the dock
+  against a scripted LM Studio (amber, red, Summarize and continue, a refused request, the memory
+  notes).
 - **The context window** (`contextGuard.test.js`): the estimate errs high; the plan keeps a loaded
   context that fits, asks for a fitting one over a 4,096 default, keeps it across the
   conversation, caps it at the model's maximum and refuses beyond it; `planCopilotChat` decides

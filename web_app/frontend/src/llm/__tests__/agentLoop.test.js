@@ -367,9 +367,17 @@ describe('runCopilotTurn', () => {
             { calls: [{ name: 'echo', args: { value: 3 } }] },
             { text: 'ok' }
         ]);
-        await collect(runCopilotTurn({
+        const events = await collect(runCopilotTurn({
             model: callModel, messages: baseMessages, tools: [big], limits: { resultCharBudget: 900, turnCharBudget: 1500 }
         }));
+        // Never silently: each shortening is an event right after the tool_end
+        // that caused it (the dock's footer says so, turnState.js).
+        const compacted = events.filter((event) => event.type === 'compacted');
+        expect(compacted.length).toBeGreaterThan(0);
+        compacted.forEach((event) => {
+            expect(event.count).toBeGreaterThan(0);
+            expect(events[events.indexOf(event) - 1].type).toBe('tool_end');
+        });
         const toolContents = requests[3].messages.filter((message) => message.role === 'tool').map((message) => message.content);
         // The earliest is compacted (its form: tools.test.js compactToolMessage),
         // from the message the model first read; the newest never is.

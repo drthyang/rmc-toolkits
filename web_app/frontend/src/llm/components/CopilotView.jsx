@@ -8,6 +8,8 @@ import { STOPPED_BY } from '../copilot/turnPolicy';
 import { changeReply, questionReply, stepSummary, turnReferences } from '../copilot/turnState';
 import { useCopilot } from '../useCopilot';
 import ChangeCard from './ChangeCard';
+import ContextMeter from './ContextMeter';
+import { compactedNote, memoryNote } from './chatNotes';
 import MarkdownMessage from './MarkdownMessage';
 import { answerParts } from './answerParts';
 import { plainReferences } from './referenceDisplay';
@@ -140,6 +142,14 @@ const groupItems = (items) => items.reduce((groups, item) => {
     return groups;
 }, []);
 
+const SUMMARY_DIVIDER_TEXT = 'Summarized — the answers above go to the model as their sentences with numbers';
+
+const SummaryDivider = () => (
+    <p className="llm-config-divider" title="Summarize and continue: each earlier answer is re-sent as its sentences with numbers and its Outcome line, at most 600 characters. No model writes the summary.">
+        <span>{SUMMARY_DIVIDER_TEXT}</span>
+    </p>
+);
+
 // One assistant turn as the dock draws it (exported for the tests that render it alone).
 export const AssistantTurn = ({
     turn, pages, onOpenPage, cardLinks, question = null, onAnswer = null, approval = null, onDecide = null, undos = null,
@@ -191,6 +201,7 @@ export const AssistantTurn = ({
             <span className="llm-message-avatar" aria-hidden="true"><WaveMark /></span>
             <div className="llm-message-body llm-turn">
                 <span className="llm-message-name">Copilot</span>
+                {turn.memory && <p className="llm-memory-note">{memoryNote(turn.memory)}</p>}
                 {groups.map((group, index) => (group.kind === 'steps' ? (
                     <ol key={index} className="llm-steps" aria-label="Analyses run">
                         {group.steps.map(stepCard)}
@@ -220,13 +231,15 @@ export const AssistantTurn = ({
                         )}
                     </div>
                 )}
-                {!turn.streaming && (summary || stopNote || turn.toolsUnsupported || turn.cut || turn.gates?.length > 0) && (
+                {!turn.streaming && (summary || stopNote || turn.toolsUnsupported || turn.cut || turn.gates?.length > 0 || turn.compacted > 0) && (
                     <p className={`llm-turn-footer${turn.cut ? ' is-cut' : ''}`}>
                         {[
                             summary,
                             // The evidence gate's send-backs (THY-18).
                             ...(turn.gates || []).map((gate) => gate.notice),
                             turn.toolsUnsupported ? 'this model cannot run analyses — answered from the run summary' : '',
+                            // Never silently: earlier results sent shortened (agentLoop.js turnCharBudget).
+                            compactedNote(turn.compacted),
                             cutNote ? 'the reply reached the model\'s length limit and is cut short' : '',
                             stopNote
                         ].filter(Boolean).join(' · ')}
@@ -311,7 +324,7 @@ const CopilotView = ({
     autoApprove = false
 }) => {
     const copilot = useCopilot({
-        settings, run, tools, toolsEnabled, runKey, configKey, focus, onTurnEnd, onQuestion, onApproval, skills, autoApprove
+        settings, run, tools, toolsEnabled, runKey, configKey, focus, onTurnEnd, onQuestion, onApproval, skills, autoApprove, connected
     });
     useEffect(() => { onBusyChange?.(copilot.busy); }, [copilot.busy, onBusyChange]);
     const showCard = useCallback((id) => { focus?.show([id], { source: 'user' }); }, [focus]);
@@ -422,6 +435,7 @@ const CopilotView = ({
                 <div className="llm-chat-log" ref={logRef}>
                     {copilot.turns.flatMap((turn, index) => [
                         ...(copilot.breaks.before.includes(index) ? [<ConfigurationDivider key={`configuration-${index}`} />] : []),
+                        ...(copilot.summarizedAt === index ? [<SummaryDivider key={`summary-${index}`} />] : []),
                         turn.role === 'user'
                             ? <UserMessage key={index} content={turn.content} />
                             : (
@@ -451,6 +465,7 @@ const CopilotView = ({
                         />
                     )}
                     {configurationChanged && <ConfigurationDivider />}
+                    {copilot.summarizedAt === copilot.turns.length && !copilot.live && <SummaryDivider />}
                 </div>
             ) : (
                 <div className="llm-chat-empty">
@@ -534,9 +549,19 @@ const CopilotView = ({
             </form>
             <div className="llm-composer-foot">
                 <span className="llm-composer-status">{toolStatus}</span>
-                {hasConversation && !copilot.busy && (
-                    <button type="button" className="llm-link-btn" onClick={copilot.clear}>New conversation</button>
-                )}
+                <span className="llm-composer-tail">
+                    {connected && (
+                        <ContextMeter
+                            meter={copilot.meter}
+                            busy={copilot.busy}
+                            onStartFresh={hasConversation ? copilot.clear : null}
+                            onSummarize={copilot.summarize}
+                        />
+                    )}
+                    {hasConversation && !copilot.busy && !(connected && ['amber', 'red'].includes(copilot.meter?.level)) && (
+                        <button type="button" className="llm-link-btn" onClick={copilot.clear}>New conversation</button>
+                    )}
+                </span>
             </div>
         </div>
     );
