@@ -25,6 +25,7 @@ import {
 } from './sceneAxes';
 import useCopilotViewer from '../useCopilotViewer';
 import './UnitCellPanel.css';
+import { isDisplayed } from './pageVisibility';
 
 const SAVE_OPTIONS = [
     { id: 'png', label: 'Standard PNG', hint: '1×' },
@@ -151,8 +152,11 @@ export default function SiteStructurePanel({
 
         let animationId = 0;
         const animate = () => {
-            controls.update();
-            renderer.render(scene, camera);
+            // A page the app keeps mounted but hidden draws nothing.
+            if (isDisplayed(renderer.domElement)) {
+                controls.update();
+                renderer.render(scene, camera);
+            }
             animationId = requestAnimationFrame(animate);
         };
         animate();

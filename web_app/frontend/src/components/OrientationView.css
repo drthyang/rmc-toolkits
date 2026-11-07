@@ -64,8 +64,9 @@
     white-space: nowrap;
 }
 
-/* Axis-views mini panel: three fixed-angle views stacked vertically, one
-   scissored canvas with a click-to-snap zone over each third. */
+/* Axis-views mini panel: three fixed-angle views stacked vertically (side by
+   side in a wide panel, .is-across), one scissored canvas with a
+   click-to-snap zone over each third. */
 .orient-multiview {
     position: relative;
     flex: 1 1 auto;
@@ -101,6 +102,24 @@
 
 .orient-multiview-zone:last-child {
     border-bottom: 0;
+}
+
+/* A wide, short panel (the stacked layouts): the three views side by side. */
+.orient-multiview.is-across .orient-multiview-zone {
+    top: 0;
+    right: auto;
+    width: 33.334%;
+    height: 100%;
+    border-bottom: 0;
+    border-right: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.orient-multiview.is-across .orient-multiview-zone:last-child {
+    border-right: 0;
+}
+
+.orient-multiview.is-across .orient-multiview-zone:hover {
+    border-right-color: color-mix(in srgb, var(--border) 70%, transparent);
 }
 
 /* Hover: a translucent dark scrim that visibly DIMS the pane (the sphere stays

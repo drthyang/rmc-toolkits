@@ -28,6 +28,7 @@ import AppFooter from './AppFooter';
 import { uiScale } from '../uiScale';
 import useCopilotViewer from '../useCopilotViewer';
 import './StructurePage.css';
+import { isDisplayed } from './pageVisibility';
 
 const vectorLength = (vector) => Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
 const dot = (a, b) => a.reduce((sum, value, index) => sum + value * b[index], 0);
@@ -1283,8 +1284,11 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
 
         let frameId;
         const animate = () => {
-            controls.update();
-            renderer.render(scene, camera);
+            // A page the app keeps mounted but hidden draws nothing.
+            if (isDisplayed(renderer.domElement)) {
+                controls.update();
+                renderer.render(scene, camera);
+            }
             frameId = requestAnimationFrame(animate);
         };
         animate();
@@ -1364,7 +1368,9 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                                 ))}
                             </select>
                         </Control>
-                        <Control label="Normal">
+                        {/* A div, not a label: Safari forwards a tap on an option to the
+                            label's first button, which opened the menu again. */}
+                        <Control as="div" label="Normal">
                             <span className="ui-dropdown" ref={normalMenuRef}>
                                 <button
                                     type="button"

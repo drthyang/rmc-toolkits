@@ -19,6 +19,7 @@
 // Pure, no React.
 
 import { fillReferences, isReferenceName } from '../copilot/references';
+import { collapseEchoes } from '../copilot/echoedReferences';
 
 /** The link scheme of a missing number's marker (MarkdownMessage draws it, never as a link). */
 export const MISSING_SCHEME = 'ref:';
@@ -53,7 +54,7 @@ export const displayReferences = (text, { store = null, streaming = false } = {}
     if (typeof text !== 'string' || !text.includes('{{')) return text;
     let source = text;
     if (streaming) source = source.replace(OPEN_REFERENCE, '');
-    const filled = store ? fillReferences(source, store).text : source;
+    const filled = store ? fillReferences(collapseEchoes(source, store), store).text : source;
     if (!filled.includes('{{')) return filled;
     return filled.split(SEGMENTS).map((segment, index) => {
         const kind = index % 2 === 1 ? kindOf(segment) : 'prose';
