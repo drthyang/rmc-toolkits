@@ -1,7 +1,7 @@
 {
   "tool": "check_ripples",
   "arguments": {},
-  "content_chars": 1858,
+  "content_chars": 1806,
   "content": {
     "ref": "r1",
     "checks": [
@@ -11,39 +11,25 @@
       },
       {
         "level": "note",
-        "text": "xray_sq: fitted in Q: the box is not asked to make ripples (a G(r) transformed from these data still shows them)."
-      },
-      {
-        "level": "note",
         "text": "xpdf: fitted in r, but RMCProfile transforms the model F(Q) exactly as the data: both carry the same ripples, so the box is not asked to make them."
       },
       {
         "level": "note",
         "text": "xpdf: below the first distance (0.01–2.06 Å) the data's rms about the baseline is 6.6× the ripples the strong peaks predict there (the model, transformed alike, shows 1.2× the prediction there): noise or processing errors dominate the low r."
+      },
+      {
+        "level": "note",
+        "text": "xray_sq: fitted in Q: the box is not asked to make ripples (a G(r) transformed from these data still shows them)."
       }
     ],
     "data": {
       "datasets": [
         {
-          "dataset": "xray_sq",
-          "file": "GTS_250K_FQ1.csv",
-          "status": "assessed",
-          "fitted_in": "Q",
-          "risk": "none",
-          "Q_A": [0.8, 26.98],
-          "Q_from": "this file's Q grid",
-          "resolution_A": {
-            "fwhm": 0.138,
-            "nyquist": 0.116,
-            "ripple_period": 0.233
-          }
-        },
-        {
           "dataset": "xpdf",
           "file": "GTS_250K_FT_XFQ1.csv",
           "status": "assessed",
           "fitted_in": "r",
-          "model": "the same transform of the model F(Q) as the data's: truncated alike",
+          "model": "same transform as the data",
           "risk": "matched",
           "Q_A": [0.8, 26.98],
           "window": "none",
@@ -94,7 +80,21 @@
             "predicted_rms": 0.0043,
             "model_rms": 0.005,
             "data_minus_model_rms": 0.026,
-            "relative_to": "the largest strong peak"
+            "relative_to": "largest peak"
+          }
+        },
+        {
+          "dataset": "xray_sq",
+          "file": "GTS_250K_FQ1.csv",
+          "status": "assessed",
+          "fitted_in": "Q",
+          "risk": "none",
+          "Q_A": [0.8, 26.98],
+          "Q_from": "this file's Q grid",
+          "resolution_A": {
+            "fwhm": 0.138,
+            "nyquist": 0.116,
+            "ripple_period": 0.233
           }
         }
       ],

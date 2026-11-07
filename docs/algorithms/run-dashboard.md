@@ -2886,7 +2886,10 @@ risk; give `qmax`; do not read a ripple-consistent feature as structure, test it
 Lorch-windowed transform or the other radiation; a run from a new start only for a specific suspect
 feature in a high-risk fit, with the model truncated as the data are; a split below the resolution is
 not constrained. The checks: a `warn` per high-risk dataset and per ripple-consistent feature, notes
-otherwise; `fail` only when nothing could be assessed.
+otherwise (one per reading, its features grouped); `fail` only when nothing could be assessed. The
+real-space datasets come first, the riskiest first, and the result has its own budget
+(`RIPPLES_RESULT_BUDGET`, 4,500 characters: the Demo's eight features in 2–6 Å and both datasets are
+3,695), so no row is cut.
 
 ### Parameters and defaults — termination ripples
 

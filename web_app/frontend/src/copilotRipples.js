@@ -34,12 +34,13 @@ const roundSig = (value, digits = 3) => (
 );
 const roundR = (value) => (Number.isFinite(value) ? Math.round(value * 1000) / 1000 : null);
 
-// How RMCProfile makes the model, in words (fit_space_risk's `model`).
+// How RMCProfile makes the model, in a few words (fit_space_risk's `model`;
+// the risk's sentence in the checks says what it means).
 const MODEL_WORDS = {
-    'same-transform': 'the same transform of the model F(Q) as the data\'s: truncated alike',
-    histogram: 'the configuration\'s histogram, not truncated',
-    sinc: 'the histogram convolved with the sinc of the CONVOLVE Q range',
-    'xray-transform': 'the histogram transformed over the block\'s QMIN-QMAX and back'
+    'same-transform': 'same transform as the data',
+    histogram: 'untruncated histogram',
+    sinc: 'histogram ⊗ sinc(CONVOLVE Q)',
+    'xray-transform': 'histogram over QMIN-QMAX'
 };
 
 // Why a dataset carries the risk it does (fit_space_risk's `because`).
@@ -120,6 +121,9 @@ const keyFiles = (plotFiles) => {
 
 const STRONG_PEAKS_SHOWN = 4;
 
+/** check_ripples' result budget (characters): its datasets and features whole. */
+export const RIPPLES_RESULT_BUDGET = 4500;
+
 const datasetRow = (dataset, key) => {
     const row = { dataset: key, file: dataset.file, status: dataset.status };
     if (dataset.status !== 'assessed') {
@@ -173,7 +177,7 @@ const datasetRow = (dataset, key) => {
             row.low_r.predicted_rms = relative(low.predictedRms);
             if (Number.isFinite(low.modelRms)) row.low_r.model_rms = relative(low.modelRms);
             if (Number.isFinite(low.dataMinusModelRms)) row.low_r.data_minus_model_rms = relative(low.dataMinusModelRms);
-            row.low_r.relative_to = 'the largest strong peak';
+            row.low_r.relative_to = 'largest peak';
         }
         if (Number.isFinite(low.enforcedBelow)) row.low_r.enforced_below_A = roundR(low.enforcedBelow);
     }
@@ -188,10 +192,7 @@ const readingRow = (reading, key) => {
     }
     row.at_A = roundR(reading.r);
     row.size = roundSig(reading.size, 2);
-    if (reading.ripple) {
-        row.ripple_A = roundR(reading.ripple.r);
-        row.ripple_size = roundSig(reading.ripple.amplitude, 2);
-    }
+    if (reading.ripple) row.ripple_size = roundSig(reading.ripple.amplitude, 2);
     if (reading.fromPeak) row.from_peak_A = roundR(reading.fromPeak.distance);
     row.below_resolution = Boolean(reading.belowResolution);
     return row;
@@ -205,7 +206,16 @@ const fmt = (value, digits = 3) => String(roundSig(value, digits));
  */
 export const summarizeRipples = (result, { keys, only = null, pair = null } = {}) => {
     const keyOf = (file) => keys.get(file) || file;
-    const all = (result.datasets || []).filter((dataset) => keys.has(dataset.file));
+    // Real-space datasets first, the riskiest first (the result budget halves
+    // lists from the end), then the fits in Q.
+    const rank = (dataset) => {
+        if (!dataset.fit || dataset.fit.fitSpace === 'reciprocal') return 4;
+        return { high: 0, unknown: 1, matched: 2 }[dataset.fit.risk] ?? 3;
+    };
+    const all = (result.datasets || []).filter((dataset) => keys.has(dataset.file))
+        .map((dataset, index) => ({ dataset, index }))
+        .sort((a, b) => (rank(a.dataset) - rank(b.dataset)) || (a.index - b.index))
+        .map(({ dataset }) => dataset);
     const datasets = only ? all.filter((dataset) => keyOf(dataset.file) === only) : all;
     const data = { datasets: datasets.map((dataset) => datasetRow(dataset, keyOf(dataset.file))) };
     const checks = [];
@@ -258,13 +268,37 @@ export const summarizeRipples = (result, { keys, only = null, pair = null } = {}
             return row;
         });
         data.found = Boolean(result.found);
+        // One line per reading, the features that read so grouped (positions in Å).
+        const byClass = new Map();
+        const readIn = new Set(data.features.flatMap((feature) => feature.in.map((reading) => reading.dataset)));
         for (const feature of data.features) {
-            const parts = feature.in.map((reading) => `in ${reading.dataset} ${FEATURE_SENTENCES[reading.class] || reading.class}`
-                + (reading.below_resolution ? ` (and closer to its peak than the resolution)` : ''));
-            const across = feature.across ? `; across the datasets ${ACROSS_SENTENCES[feature.across.verdict] || feature.across.verdict}` : '';
-            const ripple = feature.in.some((reading) => reading.class === 'ripple-consistent')
-                || feature.across?.verdict === 'moves-with-qmax';
-            checks.push({ level: ripple ? 'warn' : 'note', text: `r = ${feature.r} Å: ${parts.join('; ')}${across}.` });
+            for (const reading of feature.in) {
+                const label = readIn.size > 1 ? `${feature.r} (${reading.dataset})` : String(feature.r);
+                if (!byClass.has(reading.class)) byClass.set(reading.class, []);
+                byClass.get(reading.class).push(label);
+            }
+        }
+        for (const [kind, where] of byClass) {
+            checks.push({
+                level: kind === 'ripple-consistent' ? 'warn' : 'note',
+                text: `r = ${where.join(', ')} Å: ${FEATURE_SENTENCES[kind] || kind}.`
+            });
+        }
+        const close = data.features.filter((feature) => feature.in.some((reading) => reading.below_resolution));
+        if (close.length) {
+            checks.push({ level: 'note', text: `r = ${close.map((feature) => feature.r).join(', ')} Å: closer to a strong peak than the r-resolution (the kernel's FWHM).` });
+        }
+        const byVerdict = new Map();
+        for (const feature of data.features) {
+            if (!feature.across) continue;
+            if (!byVerdict.has(feature.across.verdict)) byVerdict.set(feature.across.verdict, []);
+            byVerdict.get(feature.across.verdict).push(feature.r);
+        }
+        for (const [verdict, where] of byVerdict) {
+            checks.push({
+                level: verdict === 'moves-with-qmax' ? 'warn' : 'note',
+                text: `Across the datasets, r = ${where.join(', ')} Å: ${ACROSS_SENTENCES[verdict] || verdict}.`
+            });
         }
     }
     if (result.pair) {
@@ -280,14 +314,26 @@ export const summarizeRipples = (result, { keys, only = null, pair = null } = {}
                 return row;
             })
         };
-        for (const feature of data.pair.features) {
-            const at = feature.at_ripple.length
-                ? `at a predicted ripple of ${feature.at_ripple.map((ripple) => ripple.dataset).join(', ')}, fitted in r against a model not truncated like the data: the box may be making it`
-                : 'at no predicted ripple of a dataset whose box may fit ripples';
+        const atRipple = data.pair.features.filter((feature) => feature.at_ripple.length);
+        const clear = data.pair.features.filter((feature) => !feature.at_ripple.length);
+        if (atRipple.length) {
             checks.push({
-                level: feature.at_ripple.length ? 'warn' : 'note',
-                text: `${data.pair.pair} g(r) r = ${feature.r} Å: ${at}`
-                    + (feature.below_resolution ? `; ${feature.spacing_A} Å from the next peak, below the data's resolution.` : '.')
+                level: 'warn',
+                text: `${data.pair.pair} g(r) r = ${atRipple.map((feature) => feature.r).join(', ')} Å: at a predicted ripple of a G(r) fitted `
+                    + 'in r against a model not truncated like the data: the box may be making it.'
+            });
+        }
+        if (clear.length) {
+            checks.push({
+                level: 'note',
+                text: `${data.pair.pair} g(r) r = ${clear.map((feature) => feature.r).join(', ')} Å: at no predicted ripple of a dataset whose box may fit ripples.`
+            });
+        }
+        const unresolved = data.pair.features.filter((feature) => feature.below_resolution);
+        if (unresolved.length) {
+            checks.push({
+                level: 'note',
+                text: `${data.pair.pair} g(r) r = ${unresolved.map((feature) => feature.r).join(', ')} Å: closer to the next peak than the data's r-resolution.`
             });
         }
     } else if (pair) {
@@ -382,7 +428,6 @@ const RIPPLES_SHAPE = {
             'peak_A?': 'number|null',
             'at_A?': 'number|null',
             'size?': 'number|null',
-            'ripple_A?': 'number|null',
             'ripple_size?': 'number|null',
             'from_peak_A?': 'number|null',
             'below_resolution?': 'boolean'
@@ -445,6 +490,9 @@ export const buildRippleTool = ({ plotFiles = null, ripples = null } = {}) => {
         method: 'Use it before reading a small peak, shoulder or split in a G(r) or partial g(r) as structure.',
         parameters: { type: 'object', properties },
         dataShape: RIPPLES_SHAPE,
+        // Every dataset and up to eight features: within the default budget
+        // the rows would be cut (as analyze_clusters' and analyze_modulations').
+        resultBudget: RIPPLES_RESULT_BUDGET,
         label: ({ dataset, pair }) => `Termination ripples${dataset ? ` ${dataset}` : ''}${pair ? ` · ${pair}` : ''}`,
         page: 'dashboard',
         cards: ({ dataset } = {}) => [...keyed.entries()]

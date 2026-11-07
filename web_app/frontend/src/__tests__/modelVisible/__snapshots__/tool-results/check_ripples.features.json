@@ -4,17 +4,13 @@
     "features": [2.32, 2.8],
     "split": [2.45, 2.6]
   },
-  "content_chars": 2893,
+  "content_chars": 2793,
   "content": {
     "ref": "r1",
     "checks": [
       {
         "level": "ok",
         "text": "No real-space fit asks the box to make ripples (each model is truncated as its data are); not ripples: r = 2.8 Å."
-      },
-      {
-        "level": "note",
-        "text": "xray_sq: fitted in Q: the box is not asked to make ripples (a G(r) transformed from these data still shows them)."
       },
       {
         "level": "note",
@@ -26,11 +22,15 @@
       },
       {
         "level": "note",
-        "text": "r = 2.32 Å: in xpdf within twice the data's noise level (from the low-r region): not resolved from noise."
+        "text": "xray_sq: fitted in Q: the box is not asked to make ripples (a G(r) transformed from these data still shows them)."
       },
       {
         "level": "note",
-        "text": "r = 2.8 Å: in xpdf larger than the ripple predicted there: more than termination (a weaker peak, the strong peak's own shape, or noise)."
+        "text": "r = 2.32 Å: within twice the data's noise level (from the low-r region): not resolved from noise."
+      },
+      {
+        "level": "note",
+        "text": "r = 2.8 Å: larger than the ripple predicted there: more than termination (a weaker peak, the strong peak's own shape, or noise)."
       },
       {
         "level": "note",
@@ -40,25 +40,11 @@
     "data": {
       "datasets": [
         {
-          "dataset": "xray_sq",
-          "file": "GTS_250K_FQ1.csv",
-          "status": "assessed",
-          "fitted_in": "Q",
-          "risk": "none",
-          "Q_A": [0.8, 26.98],
-          "Q_from": "this file's Q grid",
-          "resolution_A": {
-            "fwhm": 0.138,
-            "nyquist": 0.116,
-            "ripple_period": 0.233
-          }
-        },
-        {
           "dataset": "xpdf",
           "file": "GTS_250K_FT_XFQ1.csv",
           "status": "assessed",
           "fitted_in": "r",
-          "model": "the same transform of the model F(Q) as the data's: truncated alike",
+          "model": "same transform as the data",
           "risk": "matched",
           "Q_A": [0.8, 26.98],
           "window": "none",
@@ -109,7 +95,21 @@
             "predicted_rms": 0.0043,
             "model_rms": 0.005,
             "data_minus_model_rms": 0.026,
-            "relative_to": "the largest strong peak"
+            "relative_to": "largest peak"
+          }
+        },
+        {
+          "dataset": "xray_sq",
+          "file": "GTS_250K_FQ1.csv",
+          "status": "assessed",
+          "fitted_in": "Q",
+          "risk": "none",
+          "Q_A": [0.8, 26.98],
+          "Q_from": "this file's Q grid",
+          "resolution_A": {
+            "fwhm": 0.138,
+            "nyquist": 0.116,
+            "ripple_period": 0.233
           }
         }
       ],
@@ -122,7 +122,6 @@
               "class": "within-noise",
               "at_A": 2.32,
               "size": -0.35,
-              "ripple_A": 2.32,
               "ripple_size": -0.49,
               "from_peak_A": 0.189,
               "below_resolution": false
@@ -137,7 +136,6 @@
               "class": "larger-than-ripple",
               "at_A": 2.8,
               "size": 1.4,
-              "ripple_A": 2.81,
               "ripple_size": 0.34,
               "from_peak_A": 0.291,
               "below_resolution": false
