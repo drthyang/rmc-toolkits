@@ -1472,7 +1472,13 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                 <span className="ui-legend__item"><i className="ui-legend__swatch" style={{ background: '#3f7fd6' }} /> PC3</span>
                             </>
                         )}
-                        <span className="ui-legend__item"><i className="ui-legend__swatch" style={{ background: ellipsoidColor }} /> {Math.round(probability * 100)}% ellipsoid</span>
+                        {/* Name what is drawn: the ellipsoid (wireframe or its KDE shell), the isosurface. */}
+                        {(showEllipsoid || showEllipsoidKde) && (
+                            <span className="ui-legend__item"><i className="ui-legend__swatch" style={{ background: ellipsoidColor }} /> {Math.round(probability * 100)}% ellipsoid</span>
+                        )}
+                        {showSurface && (
+                            <span className="ui-legend__item"><i className="ui-legend__swatch" style={{ background: `rgb(${sampleColormap(colormap, 0.72).join(', ')})` }} /> {isoPercent}% isosurface</span>
+                        )}
                         {shellBoxNeeded && (
                             <span
                                 className="ui-legend__item ui-legend__warning"
