@@ -144,10 +144,11 @@ the judged answer, the history and the validation protocol 2026-11-01.1 are as t
   the Outcome's own summary line still read "coordination is 6" and drew the same Check. For a
   demonstration, ask an interpretation question that does not quote a pair's coordination (the
   [demo script](demo-script.md) uses "Has this run converged, and how good is the fit?").
-- **A number shown twice after its unit.** Fix 0387c42 covers a number typed just before its own
-  reference; where a unit or words sit between them (likely, not yet traced), it still shows
-  twice ("3.25 Se per Ta 3.25", "127 deg² 127"; gemma4:26b, local build). Display only; for after
-  the freeze.
+- **A number shown twice after its unit.** Fixed in 92b81f1 (display only). Fix 0387c42 covered a
+  number typed just before its own reference, or with one of a few units between; where a label sat
+  between them it still showed twice ("3.25 Se per Ta 3.25", "127 deg² 127"; gemma4:26b, local
+  build). The dock now shows it once when a short label (up to three words, no digits or clause
+  punctuation) sits between, and only when the typed number matches the engine's value.
 - **gemma4:26b's own habits.** It can think for over a minute before a change card, may propose
   the change again after a stale refusal (Decline the second card), and sometimes runs one analysis
   more than asked. Asked whether the TaSe₆ octahedron is distorted, it once passed
