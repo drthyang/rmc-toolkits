@@ -5,6 +5,8 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+## 0.8.0 — 2026-11-07
+
 ### Validation: the 0.8.0 live gate (Claude Sonnet 5.5; Muse Glimmer in part)
 
 - The live arms ran at commit 472d9bd (protocol 2026-11-01.1) with the turn's default limits.
