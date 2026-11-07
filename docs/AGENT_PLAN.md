@@ -106,6 +106,9 @@ test arms B and C: `docs/algorithms/copilot-validation.md`, "Live results (2026-
 at 7456af9 with `--limits maxTurnMs=3600000,requestMaxMs=1200000`: meta/muse-glimmer (dev smoke, then test
 B and C), then Claude Sonnet 5.5 on test (arm B) once the user confirms the Console's $20 limit, with a stop
 after its first case to compare the ledger with the Console's usage. qwen3.8-27b is dropped this cycle.
+The 0.8.0 gate (the user's go, 2026-11-07; 472d9bd, protocol 2026-11-01.1, default limits): Claude
+Sonnet 5.5, test arm B, 42 runs, 0.920 for $19.76 by the ledger (the run did not stop after its first
+case); Muse Glimmer, only 3 of the 14 test cases in the 30-minute local cap ("Live results (2026-11-07)").
 
 **Waiting for the user:**
 - the user's post-v1 list:

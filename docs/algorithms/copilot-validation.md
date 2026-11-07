@@ -1830,3 +1830,51 @@ split. Its records are sealed in `validation/holdout/live/`, the dev smoke's are
   the previous one".
 - The next request carries none of the earlier questions or answers. The page's console showed two 404s
   for resources, not investigated.
+
+## Live results (2026-11-07): Claude Sonnet 5.5, and part of Muse Glimmer
+
+The 0.8.0 gate (the user's go, 2026-11-07), at commit 472d9bd under protocol 2026-11-01.1, with the
+turn's default limits (10 minutes a turn and a request, a 3-minute stall guard, 6 rounds). These are
+counts only on the test split. The records are sealed in `validation/holdout/live/`, and the summaries
+are `validation/baseline/live/claude-sonnet-5.5-summary.json` and
+`validation/baseline/live/meta-muse-glimmer-summary.json`.
+
+| model | split | arm | runs | mean score | A / A+ / D | minutes a run (mean, max) | 6-round endings | cut | errors |
+|---|---|---|---|---|---|---|---|---|---|
+| claude-sonnet-5.5 | test (3 runs a case) | B | 42 | 0.920 | 0.800 / 0.948 / 1.000 | 0.8, 1.4 | 11 (26 %) | 0 | 0 |
+| meta/muse-glimmer | test, 3 of 14 cases (1 run each) | B | 3 | 0.778 | (over all 14) | 8.5, 10.3 | 3 (100 %) | 0 | 0 |
+
+- **Claude Sonnet 5.5, arm B, scores 0.920.** That is 0.12 above arm A and 0.03 below A+. Of its 42
+  runs, 25 scored 1, 14 scored from 0.75 to 0.99, and 3 scored below that. No run scored 0.
+  - There were no verdict errors, no spurious claims and no overclaims, and 3 contradictions.
+  - It made 3.96 tool calls a round (gemma made 1.02), and 31 runs answered before the round budget ran
+    out.
+  - The run used 560 references, every one filled. The reference repair sent 28 answers back.
+  - There was 1 evidence-gate send-back.
+  - 9 calls were refused (analyze_clusters 5, find_gr_peaks 4) and 3 failed (polyhedral_distortion).
+    No call used `element: "all"`.
+- **The answer checks.** Every Sonnet run's Outcome is *not verified* (gemma's 41 of 42).
+  - The answer checks raised 104 findings: superstructure 28, correlated-motion 21, coordination 20,
+    window 13, single-configuration 10, and 12 others.
+  - None of them matches one of the 3 contradictions the score found. Caught 0, missed 3.
+  - This needs a review of the facts catalogue against these answers before the Outcome line can be
+    trusted with a strong model. It is not a change to the protocol.
+- **Spend:** $19.76 by the tracker's ledger, under the $20 cap. That is 274 requests: an estimated
+  7.36M prompt tokens and 0.14M reply tokens.
+  - The ledger counts every prompt token at the cache-write rate. It does not count hidden thinking.
+  - This section's earlier estimate ($6.30 at list prices, $7.50 by the tracker) assumed 70–90k prompt
+    tokens a run. The runs averaged about 175k.
+- **Muse Glimmer did not fit the 30-minute cap on a local batch.** Each run took about 8.5 minutes:
+  about 75 s a request, with the tools taking about 0 s. The cap stopped the batch after 3 of the 14
+  test cases of arm B. Those three are a subset, so their mean is not comparable to the other columns.
+  - Every run took 6 rounds at 1.0 call a round.
+  - All 86 references were filled, after 2 repairs.
+- **Against gemma4:26b (protocol 2026-10-24.6):**
+  - gemma's scores on the same test split were B 0.748 and C 0.397.
+  - The comparison is not strict. Protocol 2026-11-01.1 parses `{{rN.data.…}}` references and adds the
+    one reference repair. Under 2026-10-24.6, those references zeroed gemma verdicts that were
+    otherwise right: 115 of its 161 unknown test-B references had that prefix.
+  - gemma's B score is therefore a lower bound on what it would score now. The gap to Sonnet (0.17) is
+    an upper bound on the model's share of the difference.
+  - gemma also ran with `--limits maxTurnMs=3600000,requestMaxMs=1200000` and these runs did not.
+    That does not matter here: no run here came near the 10-minute turn limit.
