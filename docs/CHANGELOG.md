@@ -5,6 +5,383 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+### Validation: the 0.8.0 live gate (Claude Sonnet 5.5; Muse Glimmer in part)
+
+- The live arms ran at commit 472d9bd (protocol 2026-11-01.1) with the turn's default limits.
+  - Test, counts only:
+    - Claude Sonnet 5.5, arm B, 42 runs (3 a case): 0.920, against A 0.800, A+ 0.948 and D 1.000.
+    - No errors, cuts or verdict errors.
+  - Spend: $19.76 by the tracker's ledger, under the $20 cap.
+  - Muse Glimmer, arm B: 3 of the 14 test cases (1 run each) in the 30-minute local cap, about 8.5
+    minutes a run. Its mean, 0.778, is over a subset and is not compared.
+- Compared with gemma4:26b's 0.748 (protocol 2026-10-24.6), with a caveat: protocol 2026-11-01.1 now
+  fills the `{{rN.data.…}}` references that zeroed gemma's verdicts, so the two protocols do not
+  compare strictly.
+- Every Sonnet run's Outcome is *not verified*. None of the answer checks' 104 findings matches one of
+  the score's 3 contradictions, so the facts catalogue needs a review.
+- Records: the test split sealed in `validation/holdout/live/`, with counts-only summaries in
+  `validation/baseline/live/`. The section "Live results (2026-11-07)" in
+  `docs/algorithms/copilot-validation.md`.
+
+### Copilot: a context meter by the chat box; nothing cut silently (THY-76, THY-26)
+
+- "Context 62%" beside the composer: how much of the active model's window the next request takes,
+  the reply reserve counted. Neutral below 70 %, amber from 70 % to 90 %, red above. The numbers
+  are the context guard's own (`provider/contextMeter.js`): the request counted by the guard's
+  estimator (`estimatePromptTokens`), plus the reply room the guard keeps (8,192 tokens; 4,096 on
+  LM Studio), against the line the guard refuses at: the model's maximum on Ollama, the context
+  LM Studio loaded it with, a Claude model's published window. 100 % is exactly where the guard
+  refuses a request. A model whose window is not known (an Ollama model that does not report its
+  maximum, LM Studio before it loads the model, a cloud model the meter does not know) shows its
+  tokens only, with no warning colour.
+- What it shows: while the Copilot works, its latest request; between questions, the larger of the
+  next question's first request and the last answer's largest request; after a refusal, the request
+  that was refused (over 100 %). The details behind "?": the tokens used of the window, the prompt
+  and the reply reserve, where the window comes from, the next and the last request, how accurate
+  the count is (deliberately high: 2.5 characters a token, 1.4 for analysis results, about 30 %
+  above gemma4's real count), and for a Claude model the cost so far (the same estimate at its
+  published price; hidden thinking not included).
+- At amber or red: Start fresh (a new conversation) and, when it would shrink the next request,
+  Summarize and continue. Summarize re-sends each earlier answer as its sentences with numbers and
+  its Outcome line, at most 600 characters; no model writes the summary, so it cannot add or change
+  a number. The chat marks where it was done. The details also say what makes room on the server
+  (reload the model in LM Studio with a longer context; on Ollama, a model with a longer context).
+- Phones: the meter stays folded away until amber.
+- Never truncated silently: the chat now says when the oldest questions stop being sent to the
+  model (it keeps the last 4), when the last answer goes shortened to its sentences with numbers
+  (over 2,000 characters), and when earlier results of an answer were sent shortened to their checks
+  and key numbers to fit the answer's budget (a new `compacted` event from the agent loop). What is
+  sent did not change; only the saying.
+- InfoBadge on phones: a "?" whose popover opens upward (the context meter's, the error ribbon's)
+  now shows it at the screen's foot; it used to open above the top of the screen.
+- No model-visible text changed: prompts, tool descriptions, tool results and the validation's
+  records are byte for byte as before; PROTOCOL_VERSION unchanged. Summarize and continue changes
+  what the dock sends only when the user presses it; the validation harness never uses it.
+- THY-26 audit: `ask_user` (asks before guessing a parameter that changes the science, 2–4 options
+  and Other, waits and resumes, the "ask only when it changes the analysis; never what the data
+  answers" rules, replay tests for ask / no ask / cancel) and the context guard (Ollama sized with
+  `num_ctx`, refused rather than cut, LM Studio's loaded window checked, a read-share backstop) were
+  already on main; the Displacement Directions page no longer scrolls sideways at 768–853 px since
+  the device layouts.
+- Tests (scripted servers only): 100 % is the guard's refusal line on Ollama and LM Studio; the
+  levels' bounds; the Claude windows and prices; the previewed request is the turn's first request;
+  the history window's counts; the chat's notes; the compacted event after its tool_end; the dock
+  against a scripted LM Studio — the guard's numbers, amber, red, Summarize and continue, a refused
+  request, the memory notes.
+
+### Layouts for iPhone and iPad
+
+- Phones and portrait iPads: the run-folder field and the bond-window and bin-width fields now
+  use 16px text, so iOS no longer zooms the page when one takes focus (a rule meant to do this
+  lost to the fields' own sizes).
+- The Copilot's sheet keeps its composer on screen on a phone in landscape. An open sheet takes
+  at least 19rem (up to 72% of the window); before, 46% of a ~400px-tall window cut off the
+  composer under the sheet's head.
+- Displacement Directions on a touch screen: a tap on the sphere reads out that cell (direction,
+  enhancement, atoms, local z), as the mouse pointer does. A tap off the sphere or a drag clears
+  it, and past the middle of the view the readout sits left of the point, so it stays on the
+  card.
+- iPad 11" in portrait: PCA Ellipsoid shows its two 3D views side by side, under statistics
+  laid out 2 × 2 (also on a 13" in portrait), where one long column used to put the views a
+  screen down. In landscape, the four statistics columns are sized so the crystal orientation
+  no longer scrolls sideways.
+- iPad 11" in landscape and 13" in portrait: Displacement Directions shows the sphere and the site
+  picker side by side, with the axis views in a row under both.
+- Windows 1041–1319px wide (an iPad 11" in landscape, beside the Copilot rail): the header takes
+  two tidy rows, brand and data source then the tabs. Before, the data source wrapped alone onto
+  the right of a second row.
+- Touch screens: tap targets are 44px. Fields, selects and header buttons are 44px tall, and the
+  page tabs too. Small buttons keep their look but respond to taps across a 44px strip: tool and
+  save buttons, the 3D and card toggles, pills, the Copilot's buttons, and the footer links.
+  Sliders respond across a 44px-tall strip, and the space-group ladder's bricks are 44px.
+
+### Bond Geometry: each angle in the range marked by an arc
+
+- The folded cell now marks each highlighted triplet's angle with a thin fuchsia arc at its
+  central atom, from one bond to the other, as bright as the triplet's share. The bonds say
+  which atoms take part; the arcs say which angle. On the Demo (Se–Ta–Se), 80–100° lit every
+  Ta–Se bond and could not tell the angles apart; now each Ta shows its six ~88.5° angles bright
+  and its three ~75° and three ~104° ones faint. 70–80° and 100–110° mark the three ~75° and the
+  three ~104° angles at each Ta. Hovering a bin shows its arcs too.
+- The highlighted bonds are only a little thicker than the others now (they keep their brightness
+  by share), so they no longer hide the arcs where they meet.
+- The arcs are the highlight's own triplets, with the same 750 cap, largest shares first, and
+  the same 2% threshold. All arcs are one draw call. The "?" help says what an arc means.
+- With a GPU, frame time and time to highlight are unchanged (Demo and an 8,000-site cell). On a
+  software renderer, an 8,000-site cell showing 750 arcs turns at about 30 frames a second
+  instead of 40; the Demo is unchanged.
+
+### Bond Geometry: the angle highlight weighted by share, and rounder bonds
+
+- Each triplet in the picked angle range (or the hovered bin) is drawn as strongly as its share:
+  the part of its angles that fall in the range. A triplet almost wholly inside shows bright and
+  thick; one that only reaches the range with the tail of its spread shows faint; under 2% it is
+  not drawn (still counted). A bond used by several triplets shows the brightest. On the Demo
+  (Se–Ta–Se), 70–80° and 100–110° now pick out 48 of the 96 Ta–Se bonds each instead of all 96;
+  80–100° and 150–180° still hold every bond (each takes part in a cis angle near 88° and in one
+  trans angle). The legend counts are unchanged; the "?" help says what the brightness means.
+- A large cell keeps the 750 triplets with the largest shares (equal shares nearest the centre, as
+  before).
+- The folded cell's bonds are drawn like ball-and-stick sticks: lit with a soft highlight, round
+  ends, edges that darken so crossing bonds stay apart, a little thinner, and each end stopping
+  at the edge of its site's cloud instead of running through it. Same draw calls; on a software
+  renderer the tubes take fewer segments and skip multisampling, so the view stays smooth.
+
+### Bond Geometry: pick an angle range and see its triplets in 3D
+
+- Drag across the angle plot (sin-corrected or density) to pick a range of angles, drawn as the
+  Slab In Cell band. Drag the band or its edges to move it, by mouse or finger; double-click it or
+  press Clear to remove it. The card header reads the range in one line ("85–95°").
+- The folded cell draws every A–B–C triplet in the range as thicker tubes in its bond colours and
+  dims the other bonds; the legend gives the count ("2,310 angles in 85–95°"). With no range,
+  pointing at a bin (tapping it on a phone) previews that bin.
+- The triplets are the ones the histogram counts: the same windows, periodic images and central
+  atoms, walked by the engine's own loop (tested against an all-pairs search, bin by bin). The
+  range moves in whole bins, so its count is the histogram's. Each triplet is drawn between the
+  average sites, so a drawn angle is the sites' average one.
+- A large cell keeps to the bonds it draws (those nearest its centre) and to at most 750
+  triplets, and says how many it shows ("40 of 2,310 angles in 85–95° shown").
+- The triplets are found in a worker of their own after Compute, so Compute is not slowed. Not
+  yet for a server folder (a run opened in the browser only). Nothing the AI Copilot is sent
+  changes.
+
+### Bond Geometry: the partial g(r) is a tab of the angle card
+
+- The partial g(r) window helper is now the third tab of the angle card (sin-corrected, the
+  default, then density, then g(r)) instead of a card of its own; same curves, guides and window
+  chip. The folded cell takes the right column at full height. The KPI rail stays in place on
+  every tab.
+- The AI Copilot's card ids are unchanged: a highlight on `bond-windows` (now the g(r) tab panel)
+  brings that tab forward, and one on `bond-angles` brings the angle view back. Nothing the model
+  is sent changes.
+- The folded cell draws the bonds as shaded tubes in their bond-window colours (A–B blue, B–C
+  orange, as in the legend and the g(r) guides) instead of thin translucent lines, and fades the
+  clouds of elements outside the bonds, so the selected triplet stands out.
+- The bond search is a linked-cell one: on a synthetic 8000-site P1 cell (50 Å) the bonds now
+  appear in ~65 ms instead of a ~17 s freeze, with the same bonds (tested against the old search).
+  A large cell draws at most 1,500 bonds, those nearest its centre, and the legend says how many of
+  how many it shows. Draw calls are unchanged (one per window).
+
+### Copilot: numbers by reference always filled or sent back, and short answers in the dock
+
+- The user saw `σ²θ = {{r5.data.average_structure.angle_variance_deg2.mean}} deg²` raw in the dock
+  (2026-11-01), and gemma4:26b's first live runs lost otherwise right answers the same way. The model
+  reads each result as `{"ref": "r5", "checks": […], "data": {…}}` and wrote its paths from that root,
+  while the app read them below `data`. A path written from the tool message's root
+  (`{{r5.data.<path>}}`) now names the value at `<path>`: the user's sentence reads "σ²θ = 111 deg² and
+  a trans angle of 159.6°". This is exact, not a guess: no tool's data has a top-level `data` key (a
+  test keeps it so).
+- An answer whose references still name no value goes back to the model once, before anyone reads
+  it, with what each path reaches: the object it names and the values it holds, the keys at the step
+  that names nothing, or that no result has that ref. The model writes the answer again with exact
+  paths, or without the number. The app never fills a near miss. The repair needs no tool, so it also
+  runs on the last request. A reference still unfilled after it is a finding under the answer, and
+  the Outcome is not verified.
+- The dock never shows a raw `{{…}}`. While the answer streams, references the turn's results fill
+  show their numbers, and one still being written is held back. Any reference left over is marked
+  *number missing*, and its hover names it.
+- Answers in the dock are shorter. With the view tools (the dock only), the prompt now asks for the
+  conclusion first in one or two plain sentences, then only the few numbers that carry it (at most
+  five, unless the user asks for more), with their units and windows, then the caveats in one
+  sentence. It also asks for no field-by-field restating, no full distributions and no tables unless
+  the user asks: each analysis's step card holds all its numbers.
+- A long finished answer shows its conclusion, and the rest sits behind *Show details*. The rest
+  folds when it holds a table, a heading or code, when the answer runs to 700 characters, or when the
+  rest holds more than 8 numbers. An answer in the prompt's shape shows whole.
+- Model-visible:
+  - the dock's system prompt gains `ANSWER_RULES` (six system-prompt variants with the view tools,
+    and `dock/first-request.txt`). The dock's worst turn takes 262 more tokens, leaving 3,258 to
+    spare in the live runs' 48k (was 3,520);
+  - the reference repair's message is new (`harness/reference-repair.txt`). Arms B and C read the same
+    words, and only when a reference fails.
+  - The arms' prompts, the tools, the skills and the scoring are unchanged. Arm B's worst turn stays
+    at 7,044 tokens to spare.
+- Protocol 2026-11-01.1: a verdict that held `{{rN.data.…}}` now parses, and a run can make one
+  repair request. Runs under 2026-10-24.6 are not comparable. The record keeps the repair in `gates`
+  (id `reference`) and its withdrawn answer in `retracted`. `evidence.gates` keeps the evidence
+  gate's only, and the report counts the answers sent back beside the references filled and unknown.
+- Tests:
+  - the user's sentence in a real turn on the Demo, and an object path repaired
+    (`answerReferences.test.js`);
+  - the store and `explain` (`references.test.js`);
+  - the repair in the verification, the turn policy and the loop;
+  - a scripted harness run repaired and scored, its record pinned;
+  - the dock's display (`referenceDisplay.test.jsx`) and the fold (`answerParts.test.jsx`);
+  - the dock-only prompt (`copilotPrompt.test.js`).
+
+### Copilot: its first change tool, the Bond Geometry inputs, asked first and undoable
+
+- The Copilot can now set the Bond Geometry inputs, the one thing the Workbench lets a user change
+  (the user's decision, 2026-11-01, MATERIA-style). `set_bond_geometry` takes the page's controls —
+  `end1`, `apex`, `end2` (the triplet, B central), `r12_min` / `r12_max` (the A–B window),
+  `distinct_bc` with `r23_min` / `r23_max` (the B–C window), `bin_width` — each optional, the
+  others kept as the page has them. Its schema is strict (an unknown argument is refused), with the
+  page's own ranges (windows 0–15 Å, bins 0.1–45°) and the run's elements. It sets the controls
+  through the page's own handlers, as the user's typing would, and the page then computes as its
+  Compute button does. Its method advice points the model to the coordination-shells skill for the
+  windows (the whole first shell, `find_gr_peaks`' `first_shell.window_A`, unless the user asked
+  for another), and to `compute_bond_angles` for an answer.
+- It asks first. The change waits on an approval card in the dock: one plain line, the page after
+  the change (each control's before → after behind "?"), with Apply and Decline. A declined change
+  returns `{"declined": true}` to the model. The settings drawer's new *Changes* field switches to
+  Auto, which applies changes without the card. Auto is never saved, so every reload starts at Ask
+  first. When a change waits while the dock is collapsed, the rail says so.
+- Stale-state check: a card shown on one state of the page is never applied to another. If the
+  inputs, the result shown, the run or its configuration moved while the card waited, the change is
+  refused ("Not applied: …") and the model gets the inputs now on the page.
+- It is refused in plain words when no run is open, when the page cannot read the run, or when the
+  values contradict each other or would leave the page unable to compute (the refusal names the box
+  and the argument that sets it). When the page already shows exactly that, nothing is asked.
+- Undo: each applied change is the Copilot's entry in a small change history (`actor: 'agent'`),
+  and its card has Undo. Undo puts back the inputs from before the change while the page still holds
+  the Copilot's inputs on the same run and configuration. If the page showed a result before, it is
+  computed again; if not, the Copilot's result is taken off. A refused Undo says why.
+- Every Copilot tool now has its effect — `compute`, `view` or `change` — in one list
+  (`src/llm/copilot/effects.js`). The dock reads its tools through it with every effect. The
+  validation's live arms read theirs compute-only (`liveArmTools`), and the turn offers a change
+  tool only with an approve port, which the harness never passes. A change step is not an analysis
+  (the footer, the Outcome, the evidence gate).
+- Model-visible: one new tool in the dock's request (its definition, `dock/tools.json`, and the tool
+  list in `dock/first-request.txt`). The system prompt, every existing tool description and skill,
+  and the arms' requests are unchanged; the harness snapshots pass as they were, and the protocol
+  version stays. The dock's worst turn takes 721 more tokens: it fits the live runs' 48k with 3,520
+  to spare (was 4,241), and arm B's is unchanged at 7,044.
+- Tests: the effects list against every builder's tool and both adapters (`toolEffects.test.js`,
+  `toolEffectsReaders.test.jsx`, `validation/__tests__/computeOnly.test.js`); the change-tool
+  contract in the turn and the loop (`changeTools.test.js`); the strict schema
+  (`toolCalls.test.js`); the page's controller (`BondGeometryControl.test.jsx`) and inputs model
+  (`bondGeometryInputs.test.js`); the tool on the page (`copilotChangeTools.test.jsx`: schema,
+  refusals, Ask first, Auto, a decline, the stale check, the page's controls set and recomputed,
+  every data form, Undo); the approval card through the dock (`changeCard.test.jsx`); and the dock
+  beside the page end to end (`copilotChangeDock.test.jsx`).
+
+### Python 3.10 or newer
+
+- `rmc_toolkits` now needs Python 3.10 or newer (`requires-python = ">=3.10"`). Python 3.9 reached
+  end of life, and GitHub's Ubuntu 26.04 runners no longer provide it, so CI could not test it.
+- CI's oldest-dependencies job runs on Python 3.10 with the same floors pinned exactly (numpy
+  1.22.4, SciPy 1.8.1, matplotlib 3.6.3, contourpy 1.0.7). The floors are unchanged.
+
+### Copilot: no temperature for Claude in the dock and the watchdog
+
+- Claude Opus 5.5 in the Copilot dock (Anthropic's OpenAI-compatible endpoint,
+  `https://api.anthropic.com/v1`) failed every question with "HTTP 400: `temperature` is deprecated
+  for this model": the dock always sent the drawer's temperature (0.2 by default), and the watchdog
+  always sent 0. Current Claude models take only their own sampling.
+- `provider/sampling.js` says which models take no temperature: `takesNoTemperature({ baseUrl,
+  model })` holds for a model id that starts with `claude-` or for any model on `api.anthropic.com`.
+  `temperatureFor(settings, t)` is null for those and `t` otherwise. The dock's port
+  (`useCopilot.js` `copilotModel`) hands `providerModel` `temperature: null` for them, so no request
+  carries a temperature key, the warmer retry and the final round included. The watchdog's request
+  goes without one too. Every other model is unchanged: Ollama and LM Studio still send 0.2, 0.6 or
+  more on the warmer retry, and 0 for the watchdog. The connection test only lists the models
+  (`GET /models`), so it sent no temperature before either.
+- The settings drawer greys out the temperature field for such a model, with one line: "Claude uses
+  its own sampling". The saved value is kept for the next model that takes one.
+- Tool choice was checked against the same endpoint: the loop only ever asks for `"auto"` or, on
+  the final round, `"none"` (both accepted). It never sends `"required"` or a named function, which
+  current Claude models refuse. Nothing changed there; a test pins it.
+- No model-visible text changed (prompts, tool descriptions, skills). The validation is untouched:
+  its Claude Sonnet 5.5 entry already set `temperature: null`.
+- Tests (scripted, fake servers only): the dock's port on Anthropic's API sends no temperature key in
+  the first request, the warmer retry or the final round, and its tool choice is only "auto" or
+  "none"; LM Studio, a cloud model that is not Claude, and Ollama's native API send 0.2 and then 0.6.
+  The dock end to end, through a looping first reply asked again warmer, sends no temperature for
+  Claude, and 0.2 then 0.6 for a local model. The watchdog sends no temperature for Claude and 0 for
+  Ollama and LM Studio. The drawer's field is off for Claude, with its note, and editable for a
+  local model.
+
+### Validation: the first live results (gemma4:26b; Muse Glimmer and Claude Sonnet 5.5 not yet run)
+
+- The live arms ran with one local model, `gemma4:26b` (Ollama), at commit 7456af9 (protocol 2026-10-24.6).
+  - Test, counts only: arm B 0.748 and arm C 0.397, against A 0.800, A+ 0.948 and D 1.000.
+  - Dev smoke: arm B 0.652, against A 0.814 and A+ 0.952.
+  - No run timed out or was cut.
+- Three failure patterns:
+  - number references written as `{{rN.data.…}}`, which zero otherwise right answers;
+  - `element: "all"`;
+  - about one tool call per round.
+- The dock's streaming, its Live Data divider and the history reset were checked live.
+- Records: the dev smoke in `validation/baseline/live/`, the test split sealed in `validation/holdout/live/`,
+  and a counts-only summary. The section "Live results (2026-10-25)" in `docs/algorithms/copilot-validation.md`.
+
+### Displacement Directions: the page opens at ν = 10, smoothed 4×
+
+- The Displacement Directions page now opens at the resolution ν = 10 (1002 cells) with the map
+  smoothed 4× (four neighbour passes), the user's choice. Auto, the engine's resolution and the
+  tiling the AI Copilot reads, is still offered and still labelled with the ν it chose. Every
+  readout under the sphere (the peak, its direction ± the cell radius, σ, the map, asymmetry and
+  anisotropy tests) still comes from the raw histogram at smoothing 0: the smoothing redraws only
+  the map. The page and the Copilot now agree only when Auto is picked.
+- `analyze_displacement_directions` is unchanged (Auto, unsmoothed), and nothing the model is sent
+  changes. The validation's arm A keeps the settings frozen at protocol 2026-10-24.6 (Auto,
+  unsmoothed), now pinned in `validation/armA.js`; its dev records are identical (no protocol bump,
+  no re-record). Decision record `2026-10-24-directions-page-defaults`.
+
+### Validation: `run.js live --limits` for a slow local model
+
+- `live` takes `--limits key=value,…`, the batch's overrides of the turn's budgets (the keys of
+  `TURN_LIMITS`, positive integers, milliseconds for the `*Ms` ones), e.g.
+  `--limits maxTurnMs=2400000,requestMaxMs=1200000` for a local model that thinks at ~12 tokens a
+  second, which the default 10-minute turn would cut short. The harness already took per-run
+  overrides and kept them in each record's `policy.limits`; only the command line did not pass them.
+  The same values go to every run of a batch; an unknown key or a value that is not a positive integer
+  is refused before anything runs. Without the flag nothing changes: a record is byte-identical, and
+  the turn, the tools, the prompt and the protocol are untouched (no protocol bump).
+
+### Validation: Claude Sonnet 5.5's request policy, no temperature and a reply cap (protocol 2026-10-24.6)
+
+- The user's decisions of 2026-10-24 ("Fix both first", "Raise to $20"). Claude Sonnet 5.5 takes
+  only its default sampling, and a request carrying `temperature` is refused with HTTP 400. Its
+  `validation/models.js` entry now sets `temperature: null` (NEBULA's setting) and
+  `maxTokens: MAX_REPLY_TOKENS` (8,192). Its spend cap is $20 (RMC's share of the cycle's $40 total
+  may be up to $28; $12 before). Its cache-read price stays $0.10 per million tokens (the pricing
+  page's for `claude-sonnet-5-5`, checked 2026-10-24).
+- The model port (`providerModel`) takes the two settings, only when given, so the dock's requests
+  are unchanged. With `temperature: null` no request carries a temperature key, the warmer retry
+  included: the retry is still asked, but unchanged. `client.js` and `ollama.js` leave a null
+  temperature out of the body. `maxTokens` goes out as `max_tokens` in an OpenAI-compatible body,
+  with thinking counted within it; on Ollama it caps the plan's `num_predict`. `max_tokens` is never
+  sent by default, and a cap that is not a positive integer is refused when the port is made.
+- The spend tracker already priced each request at 8,192 tokens of reply. That figure is now the
+  cap each Sonnet request is sent with, so the reservation is a bound the API enforces. Its
+  arithmetic is unchanged. Its comment now says what the charge cannot see: thinking billed as
+  output but returned with no text.
+- The run policy records what is sent. Sonnet's temperature is
+  `{ base: null, warmer_retry_min: null, sent: false }`, and its reply cap is
+  `{ sent: 'max_tokens', max_tokens: 8192 }` (`replyCapOf`). The transcript says "no temperature
+  sent" and "max_tokens 8192 in every request", and the report's temperature column says "not
+  sent". The LM Studio and Ollama rows, the local models' requests (byte for byte), the prompt, the
+  tools and the scoring are unchanged.
+- Tests (all scripted, fake servers only): Sonnet's request as sent and its body, for both the
+  first request and the warmer retry: no temperature key, `max_tokens` 8192. LM Studio's and
+  Ollama's bodies are pinned as before. The policy, the transcript and the report are checked from
+  a metered live run, the $20 boundary of the cap check is tested, and the port, `client.js` and
+  `ollama.js` have unit tests.
+
+### Copilot: a refused analysis backs no claim (the user's decision A5; protocol 2026-10-24.5)
+
+- The evidence gate counts only a call that answered. A call that ends `refused` (the tool's own
+  `fail` check, such as `compute_bond_angles` refusing a window that cuts the coordination shell)
+  backs no claim, under `anyOf`, `firstOffered` and `allOf` alike: a refusal of one option does not
+  count, an answer of another does. Until now it ran and backed its claim, so a refused bond-angle
+  window still counted its coordination. The user's words: "A5: option 2. A refused analysis
+  doesn't count: the gate sends the claim back, and the model re-runs on the whole shell or asks me
+  to confirm the window. Land it before the B/C runs." Approved by the user, 2026-10-24
+  (`validation/findings/decisions/2026-10-24-refused-not-evidence.json`).
+- The send-back says the call refused. For a window cut (a refusal whose data carry `refused`:
+  `compute_bond_angles`, `polyhedral_distortion`) it offers both fixes: run it again on the whole
+  shell, or, if the user wants that window, ask them (`ask_user`) and call again with
+  `window_confirmed: true`. For any other refusal it says only to run the call so that it answers.
+  Under method `'off'` (arm C) it names no tool, window or remedy (`OFF_REFUSED_NUDGE`). The gate's
+  notice, the end-of-turn finding and the Outcome's reason ("did not run or refused") name the
+  refusal too.
+- Unchanged: a refused call is still an analysis (the dock's footer, the records' `analysis` and
+  `refused_calls`), the Outcome still reads it as a failure, and its facts still reach the checks.
+  The system prompt and the tools are unchanged, so every model-visible snapshot and the 48k
+  headroom (4,241 tokens for the dock's worst turn, 7,044 for arm B's) stay. Arms A, A+ and D on dev
+  are unchanged (no model, no gate).
+
 ### Bond Geometry: the "Angles" tile is an angle count, and says so
 
 - The KPI tile labelled "Angles" (shown uppercase, "ANGLES 15.0 per Ta") is a count, not an angle:
