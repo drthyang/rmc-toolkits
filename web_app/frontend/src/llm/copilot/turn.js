@@ -116,11 +116,11 @@ import { isChangeTool } from './effects';
 import { TURN_METHODS, toolAsSent, toolDescription } from './method';
 import { compactAnswer, explainModelError } from './robustness';
 import { READ_SKILL, buildReadSkillTool, parseSkillFiles, skillIndex } from './skills';
-import { usableTools } from './tools';
+import { toRequestTools, usableTools } from './tools';
 import { stoppedByFailure } from './turnPolicy';
 import { createVerification, shownContext } from './verification';
 import { buildRunContext } from '../context/runContext';
-import { buildCopilotMessages, copilotSystemPrompt } from '../prompts/copilot';
+import { HISTORY_MESSAGES, buildCopilotMessages, copilotSystemPrompt } from '../prompts/copilot';
 import { asModelPort } from '../provider/model';
 
 // The longest earlier answer re-sent whole as memory.
@@ -301,6 +301,50 @@ const ending = (error) => {
  * `offered.skills` the skill names read_skill offers.
  */
 export const describeTurn = (spec) => describe(planTurn(readSpec(spec, { running: false })));
+
+/**
+ * What the model reads of a history (historyMessages, then the prompt's
+ * window of HISTORY_MESSAGES messages): `{ answered, sent, dropped,
+ * shortened }` — the answered questions, how many of them are sent, how many
+ * are dropped (the oldest), and how many of those sent go as their
+ * shortened answer (compactAnswer: longer than MEMORY_ANSWER_CHARS). The
+ * dock says so in the chat; nothing here changes what is sent.
+ */
+export const historyWindow = (history = []) => {
+    const pairs = [];
+    (Array.isArray(history) ? history : []).forEach((entry) => {
+        const text = typeof entry?.answer === 'string' ? entry.answer.trim() : '';
+        if (text && typeof entry?.question === 'string' && entry.question.trim()) pairs.push(text);
+    });
+    const sent = pairs.slice(-Math.floor(HISTORY_MESSAGES / 2));
+    return {
+        answered: pairs.length,
+        sent: sent.length,
+        dropped: pairs.length - sent.length,
+        shortened: sent.filter((text) => text.length > MEMORY_ANSWER_CHARS).length
+    };
+};
+
+/**
+ * The first request a turn with this spec would send, without running it:
+ * `{ messages, tools }` as the agent loop hands them to the model port (the
+ * prompt, the context, the history window and the question; the tools in
+ * the request's form, or null with tools off), and `history`
+ * (historyWindow). Pure; `question` may be empty and `model` is not needed.
+ * The context meter estimates it with the guard's estimator. A Workbench
+ * question asked before the first request (clarify.js) adds its note to the
+ * question; that is not in the preview.
+ */
+export const requestPreview = (spec) => {
+    const turn = readSpec(spec, { running: false });
+    const plan = planTurn(turn);
+    const question = typeof turn.question === 'string' ? turn.question : '';
+    return {
+        messages: turnMessages(plan, { question, history: turn.history }),
+        tools: plan.toolsActive ? toRequestTools(plan.offered.tools) : null,
+        history: historyWindow(turn.history)
+    };
+};
 
 /**
  * One question, as events (see the header). Throws a TypeError on invalid
