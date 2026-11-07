@@ -60,4 +60,55 @@ describe('a number typed before its own reference', () => {
         expect(turn.items.filter((item) => item.kind === 'text').at(-1).text).toBe('Mean 2.637 Å.');
         expect(turn.text).toBe('Mean 2.64 Å 2.637.\nOutcome: done.');
     });
+
+    describe('with a short unit or label between the number and its reference', () => {
+        const labelled = () => {
+            const references = store();
+            references.put('r2', { cn: { Se_per_Ta: 3.25 } });
+            references.put('r5', { angle: { mean_deg2: 127 } });
+            return references;
+        };
+
+        it('shows "3.25 Se per Ta" and "127 deg²" once, the label after the value', () => {
+            const raw = 'CN 3.25 Se per Ta {{r2.cn.Se_per_Ta}}; spread 127 deg² {{r5.angle.mean_deg2}}.';
+            expect(collapseEchoes(raw, labelled())).toBe('CN {{r2.cn.Se_per_Ta}} Se per Ta; spread {{r5.angle.mean_deg2}} deg².');
+            const filled = fillReferences(raw, labelled()).text;
+            expect(filled).toBe('CN 3.25 Se per Ta 3.25; spread 127 deg² 127.');
+            expect(collapseFilledEchoes(filled, raw, labelled())).toBe('CN 3.25 Se per Ta; spread 127 deg².');
+        });
+
+        it('still collapses a plain unit', () => {
+            expect(fillReferences(collapseEchoes('d = 2.64 Å {{r1.first_shell.mean_d_A}}', labelled()), labelled()).text).toBe('d = 2.637 Å');
+        });
+
+        it('keeps a mismatch visible', () => {
+            const raw = 'CN 3.20 Se per Ta {{r2.cn.Se_per_Ta}}.';
+            expect(collapseEchoes(raw, labelled())).toBe(raw);
+            const filled = fillReferences(raw, labelled()).text;
+            expect(collapseFilledEchoes(filled, raw, labelled())).toBe('CN 3.20 Se per Ta 3.25.');
+        });
+
+        it('leaves a clause, a long label, a line break and digits between them alone', () => {
+            for (const raw of [
+                '6 neighbours, of which {{r1.first_shell.cn.Se_per_Ta}} are Se.',
+                '6 neighbours of which most {{r1.first_shell.cn.Se_per_Ta}}.',
+                '6 extraordinarilylongwordlabel {{r1.first_shell.cn.Se_per_Ta}}.',
+                '6 Se\n{{r1.first_shell.cn.Se_per_Ta}}.',
+                '6 (Se) {{r1.first_shell.cn.Se_per_Ta}}.',
+                '6 Se per Ta2 {{r1.first_shell.cn.Se_per_Ta}}.'
+            ]) {
+                expect(collapseEchoes(raw, labelled())).toBe(raw);
+            }
+        });
+
+        it('leaves a number without its reference and a reference to another value alone', () => {
+            expect(collapseEchoes('CN 3.25 Se per Ta.', labelled())).toBe('CN 3.25 Se per Ta.');
+            const other = 'CN 3.25 Se per Ta {{r1.first_shell.mean_d_A}}.';
+            expect(collapseEchoes(other, labelled())).toBe(other);
+        });
+
+        it('the dock\'s streaming text shows it once', () => {
+            expect(displayReferences('CN 3.25 Se per Ta {{r2.cn.Se_per_Ta}}', { store: labelled(), streaming: true })).toBe('CN 3.25 Se per Ta');
+        });
+    });
 });
