@@ -155,6 +155,7 @@ SIGMA_MAX = 1.0
 #: Levenberg–Marquardt on (r₀, ln σ).
 FIT_MAX_ITERATIONS = 60
 FIT_STEP_TOL = 1e-10
+FIT_POLISH_STEPS = 4
 
 #: The grid step assumed for a transform whose own step the files do not give.
 DEFAULT_DQ = 0.01
@@ -444,6 +445,34 @@ def fit_peak(r: np.ndarray, target: np.ndarray, q: np.ndarray, weights: np.ndarr
             lam *= 4.0
         if not accepted or moved < FIT_STEP_TOL or previous - cost <= 1e-15 * previous:
             break
+    # Polish: Gauss–Newton steps to the stationary point (no cost test, which
+    # round-off decides near the minimum), so two engines that sum in another
+    # order land on the same parameters, not merely on the same cost.
+    for _ in range(FIT_POLISH_STEPS):
+        columns = []
+        for j in range(2):
+            plus = list(theta)
+            minus = list(theta)
+            plus[j] += steps[j]
+            minus[j] -= steps[j]
+            fp, fm = evaluate(plus), evaluate(minus)
+            if fp is None or fm is None:
+                break
+            columns.append((fp[3] - fm[3]) / (2.0 * steps[j]))
+        if len(columns) < 2:
+            break
+        j0, j1 = columns
+        f = current[3]
+        h00, h01, h11 = float(np.dot(j0, j0)), float(np.dot(j0, j1)), float(np.dot(j1, j1))
+        g0, g1 = float(np.dot(j0, f)), float(np.dot(j1, f))
+        det = h00 * h11 - h01 * h01
+        if det <= 0 or not math.isfinite(det):
+            break
+        trial = clamp([theta[0] - (h11 * g0 - h01 * g1) / det, theta[1] - (h00 * g1 - h01 * g0) / det])
+        result = evaluate(trial)
+        if result is None or float(np.dot(result[3], result[3])) > cost * (1.0 + 1e-9):
+            break
+        theta, current, cost = trial, result, float(np.dot(result[3], result[3]))
     amplitude, background, slope, residual = current
     return {
         "amplitude": float(amplitude),
@@ -1702,7 +1731,8 @@ def ripples_for_run(paths, *, features=None, r_range=None, split=None, pair=None
                 r_first=r_first, processing=processing,
             ))
         except (OSError, ValueError) as error:
-            payloads.append({"status": "failed", "reason": f"could not read the run's files: {error}",
+            message = str(error).replace(str(folder) + "/", "").replace(str(folder) + "\\", "")
+            payloads.append({"status": "failed", "reason": f"could not read the run's files: {message}",
                              "file": path.name, "kind": info["kind"], "number": info["number"], "total": True, "block": None,
                              "fit": None, "transform": None, "resolution": None, "peaks": [], "lowR": None,
                              "processing": None, "space": None, "rFirst": None, "_analysis": None})
