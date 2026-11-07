@@ -20,7 +20,7 @@
 // 1.5e-9). The generator refuses a reading within 1e-6 of a threshold.
 
 import { readFileSync } from 'node:fs';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import fixture from './fixtures/ripples_fixture.json';
 import { expectGolden } from './goldenCompare';
 import { makeRunFromEntries } from '../browserData';
@@ -40,7 +40,9 @@ const RIPPLES_RTOL = 1e-7;
 
 const fitsOf = (run, names) => names.map((name) => run.allFiles.find((file) => file.name === name));
 
-beforeEach(() => clearRipplesCache());
+// One clean start: a later call on the same files reuses the datasets' analyses,
+// as the app does, and its readings are still held to the golden's.
+beforeAll(() => clearRipplesCache());
 
 describe('the ripple assessment matches the server (ripples_fixture.json)', () => {
     it.each(fixture.demo.calls.map((call) => [JSON.stringify(call.args), call]))('the Demo, %s', async (name, call) => {

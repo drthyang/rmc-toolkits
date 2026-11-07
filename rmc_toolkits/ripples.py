@@ -152,9 +152,12 @@ FEATURE_MIN_FRACTION = 0.01
 SIGMA_MIN_QMAX = 0.1
 SIGMA_MAX = 1.0
 
-#: Levenberg–Marquardt on (r₀, ln σ).
-FIT_MAX_ITERATIONS = 60
-FIT_STEP_TOL = 1e-10
+#: Levenberg–Marquardt on (r₀, ln σ) to a step of FIT_STEP_TOL or a relative
+#: cost decrease of FIT_COST_RTOL, then FIT_POLISH_STEPS Gauss–Newton steps to
+#: the stationary point.
+FIT_MAX_ITERATIONS = 30
+FIT_STEP_TOL = 1e-7
+FIT_COST_RTOL = 1e-10
 FIT_POLISH_STEPS = 4
 
 #: The grid step assumed for a transform whose own step the files do not give.
@@ -443,7 +446,7 @@ def fit_peak(r: np.ndarray, target: np.ndarray, q: np.ndarray, weights: np.ndarr
                     accepted = True
                     break
             lam *= 4.0
-        if not accepted or moved < FIT_STEP_TOL or previous - cost <= 1e-15 * previous:
+        if not accepted or moved < FIT_STEP_TOL or previous - cost <= FIT_COST_RTOL * previous:
             break
     # Polish: Gauss–Newton steps to the stationary point (no cost test, which
     # round-off decides near the minimum), so two engines that sum in another

@@ -41,8 +41,9 @@ export const MAX_FEATURES = 8;
 export const FEATURE_MIN_FRACTION = 0.01;
 export const SIGMA_MIN_QMAX = 0.1;
 export const SIGMA_MAX = 1.0;
-export const FIT_MAX_ITERATIONS = 60;
-export const FIT_STEP_TOL = 1e-10;
+export const FIT_MAX_ITERATIONS = 30;
+export const FIT_STEP_TOL = 1e-7;
+export const FIT_COST_RTOL = 1e-10;
 export const FIT_POLISH_STEPS = 4;
 export const DEFAULT_DQ = 0.01;
 export const INPUT_MAP_TOLERANCE = 1e-5;
@@ -106,6 +107,66 @@ const interp = (at, x, y) => {
     }
     if (x[hi] === x[lo]) return y[lo];
     return y[lo] + (at - x[lo]) * (y[hi] - y[lo]) / (x[hi] - x[lo]);
+};
+
+// --- fast sines and Gaussians on a uniform grid -------------------------------------------
+// The transform's Q grids are uniform (qGrid; the points below Q_min step down
+// by ΔQ), so sin(Q_k x) and e^{−Q_k²σ²/2} follow recurrences — the angle
+// addition and the Gaussian's ratio — instead of a Math.sin and a Math.exp
+// per point, re-anchored on the exact value every ANCHOR_EVERY points (a
+// drift of a few ε). The Python engine evaluates them directly; the two agree
+// far inside the golden's tolerance.
+const ANCHOR_EVERY = 64;
+
+/** out[k] = sin(q[k]·x) for a uniform grid q. */
+const sinesOnGrid = (q, x, out = new Float64Array(q.length)) => {
+    const n = q.length;
+    if (n < 3) {
+        for (let k = 0; k < n; k += 1) out[k] = Math.sin(q[k] * x);
+        return out;
+    }
+    const step = (q[n - 1] - q[0]) / (n - 1);
+    const c1 = Math.cos(step * x);
+    const s1 = Math.sin(step * x);
+    let s = 0;
+    let c = 1;
+    for (let k = 0; k < n; k += 1) {
+        if (k % ANCHOR_EVERY === 0) {
+            const angle = q[k] * x;
+            s = Math.sin(angle);
+            c = Math.cos(angle);
+        }
+        out[k] = s;
+        const next = s * c1 + c * s1;
+        c = c * c1 - s * s1;
+        s = next;
+    }
+    return out;
+};
+
+/** out[k] = e^{−q[k]²σ²/2} for a uniform grid q. */
+const gaussianOnGrid = (q, sigma, out = new Float64Array(q.length)) => {
+    const n = q.length;
+    const a = 0.5 * sigma * sigma;
+    if (n < 3) {
+        for (let k = 0; k < n; k += 1) out[k] = Math.exp(-a * q[k] * q[k]);
+        return out;
+    }
+    const step = (q[n - 1] - q[0]) / (n - 1);
+    const square = Math.exp(-2 * a * step * step);
+    let value = 0;
+    let ratio = 0;
+    for (let k = 0; k < n; k += 1) {
+        if (k % ANCHOR_EVERY === 0) {
+            value = Math.exp(-a * q[k] * q[k]);
+            // e^{−a(q+h)²}/e^{−aq²} = e^{−a(2qh + h²)}; each step multiplies it by e^{−2ah²}.
+            ratio = Math.exp(-a * (2 * q[k] * step + step * step));
+        }
+        out[k] = value;
+        value *= ratio;
+        ratio *= square;
+    }
+    return out;
 };
 
 // --- the transform's grid and kernel ---------------------------------------------------
@@ -175,18 +236,24 @@ export const gaussianD = (r, peak) => Float64Array.from(r, (value) => {
     return peak.amplitude * (Math.exp(-((value - peak.r) ** 2) / (2 * s * s)) - Math.exp(-((value + peak.r) ** 2) / (2 * s * s)));
 });
 
-/** A√(2π)σ e^{−Q²σ²/2} sin(Q r₀). */
-export const gaussianSine = (q, peak) => Float64Array.from(q, (value) => {
+/** A√(2π)σ e^{−Q²σ²/2} sin(Q r₀), on a uniform grid q. */
+export const gaussianSine = (q, peak) => {
     const s = peak.sigma;
-    return peak.amplitude * SQRT_2PI * s * Math.exp(-0.5 * value * value * s * s) * Math.sin(value * peak.r);
-});
+    const out = gaussianOnGrid(q, s);
+    const sines = sinesOnGrid(q, peak.r);
+    const scale = peak.amplitude * SQRT_2PI * s;
+    for (let k = 0; k < out.length; k += 1) out[k] = scale * out[k] * sines[k];
+    return out;
+};
 
-/** (2/π) Σ_k w_k S_k sin(Q_k r) at every r. */
+/** (2/π) Σ_k w_k S_k sin(Q_k r) at every r, on a uniform grid q. */
 export const applyTransform = (q, weights, spectrum, r) => {
     const coefficients = Float64Array.from(weights, (w, k) => TWO_OVER_PI * w * spectrum[k]);
+    const sines = new Float64Array(q.length);
     return Float64Array.from(r, (at) => {
+        sinesOnGrid(q, at, sines);
         let total = 0;
-        for (let k = 0; k < q.length; k += 1) total += Math.sin(at * q[k]) * coefficients[k];
+        for (let k = 0; k < q.length; k += 1) total += sines[k] * coefficients[k];
         return total;
     });
 };
@@ -275,7 +342,7 @@ const solve3 = (m, v) => {
     return out;
 };
 
-const sineRows = (r, q) => Array.from(r, (at) => Float64Array.from(q, (value) => Math.sin(at * value)));
+const sineRows = (r, q) => Array.from(r, (at) => sinesOnGrid(q, at));
 
 const projected = (sines, q, weights, target, r, r0, sigma) => {
     const spectrum = gaussianSine(q, { amplitude: 1, r: r0, sigma });
@@ -354,7 +421,7 @@ export const fitPeak = (r, target, q, weights, r0, sigma, bounds) => {
             }
             lambda *= 4;
         }
-        if (!accepted || moved < FIT_STEP_TOL || previous - cost <= 1e-15 * previous) break;
+        if (!accepted || moved < FIT_STEP_TOL || previous - cost <= FIT_COST_RTOL * previous) break;
     }
     // Polish: Gauss–Newton steps to the stationary point (fit_peak).
     for (let polish = 0; polish < FIT_POLISH_STEPS; polish += 1) {

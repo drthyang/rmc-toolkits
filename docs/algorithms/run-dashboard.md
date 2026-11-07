@@ -2802,8 +2802,8 @@ negative) at $r \ge r_\mathrm{first} - \mathrm{FWHM}$, by prominence against the
 opposite extrema (≥ 10 % of the largest; the 24 largest). Largest first, each is fitted on its window
 (the points within 30 % of its prominence, at most one ripple period each side) with the accepted
 peaks' truncated models taken off: $A$, a line $b_0 + b_1(r - r_j)$ by least squares at every step and
-$(r_j, \ln\sigma_j)$ by Levenberg–Marquardt (central differences), then Gauss–Newton steps to the
-stationary point. A candidate is a peak when its amplitude has its sign, $\sigma$ lies within its
+$(r_j, \ln\sigma_j)$ by Levenberg–Marquardt (central differences; to a step of $10^{-7}$ or a relative
+cost decrease of $10^{-10}$, at most 30 iterations), then four Gauss–Newton steps to the stationary point. A candidate is a peak when its amplitude has its sign, $\sigma$ lies within its
 window's half-width (wider is the background) and under 1 Å, and its fitted height is at least half its
 prominence: a ripple of a larger peak is explained by that peak's model and is not one. Two
 backfitting sweeps refit each peak with the others taken off; kept are the 12 with the largest
@@ -2900,6 +2900,7 @@ otherwise; `fail` only when nothing could be assessed.
 | `PEAK_WINDOW_FRACTION`, `PEAK_WINDOW_MAX_PERIODS` | 0.3, 1 | a peak's fit window |
 | `RIPPLE_EXPLAINED_FRACTION` | 0.5 | a candidate the larger peaks' ripples explain is not a peak |
 | `BACKFIT_SWEEPS`, `FIT_POLISH_STEPS` | 2, 4 | refits; Gauss–Newton steps after LM |
+| `FIT_MAX_ITERATIONS`, `FIT_STEP_TOL`, `FIT_COST_RTOL` | 30, $10^{-7}$, $10^{-10}$ | LM's stopping rule |
 | `SIGMA_MIN_QMAX`, `SIGMA_MAX` | $0.1/Q_\mathrm{max}$, 1 Å | σ bounds |
 | `LOW_R_MIN_PERIODS`, `ENFORCED_RTOL`, `FILTERED_RATIO` | 1, $10^{-9}$, 0.3 | the low-r states |
 | `BACKGROUND_PERIODS` | 2 | the box average under a feature |
