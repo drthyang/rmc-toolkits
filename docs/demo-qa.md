@@ -139,11 +139,20 @@ the judged answer, the history and the validation protocol 2026-11-01.1 are as t
 - **An answer check misreads a pair's coordination.** For "the Ta–Se first shell … coordination
   number of 6", the check takes the element nearest the number (Se) as the centre and reports "The
   answer gives Se a coordination of 6, but … 3 Ta per Se", so a right answer reads *Not verified*.
-  The checks are part of the validation protocol and stay as they are for 0.8.0. Workaround: ask
-  for the count as "Se per Ta"; the per-count phrasing names its centre.
+  The checks are part of the validation protocol and stay as they are for 0.8.0. Asking for the
+  count as "Se per Ta" does not avoid it: in a later check the answer said "6 Se atoms per Ta", but
+  the Outcome's own summary line still read "coordination is 6" and drew the same Check. For a
+  demonstration, ask an interpretation question that does not quote a pair's coordination (the
+  [demo script](demo-script.md) uses "Has this run converged, and how good is the fit?").
+- **A number shown twice after its unit.** Fix 0387c42 covers a number typed just before its own
+  reference; where a unit or words sit between them (likely, not yet traced), it still shows
+  twice ("3.25 Se per Ta 3.25", "127 deg² 127"; gemma4:26b, local build). Display only; for after
+  the freeze.
 - **gemma4:26b's own habits.** It can think for over a minute before a change card, may propose
   the change again after a stale refusal (Decline the second card), and sometimes runs one analysis
-  more than asked. None is an app error.
+  more than asked. Asked whether the TaSe₆ octahedron is distorted, it once passed
+  `window_confirmed` to the change tool, which refused the unknown argument (a *Not applied* card),
+  and then answered from the analyses. None is an app error.
 - **One 404 when connecting to LM Studio.** Server detection asks `/api/version` (Ollama's) first;
   LM Studio answers 404, which the console shows. Expected.
 - **Idle 3D pages still draw every frame.** The page in view keeps its render loop (PCA Ellipsoid

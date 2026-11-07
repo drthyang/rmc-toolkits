@@ -3,94 +3,126 @@
 [![Tests](https://github.com/drthyang/rmc-toolkits/actions/workflows/tests.yml/badge.svg)](https://github.com/drthyang/rmc-toolkits/actions/workflows/tests.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
-A **browser-first workbench** for inspecting **RMCProfile** modeling runs. Open the hosted app,
-select a run folder, and review the fits, the χ² history, atomic-density maps, thermal ellipsoids,
-displacement directions, bond angles, symmetry and 3D structure views, with nothing to install.
-An **AI Copilot** beside the pages answers questions about the run by running those analyses
-itself.
+An **interpretation workbench for RMCProfile runs.** Open a finished (or running) RMCProfile run
+folder in the browser and use it to **judge the fit** (data against model, the χ² history, the
+space group the configuration keeps), **read the local structure** (bond angles, thermal
+ellipsoids, displacement directions, atomic density) and **decide the next step**: the next
+analysis, or the next RMC run. An optional **AI Copilot** beside the pages runs those same analyses
+for you and checks its own answers. Nothing to install.
 
 ### ▶️ Open the app: [drthyang.github.io/rmc-toolkits](https://drthyang.github.io/rmc-toolkits/)
 
-1. Visit the link above.
-2. Click **Select Folder** and choose your RMCProfile run directory, or press **Demo** for a
-   bundled example run (GaTa₄Se₈, 250 K).
-3. Everything renders in your browser.
+1. Open the link above (desktop, iPad or phone).
+2. Press **Demo** for the bundled example run (GaTa₄Se₈, 250 K), or **Select Folder** and pick
+   your own RMCProfile run directory.
+3. Move between **Dashboard**, **Atomic Density**, **Bond Geometry**, **PCA Ellipsoid** and
+   **Displacement Directions**; open the **AI Copilot** rail at the right edge to ask questions.
 
-![The AI Copilot answering a question about the Demo run with a local model](assets/rmc-toolkits-copilot.gif)
+![Bond Geometry on the Demo run: the Se–Ta–Se angle distribution with the 80–100° range selected, and those angles' bonds and arcs in the 3D cell](assets/workbench-bond-geometry.webp)
 
-<sub>The AI Copilot on the Demo run with a local model (Muse Glimmer on LM Studio), sped up while
-the model thinks. It reads its coordination-shells skill, finds the whole Ga–Se shell in the
-partial g(r), computes the Se–Ga–Se angles in that shell, flags the 2.2 Å closest-approach cut,
-and shows the same analysis on the Bond Geometry page.</sub>
+<sub>Bond Geometry on the Demo run: Se–Ta–Se angles at Ta, with the 80–100° range dragged on the
+distribution. In the 3D cell the bonds brighten by the share of their angles in that range, and an
+arc at the central Ta marks each angle in it.</sub>
 
 🔒 **Your run files never leave your device.** They are read and rendered in your browser and are
 never uploaded to rmc-toolkits or any project server. (Your browser's picker may say "Upload", but
-nothing is sent.) A cloud AI model, if you choose one, receives summaries only.
+nothing is sent.) A cloud AI model, if you choose one, receives summaries and analysis results
+only.
 
-⚡ **Live Data** refreshes the charts while a run writes new files, in Chromium browsers (Chrome,
-Edge, Arc, Opera) or through the local Flask backend.
+## What it does
 
-🤖 **AI Copilot (beta).** Ask about the open run in plain language. The Copilot runs the
-Workbench's analyses, shows each one as a step card with deterministic checks, points at the cards
-and plot peaks it explains, and asks you when a choice would change the result. It can set up the
-Bond Geometry page for you, after you approve the change, and you can undo it. It works with a
-local model (Ollama, LM Studio; nothing leaves your machine) or, with your key, a cloud one
-(OpenAI, Gemini, Anthropic).
-
-📱 **Phones and tablets.** The pages fit iPhone and iPad screens in both orientations, with
-touch-sized controls and the Copilot as a bottom sheet.
-
-📖 **New here?** Start with [QuickStart.md](QuickStart.md).
-
-## Features
-
-- **Run dashboard:** interactive charts of the fits (G(r), F(Q)/S(Q), Bragg, partials, EXAFS) and
-  the χ² history, with hover readouts, drag-to-zoom, model information, the detected space group
-  and PNG/SVG/ZIP export.
-- **Atomic Density:** KDE density slices (WebGPU with a CPU fallback), a draggable slab-in-cell
-  projection and a 3D folded unit cell of the `.rmc6f` structure.
-- **Bond Geometry:** bond-angle distributions the RMCProfile `triplets` way (an A–B–C triplet with
-  B central), with bond windows bracketed against the run's partial g(r) (sin-corrected, density
-  and g(r) tabs). Drag an angle range on the distribution to see its triplets in the 3D cell:
-  bonds brighten by the share of their angles in the range, and an arc at the central atom marks
-  each angle.
-- **PCA Ellipsoid:** per-site thermal ellipsoids from the displacement clouds, with a 3D KDE
-  isosurface and each principal axis in the crystallographic frame, after Maksim Eremenko's
+- **Dashboard:** the fits (G(r), F(Q)/S(Q), Bragg, partials, EXAFS) with their Rw, the χ² history,
+  model information and the **Detected SG** ladder (the space group the configuration keeps as the
+  tolerance tightens), with PNG/SVG/ZIP and CIF export.
+- **Bond Geometry:** bond-angle distributions the RMCProfile `triplets` way (A–B–C, B central),
+  with bond windows checked against the run's partial g(r). Drag an angle range to see those
+  angles' bonds and arcs in the 3D cell.
+- **PCA Ellipsoid:** per-site thermal ellipsoids from the displacement clouds, a 3D KDE isosurface
+  and each principal axis in the crystal frame, after Maksim Eremenko's
   [PCA_KDE utilities](https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE).
 - **Displacement Directions:** where atoms move, binned in solid angle on a sphere, with a
-  calibrated significance test for each preferred direction.
-- **Symmetry:** the space group and how it changes with tolerance, named correctly for
-  non-symmorphic groups, with Wyckoff letters for all 230.
+  calibrated significance for each preferred direction.
+- **Atomic Density:** KDE density slices (WebGPU with a CPU fallback), a draggable slab and a 3D
+  folded unit cell.
+- **Live Data:** the charts refresh while a run writes new files (Chromium browsers, or the local
+  Flask backend).
 - **Python package and CLIs:** the same engines as a library (`rmc_toolkits`), bond angles from the
   command line (`rmc-triplets`), automatic S(Q) scaling (`rmc-autoscale`) and an optional Flask
   backend.
 
 ## Screenshots
 
-| Run dashboard | Atomic density (KDE / slab / 3D) |
+All from the bundled public Demo run.
+
+| Dashboard: fits, Rw, Detected SG ladder | Atomic Density: KDE slice, slab, 3D cell |
 | --- | --- |
-| ![Run dashboard](assets/rmc-toolkits-dashboard-demo.png) | ![Atomic density](assets/rmc-toolkits-kde-demo.png) |
+| ![Dashboard](assets/workbench-dashboard.webp) | ![Atomic Density](assets/workbench-atomic-density.webp) |
 
-| PCA ellipsoid (thermal ellipsoids) | Displacement directions |
+| PCA Ellipsoid: a Se site's ellipsoid and isosurface | Displacement Directions: a Se site's direction sphere |
 | --- | --- |
-| ![PCA ellipsoid](assets/rmc-toolkits-pca-demo.png) | ![Displacement directions](assets/rmc-toolkits-displacement-demo.png) |
+| ![PCA Ellipsoid](assets/workbench-pca-ellipsoid.webp) | ![Displacement Directions](assets/workbench-displacement-directions.webp) |
 
-## AI Copilot
+| The Copilot asks before it changes an input | Applied: the page computes, Undo on the card |
+| --- | --- |
+| ![The Copilot's approval card for a Bond Geometry change](assets/workbench-copilot-approval.webp) | ![The applied change, the computed distribution and the Outcome](assets/workbench-copilot-applied.webp) |
 
-Turn it on from the **AI Copilot** rail at the right edge: open its settings (gear), pick a
-provider, press **Test** and choose a model. The run's metrics, symmetry and convergence history
-travel with every question; when they are not enough, the Copilot runs an analysis and shows it as
-a step card you can expand to see the exact numbers the model read. **Show in** loads the same
-analysis on its page, beside the chat. Every answer ends with an **Outcome** chip, and an answer
-the checks contradict is marked **Not verified**. The numbers it quotes by reference are filled
-in from the analyses it ran.
+<sub>Screenshots © 2026 Tsung-Han Yang. The Copilot shots use gemma4:26b on a local Ollama.</sub>
 
-It can also set the Bond Geometry inputs (triplet, bond windows, bin width) when you ask it to set
-up an analysis. A card shows the change first; nothing changes until you press **Apply** (or
-choose **Auto** in the settings), and **Undo** puts the old inputs back. A **Context** meter by the
-chat box shows how full the model's context window is, and the chat says whenever earlier
-conversation stops being sent in full. How it works, its tools, privacy and provider setup: the
-[Copilot guide](web_app/frontend/src/llm/README.md).
+## AI Copilot (beta)
+
+Ask about the open run in plain language. The Copilot runs the Workbench's analyses (the site
+table, g(r) peaks and coordination shells, bond angles, displacement directions, symmetry at a
+tolerance, convergence, where the fit misses the data, clusters, polyhedra, modulations), shows
+each as a step card with deterministic checks, points at the cards and peaks it explains, and asks
+you when a choice would change the result. **Show in** opens the same analysis on its page.
+
+It works with a **local** model (Ollama or LM Studio: nothing leaves your machine) or, with your
+own key, a **cloud** one (OpenAI, Gemini, Anthropic). Setup, including connecting a local Ollama
+to the hosted site: [QuickStart, *4. AI Copilot*](QuickStart.md#4-ai-copilot-optional).
+
+### How the Copilot stays safe
+
+- **Local models keep the data on the machine.** With Ollama or LM Studio nothing is sent anywhere;
+  a cloud provider is labelled as such and warns before you use it.
+- **Analyses only compute.** They read the run and return results; your files are never changed.
+- **One change tool, and it asks first.** The only tool that changes anything sets the Bond
+  Geometry inputs (triplet, bond windows, bin width). The change waits on a card until you press
+  **Apply** (or **Decline**). *Changes: Ask first* is the default; *Auto* is opt-in and resets to
+  Ask first on every reload. **Undo** on the card restores the earlier inputs, and if the page
+  changed while the card waited, the change is refused instead of applied to a different state.
+- **Numbers come from the tools, not the model.** The model quotes numbers by reference to a tool
+  result, and the app fills them in from that result. A reference that names no value is sent back
+  to the model to fix; a raw reference is never shown.
+- **Answers are checked.** An evidence gate sends an answer back when it makes a claim without the
+  analysis that claim needs. Answer checks compare the answer with what the analyses and the run
+  established, and every answer ends with an **Outcome**: a contradiction adds a **Check** line and
+  lowers it to **Not verified**, whatever the model said.
+- **No silent truncation.** A **Context** meter shows how full the model's context window is; the
+  Copilot refuses a question the loaded context cannot hold, and the chat says whenever earlier
+  conversation stops being sent in full.
+
+How it works, its tools and privacy in detail: the [Copilot guide](web_app/frontend/src/llm/README.md).
+
+### Validation
+
+Does the Copilot help? The protocol ([copilot-validation.md](docs/algorithms/copilot-validation.md),
+protocol 2026-11-01.1) uses **14 synthetic cases with planted truth** (off-centring, modulations,
+cluster distortions, Jahn–Teller, symmetry lowering, chirality and null cases), held out as a
+sealed test split that no tool, skill or prompt was tuned on. Each case gets one open question (is
+there order beyond the average structure, and what is the space group?), and the verdict is scored
+by fixed rules written before any model run.
+
+| Arm (test split, 14 cases) | Mean score |
+| --- | --- |
+| A: the default Workbench pages, read by fixed rules (no model) | 0.800 |
+| B: the Copilot with Claude Sonnet 5.5 (3 runs per case, 42 runs) | **0.920** |
+| A+: every engine swept exhaustively, joined by fixed rules (no model) | 0.948 |
+| The planted truth | 1.000 |
+
+With Claude Sonnet 5.5 the Copilot **beats the default pages** (0.920 against 0.800). It **does not
+yet beat the exhaustive engine sweep** on this score (0.948). gemma4:26b scored 0.748 under an
+earlier protocol (2026-10-24.6), which is not strictly comparable. Muse Glimmer ran only 3 of the
+14 cases, so it is not reported as a result.
 
 ## Run it locally (optional)
 
@@ -109,19 +141,22 @@ Self-hosting, the backend API, file patterns and the Python package:
 
 ## Status
 
-Beta: version 0.8.0 ([changelog](docs/CHANGELOG.md)). Python 3.10 or newer. The AI Copilot is
+Beta: version **0.8.0** ([changelog](docs/CHANGELOG.md)). Python 3.10 or newer. The AI Copilot is
 experimental: trust its step cards' checks over its own verdict.
 
 ## Documentation
 
-- [QuickStart.md](QuickStart.md): a tour of the app, Live Data and Copilot setup.
+- [QuickStart.md](QuickStart.md): the user guide, page by page, with Live Data and Copilot setup.
+- [docs/demo-script.md](docs/demo-script.md): a 5–10 minute walkthrough of the Demo.
 - [docs/REFERENCE.md](docs/REFERENCE.md): local and self-hosted setup, the backend API, file
   patterns, the Python package and command-line tools, tests.
 - [docs/ALGORITHMS.md](docs/ALGORITHMS.md): the math of every page, anchored to the code, with the
   approximations stated.
 - [AI Copilot guide](web_app/frontend/src/llm/README.md): how it works, its tools, privacy, setup.
-- [docs/AGENT_PLAN.md](docs/AGENT_PLAN.md): the Copilot's architecture, tool and skill plan; how
-  it is validated: [copilot-validation.md](docs/algorithms/copilot-validation.md).
+- [docs/AGENT_PLAN.md](docs/AGENT_PLAN.md) and
+  [copilot-validation.md](docs/algorithms/copilot-validation.md): the Copilot's architecture and
+  how it is validated.
+- [docs/demo-qa.md](docs/demo-qa.md): the end-to-end QA of the Demo for 0.8.0.
 - [docs/ROADMAP.md](docs/ROADMAP.md) · [docs/CHANGELOG.md](docs/CHANGELOG.md) · [AGENTS.md](AGENTS.md)
   (contributor guide).
 
