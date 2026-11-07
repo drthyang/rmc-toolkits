@@ -239,6 +239,9 @@ export default function OrientationView({
     // Hovered cell readout: { cell, x, y, map } in canvas-local coordinates,
     // `map` the result it was picked on.
     const [hover, setHover] = useState(null);
+    // The axis views sit side by side in a wide, short panel (the stacked
+    // layouts: phones, tablets) and one above another in the tall column.
+    const [miniAcross, setMiniAcross] = useState(false);
 
     const mountRef = useRef(null);
     const sceneRef = useRef(null);
@@ -288,9 +291,13 @@ export default function OrientationView({
         if (!width || !height) return;
         const { renderer, camera } = mini;
         renderer.setSize(width, height);
-        // Panes stack vertically (axis 0 on top). WebGL viewport y runs from
-        // the bottom, so pane i sits at y = height - (i + 1) * paneHeight.
-        const paneHeight = Math.floor(height / 3);
+        // Panes stack vertically (axis 0 on top) in a tall panel, and sit side
+        // by side (axis 0 on the left) in a wide one. WebGL viewport y runs
+        // from the bottom, so a stacked pane i sits at y = height - (i + 1) * paneHeight.
+        const across = width >= 1.5 * height;
+        setMiniAcross(across);
+        const paneWidth = across ? Math.floor(width / 3) : width;
+        const paneHeight = across ? height : Math.floor(height / 3);
         renderer.setScissorTest(true);
         const { axes } = miniAxesRef.current;
         // Screen-up convention matching the density page's snap views: down
@@ -305,12 +312,13 @@ export default function OrientationView({
             // Far enough back that a fully-inflated relief surface (radius
             // clamped at 2.2) never clips the pane edges.
             camera.position.copy(dir).multiplyScalar(5.6);
-            camera.aspect = width / paneHeight;
+            camera.aspect = paneWidth / paneHeight;
             camera.updateProjectionMatrix();
             camera.lookAt(0, 0, 0);
-            const y = height - (i + 1) * paneHeight;
-            renderer.setViewport(0, y, width, paneHeight);
-            renderer.setScissor(0, y, width, paneHeight);
+            const x = across ? i * paneWidth : 0;
+            const y = across ? 0 : height - (i + 1) * paneHeight;
+            renderer.setViewport(x, y, paneWidth, paneHeight);
+            renderer.setScissor(x, y, paneWidth, paneHeight);
             renderer.render(handle.scene, camera);
         }
         renderer.setScissorTest(false);
@@ -645,13 +653,13 @@ export default function OrientationView({
         <>
             <Card roundEnds className="orient-mini-panel" data-copilot-card="direction-views">
                 <CardHeader title="Axis views" />
-                <div className="ui-stage ui-stage--glow-faint orient-multiview" ref={miniMountRef}>
+                <div className={`ui-stage ui-stage--glow-faint orient-multiview${miniAcross ? ' is-across' : ''}`} ref={miniMountRef}>
                     {[0, 1, 2].map((axisIndex) => (
                         <button
                             key={axisIndex}
                             type="button"
                             className="orient-multiview-zone"
-                            style={{ top: `${(axisIndex * 100) / 3}%` }}
+                            style={miniAcross ? { left: `${(axisIndex * 100) / 3}%` } : { top: `${(axisIndex * 100) / 3}%` }}
                             onClick={() => snapMain(axisIndex)}
                             title={`Snap the main view to look down ${miniAxes.labels[axisIndex]}`}
                         >
