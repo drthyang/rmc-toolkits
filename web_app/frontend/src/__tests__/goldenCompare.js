@@ -8,7 +8,9 @@
 // - strings, booleans and null exactly;
 // - a number that is an integer on both sides exactly (counts, cell indices,
 //   frequencies: a point in another cell is a different result, not round-off);
-// - any other number to RTOL relative plus ATOL absolute (the engines sum in a
+// - any other number to RTOL relative (or the caller's `rtol`: a golden of an
+//   iterative fit, whose flat minimum the two engines locate to about √ε of its
+//   scale, ripples_fixture.json) plus ATOL absolute (the engines sum in a
 //   different order, and the JS eigensolver and incomplete gamma are not
 //   LAPACK's or SciPy's), or to RTOL relative alone for a `relative` key
 //   (p-values reach 1e-142, where any absolute floor would check nothing);
@@ -31,14 +33,14 @@ export const DEGENERATE_GAP = 1e-6;
 
 const isArrayLike = (value) => Array.isArray(value) || ArrayBuffer.isView(value);
 
-const expectNumber = (actual, expected, path, relative) => {
+const expectNumber = (actual, expected, path, relative, rtol = RTOL) => {
     expect(typeof actual, path).toBe('number');
     if (Number.isInteger(expected) && Number.isInteger(actual)) {
         // + 0 folds -0 into 0: the same integer.
         expect(actual + 0, path).toBe(expected + 0);
         return;
     }
-    const bound = RTOL * Math.abs(expected) + (relative ? 1e-300 : ATOL);
+    const bound = rtol * Math.abs(expected) + (relative ? 1e-300 : ATOL);
     expect(Math.abs(actual - expected), `${path}: ${actual} vs ${expected}`).toBeLessThanOrEqual(bound);
 };
 
@@ -76,13 +78,13 @@ const expectEigenbasis = (actual, expected, spectrum, path) => {
 };
 
 export const expectGolden = (actual, expected, path, options = {}) => {
-    const { relative = new Set(), bases = {}, key = null } = options;
+    const { relative = new Set(), bases = {}, key = null, rtol = RTOL } = options;
     if (expected === null) {
         expect(actual, path).toBeNull();
         return;
     }
     if (typeof expected === 'number') {
-        expectNumber(actual, expected, path, relative.has(key));
+        expectNumber(actual, expected, path, relative.has(key), rtol);
         return;
     }
     if (typeof expected !== 'object') {
@@ -96,12 +98,12 @@ export const expectGolden = (actual, expected, path, options = {}) => {
         }
         expect(isArrayLike(actual), `${path} is an array`).toBe(true);
         expect(actual.length, `${path} length`).toBe(expected.length);
-        expected.forEach((value, i) => expectGolden(actual[i], value, `${path}[${i}]`, { relative, key }));
+        expected.forEach((value, i) => expectGolden(actual[i], value, `${path}[${i}]`, { relative, key, rtol }));
         return;
     }
     expect(actual !== null && typeof actual === 'object', `${path} is an object`).toBe(true);
     expect(Object.keys(actual).sort(), `${path} keys`).toEqual(Object.keys(expected).sort());
     Object.entries(expected).forEach(([name, value]) => {
-        expectGolden(actual[name], value, `${path}.${name}`, { relative, bases, key: name });
+        expectGolden(actual[name], value, `${path}.${name}`, { relative, bases, key: name, rtol });
     });
 };

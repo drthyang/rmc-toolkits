@@ -1,0 +1,229 @@
+{
+  "tool": "check_ripples",
+  "arguments": {
+    "r_min": 2,
+    "r_max": 6
+  },
+  "content_chars": 3639,
+  "content": {
+    "ref": "r1",
+    "checks": [
+      {
+        "level": "ok",
+        "text": "No real-space fit asks the box to make ripples (each model is truncated as its data are); not ripples: r = 2.14, 2.8, 3.18, 4.14, 4.35, 4.6, 4.85, 5.84 Å."
+      },
+      {
+        "level": "note",
+        "text": "xpdf: fitted in r, but RMCProfile transforms the model F(Q) exactly as the data: both carry the same ripples, so the box is not asked to make them."
+      },
+      {
+        "level": "note",
+        "text": "xpdf: below the first distance (0.01–2.06 Å) the data's rms about the baseline is 6.6× the ripples the strong peaks predict there (the model, transformed alike, shows 1.2× the prediction there): noise or processing errors dominate the low r."
+      },
+      {
+        "level": "note",
+        "text": "xray_sq: fitted in Q: the box is not asked to make ripples (a G(r) transformed from these data still shows them)."
+      },
+      {
+        "level": "note",
+        "text": "r = 2.14, 2.8, 3.18, 4.6 Å: larger than the ripple predicted there: more than termination (a weaker peak, the strong peak's own shape, or noise)."
+      },
+      {
+        "level": "note",
+        "text": "r = 4.14, 4.35, 4.85, 5.84 Å: no ripple of its sign is predicted there: not termination (a weaker peak, the strong peak's own shape, or noise)."
+      }
+    ],
+    "data": {
+      "datasets": [
+        {
+          "dataset": "xpdf",
+          "file": "GTS_250K_FT_XFQ1.csv",
+          "status": "assessed",
+          "fitted_in": "r",
+          "model": "same transform as the data",
+          "risk": "matched",
+          "Q_A": [0.8, 26.98],
+          "window": "none",
+          "Q_from": "the run's F(Q) file",
+          "resolution_A": {
+            "fwhm": 0.138,
+            "nyquist": 0.116,
+            "ripple_period": 0.233
+          },
+          "strong_peaks": [
+            {
+              "r": 2.509,
+              "sigma_A": 0.057,
+              "first_ripples": [
+                [2.32, -0.066],
+                [2.7, -0.071]
+              ]
+            },
+            {
+              "r": 5.493,
+              "sigma_A": 0.099,
+              "first_ripples": [
+                [5.28, -0.0067],
+                [5.7, -0.0066]
+              ]
+            },
+            {
+              "r": 7.333,
+              "sigma_A": 0.1,
+              "first_ripples": [
+                [7.12, -0.0045],
+                [7.65, 0.0038]
+              ]
+            },
+            {
+              "r": 12.687,
+              "sigma_A": 0.098,
+              "first_ripples": [
+                [12.48, -0.0071],
+                [12.9, -0.007]
+              ]
+            }
+          ],
+          "low_r": {
+            "state": "measured",
+            "range_A": [0.01, 2.06],
+            "rms": 0.028,
+            "predicted_rms": 0.0043,
+            "model_rms": 0.005,
+            "data_minus_model_rms": 0.026,
+            "relative_to": "largest peak"
+          }
+        },
+        {
+          "dataset": "xray_sq",
+          "file": "GTS_250K_FQ1.csv",
+          "status": "assessed",
+          "fitted_in": "Q",
+          "risk": "none",
+          "Q_A": [0.8, 26.98],
+          "Q_from": "this file's Q grid",
+          "resolution_A": {
+            "fwhm": 0.138,
+            "nyquist": 0.116,
+            "ripple_period": 0.233
+          }
+        }
+      ],
+      "features": [
+        {
+          "r": 2.14,
+          "in": [
+            {
+              "dataset": "xpdf",
+              "class": "larger-than-ripple",
+              "at_A": 2.14,
+              "size": -0.98,
+              "ripple_size": -0.22,
+              "from_peak_A": 0.369,
+              "below_resolution": false
+            }
+          ]
+        },
+        {
+          "r": 2.8,
+          "in": [
+            {
+              "dataset": "xpdf",
+              "class": "larger-than-ripple",
+              "at_A": 2.8,
+              "size": 1.4,
+              "ripple_size": 0.34,
+              "from_peak_A": 0.291,
+              "below_resolution": false
+            }
+          ]
+        },
+        {
+          "r": 3.18,
+          "in": [
+            {
+              "dataset": "xpdf",
+              "class": "larger-than-ripple",
+              "at_A": 3.18,
+              "size": -0.94,
+              "ripple_size": -0.16,
+              "from_peak_A": 0.522,
+              "below_resolution": false
+            }
+          ]
+        },
+        {
+          "r": 4.14,
+          "in": [
+            {
+              "dataset": "xpdf",
+              "class": "no-ripple-here",
+              "at_A": 4.14,
+              "size": -2.3,
+              "ripple_size": -0.1,
+              "from_peak_A": 0.438,
+              "below_resolution": false
+            }
+          ]
+        },
+        {
+          "r": 4.35,
+          "in": [
+            {
+              "dataset": "xpdf",
+              "class": "no-ripple-here",
+              "at_A": 4.35,
+              "size": 3.4,
+              "from_peak_A": 0.648,
+              "below_resolution": false
+            }
+          ]
+        },
+        {
+          "r": 4.6,
+          "in": [
+            {
+              "dataset": "xpdf",
+              "class": "larger-than-ripple",
+              "at_A": 4.6,
+              "size": -0.7,
+              "ripple_size": -0.086,
+              "from_peak_A": 0.893,
+              "below_resolution": false
+            }
+          ]
+        },
+        {
+          "r": 4.85,
+          "in": [
+            {
+              "dataset": "xpdf",
+              "class": "no-ripple-here",
+              "at_A": 4.85,
+              "size": -0.9,
+              "ripple_size": -0.085,
+              "from_peak_A": 0.643,
+              "below_resolution": false
+            }
+          ]
+        },
+        {
+          "r": 5.84,
+          "in": [
+            {
+              "dataset": "xpdf",
+              "class": "no-ripple-here",
+              "at_A": 5.84,
+              "size": -2,
+              "from_peak_A": 0.347,
+              "below_resolution": false
+            }
+          ]
+        }
+      ],
+      "found": true,
+      "verdict": "No real-space fit asks the box to make ripples (each model is truncated as its data are); not ripples: r = 2.14, 2.8, 3.18, 4.14, 4.35, 4.6, 4.85, 5.84 Å.",
+      "next": ["One G(r) only: add a dataset with a different Q_max (X-ray beside neutron) to tell a ripple, which moves with Q_max, from a feature, which stays."]
+    }
+  }
+}

@@ -25,6 +25,7 @@ import { symmetryShifts } from './symmetryShift';
 import { nearestLowIndex } from './viewer3d';
 import { CLUSTER_BECAUSE, SPLIT_SITE_KURTOSIS, SPLIT_SITE_SE, isSplitSite } from './workers/clusters';
 import { oneOf } from './llm/copilot/dataShape';
+import { buildRippleTool } from './copilotRipples';
 
 // Each tool's `dataShape` (llm/copilot/dataShape.js) is the shape of the data
 // its summarizer builds — the paths the model quotes by reference — declared
@@ -2058,7 +2059,7 @@ export const elementProperty = (elements, description) => (
  * Model arguments reach the engines only through the explicit
  * mapping in each run(), never by spreading.
  */
-export const buildCopilotTools = ({ request, structure, elements = [], plotFiles = null, runSettings = null }) => {
+export const buildCopilotTools = ({ request, structure, elements = [], plotFiles = null, runSettings = null, ripples = null }) => {
     const tools = [];
     const unitCellFrom = (payload) => unitCellVectors(payload?.latticeVectors ?? structure?.latticeVectors, payload?.supercell ?? structure?.supercell);
     // The run's one shell reading, memoised per partials data, structure and
@@ -2405,5 +2406,9 @@ export const buildCopilotTools = ({ request, structure, elements = [], plotFiles
     // without it, the advice names no tool the model lacks).
     const clusters = tools.find((tool) => tool.name === 'analyze_clusters');
     if (clusters) clusters.method = clusterMethod({ polyhedra: tools.some((tool) => tool.name === 'polyhedral_distortion') });
+    // Termination ripples (copilotRipples.js): over the run's fit files,
+    // through the run's ripple source (the adapter's; none, no tool).
+    const rippleTool = buildRippleTool({ plotFiles, ripples });
+    if (rippleTool) tools.push(rippleTool);
     return tools;
 };

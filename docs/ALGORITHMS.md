@@ -54,6 +54,22 @@ The ribbon is the diagonal; neighbouring r points are strongly correlated, and t
 No σ column in the input file, no ribbon — never an assumed σ.
 → [derivation](algorithms/run-dashboard.md#the-gr-error-ribbon-fourier-transform-error-propagation)
 
+**Termination ripples** — the Copilot's `check_ripples`: cutting the transform at $Q_\mathrm{max}$
+convolves each peak with the kernel $K(x)=\sum_k w_k\cos(Q_k x)$ (FWHM $3.79/Q_\mathrm{max}$ for a
+rectangle). A strong peak, a Gaussian $d_j$ in $D = r\,G$ space fitted *through* the transform
+($S_j(Q)=A_j\sqrt{2\pi}\sigma_j e^{-Q^2\sigma_j^2/2}\sin Qr_j$ exactly), predicts the ripples
+
+$$\Delta_j(r) = T[d_j](r) - T_{[Q_\mathrm{min},\infty)}[d_j](r),\qquad T[d](r)=\frac{2}{\pi}\sum_k w_k S(Q_k)\sin(Q_k r)$$
+
+(the uncut transform is $d_j$ less its part below $Q_\mathrm{min}$: no sum to infinity). A feature is
+`ripple-consistent` when a ripple of its sign lies within $\pi/(2Q_\mathrm{max})$ and its size is within
+a factor 1.5 of it. Whether the box is *asked* to fit ripples is how RMCProfile makes the model it
+compares, established on its own files: an X-ray F(Q) fitted in r is compared through the same
+transform (matched); a neutron G(r) without `CONVOLVE` against the untruncated histogram (high risk);
+with `CONVOLVE :: Q_c` against the D-space sinc of $Q_c$ (matched only if $Q_c$ is the data's
+$Q_\mathrm{max}$ with no window; unknown when the files do not say).
+→ [derivation](algorithms/run-dashboard.md#termination-ripples-the-copilots-check_ripples)
+
 **Atomic density** — a 2-D Gaussian KDE over the supercell folded into one unit cell, with
 bandwidth $\mathbf H$ scaled from the covariance $\mathbf C$ of the slab's atoms (SciPy's
 convention; the same kernel in the browser and in Python):
@@ -117,7 +133,7 @@ written.
 |---|---|---|
 | *(shared)* | Symbols, units, coordinate frames, symbol collisions, citation conventions, reference-grade vs visualization-grade | [Notation and conventions](algorithms/notation.md) |
 | **Auto StoG** | Absolute-scale $(a,b)$ for a measured $S(Q)$: composition constants, sine-transform pair with Lorch/low-$Q$ correction/Fourier filter, level sweep + closed-form affine fit + self-consistent loop, $\rho_0$ estimate, and the written stog/RMCProfile file family | [Auto StoG](algorithms/auto-stog.md) |
-| **Dashboard** | Run-folder detection and parsing, the "Rwp"/R-value metrics, the SVG plot renderer (ticks, zoom, hover, export), the G(r) error ribbon (RMCProfile's transform of F(Q) reproduced, F(Q)'s σ propagated with its full covariance), the model summary and the client-side space-group finder | [Run Dashboard](algorithms/run-dashboard.md) |
+| **Dashboard** | Run-folder detection and parsing, the "Rwp"/R-value metrics, the SVG plot renderer (ticks, zoom, hover, export), the G(r) error ribbon (RMCProfile's transform of F(Q) reproduced, F(Q)'s σ propagated with its full covariance), the termination ripples the Copilot's `check_ripples` reads (how RMCProfile truncates each model, the predicted ripples of the strong peaks, the low-r level), the model summary and the client-side space-group finder | [Run Dashboard](algorithms/run-dashboard.md) |
 | **Atomic Density** *(the nav label; this reference calls the page **Structure**, and the page heading itself reads "KDE And Folded Unit Cell")* | Supercell folded into one cell: the 2-D Gaussian KDE slice (CPU + WGSL), contours and colour mapping, the Slab In Cell projection, and the Three.js folded unit-cell view | [Structure](algorithms/structure.md) |
 | **Bond Geometry** | Bond angles at a central atom over the periodic configuration: linked-cell neighbour search with explicit image shifts, the three angle curves (counts, per-degree density, exact sin-corrected), bond-length histograms, coordination statistics, and the page's partial-g(r) helper and folded-cell bond view | [Bond Geometry](algorithms/bond-geometry.md) |
 | **PCA Ellipsoid** | Per-site displacement clouds: covariance, eigen-decomposition, ADP readouts, $\chi^2$ probability ellipsoid, separable 3-D Gaussian KDE + marching-cubes isosurface, wall projections, Mardia non-Gaussianity and per-axis kurtosis, and the PCA↔crystal frame algebra | [PCA Ellipsoid](algorithms/pca-ellipsoid.md) |
@@ -257,7 +273,12 @@ Consolidated from every page's *Caveats* section. Each line links to the section
 - Cross-engine orientation parity is guarded in CI by one generated golden, `orientation_fixture.json` (`tests/generate_orientation_fixture.py`; checked by `orientationParity.test.js`, and by `tests/test_orientation_fixture.py` so it cannot go stale): 21 full payloads (the RNG-free golden cloud at the settings the suites used to pin by hand, the 8-well ⟨111⟩ model, isotropic, one-sided, prolate in the PCA frame, a map too sparse for its test, singly occupied pairs, three demo-run sites and the pooled Ga cloud; $\nu$ = 2–10), the `recommendedFrequency` table, the tie-resolved cells of the axes and the 26 ⟨100⟩/⟨110⟩/⟨111⟩ directions, `neighbors` checksums and the $\nu=38$ polygon starts, and Pearson's exact null moments. Integers, booleans and nulls compare exactly, floats to $10^{-9}$ relative + $10^{-12}$, p-values to $10^{-9}$ relative, the axis sets eigenspace by eigenspace to $10^{-9}$ (a degenerate pair, the 8-well model's, by its projector; JS `regularizedGamma`/`normalQuantile` are pinned to SciPy separately). Measured on the fixture: floats ≤ $6\times10^{-13}$ relative, p-values ≤ $3\times10^{-12}$. Measured on both GaNb₄Se₈ runs (104 sites × 7 settings): all integer and boolean fields identical, all floats ≤ $3\times10^{-13}$ relative. The full-array comparison ($\le 9\times10^{-16}$ on the tiling at $\nu=4$) was a one-off dev-machine verification — [displacement-directions.md](algorithms/displacement-directions.md#parity-python-engine-vs-javascript-port).
 - Structure KDE and bond angles: see the golden fixtures above (KDE $10^{-6}$ of the peak below the fit cap; bond angles exact integer histograms and $10^{-9}$ floats).
 - G(r) error ribbon (`ft_uncertainty.py` ↔ `ftUncertainty.js`/`ftUncertaintyRun.js`): one golden, `ft_uncertainty_fixture.json` (the demo run and twelve synthetic run folders, every outcome), compared by the rule above in the browser and against Flask's `/api/plot/data`; its propagation leaves RMCProfile's box convolution out, checked exactly to change σ(r) by under 1 % (0.19 % at r ≤ 20 Å on the demo grids) — [run-dashboard.md](algorithms/run-dashboard.md#the-gr-error-ribbon-fourier-transform-error-propagation).
+- Termination ripples (`ripples.py` ↔ `ripples.js`/`ripplesRun.js`): one golden, `ripples_fixture.json` (the Demo's calls and seven synthetic run folders, every risk, transform source and reading), compared in the browser and against Flask's `/api/ripples`; every class, risk and state exactly, numbers to $10^{-7}$ relative (the strong peaks are an iterative fit; seen $1.5\times10^{-9}$), no reading within $10^{-6}$ of a threshold — [run-dashboard.md](algorithms/run-dashboard.md#termination-ripples-the-copilots-check_ripples).
 - Anything not in a parity table has not been checked — [notation.md §3d](algorithms/notation.md#3d-reference-grade-vs-visualization-grade).
+
+**Termination ripples**
+
+- The strong peaks are Gaussians fitted through the transform: a peak of several unresolved distances is approximated, hence the factor 1.5 a ripple-consistent feature is allowed; a feature of the size and sign of the ripple it sits on cannot be told from it in one dataset — a second Q_max decides. A neutron G(r)'s window is the stog / Auto StoG files' word, else assumed none and marked so. RMCProfile's model functions were established on 6.7.9.1 (the histogram) and 6.9.0-rc.0 (the histogram, `CONVOLVE`'s sinc, `R_CUTOFF`, the X-ray real-space transform; with QMIN > 0 a smooth term remains unidentified) — [run-dashboard.md](algorithms/run-dashboard.md#caveats--what-this-is-not-3).
 
 **Tolerance dependence in the symmetry finder**
 
@@ -496,12 +517,12 @@ following, grouped by module:
 
 | Group | Files |
 |---|---|
-| Python engines | [`rmc_toolkits/`](../rmc_toolkits) — `parsers.py`, `plots.py`, `kde.py`, `pca_kde.py`, `orientation.py`, `transforms.py`, `ft_uncertainty.py`, `scaling.py`, `scattering.py`, `scaling_cli.py`, `triplets.py`, `triplets_cli.py`, `clusters.py`, `modulations.py` |
+| Python engines | [`rmc_toolkits/`](../rmc_toolkits) — `parsers.py`, `plots.py`, `kde.py`, `pca_kde.py`, `orientation.py`, `transforms.py`, `ft_uncertainty.py`, `ripples.py`, `scaling.py`, `scattering.py`, `scaling_cli.py`, `triplets.py`, `triplets_cli.py`, `clusters.py`, `modulations.py` |
 | Flask API | [`web_app/backend/app.py`](../web_app/backend/app.py) (routes, data-root guard, `_number()` validation, `_FileCache` file-signature caches) |
 | Browser workers | [`web_app/frontend/src/workers/`](../web_app/frontend/src/workers) — `autoScale.js`, `autoScaleWorker.js`, `localKdeWorker.js`, `gpuKde.js`, `slabSelection.js`, `pcaKde.js`, `pcaKdeWorker.js`, `orientation.js`, `triplets.js`, `clusters.js`, `modulations.js`, `localStructureWorker.js`, `requestGuards.js`, `marchingCubes.js` |
 | Frontend pages | [`web_app/frontend/src/components/`](../web_app/frontend/src/components) — `AutoStogPage.jsx`, `Dashboard.jsx`, `InteractivePlot.jsx`, `StructurePage.jsx`, `PcaKdePage.jsx`, `OrientationPage.jsx`, `OrientationView.jsx`, `BondGeometryPage.jsx`, `FoldedCellPanel.jsx`, `SiteStructurePanel.jsx`, `ModelSummary.jsx`, `sceneAxes.js` |
-| Frontend modules | [`web_app/frontend/src/`](../web_app/frontend/src) — `App.jsx` (nav order, `SHOW_AUTO_STOG`, Live Data `configEpoch`), `browserData.js`, `ftUncertainty.js`, `ftUncertaintyRun.js`, `grRibbon.js`, `plotDomain.js`, `useSiteCloud.js`, `symmetry.js`, `symmetryModel.js`, `spaceGroupSymbol.js`, `spaceGroupTable.js`, `wyckoff.js`, `wyckoffTable.js`, `pcaCrystalFrame.js`, `orientationSphere.js`, `rmc6f.js`, `siteLabel.js`, `moveStats.js`, `colormaps.js`, `atomColors.js`, `figureExport.js`, `zipArchive.js` |
-| AI Copilot | [`web_app/frontend/src/llm/`](../web_app/frontend/src/llm) — `context/`, `copilot/`, `focus/`, `watchdog/`, `prompts/`, `provider/`, `useAssistant.js`, `useCopilot.js`, `components/`; the host side in `src/` — `copilotTools.js`, `copilotCards.js`, `copilotViewTools.js`, `copilotSkills.js`, `viewer3d.js`, `useCopilotViewer.js`, `cameraPose.js` |
+| Frontend modules | [`web_app/frontend/src/`](../web_app/frontend/src) — `App.jsx` (nav order, `SHOW_AUTO_STOG`, Live Data `configEpoch`), `browserData.js`, `ftUncertainty.js`, `ftUncertaintyRun.js`, `ripples.js`, `ripplesRun.js`, `ripplesFlask.js`, `grRibbon.js`, `plotDomain.js`, `useSiteCloud.js`, `symmetry.js`, `symmetryModel.js`, `spaceGroupSymbol.js`, `spaceGroupTable.js`, `wyckoff.js`, `wyckoffTable.js`, `pcaCrystalFrame.js`, `orientationSphere.js`, `rmc6f.js`, `siteLabel.js`, `moveStats.js`, `colormaps.js`, `atomColors.js`, `figureExport.js`, `zipArchive.js` |
+| AI Copilot | [`web_app/frontend/src/llm/`](../web_app/frontend/src/llm) — `context/`, `copilot/`, `focus/`, `watchdog/`, `prompts/`, `provider/`, `useAssistant.js`, `useCopilot.js`, `components/`; the host side in `src/` — `copilotTools.js`, `copilotRipples.js`, `copilotCards.js`, `copilotViewTools.js`, `copilotSkills.js`, `viewer3d.js`, `useCopilotViewer.js`, `cameraPose.js` |
 | Tests | [`tests/`](../tests) and `web_app/frontend/src/**/__tests__/` |
 | Project docs consulted | [AGENTS.md](../AGENTS.md), [README.md](../README.md), [QuickStart.md](../QuickStart.md), [REFERENCE.md](REFERENCE.md), [STOG_SCALING_PLAN.md](STOG_SCALING_PLAN.md), [SCALING_PROCEDURE.md](SCALING_PROCEDURE.md), [CHANGELOG.md](CHANGELOG.md) |
 

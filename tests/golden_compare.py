@@ -61,7 +61,7 @@ def _basis_misfit(got, want, spectrum) -> float:
 
 
 def assert_same(case, got, want, path: str = "$", *, relative=frozenset(), bases=None, key=None,
-                message: str = "") -> None:
+                message: str = "", rtol: float = RTOL) -> None:
     """Assert ``got`` (regenerated) matches ``want`` (committed) under the rule above."""
     bases = bases or {}
     where = f"{message} ({path})" if message else path
@@ -74,7 +74,7 @@ def assert_same(case, got, want, path: str = "$", *, relative=frozenset(), bases
         if isinstance(want, int) and isinstance(got, int):
             case.assertEqual(got, want, where)
             return
-        bound = RTOL * abs(want) + (1e-300 if key in relative else ATOL)
+        bound = rtol * abs(want) + (1e-300 if key in relative else ATOL)
         case.assertTrue(math.isfinite(got), where)
         case.assertLessEqual(abs(got - want), bound, f"{where}: {got!r} vs {want!r}")
         return
@@ -85,13 +85,14 @@ def assert_same(case, got, want, path: str = "$", *, relative=frozenset(), bases
             case.assertLessEqual(_basis_misfit(got, want, bases[key]), AXIS_TOL, f"{where} eigenbasis")
             return
         for index, (got_item, want_item) in enumerate(zip(got, want)):
-            assert_same(case, got_item, want_item, f"{path}[{index}]", relative=relative, key=key, message=message)
+            assert_same(case, got_item, want_item, f"{path}[{index}]", relative=relative, key=key, message=message,
+                        rtol=rtol)
         return
     if isinstance(want, dict):
         case.assertIsInstance(got, dict, where)
         case.assertEqual(sorted(got), sorted(want), f"{where} keys")
         for name in want:
             assert_same(case, got[name], want[name], f"{path}.{name}", relative=relative, bases=bases,
-                        key=name, message=message)
+                        key=name, message=message, rtol=rtol)
         return
     case.fail(f"{where}: unexpected value {want!r}")

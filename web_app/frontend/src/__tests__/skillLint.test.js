@@ -66,14 +66,15 @@ const SNAPSHOTS = join(HERE, 'modelVisible/__snapshots__');
  * bond-angle engine's payload and the run's shell catalogue.
  */
 const offeredTools = async () => {
-    const { run, rmc6fText } = await loadDemoAssistantRun();
+    const { run, rmc6fText, loaded } = await loadDemoAssistantRun();
     const request = inProcessEngine(rmc6fText);
     const cards = buildCopilotCards({ plotFiles: run.plotFiles, rValueFile: run.rValueFile, symmetry: run.symmetry });
     const tools = [
         ...buildRunTools(run, { cards }),
         ...buildFocusTools({ cards, pages: COPILOT_PAGES }),
         ...buildCopilotTools({
-            request, structure: run.structure, elements: Object.keys(run.structure.elementCounts || {}).sort(), plotFiles: run.plotFiles, runSettings: run.runSettings
+            request, structure: run.structure, elements: Object.keys(run.structure.elementCounts || {}).sort(), plotFiles: run.plotFiles,
+            runSettings: run.runSettings, ripples: loaded.ripples
         }),
         ...buildViewTools({ cards, pages: COPILOT_PAGES, activePage: () => 'dashboard' }),
         ...buildChangeTools({ elements: Object.keys(run.structure.elementCounts || {}).sort(), history: createChangeHistory() }),

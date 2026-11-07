@@ -148,22 +148,26 @@ const TWO_LARGEST_SKILLS_TODAY = Object.freeze([
 // overlong answers that dump numbers) adds 262 to the dock's system prompt
 // (5,059 → 5,321): sent with the view tools only, so arm B's numbers are
 // unchanged.
+// check_ripples, termination ripples (2026-11-07), adds 612: its definition
+// with its method pointer (the tools 8,616 → 9,228). The dock only: the live
+// arms leave it out by name (validation/harness.js LIVE_ARM_EXCLUDED), so arm
+// B's numbers are unchanged; the dock's headroom at 48k falls 3,258 → 2,647.
 const DOCK_WORST_TURN_TODAY = Object.freeze({
     systemPrompt: 5321,
-    toolJson: 8616,
+    toolJson: 9228,
     contextBlock: 2480,
     question: 70,
     skills: 12492,
     analyses: 8724,
     replyReserve: 8192,
-    firstRequest: 16486,
-    prompt: 37702,
-    needed: 45894,
-    headroom: -13126,
-    lmStudioHeadroom: -9030
+    firstRequest: 17098,
+    prompt: 38313,
+    needed: 46505,
+    headroom: -13737,
+    lmStudioHeadroom: -9641
 });
 // By how much the dock's worst turn overflows the window today.
-const DOCK_OVERFLOW_TOKENS_TODAY = 13126;
+const DOCK_OVERFLOW_TOKENS_TODAY = 13737;
 
 // Arm B's first request on each dev case is 9.7k–11.2k tokens; the largest,
 // since plan item 4.6, is the fit-data case: its fit tools (assess_convergence,
@@ -429,6 +433,6 @@ describe('the worst realistic turn in a 32,768-token window (plan 5.5)', () => {
             expect(plan.needed).toBe(turn.numbers.needed);
             expect(turn.numbers.prompt + LMSTUDIO_REPLY_MIN_TOKENS).toBeLessThanOrEqual(window);
         }
-        expect([window - dockTurn.numbers.needed, window - armBTurn.numbers.needed]).toEqual([3258, 7044]);
+        expect([window - dockTurn.numbers.needed, window - armBTurn.numbers.needed]).toEqual([2647, 7044]);
     });
 });

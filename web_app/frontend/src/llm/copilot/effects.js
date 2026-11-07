@@ -49,6 +49,9 @@ export const COPILOT_TOOL_EFFECTS = Object.freeze({
     analyze_modulations: 'compute',
     detect_symmetry: 'compute',
     measure_symmetry_lowering: 'compute',
+    // Termination ripples (src/copilotRipples.js), offered in the dock only for
+    // now: validation/harness.js LIVE_ARM_EXCLUDED leaves it out of the arms.
+    check_ripples: 'compute',
     // The host's view tools (src/copilotViewTools.js).
     orient_3d_view: 'view',
     current_view: 'view',
