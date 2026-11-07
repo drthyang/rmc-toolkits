@@ -2,11 +2,20 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { describeTurn, runTurn } from './copilot/turn';
+import { compactAnswer } from './copilot/robustness';
+import { MEMORY_ANSWER_CHARS, describeTurn, historyWindow, requestPreview, runTurn } from './copilot/turn';
 import { stoppedByFailure } from './copilot/turnPolicy';
 import { applyTurnEvent, closeTurn, newAssistantTurn } from './copilot/turnState';
+import { CHARS_PER_TOKEN, estimatePromptTokens } from './provider/contextGuard';
+import { contextUsage, meterLimits, probeLimits, requestCost } from './provider/contextMeter';
 import { providerModel } from './provider/model';
 import { temperatureFor } from './provider/sampling';
+
+// Summarize and continue: each earlier answer is re-sent as at most this
+// many characters (compactAnswer: its sentences with numbers, its Outcome
+// line). No model call writes the summary, so it cannot add or change a
+// number.
+export const SUMMARY_ANSWER_CHARS = 600;
 
 // The dock's adapter of the turn module (copilot/turn.js): the conversation
 // state for the Copilot page — the finished turns, the turn in progress,
@@ -113,20 +122,38 @@ export const configurationBreaks = (turns, configKey = null) => {
  * `configKey`, the current configuration, since the last change count: an
  * answer about a previous configuration is never sent as memory.
  */
-export const turnHistory = (turns, configKey = null) => {
+export const turnHistory = (turns, configKey = null, { summarizedAt = null } = {}) => {
     const { before, after } = configurationBreaks(turns, configKey);
     if (after) return [];
-    const current = turns.slice(before.at(-1) ?? 0);
+    const start = before.at(-1) ?? 0;
+    const current = turns.slice(start);
     return current.flatMap((turn, index) => {
         if (turn.role !== 'user') return [];
         const reply = current[index + 1];
-        return [{ question: turn.content, answer: reply?.role === 'assistant' ? reply.text || '' : '' }];
+        const answer = reply?.role === 'assistant' ? reply.text || '' : '';
+        // Summarize and continue: the answers before that point go as their
+        // sentences with numbers (and their Outcome line), shorter than the
+        // turn's own MEMORY_ANSWER_CHARS.
+        const summarized = Number.isInteger(summarizedAt) && start + index < summarizedAt;
+        return [{ question: turn.content, answer: summarized && answer ? compactAnswer(answer, SUMMARY_ANSWER_CHARS) : answer }];
     });
 };
 
+// The output tokens of a reply, estimated as the guard estimates text.
+const replyTokens = (chars) => Math.ceil(chars / CHARS_PER_TOKEN);
+
+// A request's tokens as the guard counts them: the plan's own estimate on
+// Ollama and LM Studio (the same estimatePromptTokens), else counted here.
+const requestEstimate = (sent) => (Number.isFinite(sent?.plan?.estimate)
+    ? sent.plan.estimate
+    : estimatePromptTokens({ messages: sent?.messages || [], tools: sent?.tools ?? null }));
+
+// The larger of two requests (by tokens).
+const larger = (a, b) => (!a ? b : (!b ? a : (b.estimate > a.estimate ? b : a)));
+
 export const useCopilot = ({
     settings, run, tools, toolsEnabled = true, runKey = null, configKey = null, focus = null, onTurnEnd = null,
-    onQuestion = null, onApproval = null, skills = null, autoApprove = false
+    onQuestion = null, onApproval = null, skills = null, autoApprove = false, connected = false
 }) => {
     const [turns, setTurns] = useState([]);
     const [live, setLive] = useState(null);
@@ -262,6 +289,55 @@ export const useCopilot = ({
     const unsupported = unsupportedModels.has(settings.model);
     const toolsOn = toolsEnabled && offersTools && !unsupported;
 
+    // The context meter (provider/contextMeter.js): the guard's numbers for
+    // the next question's first request, the largest request of the last
+    // answer, the running answer's latest request, or a request the guard
+    // refused. `limitsPlan`: the guard's latest plan for this model (a
+    // request's, or probeLimits' before the first one).
+    const [summarizedAt, setSummarizedAt] = useState(null);
+    const [limitsPlan, setLimitsPlan] = useState(null);
+    const [liveRequest, setLiveRequest] = useState(null);
+    const [peak, setPeak] = useState(null);
+    const [refused, setRefused] = useState(null);
+    const [cost, setCost] = useState(0);
+    const [probeTick, setProbeTick] = useState(0);
+    // What the last question's history window held, for the chat's memory note.
+    const memoryRef = useRef({ answered: 0, dropped: 0 });
+
+    // The window of a local server's model, before any request (the same
+    // probes and caches as the guard; a cloud model needs none). Asked again
+    // after each answer: LM Studio's model may have been reloaded.
+    useEffect(() => {
+        if (!connected || !settings.baseUrl || !settings.model) return undefined;
+        const controller = new AbortController();
+        const model = settings.model;
+        probeLimits({ baseUrl: settings.baseUrl, model }, { signal: controller.signal })
+            .then((plan) => setLimitsPlan({ plan, model }))
+            // An unreachable server: the window stays unknown (the meter says so).
+            .catch(() => {});
+        return () => controller.abort();
+    }, [connected, settings.baseUrl, settings.model, probeTick]);
+
+    const history = useMemo(() => turnHistory(turns, configKey, { summarizedAt }), [turns, configKey, summarizedAt]);
+    // The next question's first request, as the guard would estimate it.
+    const previewTokens = useCallback((items) => {
+        try {
+            const { messages, tools: sent } = requestPreview({
+                run, tools, askUser, approve, skills, history: items, config: { toolsEnabled: toolsOn }
+            });
+            return estimatePromptTokens({ messages, tools: sent });
+        } catch {
+            // The setup error is shown already (description.setupError).
+            return null;
+        }
+    }, [run, tools, askUser, approve, skills, toolsOn]);
+    const nextTokens = useMemo(() => previewTokens(history), [previewTokens, history]);
+    // What Summarize and continue would leave: offered only when it helps.
+    const summarizedTokens = useMemo(
+        () => (turns.length ? previewTokens(turnHistory(turns, configKey, { summarizedAt: turns.length })) : null),
+        [previewTokens, turns, configKey]
+    );
+
     const ask = useCallback(async (questionText) => {
         const text = questionText.trim();
         if (!text || abortRef.current) return;
@@ -269,14 +345,32 @@ export const useCopilot = ({
         abortRef.current = controller;
         const generation = generationRef.current;
         setError(null);
+        setRefused(null);
 
         // The agent moves on: the last answer's highlight ends.
         focus?.clear('question');
         const model = settings.model;
 
+        // Never truncated silently: what this question's memory leaves out
+        // that the last one sent (the oldest questions dropped, the last
+        // answer shortened) goes into the chat as the answer's memory note.
+        const window = historyWindow(history);
+        const known = window.answered >= memoryRef.current.answered ? memoryRef.current : { answered: 0, dropped: 0 };
+        const lastAnswer = history.filter((entry) => entry.answer.trim() && entry.question.trim()).at(-1)?.answer.trim() || '';
+        const memory = {
+            dropped: Math.max(0, window.dropped - known.dropped),
+            kept: window.sent,
+            shortened: window.answered > known.answered && lastAnswer.length > MEMORY_ANSWER_CHARS
+        };
+        memoryRef.current = window;
+
         setTurns((current) => [...current, { role: 'user', content: text, configKey }]);
-        let turn = newAssistantTurn(now());
+        let turn = { ...newAssistantTurn(now()), memory: memory.dropped || memory.shortened ? memory : null };
         setLive(turn);
+        // This answer's requests: the largest, and its estimated cost.
+        let turnPeak = null;
+        let spent = 0;
+        let replyChars = 0;
         try {
             for await (const event of runTurn({
                 question: text,
@@ -288,7 +382,7 @@ export const useCopilot = ({
                 skills,
                 // Earlier turns travel as their question and final answer
                 // only, and only those about the current configuration.
-                history: turnHistory(turns, configKey),
+                history,
                 signal: controller.signal,
                 clock: CLOCK,
                 toolContext: focus ? { focus } : null,
@@ -299,6 +393,9 @@ export const useCopilot = ({
                     // harness records it.
                     turn = closeTurn(turn, event.stoppedBy);
                     if (event.type === 'failed') setError(event.hint ? `${event.message} ${event.hint}` : event.message);
+                    if (event.error?.name === 'ContextLimitError') {
+                        setRefused({ needed: event.error.needed, available: event.error.available });
+                    }
                 } else {
                     turn = applyTurnEvent(turn, event, event.at);
                     if (event.type === 'tool_start' && event.cards?.length) focus?.running(event.id, event.cards);
@@ -306,6 +403,14 @@ export const useCopilot = ({
                     if (event.type === 'tools_unsupported') {
                         setUnsupportedModels((current) => new Set(current).add(model));
                     }
+                    if (event.type === 'request') {
+                        const request = { estimate: requestEstimate(event.sent) };
+                        turnPeak = larger(turnPeak, request);
+                        setLiveRequest(request);
+                        if (event.sent?.plan) setLimitsPlan({ plan: event.sent.plan, model });
+                        spent += requestCost({ model, inputTokens: request.estimate }) ?? 0;
+                    }
+                    if (event.type === 'text' || event.type === 'reasoning') replyChars += event.delta?.length || 0;
                 }
                 setLive(turn);
             }
@@ -327,8 +432,15 @@ export const useCopilot = ({
                 onTurnEndRef.current?.(turn);
             }
             setLive(null);
+            if (generation === generationRef.current) {
+                setLiveRequest(null);
+                setPeak(turnPeak);
+                spent += requestCost({ model, inputTokens: 0, outputTokens: replyTokens(replyChars) }) ?? 0;
+                if (spent) setCost((current) => current + spent);
+                setProbeTick((tick) => tick + 1);
+            }
         }
-    }, [turns, configKey, run, tools, toolsEnabled, unsupported, focus, askUser, approve, skills, settings]);
+    }, [configKey, history, run, tools, toolsEnabled, unsupported, focus, askUser, approve, skills, settings]);
 
     const clear = useCallback(() => {
         generationRef.current += 1;
@@ -336,8 +448,25 @@ export const useCopilot = ({
         setTurns([]);
         setUndos({});
         setError(null);
+        setSummarizedAt(null);
+        setLiveRequest(null);
+        setPeak(null);
+        setRefused(null);
+        setCost(0);
+        memoryRef.current = { answered: 0, dropped: 0 };
         focus?.clear('new-conversation');
     }, [focus]);
+
+    // Summarize and continue: the answers so far go to the model as their
+    // sentences with numbers from the next question on (turnHistory), and
+    // the chat shows where (summarizedAt).
+    const summarize = useCallback(() => {
+        if (abortRef.current || !turns.length) return;
+        setSummarizedAt(turns.length);
+        setPeak(null);
+        setRefused(null);
+        setError(null);
+    }, [turns.length]);
 
     // Another run opened: stop and forget, as a new conversation.
     const lastRunKeyRef = useRef(runKey);
@@ -350,6 +479,35 @@ export const useCopilot = ({
     // Where the conversation crosses a new configuration (the dock's dividers).
     const breaks = useMemo(() => configurationBreaks(turns, configKey), [turns, configKey]);
 
+    const meter = useMemo(() => {
+        const plan = limitsPlan?.model === settings.model ? limitsPlan.plan : null;
+        const limits = meterLimits(plan, { model: settings.model });
+        const usage = (request) => (request && Number.isFinite(request.estimate) ? contextUsage({ estimate: request.estimate, limits }) : null);
+        const next = usage(nextTokens == null ? null : { estimate: nextTokens });
+        const last = usage(peak);
+        const running = usage(liveRequest);
+        let shown = running || (last && next ? (last.used > next.used ? last : next) : (next || last));
+        if (refused && Number.isFinite(refused.needed)) {
+            // The guard refused: the request it would have needed, against
+            // the window it had (100 % and more).
+            const window = Number.isFinite(refused.available) && refused.available > 0 ? refused.available : limits.window;
+            const share = window ? refused.needed / window : null;
+            shown = { prompt: refused.needed - limits.reserve, reserve: limits.reserve, used: refused.needed, window, share, level: 'red', refused: true };
+        }
+        if (!shown) return null;
+        return {
+            ...shown,
+            next,
+            last,
+            running,
+            limits,
+            model: settings.model,
+            cost: requestCost({ model: settings.model, inputTokens: 0 }) == null ? null : cost,
+            canSummarize: !running && nextTokens != null && summarizedTokens != null && summarizedTokens < nextTokens,
+            summarized: summarizedAt != null
+        };
+    }, [limitsPlan, settings.model, nextTokens, peak, liveRequest, refused, cost, summarizedTokens, summarizedAt]);
+
     return {
         turns,
         breaks,
@@ -359,6 +517,9 @@ export const useCopilot = ({
         ask,
         stop,
         clear,
+        summarize,
+        summarizedAt,
+        meter,
         question: question?.request || null,
         answerQuestion,
         approval: approval?.request || null,

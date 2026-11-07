@@ -78,6 +78,10 @@ import { createVerification } from './verification';
 //                                                  an error and for a Workbench question);
 //                                                  analysis: the step is an analysis
 //                                                  (verification isAnalysis; the footer counts these)
+//   { type: 'compacted', count }                   after a tool_end: the turn's results
+//                                                  passed turnCharBudget, so `count` earlier
+//                                                  ones were shortened to their checks and key
+//                                                  numbers (compactToolMessage); the dock says so
 //   { type: 'tools_unsupported', error }           the port's ToolsUnsupportedError on the
 //                                                  first request: retried without tools
 //   { type: 'gate', id, what, missing, notice }    the verification sent the answer back
@@ -316,7 +320,10 @@ export async function* runCopilotTurn({
         }
     }
 
+    // Returns how many earlier results it shortened (the `compacted` event:
+    // the dock says so in the chat, never silently).
     const keepWithinTurnBudget = (currentRoundStart) => {
+        let shortened = 0;
         let total = toolMessages.reduce((sum, index) => sum + messages[index].content.length, 0);
         for (const index of toolMessages) {
             if (total <= turnCharBudget) break;
@@ -326,8 +333,10 @@ export async function* runCopilotTurn({
             if (compact.length < before) {
                 messages[index] = { ...messages[index], content: compact };
                 total -= before - compact.length;
+                shortened += 1;
             }
         }
+        return shortened;
     };
 
     // The policy's step: the next request, the calls to run, or the end.
@@ -585,7 +594,7 @@ export async function* runCopilotTurn({
                 change: isChangeTool(tool)
             }, (ref) => toolMessage(result, { budget, ref }));
             messages.push({ role: 'tool', tool_call_id: call.id, content: sent.content });
-            keepWithinTurnBudget(roundStart);
+            const compacted = keepWithinTurnBudget(roundStart);
             yield toolEnd({
                 id: stepId,
                 name: call.name,
@@ -596,6 +605,7 @@ export async function* runCopilotTurn({
                 analysis: sent.analysis,
                 pageParams: result.error ? null : pageParamsFor(tool, result.args)
             });
+            if (compacted) yield { type: 'compacted', count: compacted };
         }
         // The next request carries this round's results.
         step = policy.next({ kind: 'round', progressed, waitedMs });

@@ -1655,6 +1655,93 @@
     text-decoration: underline;
 }
 
+/* The composer foot's right side: the context meter, then New conversation
+   (or, at amber and red, the meter's own Start fresh). */
+.llm-composer-tail {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.35rem 0.9rem;
+    margin-left: auto;
+}
+
+/* The context meter (ContextMeter.jsx): a short bar and "Context 62%";
+   neutral below 70 %, amber to 90 %, red above. */
+.llm-meter {
+    --meter-tone: var(--subtle);
+    --meter-amber: #e0a33a;
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.8rem;
+    color: var(--meter-tone);
+    font-variant-numeric: tabular-nums;
+}
+
+:root[data-theme='light'] .llm-meter {
+    --meter-amber: #b45309;
+}
+
+.llm-meter.is-amber {
+    --meter-tone: var(--meter-amber);
+}
+
+.llm-meter.is-red {
+    --meter-tone: var(--danger);
+}
+
+.llm-meter.is-amber .llm-meter-label,
+.llm-meter.is-red .llm-meter-label {
+    font-weight: 600;
+}
+
+.llm-meter-main {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.llm-meter-bar {
+    position: relative;
+    width: 2.6rem;
+    height: 0.3rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--subtle) 25%, transparent);
+}
+
+.llm-meter-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: inherit;
+    background: var(--meter-tone);
+}
+
+.llm-meter-details {
+    display: grid;
+    gap: 0.35rem;
+}
+
+.llm-meter-actions {
+    display: inline-flex;
+    gap: 0.8rem;
+}
+
+/* Phones: the meter stays folded away until it needs the user (amber). */
+@media (max-width: 600px) {
+    .llm-meter.is-neutral {
+        display: none;
+    }
+}
+
+/* What an answer's memory left out (useCopilot.js): never silently. */
+.llm-memory-note {
+    margin: 0;
+    font-size: 0.74rem;
+    color: var(--subtle);
+}
+
 /* Announcements for screen readers only. */
 .llm-sr-only {
     position: absolute;

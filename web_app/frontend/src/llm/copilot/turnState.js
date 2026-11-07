@@ -137,6 +137,10 @@ export const applyTurnEvent = (turn, event, now = 0) => {
                     pageParams: event.pageParams ?? null
                 } : item))
             };
+        case 'compacted':
+            // Earlier results of this turn were shortened to fit its budget:
+            // the turn says so (never silently).
+            return { ...turn, compacted: (turn.compacted || 0) + (event.count || 0) };
         case 'tools_unsupported':
             return { ...turn, toolsUnsupported: true };
         case 'gate':
