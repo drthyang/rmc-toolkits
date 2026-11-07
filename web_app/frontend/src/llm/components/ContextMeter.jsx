@@ -25,6 +25,12 @@ const SERVER_WINDOW = {
     published: (meter) => `${meter.model}'s published window`
 };
 
+// At amber and red: what makes room beyond this conversation.
+const ROOM = {
+    lmstudio: 'Reload the model in LM Studio with a longer context to make room.',
+    ollama: 'This is the model\'s maximum: a model with a longer context makes room.'
+};
+
 // Where the window is not known, why.
 const unknownWindow = (meter) => {
     if (meter.limits.server === 'lmstudio') return 'LM Studio has not loaded the model yet, so its window is not known.';
@@ -70,6 +76,7 @@ const ContextMeter = ({ meter, busy = false, onStartFresh = null, onSummarize = 
                             Estimated high (2.5 characters a token, 1.4 for analysis results; about 30% above a real count),
                             the same count the Copilot uses to refuse a request above 100%.
                         </span>
+                        {act && ROOM[meter.limits.server] && <span>{ROOM[meter.limits.server]}</span>}
                         {meter.cost != null && <span>Cost so far: about {usd(meter.cost)} (same estimate; hidden thinking not included).</span>}
                         {meter.summarized && <span>Earlier answers are sent summarized.</span>}
                     </span>

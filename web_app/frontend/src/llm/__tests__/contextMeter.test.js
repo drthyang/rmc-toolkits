@@ -149,3 +149,16 @@ describe('the request the meter previews', () => {
         expect(historyWindow([])).toEqual({ answered: 0, sent: 0, dropped: 0, shortened: 0 });
     });
 });
+
+describe('the chat\'s notes on what was not sent whole', () => {
+    it('names the dropped questions, the shortened answer and the compacted results, and nothing otherwise', async () => {
+        const { compactedNote, memoryNote } = await import('../components/chatNotes');
+        expect(memoryNote({ dropped: 1, kept: 4 })).toBe('Memory: the earliest question is no longer sent to the model (it keeps the last 4).');
+        expect(memoryNote({ dropped: 2, kept: 4, shortened: true }))
+            .toBe('Memory: the earliest 2 questions are no longer sent to the model (it keeps the last 4); the last answer is sent shortened to its sentences with numbers.');
+        expect(memoryNote({})).toBe('');
+        expect(compactedNote(1)).toBe('1 earlier result was sent shortened to its checks and key numbers to fit');
+        expect(compactedNote(3)).toBe('3 earlier results were sent shortened to their checks and key numbers to fit');
+        expect(compactedNote(0)).toBe('');
+    });
+});
