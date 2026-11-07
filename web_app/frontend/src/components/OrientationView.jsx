@@ -420,13 +420,22 @@ export default function OrientationView({
         };
         animate();
 
+        // The stage is a flex item sized by its canvas, so resizing the canvas
+        // inside the observer's callback changes the stage again and Safari
+        // reports "ResizeObserver loop completed with undelivered
+        // notifications". Resizing on the next frame settles it the same way
+        // without the error.
+        let resizeFrame = 0;
         const handleResize = () => {
-            const w = mount.clientWidth || width;
-            const h = mount.clientHeight || height;
-            if (w === 0 || h === 0) return;
-            camera.aspect = w / h;
-            camera.updateProjectionMatrix();
-            renderer.setSize(w, h);
+            cancelAnimationFrame(resizeFrame);
+            resizeFrame = requestAnimationFrame(() => {
+                const w = mount.clientWidth || width;
+                const h = mount.clientHeight || height;
+                if (w === 0 || h === 0) return;
+                camera.aspect = w / h;
+                camera.updateProjectionMatrix();
+                renderer.setSize(w, h);
+            });
         };
         const resizeObserver = new ResizeObserver(handleResize);
         resizeObserver.observe(mount);
@@ -450,6 +459,7 @@ export default function OrientationView({
 
         return () => {
             cancelAnimationFrame(animationId);
+            cancelAnimationFrame(resizeFrame);
             resizeObserver.disconnect();
             renderer.domElement.removeEventListener('pointerdown', onPointerDown);
             renderer.domElement.removeEventListener('pointermove', onPointerMove);
