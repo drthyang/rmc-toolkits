@@ -1364,7 +1364,9 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                                 ))}
                             </select>
                         </Control>
-                        <Control label="Normal">
+                        {/* A div, not a label: Safari forwards a tap on an option to the
+                            label's first button, which opened the menu again. */}
+                        <Control as="div" label="Normal">
                             <span className="ui-dropdown" ref={normalMenuRef}>
                                 <button
                                     type="button"
