@@ -1,0 +1,78 @@
+{
+ "what": "Live runs of the Copilot validation, model meta/muse-glimmer (LM Studio 0.4.26, loaded at 49,152 tokens), at commit 472d9bd (protocol 2026-11-01.1), run.js live --arm B --split test --runs 1 --final, the turn's default limits, under a 30-minute wall-clock cap on the whole batch (perl alarm 1800 around vite-node; the harness has no overall cap). The cap stopped the batch during the 4th run, which left no record: 3 of the 14 test cases ran, 1 run each. Counts only (the records are sealed in validation/holdout/live/).",
+ "reference": {
+  "test": {
+   "cases": 14,
+   "A": 0.8002,
+   "A+": 0.9481,
+   "D": 1,
+   "note": "A, A+ and D are over all 14 test cases; the 3 cases that ran are a subset, so the mean below is not comparable to them"
+  }
+ },
+ "test_B_partial": {
+  "runs": 3,
+  "mean_score": 0.7778,
+  "scored_runs": 3,
+  "min_mean": 8.543,
+  "min_median": 9.058,
+  "min_max": 10.345,
+  "total_minutes": 25.63,
+  "stopped_by": {
+   "max_rounds": 3
+  },
+  "max_rounds_share": 1,
+  "empty_finals": 0,
+  "cut": 0,
+  "run_errors": 0,
+  "run_error_names": {},
+  "verdict_errors": {},
+  "outcomes": {
+   "not verified": 3
+  },
+  "calls_per_round": 1,
+  "calls": 18,
+  "refused_calls": 0,
+  "tool_errors": 0,
+  "element_all_errors": 0,
+  "runs_with_element_all": 0,
+  "refs_written": 86,
+  "refs_filled": 86,
+  "unknown_refs": 0,
+  "unknown_refs_data_prefix": 0,
+  "runs_with_unknown_refs": 0,
+  "reference_repairs": 2,
+  "gate_sendbacks": 0,
+  "questions": 0,
+  "overclaims": 0,
+  "windows": [
+   "[49152,49152]"
+  ],
+  "policy_warnings": 0,
+  "protocols": [
+   "2026-11-01.1"
+  ],
+  "commits": [
+   "472d9bd"
+  ],
+  "maxTurnMs": [
+   600000
+  ],
+  "split": [
+   "test"
+  ],
+  "arm": [
+   "B"
+  ],
+  "model": [
+   "meta/muse-glimmer"
+  ],
+  "cases": 3
+ },
+ "wall_minutes": 30.3,
+ "records": {
+  "test_B": "validation/holdout/live/2026-11-07_meta-muse-glimmer_B_test.tar.gz (sealed)"
+ },
+ "not_run": [
+  "meta/muse-glimmer: 11 of the 14 test cases of arm B, arm C and the dev smoke (about 8.5 minutes a run: about 75 s a request, the tools about 0 s)"
+ ]
+}

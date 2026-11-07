@@ -1,0 +1,92 @@
+{
+ "what": "Live runs of the Copilot validation, model claude-sonnet-5.5 (API id claude-sonnet-5-5; no temperature sent, max_tokens 8192), at commit 472d9bd (protocol 2026-11-01.1), run.js live --arm B --split test --runs 3 --final, the turn's default limits, under the $20 spend cap (spend.js). Counts only (the records are sealed in validation/holdout/live/).",
+ "reference": {
+  "test": {
+   "cases": 14,
+   "A": 0.8002,
+   "A+": 0.9481,
+   "D": 1
+  }
+ },
+ "test_B": {
+  "runs": 42,
+  "mean_score": 0.9201,
+  "scored_runs": 42,
+  "min_mean": 0.799,
+  "min_median": 0.784,
+  "min_max": 1.415,
+  "total_minutes": 33.547,
+  "stopped_by": {
+   "max_rounds": 11,
+   "answer": 31
+  },
+  "max_rounds_share": 0.262,
+  "empty_finals": 0,
+  "cut": 0,
+  "run_errors": 0,
+  "run_error_names": {},
+  "verdict_errors": {},
+  "outcomes": {
+   "not verified": 42
+  },
+  "calls_per_round": 3.956,
+  "calls": 803,
+  "refused_calls": 9,
+  "tool_errors": 3,
+  "element_all_errors": 0,
+  "runs_with_element_all": 0,
+  "refs_written": 560,
+  "refs_filled": 560,
+  "unknown_refs": 0,
+  "unknown_refs_data_prefix": 0,
+  "runs_with_unknown_refs": 0,
+  "reference_repairs": 28,
+  "gate_sendbacks": 1,
+  "questions": 3,
+  "overclaims": 0,
+  "windows": [
+   "[null,null]"
+  ],
+  "policy_warnings": 0,
+  "protocols": [
+   "2026-11-01.1"
+  ],
+  "commits": [
+   "472d9bd"
+  ],
+  "maxTurnMs": [
+   600000
+  ],
+  "split": [
+   "test"
+  ],
+  "arm": [
+   "B"
+  ],
+  "model": [
+   "claude-sonnet-5.5"
+  ],
+  "cases": 14
+ },
+ "answer_checks": {
+  "findings": 104,
+  "matching_a_score_contradiction": 0,
+  "score_contradictions": 3,
+  "score_contradictions_caught": 0,
+  "runs_not_verified": 42,
+  "note": "every run's Outcome is 'not verified' on the answer checks; none of the 104 findings matches one of the 3 contradictions the score found"
+ },
+ "spend": {
+  "cap_usd": 20,
+  "ledger_usd": 19.761046,
+  "requests": 274,
+  "prompt_tokens_estimated": 7360110,
+  "reply_tokens_estimated": 136077,
+  "max_request_usd": 0.1296,
+  "note": "the tracker's charge: the Copilot's estimate (2.5 characters a token), every prompt token at $2.50 per million, the reply at $10; hidden thinking billed as output is not in it, so the Console's bill can differ either way"
+ },
+ "wall_minutes": 33.6,
+ "records": {
+  "test_B": "validation/holdout/live/2026-11-07_claude-sonnet-5.5_B_test.tar.gz (sealed)"
+ }
+}
