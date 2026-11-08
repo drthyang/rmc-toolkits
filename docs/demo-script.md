@@ -57,7 +57,7 @@ Total: about 8 minutes, with 2 minutes of slack for questions or a slow model.
 
 ### 1. Dashboard (1:30)
 
-- Point at the F(Q) and xPDF fits and their Rw badges (0.0457 and 0.0119). Press **Show** on the
+- Point at the F(Q) and xPDF fits and their Rw badges (Rwp 0.04565 and 0.01186). Press **Show** on the
   χ² history.
 - Point at **Detected SG**: F-43m, and the *Space group vs. tolerance* ladder P1 → Cm → Cmm2 →
   P-42₁m → F-43m. Click **Cm**, then back on **F-43m**; the CIF button follows the pick.
@@ -70,7 +70,8 @@ Total: about 8 minutes, with 2 minutes of slack for questions or a slow model.
 - Open **Bond Geometry**. The inputs read Se–Ta–Se, 2.00–3.00 Å, 1°. Press **Compute**:
   236,431 angles, coordination 5.95 Se per Ta, mean Ta–Se 2.637 Å.
 - Click the **g(r)** tab: the Ta–Se partial g(r) with the bond window marked. The first shell is
-  split (peaks near 2.52 and 2.74 Å), and the 2.00–3.00 Å window holds all of it. Back to
+  split (peaks near 2.52 and 2.74 Å). The whole first shell runs 2.21–3.23 Å, so the
+  2.00–3.00 Å window holds almost all of it (5.95 of 6 Se per Ta). Back to
   **sin-corrected**.
 - Drag across **70–80°** on the distribution, then drag the band (or its edges) to **80–100°**.
   The readout counts the angles in the range; in the 3D cell the bonds brighten by the share of
@@ -113,7 +114,8 @@ Open the **AI Copilot** rail. If a conversation is left over, press **New conver
 
 - It runs the **Convergence check** (a step card; expand it for the exact numbers), then answers:
   not converged, the total χ² is still falling beyond its noise over the last tenth of the run;
-  Rw 0.0456 for F(Q) and 0.0119 for xPDF. **Outcome: Achieved**, "1 analysis ran and passed its
+  Rw 0.0456 for F(Q) and 0.0119 for xPDF (the badges' 0.04565 and 0.01186, rounded; F(Q)'s Rw is
+  0.045647). **Outcome: Achieved**, "1 analysis ran and passed its
   checks, and no check contradicts the answer".
 - **Say:** "The numbers come from the analyses, not from the model's memory, and every answer ends
   with an Outcome the app computes: if the answer contradicted a check, it would say Not
