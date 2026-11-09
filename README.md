@@ -18,11 +18,9 @@ for you and checks its own answers. Nothing to install.
 3. Move between **Dashboard**, **Atomic Density**, **Bond Geometry**, **PCA Ellipsoid** and
    **Displacement Directions**; open the **AI Copilot** rail at the right edge to ask questions.
 
-![Bond Geometry on the Demo run: the Se–Ta–Se angle distribution with the 80–100° range selected, and those angles' bonds and arcs in the 3D cell](assets/workbench-bond-geometry.webp)
+![The Dashboard on the Demo run: model information, the detected space group, and the fits with their Rw](assets/workbench-dashboard.webp)
 
-<sub>Bond Geometry on the Demo run: Se–Ta–Se angles at Ta, with the 80–100° range dragged on the
-distribution. In the 3D cell the bonds brighten by the share of their angles in that range, and an
-arc at the central Ta marks each angle in it.</sub>
+<sub>The Dashboard on the Demo run.</sub>
 
 🔒 **Your run files never leave your device.** They are read and rendered in your browser and are
 never uploaded to rmc-toolkits or any project server. (Your browser's picker may say "Upload", but
@@ -56,11 +54,11 @@ All from the bundled public Demo run.
 
 <table>
   <tr>
-    <th width="50%">Dashboard: fits, Rw, Detected SG ladder</th>
+    <th width="50%">Bond Geometry: an angle range and its bonds in 3D</th>
     <th width="50%">Atomic Density: KDE slice, slab, 3D cell</th>
   </tr>
   <tr>
-    <td width="50%"><img src="assets/workbench-dashboard.webp" alt="Dashboard" width="100%"></td>
+    <td width="50%"><img src="assets/workbench-bond-geometry.webp" alt="Bond Geometry: the Se–Ta–Se angle distribution with a range selected, and its bonds and arcs in the 3D cell" width="100%"></td>
     <td width="50%"><img src="assets/workbench-atomic-density.webp" alt="Atomic Density" width="100%"></td>
   </tr>
   <tr>
