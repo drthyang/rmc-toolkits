@@ -54,17 +54,32 @@ only.
 
 All from the bundled public Demo run.
 
-| Dashboard: fits, Rw, Detected SG ladder | Atomic Density: KDE slice, slab, 3D cell |
-| --- | --- |
-| ![Dashboard](assets/workbench-dashboard.webp) | ![Atomic Density](assets/workbench-atomic-density.webp) |
-
-| PCA Ellipsoid: a Se site's ellipsoid and isosurface | Displacement Directions: a Se site's direction sphere |
-| --- | --- |
-| ![PCA Ellipsoid](assets/workbench-pca-ellipsoid.webp) | ![Displacement Directions](assets/workbench-displacement-directions.webp) |
-
-| The Copilot asks before it changes an input | Applied: the page computes, Undo on the card |
-| --- | --- |
-| ![The Copilot's approval card for a Bond Geometry change](assets/workbench-copilot-approval.webp) | ![The applied change, the computed distribution and the Outcome](assets/workbench-copilot-applied.webp) |
+<table>
+  <tr>
+    <th width="50%">Dashboard: fits, Rw, Detected SG ladder</th>
+    <th width="50%">Atomic Density: KDE slice, slab, 3D cell</th>
+  </tr>
+  <tr>
+    <td width="50%"><img src="assets/workbench-dashboard.webp" alt="Dashboard" width="100%"></td>
+    <td width="50%"><img src="assets/workbench-atomic-density.webp" alt="Atomic Density" width="100%"></td>
+  </tr>
+  <tr>
+    <th width="50%">PCA Ellipsoid: a Se site's ellipsoid and isosurface</th>
+    <th width="50%">Displacement Directions: a Se site's direction sphere</th>
+  </tr>
+  <tr>
+    <td width="50%"><img src="assets/workbench-pca-ellipsoid.webp" alt="PCA Ellipsoid" width="100%"></td>
+    <td width="50%"><img src="assets/workbench-displacement-directions.webp" alt="Displacement Directions" width="100%"></td>
+  </tr>
+  <tr>
+    <th width="50%">The Copilot asks before it changes an input</th>
+    <th width="50%">Applied: the page computes, Undo on the card</th>
+  </tr>
+  <tr>
+    <td width="50%"><img src="assets/workbench-copilot-approval.webp" alt="The Copilot's approval card for a Bond Geometry change" width="100%"></td>
+    <td width="50%"><img src="assets/workbench-copilot-applied.webp" alt="The applied change, the computed distribution and the Outcome" width="100%"></td>
+  </tr>
+</table>
 
 <sub>Screenshots © 2026 Tsung-Han Yang. The Copilot shots use gemma4:26b on a local Ollama.</sub>
 
