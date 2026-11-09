@@ -18,11 +18,9 @@ for you and checks its own answers. Nothing to install.
 3. Move between **Dashboard**, **Atomic Density**, **Bond Geometry**, **PCA Ellipsoid** and
    **Displacement Directions**; open the **AI Copilot** rail at the right edge to ask questions.
 
-![Bond Geometry on the Demo run: the Se–Ta–Se angle distribution with the 80–100° range selected, and those angles' bonds and arcs in the 3D cell](assets/workbench-bond-geometry.webp)
+![The Dashboard on the Demo run: model information, the detected space group, and the fits with their Rw](assets/workbench-dashboard.webp)
 
-<sub>Bond Geometry on the Demo run: Se–Ta–Se angles at Ta, with the 80–100° range dragged on the
-distribution. In the 3D cell the bonds brighten by the share of their angles in that range, and an
-arc at the central Ta marks each angle in it.</sub>
+<sub>The Dashboard on the Demo run.</sub>
 
 🔒 **Your run files never leave your device.** They are read and rendered in your browser and are
 never uploaded to rmc-toolkits or any project server. (Your browser's picker may say "Upload", but
@@ -54,17 +52,32 @@ only.
 
 All from the bundled public Demo run.
 
-| Dashboard: fits, Rw, Detected SG ladder | Atomic Density: KDE slice, slab, 3D cell |
-| --- | --- |
-| ![Dashboard](assets/workbench-dashboard.webp) | ![Atomic Density](assets/workbench-atomic-density.webp) |
-
-| PCA Ellipsoid: a Se site's ellipsoid and isosurface | Displacement Directions: a Se site's direction sphere |
-| --- | --- |
-| ![PCA Ellipsoid](assets/workbench-pca-ellipsoid.webp) | ![Displacement Directions](assets/workbench-displacement-directions.webp) |
-
-| The Copilot asks before it changes an input | Applied: the page computes, Undo on the card |
-| --- | --- |
-| ![The Copilot's approval card for a Bond Geometry change](assets/workbench-copilot-approval.webp) | ![The applied change, the computed distribution and the Outcome](assets/workbench-copilot-applied.webp) |
+<table>
+  <tr>
+    <th width="50%">Bond Geometry: an angle range and its bonds in 3D</th>
+    <th width="50%">Atomic Density: KDE slice, slab, 3D cell</th>
+  </tr>
+  <tr>
+    <td width="50%"><img src="assets/workbench-bond-geometry.webp" alt="Bond Geometry: the Se–Ta–Se angle distribution with a range selected, and its bonds and arcs in the 3D cell" width="100%"></td>
+    <td width="50%"><img src="assets/workbench-atomic-density.webp" alt="Atomic Density" width="100%"></td>
+  </tr>
+  <tr>
+    <th width="50%">PCA Ellipsoid: a Se site's ellipsoid and isosurface</th>
+    <th width="50%">Displacement Directions: a Se site's direction sphere</th>
+  </tr>
+  <tr>
+    <td width="50%"><img src="assets/workbench-pca-ellipsoid.webp" alt="PCA Ellipsoid" width="100%"></td>
+    <td width="50%"><img src="assets/workbench-displacement-directions.webp" alt="Displacement Directions" width="100%"></td>
+  </tr>
+  <tr>
+    <th width="50%">The Copilot asks before it changes an input</th>
+    <th width="50%">Applied: the page computes, Undo on the card</th>
+  </tr>
+  <tr>
+    <td width="50%"><img src="assets/workbench-copilot-approval.webp" alt="The Copilot's approval card for a Bond Geometry change" width="100%"></td>
+    <td width="50%"><img src="assets/workbench-copilot-applied.webp" alt="The applied change, the computed distribution and the Outcome" width="100%"></td>
+  </tr>
+</table>
 
 <sub>Screenshots © 2026 Tsung-Han Yang. The Copilot shots use gemma4:26b on a local Ollama.</sub>
 
