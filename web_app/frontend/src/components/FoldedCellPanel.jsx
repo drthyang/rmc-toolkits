@@ -15,9 +15,10 @@
 //
 // `highlight` (angleHighlight.js highlightForBins: the triplets of the angle
 // range, or of the bin under the pointer) draws those triplets' bonds as
-// tubes of their own, each as strong as its share, marks each triplet's angle
-// with an arc at its central atom (angleArcs.js), and dims the other bonds;
-// the legend names the range. It has its own group, so a hover
+// tubes of their own, each as thick and as strong in colour as its share,
+// marks each triplet's angle with a shaded wedge at its central atom
+// (angleArcs.js), and draws the other bonds thin and grey, paler with
+// distance; the legend names the range. It has its own group, so a hover
 // never rebuilds the cloud.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -31,8 +32,8 @@ import SaveMenu from '../ui/SaveMenu';
 import { buildCrystalAxes } from './sceneAxes';
 import { bondRadius, cloudOpacity, foldedCellNetwork, MAX_DRAWN_BONDS, unitVectorsOf } from '../bondNetwork';
 import { highlightLabel, highlightStrength, MAX_HIGHLIGHT_TRIPLETS, MIN_HIGHLIGHT_SHARE } from '../angleHighlight';
-import { bondMaterial, renderQuality, tubeMesh } from './bondTubes';
-import { arcMesh } from './angleArcs';
+import { bondMaterial, renderQuality, setFadeRange, tubeMesh } from './bondTubes';
+import { wedgeMesh } from './angleArcs';
 import useCopilotViewer from '../useCopilotViewer';
 import './UnitCellPanel.css';
 import { isDisplayed } from './pageVisibility';
@@ -49,22 +50,24 @@ const MAX_CLOUD_POINTS = 120000;
 
 // The tubes are drawn this much thinner than bondNetwork's bondRadius.
 const BOND_RADIUS_SCALE = 0.8;
-// While a highlight is shown, the other bonds fade to this opacity; a
-// highlighted bond of strength s (highlightStrength: the square root of its
-// share) is drawn HIGHLIGHT_RADIUS + HIGHLIGHT_RADIUS_GAIN·s times thicker,
-// at opacity HIGHLIGHT_OPACITY + (1 − HIGHLIGHT_OPACITY)·s. Only a little
-// thicker: the angle arcs at the apex carry the detail, and thick bonds hid
-// them where they meet.
-const DIMMED_BOND_OPACITY = 0.14;
-const HIGHLIGHT_RADIUS = 1.0;
-const HIGHLIGHT_RADIUS_GAIN = 0.2;
-const HIGHLIGHT_OPACITY = 0.3;
-// Each highlighted triplet's angle is marked by an arc at its apex
-// (angleArcs.js), ARC_RADIUS + ARC_RADIUS_GAIN·s of the bond tube's radius
-// thick and of opacity s: no floor, so an angle the range reaches only with
-// its tail stays plainly fainter than one wholly inside.
-const ARC_RADIUS = 0.35;
-const ARC_RADIUS_GAIN = 0.55;
+// While a highlight is shown, the other bonds are drawn REST_RADIUS of their
+// radius, in REST_COLOR, paling to REST_FADE_COLOR from REST_FADE_NEAR cell
+// edges in front of the view's centre to REST_FADE_FAR behind it.
+const REST_RADIUS = 0.42;
+const REST_COLOR = '#aab3bf';
+const REST_FADE_COLOR = '#e3e7ec';
+const REST_FADE_NEAR = 0.5;
+const REST_FADE_FAR = 0.8;
+// A highlighted bond of strength s (highlightStrength: the square root of
+// its share) is drawn HIGHLIGHT_RADIUS + HIGHLIGHT_RADIUS_GAIN·s of its
+// radius, opaque, its colour from WEAK_MIX of the way towards WEAK_TINT
+// (s = 0) to its bond-role colour (s = 1). Thinner than a plain bond: the
+// wedges at the apex carry the detail, and thick bonds hid them.
+const HIGHLIGHT_RADIUS = 0.6;
+const HIGHLIGHT_RADIUS_GAIN = 0.3;
+const HIGHLIGHT_SHININESS = 24;
+const WEAK_TINT = '#dce4ec';
+const WEAK_MIX = 0.78;
 
 const disposeGroup = (group) => {
     while (group.children.length) {
@@ -133,10 +136,13 @@ const FoldedCellPanel = ({
 
         const cloudGroup = new THREE.Group();
         const bondsGroup = new THREE.Group();
+        // The bonds as the highlight's backdrop; shown only with a highlight.
+        const restGroup = new THREE.Group();
+        restGroup.visible = false;
         const highlightGroup = new THREE.Group();
         const cellGroup = new THREE.Group();
         const cellAxesGroup = new THREE.Group();
-        scene.add(cloudGroup, bondsGroup, highlightGroup, cellGroup, cellAxesGroup);
+        scene.add(cloudGroup, bondsGroup, restGroup, highlightGroup, cellGroup, cellAxesGroup);
         // The bond tubes are shaded (the clouds are points, unlit): a soft
         // sky/ground fill plus a key light that rides with the camera, so the
         // tubes read as round from every side.
@@ -172,7 +178,7 @@ const FoldedCellPanel = ({
         observer.observe(mount);
 
         sceneRef.current = {
-            scene, camera, renderer, controls, cloudGroup, bondsGroup, highlightGroup, cellGroup, cellAxesGroup, resize
+            scene, camera, renderer, controls, cloudGroup, bondsGroup, restGroup, highlightGroup, cellGroup, cellAxesGroup, resize
         };
 
         return () => {
@@ -193,9 +199,9 @@ const FoldedCellPanel = ({
     useEffect(() => {
         const handle = sceneRef.current;
         if (!handle) return;
-        const { cloudGroup, bondsGroup, cellGroup, cellAxesGroup, camera, controls } = handle;
+        const { cloudGroup, bondsGroup, restGroup, cellGroup, cellAxesGroup, camera, controls } = handle;
 
-        [cloudGroup, bondsGroup, cellGroup, cellAxesGroup].forEach(disposeGroup);
+        [cloudGroup, bondsGroup, restGroup, cellGroup, cellAxesGroup].forEach(disposeGroup);
 
         const unit = unitVectorsOf(structure) || unitVectorsOf(sites);
         handle.unit = unit || null;
@@ -272,6 +278,18 @@ const FoldedCellPanel = ({
                 BOND_RADIUS_SCALE * bondRadius(set.window, edgeLength),
                 bondMaterial({ color: set.color })
             ));
+            // The same bonds as the highlight draws them when out of range.
+            const material = bondMaterial({ color: REST_COLOR, specular: 0x000000, fade: REST_FADE_COLOR });
+            const rest = tubeMesh(
+                set.segments,
+                REST_RADIUS * BOND_RADIUS_SCALE * bondRadius(set.window, edgeLength),
+                material
+            );
+            rest.onBeforeRender = () => {
+                const distance = camera.position.distanceTo(controls.target);
+                setFadeRange(material, distance - REST_FADE_NEAR * edgeLength, distance + REST_FADE_FAR * edgeLength);
+            };
+            restGroup.add(rest);
         });
         handle.edgeLength = edgeLength;
 
@@ -293,51 +311,42 @@ const FoldedCellPanel = ({
         handle.resize();
     }, [structure, sites, network, elementColors, showCellAxes]);
 
-    // The range's (or hovered bin's) triplets: their bonds as tubes in their
-    // bond-role colours (A–B, then B–C), each as thick and opaque as its
-    // share, and their angles as arcs; the other bonds dimmed. Rebuilds only this group; runs after the
-    // scene rebuild above, which it follows.
+    // The range's (or hovered bin's) triplets: their bonds as opaque tubes in
+    // their bond-role colours (A–B, then B–C), each as thick and as strong in
+    // colour as its share, and their angles as wedges; the other bonds thin
+    // and grey. Rebuilds only this group; runs after the scene rebuild above,
+    // which it follows.
     useEffect(() => {
         const handle = sceneRef.current;
         if (!handle) return;
-        const { bondsGroup, highlightGroup, edgeLength } = handle;
+        const { bondsGroup, restGroup, highlightGroup, edgeLength } = handle;
         disposeGroup(highlightGroup);
         const on = Boolean(highlight && network?.sets.length);
-        bondsGroup.children.forEach((mesh) => {
-            mesh.material.transparent = on;
-            mesh.material.opacity = on ? DIMMED_BOND_OPACITY : 1;
-            mesh.material.depthWrite = !on;
-            mesh.material.needsUpdate = true;
-        });
+        bondsGroup.visible = !on;
+        restGroup.visible = on;
         if (!on || !edgeLength) return;
         const [first, second = first] = network.sets;
         [[highlight.ab, highlight.abShare, first], [highlight.bc, highlight.bcShare, second]].forEach(([segments, shares, set]) => {
             if (!segments?.length) return;
-            const strengths = Array.from(shares ?? [], highlightStrength);
-            const mesh = tubeMesh(
+            const strengths = shares ? Array.from(shares, highlightStrength) : Array(segments.length / 6).fill(1);
+            const strong = new THREE.Color(set.color);
+            const weak = strong.clone().lerp(new THREE.Color(WEAK_TINT), WEAK_MIX);
+            highlightGroup.add(tubeMesh(
                 segments,
                 BOND_RADIUS_SCALE * bondRadius(set.window, edgeLength),
-                bondMaterial({ color: set.color, emissiveIntensity: 0.2, transparent: true }),
+                bondMaterial({ color: '#ffffff', shininess: HIGHLIGHT_SHININESS }),
                 {
-                    scales: shares && strengths.map((s) => HIGHLIGHT_RADIUS + HIGHLIGHT_RADIUS_GAIN * s),
-                    opacities: shares && strengths.map((s) => HIGHLIGHT_OPACITY + (1 - HIGHLIGHT_OPACITY) * s)
+                    scales: strengths.map((s) => HIGHLIGHT_RADIUS + HIGHLIGHT_RADIUS_GAIN * s),
+                    colors: strengths.map((s) => weak.clone().lerp(strong, s))
                 }
-            );
-            // Drawn after the dimmed bonds; strongest first (the segments come
-            // in that order), so a faint tube never hides a strong one behind it.
-            mesh.renderOrder = 1;
-            highlightGroup.add(mesh);
+            ));
         });
-        // The angle of each drawn triplet, as an arc at its apex.
+        // The angle of each drawn triplet, as a wedge at its apex.
         if (highlight.arcs?.length) {
-            const strengths = Array.from(highlight.arcShare, highlightStrength);
-            const arcs = arcMesh(highlight.arcs, BOND_RADIUS_SCALE * bondRadius(first.window, edgeLength), {
-                scales: strengths.map((s) => ARC_RADIUS + ARC_RADIUS_GAIN * s),
-                opacities: strengths
-            });
-            if (arcs) {
-                arcs.renderOrder = 2;
-                highlightGroup.add(arcs);
+            const wedges = wedgeMesh(highlight.arcs, { strengths: Array.from(highlight.arcShare, highlightStrength) });
+            if (wedges) {
+                wedges.renderOrder = 2;
+                highlightGroup.add(wedges);
             }
         }
     }, [highlight, network, structure, sites, elementColors, showCellAxes]);
@@ -430,16 +439,16 @@ const FoldedCellPanel = ({
                         ) : null}
                         {bondSets?.length ? (
                             <p>
-                                <b>Brightness</b> — the share of a triplet's angles that fall in the
-                                range: bright when nearly all of them do, faint when only the tail
+                                <b>Strength</b> — the share of a triplet's angles that fall in the
+                                range: thick and full-coloured when nearly all of them do, thin and pale when only the tail
                                 of its spread reaches it, not drawn under {Math.round(MIN_HIGHLIGHT_SHARE * 100)}%. A bond shared by
-                                several triplets shows the brightest.
+                                several triplets shows the strongest. The other bonds turn thin and grey.
                             </p>
                         ) : null}
                         {bondSets?.length ? (
                             <p>
-                                <b>Arcs</b> — each arc spans one angle in the range, at its central
-                                atom, as bright as its triplet.
+                                <b>Wedges</b> — a shaded wedge at the central atom marks each angle
+                                in the range, as strong as its triplet.
                             </p>
                         ) : null}
                     </InfoBadge>

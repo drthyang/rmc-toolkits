@@ -41,7 +41,7 @@ Total: about 8 minutes, with 2 minutes of slack for questions or a slow model.
 |---|---|---|
 | 0 | 0:30 | Open the site, press Demo |
 | 1 | 1:30 | Dashboard: fits, χ², Detected SG ladder |
-| 2 | 2:00 | Bond Geometry: Compute, g(r) tab, angle ranges, bonds and arcs |
+| 2 | 2:00 | Bond Geometry: Compute, g(r) tab, angle ranges, bonds and wedges |
 | 3 | 1:00 | PCA Ellipsoid and Displacement Directions |
 | 4 | 2:30 | Copilot: a change with Apply and Undo; an interpretation question |
 | 5 | 0:30 | Validation, one sentence |
@@ -74,8 +74,8 @@ Total: about 8 minutes, with 2 minutes of slack for questions or a slow model.
   2.00–3.00 Å window holds almost all of it (5.95 of 6 Se per Ta). Back to
   **sin-corrected**.
 - Drag across **70–80°** on the distribution, then drag the band (or its edges) to **80–100°**.
-  The readout counts the angles in the range; in the 3D cell the bonds brighten by the share of
-  their angles in the range, and an arc at the central Ta marks each angle.
+  The readout counts the angles in the range; in the 3D cell the bonds strengthen by the share of
+  their angles in the range, and a shaded wedge at the central Ta marks each angle.
 - **Say:** "An ideal octahedron has angles of 90° and 180°. Here the 90° peak splits into three
   (near 76°, 89° and 104°) and the 180° peak sits near 160°: the TaSe₆ octahedron is distorted,
   with a split Ta–Se shell. Dragging a range shows exactly which bonds make those angles, in the
@@ -143,7 +143,7 @@ Open the **AI Copilot** rail. If a conversation is left over, press **New conver
 | Applied, with Undo | [assets/workbench-copilot-applied.webp](../assets/workbench-copilot-applied.webp) |
 | Undone | [assets/workbench-copilot-undo.webp](../assets/workbench-copilot-undo.webp) |
 | The convergence answer and its Outcome | [assets/workbench-copilot-answer.webp](../assets/workbench-copilot-answer.webp) |
-| Bond Geometry, 80–100° range, bonds and arcs | [assets/workbench-bond-geometry.webp](../assets/workbench-bond-geometry.webp) |
+| Bond Geometry, 80–100° range, bonds and wedges | [assets/workbench-bond-geometry.webp](../assets/workbench-bond-geometry.webp) |
 
 A cold model is the usual cause: gemma4:26b took 7–85 s to reach a change card in the QA, and
 60–100 s for a turn that asks a question and runs an analysis. Press **Stop** past about 2

@@ -3,11 +3,12 @@
 
 // The folded cell's bond tubes (components/bondTubes.js): a capsule whose
 // rounded ends stop BOND_END_GAP short of each site, one instance per bond,
-// with a per-bond radius and opacity for the angle highlight.
+// with a per-bond radius, colour and opacity for the angle highlight, and a
+// fade with distance for the bonds behind it.
 
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { BOND_END_GAP, bondMaterial, capsuleGeometry, tubeMesh } from '../components/bondTubes';
+import { BOND_END_GAP, bondMaterial, capsuleGeometry, setFadeRange, tubeMesh } from '../components/bondTubes';
 
 const GPU = { radialSegments: 16, capRings: 3 };
 
@@ -73,6 +74,44 @@ describe('a tube per bond', () => {
         // Without opacities every bond is opaque.
         const plain = tubeMesh(segments, 0.1, bondMaterial({ color: '#000' }), { quality: GPU });
         expect([...plain.geometry.attributes.instanceOpacity.array]).toEqual([1, 1]);
+    });
+
+    it('takes a colour per bond, and none unless asked', () => {
+        const segments = new Float64Array([0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 2, 0]);
+        const colors = [new THREE.Color('#1f6fd6'), new THREE.Color('#dce4ec')];
+        const mesh = tubeMesh(segments, 0.1, bondMaterial({ color: '#ffffff' }), { quality: GPU, colors });
+        const read = new THREE.Color();
+        colors.forEach((color, index) => {
+            mesh.getColorAt(index, read);
+            expect(read.getHexString()).toBe(color.getHexString());
+        });
+        expect(tubeMesh(segments, 0.1, bondMaterial({ color: '#000' }), { quality: GPU }).instanceColor).toBe(null);
+    });
+
+    it('fades towards a colour between two view depths, only when asked', () => {
+        const compiled = (material) => {
+            const shader = {
+                uniforms: {},
+                vertexShader: THREE.ShaderLib.phong.vertexShader,
+                fragmentShader: THREE.ShaderLib.phong.fragmentShader
+            };
+            material.onBeforeCompile(shader);
+            return shader;
+        };
+        const material = bondMaterial({ color: '#aab3bf', specular: 0x000000, fade: '#e3e7ec' });
+        const shader = compiled(material);
+        // After the edge shading, before the fragment is written.
+        expect(shader.fragmentShader).toMatch(/outgoingLight \*= mix\([\s\S]*outgoingLight = mix\(outgoingLight, bondFadeColor,[\s\S]*#include <opaque_fragment>/);
+        expect(shader.uniforms.bondFadeColor.value.getHexString()).toBe('e3e7ec');
+        setFadeRange(material, 12, 20);
+        expect(shader.uniforms.bondFadeNear.value).toBe(12);
+        expect(shader.uniforms.bondFadeFar.value).toBe(20);
+        expect(material.specular.getHex()).toBe(0x000000);
+        // Its own shader program, apart from the plain tubes'.
+        expect(material.customProgramCacheKey()).toBe('bond-tube-1-fade');
+        const plain = bondMaterial({ color: '#336699' });
+        expect(compiled(plain).fragmentShader).not.toContain('bondFadeColor');
+        expect(() => setFadeRange(plain, 1, 2)).not.toThrow();
     });
 
     it('patches the material for rounded caps, darker edges and the per-bond opacity', () => {

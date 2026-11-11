@@ -12,8 +12,10 @@
 //   stay apart without a theme-dependent fog.
 // - Each end stops BOND_END_GAP short of its site, at the edge of the site's
 //   thermal cloud, so the cloud stays visible.
-// - A per-instance opacity (and radius) lets the angle highlight draw each
-//   bond as strongly as its share.
+// - A per-instance radius and colour let the angle highlight draw each bond
+//   as strongly as its share (a per-instance opacity is there too).
+// - `fade` pales the tubes with distance from the eye, towards a given
+//   colour: the highlight's other bonds, which stay behind.
 //
 // On a software renderer (SwiftShader, llvmpipe) the tubes take fewer
 // segments and the canvas skips multisampling and draws at 1× pixel ratio.
@@ -94,18 +96,26 @@ export const capsuleGeometry = (radialSegments = 16, capRings = 3) => {
 
 /**
  * The tubes' material: Phong with a soft specular, rounded caps, darkened
- * edges and a per-instance opacity (attribute `instanceOpacity`).
+ * edges and a per-instance opacity (attribute `instanceOpacity`). With
+ * `fade` (a colour), the tubes go from their own colour to it between two
+ * view depths, set per frame with setFadeRange.
  */
-export const bondMaterial = ({ color, emissiveIntensity = 0, opacity = 1, transparent = false } = {}) => {
+export const bondMaterial = ({
+    color, emissiveIntensity = 0, opacity = 1, transparent = false, specular = 0x3a3a3a, shininess = 48, fade = null
+} = {}) => {
     const material = new THREE.MeshPhongMaterial({
         color,
         emissive: color,
         emissiveIntensity,
-        specular: 0x3a3a3a,
-        shininess: 48,
+        specular,
+        shininess,
         opacity,
         transparent
     });
+    const fadeUniforms = fade === null ? null : {
+        bondFadeNear: { value: 0 }, bondFadeFar: { value: 1 }, bondFadeColor: { value: new THREE.Color(fade) }
+    };
+    if (fadeUniforms) material.userData.fade = fadeUniforms;
     material.onBeforeCompile = (shader) => {
         shader.vertexShader = shader.vertexShader
             .replace('#include <common>', `#include <common>
@@ -138,19 +148,42 @@ diffuseColor.a *= vBondOpacity;`)
             .replace('#include <opaque_fragment>', `outgoingLight *= mix(${RIM_SHADE.toFixed(2)}, 1.0,
     smoothstep(0.0, 0.75, abs(dot(normalize(normal), normalize(vViewPosition)))));
 #include <opaque_fragment>`);
+        if (fadeUniforms) {
+            Object.assign(shader.uniforms, fadeUniforms);
+            shader.fragmentShader = shader.fragmentShader
+                .replace('#include <common>', `#include <common>
+uniform float bondFadeNear;
+uniform float bondFadeFar;
+uniform vec3 bondFadeColor;`)
+                .replace('#include <opaque_fragment>', `outgoingLight = mix(outgoingLight, bondFadeColor,
+    smoothstep(bondFadeNear, bondFadeFar, vViewPosition.z));
+#include <opaque_fragment>`);
+        }
     };
-    material.customProgramCacheKey = () => 'bond-tube-1';
+    material.customProgramCacheKey = () => (fadeUniforms ? 'bond-tube-1-fade' : 'bond-tube-1');
     return material;
+};
+
+/**
+ * The view depths (distance in front of the eye) between which a `fade`
+ * material goes from its own colour to its fade colour.
+ */
+export const setFadeRange = (material, near, far) => {
+    const fade = material.userData.fade;
+    if (!fade) return;
+    fade.bondFadeNear.value = near;
+    fade.bondFadeFar.value = far;
 };
 
 /**
  * One instanced capsule per segment (six numbers each: from xyz, to xyz),
  * each end `gap` short of its point (at most a quarter of the bond, caps
  * included). `scales` (per segment, × radius) and `opacities` (per
- * segment) default to 1.
+ * segment) default to 1; `colors` (a THREE.Color per segment) multiply the
+ * material's colour, so give them to a white material.
  */
 export const tubeMesh = (segments, radius, material, {
-    gap = BOND_END_GAP, scales = null, opacities = null, quality = renderQuality()
+    gap = BOND_END_GAP, scales = null, opacities = null, colors = null, quality = renderQuality()
 } = {}) => {
     const count = segments.length / 6;
     const geometry = capsuleGeometry(quality.radialSegments, quality.capRings);
@@ -180,6 +213,10 @@ export const tubeMesh = (segments, radius, material, {
         mesh.setMatrixAt(i, matrix);
     }
     mesh.instanceMatrix.needsUpdate = true;
+    if (colors) {
+        for (let i = 0; i < count; i += 1) mesh.setColorAt(i, colors[i]);
+        mesh.instanceColor.needsUpdate = true;
+    }
     mesh.computeBoundingSphere();
     return mesh;
 };

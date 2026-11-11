@@ -54,8 +54,8 @@ After loading, use the pages:
   - The angle card's tabs switch between the sin-corrected distribution, the raw density and the
     partial g(r) with your bond window marked, so you can bracket the whole coordination shell.
   - Drag across the distribution to pick an angle range (drag its edges or the whole band;
-    double-click or `Clear` removes it). The 3D cell brightens each bond by the share of its angles
-    in the range and draws an arc at the central atom for each angle. Hovering one bin previews
+    double-click or `Clear` removes it). The 3D cell strengthens each bond by the share of its angles
+    in the range, and a shaded wedge at the central atom marks each angle. Hovering one bin previews
     it; on a phone or tablet, tap a bin.
 - `PCA Ellipsoid` for per-site thermal ellipsoids: pick a site (from the list or by clicking an
   atom in the unit-cell view) to see its PCA displacement ellipsoid, the 3D KDE isosurface with

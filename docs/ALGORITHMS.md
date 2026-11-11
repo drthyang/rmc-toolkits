@@ -442,13 +442,14 @@ $\mathbf m = \operatorname{round}(\Delta\mathbf u - (\mathbf f_e - \mathbf f_a))
 $\Delta\mathbf u$ the bond in unit-cell fractions. A range covers whole bins, so its count is the
 histogram's; the page drops an answer whose per-bin counts differ from the payload's. Each site triplet $t$ keeps its count per bin
 $n_t(b)$ and its total $N_t=\sum_b n_t(b)$; a range $R$ draws it with share
-$s_t=\sum_{b\in R} n_t(b)/N_t$ (a hovered bin: $R$ one bin), at strength $\sqrt{s_t}$ (opacity and
-radius), not at all when $s_t<0.02$ (`MIN_HIGHLIGHT_SHARE`; still counted). A site bond takes the
+$s_t=\sum_{b\in R} n_t(b)/N_t$ (a hovered bin: $R$ one bin), at strength $\sqrt{s_t}$ (radius and
+colour, opaque), not at all when $s_t<0.02$ (`MIN_HIGHLIGHT_SHARE`; still counted). A site bond takes the
 largest $s_t$ of the drawn triplets using it; past 750 triplets the largest shares are kept (ties
-nearest the cell centre). Each drawn triplet's angle is also an arc at its apex, from one bond to
+nearest the cell centre). Each drawn triplet's angle is also a flat wedge at its apex, from one bond to
 the other, of radius 0.35 × its shorter bond (`components/angleArcs.js`; the same triplets and $s_t$,
-one arc per angle, opacity $\sqrt{s_t}$); a straight angle, which has no plane, bends towards the
-cell axis least along its bonds.
+one wedge per angle, a light fill and a darker rim along the arc, both of opacity ∝ $\sqrt{s_t}$); a
+straight angle, which has no plane, bends towards the cell axis least along its bonds. The bonds
+outside the drawn triplets are thin and grey, paler with distance from the eye.
 
 ### Test suites
 
