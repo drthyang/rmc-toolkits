@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-// The angle marks (components/angleArcs.js): an arc at the apex from one
-// bond to the other, at a fraction of the shorter bond, clear of the site's
-// cloud; all arcs one mesh, each as opaque as asked.
+// The angle marks (components/angleArcs.js): a flat wedge at the apex from
+// one bond to the other, at a fraction of the shorter bond, clear of the
+// site's cloud; all wedges one mesh, each as strong as asked.
 
 import { describe, expect, it } from 'vitest';
-import { ARC_RADIUS_FRACTION, arcFrame, arcMesh, arcPoint } from '../components/angleArcs';
+import * as THREE from 'three';
+import {
+    ARC_RADIUS_FRACTION, arcFrame, arcPoint, WEDGE_COLOR, WEDGE_FILL_OPACITY, WEDGE_RIM_FRACTION, WEDGE_RIM_OPACITY, wedgeMesh
+} from '../components/angleArcs';
+import { PLOT_PALETTE } from '../plotPalette';
 import { BOND_END_GAP } from '../components/bondTubes';
 
 const GPU = { software: false };
@@ -59,39 +63,68 @@ describe('an arc\'s frame', () => {
     });
 });
 
-describe('the arcs\' mesh', () => {
-    // Two arcs: 90° and 180°.
+describe('the wedges\' mesh', () => {
+    // Two angles: 90° and 180°.
     const arcs = new Float64Array([0, 0, 0, 2, 0, 0, 0, 2, 0, 5, 5, 5, 7, 5, 5, 3, 5, 5]);
+    const radius = ARC_RADIUS_FRACTION * 2;
+    const pointAt = (position, v) => [position.getX(v), position.getY(v), position.getZ(v)];
 
-    it('draws every arc in one mesh, each with its own opacity', () => {
-        const mesh = arcMesh(arcs, 0.05, { opacities: [1, 0.25], quality: GPU });
+    it('draws every wedge in one mesh, each with its own strength', () => {
+        const mesh = wedgeMesh(arcs, { strengths: [1, 0.25], quality: GPU });
         expect(mesh.isMesh).toBe(true);
         const { position, color } = mesh.geometry.attributes;
-        // 7.5° steps, 8 around: 90° → 12 steps, 180° → 24 steps.
-        expect(position.count).toBe((13 + 25) * 8);
+        // 4° steps: 90° → 23 steps, 180° → 45; per wedge the apex, the fan's
+        // arc and the rim's two edges.
+        expect(position.count).toBe((3 * 23 + 4) + (3 * 45 + 4));
+        expect(mesh.geometry.index.count).toBe(9 * (23 + 45));
         expect(color.itemSize).toBe(4);
-        expect(color.getW(0)).toBe(1);
-        expect(color.getW(position.count - 1)).toBe(0.25);
-        expect(mesh.material.vertexColors).toBe(true);
-        expect(mesh.material.transparent).toBe(true);
+        // The fill is light, the rim nearly opaque; both scale with strength.
+        expect(color.getW(0)).toBeCloseTo(WEDGE_FILL_OPACITY, 6);
+        expect(color.getW(3 * 23 + 3)).toBeCloseTo(WEDGE_RIM_OPACITY, 6);
+        expect(color.getW(3 * 23 + 4)).toBeCloseTo(0.25 * WEDGE_FILL_OPACITY, 6);
+        expect(color.getW(position.count - 1)).toBeCloseTo(0.25 * WEDGE_RIM_OPACITY, 6);
     });
 
-    it('keeps each tube on its arc, as thick as asked', () => {
-        const mesh = arcMesh(arcs.subarray(0, 9), 0.05, { scales: [2], quality: GPU });
+    it('is flat, unlit and seen from both faces, in the angle plot\'s blue with a darker rim', () => {
+        const mesh = wedgeMesh(arcs.subarray(0, 9), { quality: GPU });
+        expect(WEDGE_COLOR).toBe(PLOT_PALETTE[0]);
+        expect(mesh.material.isMeshBasicMaterial).toBe(true);
+        expect(mesh.material.vertexColors).toBe(true);
+        expect(mesh.material.transparent).toBe(true);
+        expect(mesh.material.depthWrite).toBe(false);
+        expect(mesh.material.side).toBe(THREE.DoubleSide);
+        const { color } = mesh.geometry.attributes;
+        const blue = new THREE.Color(WEDGE_COLOR);
+        expect([color.getX(0), color.getY(0), color.getZ(0)].map((v) => Number(v.toFixed(5))))
+            .toEqual(blue.toArray().map((v) => Number(v.toFixed(5))));
+        const last = color.count - 1;
+        expect(color.getX(last) + color.getY(last) + color.getZ(last)).toBeLessThan(blue.r + blue.g + blue.b);
+    });
+
+    it('fills from the apex to the arc, with the rim just inside it', () => {
+        const mesh = wedgeMesh(arcs.subarray(0, 9), { quality: GPU });
         const { position } = mesh.geometry.attributes;
-        const radius = ARC_RADIUS_FRACTION * 2;
-        for (let v = 0; v < position.count; v += 1) {
-            const p = [position.getX(v), position.getY(v), position.getZ(v)];
-            // Distance from the arc's circle (in the xy plane, about the apex).
-            const off = Math.hypot(Math.hypot(p[0], p[1]) - radius, p[2]);
-            expect(off).toBeCloseTo(0.1, 5);
+        expect(pointAt(position, 0)).toEqual([0, 0, 0]);
+        for (let v = 1; v < position.count; v += 1) {
+            const p = pointAt(position, v);
+            // In the bonds' plane (xy), between the two bonds.
+            expect(p[2]).toBeCloseTo(0, 6);
+            expect(p[0]).toBeGreaterThan(-1e-6);
+            expect(p[1]).toBeGreaterThan(-1e-6);
+            const r = Math.hypot(p[0], p[1]);
+            const inner = v > 24 && (v - 25) % 2 === 0;
+            expect(r).toBeCloseTo(inner ? radius * (1 - WEDGE_RIM_FRACTION) : radius, 6);
         }
     });
 
-    it('takes fewer vertices on a software renderer, and is null when nothing is drawn', () => {
-        const soft = arcMesh(arcs, 0.05, { quality: SOFTWARE });
-        expect(soft.geometry.attributes.position.count).toBe((7 + 13) * 5);
-        expect(arcMesh(new Float64Array(0), 0.05, { quality: GPU })).toBe(null);
-        expect(arcMesh(new Float64Array([0, 0, 0, 0, 0, 0, 1, 0, 0]), 0.05, { quality: GPU })).toBe(null);
+    it('takes fewer vertices on a software renderer, and skips what is not drawn', () => {
+        const soft = wedgeMesh(arcs, { quality: SOFTWARE });
+        // 10° steps: 9 and 18.
+        expect(soft.geometry.attributes.position.count).toBe((3 * 9 + 4) + (3 * 18 + 4));
+        // A strength of zero draws nothing.
+        expect(wedgeMesh(arcs, { strengths: [1, 0], quality: GPU }).geometry.attributes.position.count).toBe(3 * 23 + 4);
+        expect(wedgeMesh(arcs, { strengths: [0, 0], quality: GPU })).toBe(null);
+        expect(wedgeMesh(new Float64Array(0), { quality: GPU })).toBe(null);
+        expect(wedgeMesh(new Float64Array([0, 0, 0, 0, 0, 0, 1, 0, 0]), { quality: GPU })).toBe(null);
     });
 });

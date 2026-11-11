@@ -34,7 +34,7 @@ only.
   tolerance tightens), with PNG/SVG/ZIP and CIF export.
 - **Bond Geometry:** bond-angle distributions the RMCProfile `triplets` way (A–B–C, B central),
   with bond windows checked against the run's partial g(r). Drag an angle range to see those
-  angles' bonds and arcs in the 3D cell.
+  angles' bonds and wedges in the 3D cell.
 - **PCA Ellipsoid:** per-site thermal ellipsoids from the displacement clouds, a 3D KDE isosurface
   and each principal axis in the crystal frame, after Maksim Eremenko's
   [PCA_KDE utilities](https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE).
@@ -58,7 +58,7 @@ All from the bundled public Demo run.
     <th width="50%">Atomic Density: KDE slice, slab, 3D cell</th>
   </tr>
   <tr>
-    <td width="50%"><img src="assets/workbench-bond-geometry.webp" alt="Bond Geometry: the Se–Ta–Se angle distribution with a range selected, and its bonds and arcs in the 3D cell" width="100%"></td>
+    <td width="50%"><img src="assets/workbench-bond-geometry.webp" alt="Bond Geometry: the Se–Ta–Se angle distribution with a range selected, and its bonds and wedges in the 3D cell" width="100%"></td>
     <td width="50%"><img src="assets/workbench-atomic-density.webp" alt="Atomic Density" width="100%"></td>
   </tr>
   <tr>
