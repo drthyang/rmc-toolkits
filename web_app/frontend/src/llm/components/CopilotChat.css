@@ -47,6 +47,22 @@
     height: var(--llm-sheet-h, calc(var(--llm-sheet-f, 0.46) * var(--viewport-h, 100vh)));
 }
 
+/* A window too short to share (a phone in landscape, ≤ 480px tall): the open
+   sheet covers the whole window instead of leaving the pages a strip, and its
+   close button brings them back. The pages keep their layout underneath. */
+.llm-dock.is-sheet.is-overlay.is-open {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    height: auto;
+    border-top: 0;
+    box-shadow: none;
+}
+
+.llm-dock.is-sheet.is-overlay .llm-chat-panel-head {
+    padding-top: calc(0.55rem + var(--safe-top, 0px));
+}
+
 /* --- the rail (collapsed) ------------------------------------------------- */
 
 .llm-dock-rail {

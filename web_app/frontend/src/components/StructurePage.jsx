@@ -920,22 +920,27 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
         };
         ctx.font = `500 ${12 * s}px Inter, system-ui`;
         if (kde) {
-            drawOverlayText(`${kde.slabCount} atoms in slab (fit ${kde.fitCount})`, 12 * s, 22 * s);
+            // The readout sits inside the map's top-left corner (the map is
+            // centred in the canvas with a margin, wider when the canvas is
+            // not the plane's shape), not on the canvas margin.
+            const textX = Math.min(...cellOutline.map((point) => point.x)) + 8 * s;
+            const textY = Math.min(...cellOutline.map((point) => point.y));
+            drawOverlayText(`${kde.slabCount} atoms in slab (fit ${kde.fitCount})`, textX, textY + 18 * s);
             // d is a fraction of the depth span along the normal; its real
             // thickness in Angstrom follows from the cell metric.
             const thicknessA = slabThicknessAngstrom(kde.thickness, sliceConfig.normal, sliceConfig.range, unitCell.unitVectors);
             const thicknessText = Number.isFinite(thicknessA) ? ` (${thicknessA.toPrecision(3)} Å)` : '';
-            drawOverlayText(`${sliceConfig.label}=${kde.center.toFixed(3)}  d=${kde.thickness.toFixed(3)}${thicknessText}  bw=${kde.bw}`, 12 * s, 40 * s);
-            let nextLine = 58 * s;
+            drawOverlayText(`${sliceConfig.label}=${kde.center.toFixed(3)}  d=${kde.thickness.toFixed(3)}${thicknessText}  bw=${kde.bw}`, textX, textY + 36 * s);
+            let nextLine = textY + 54 * s;
             if (kernelAngstrom) {
                 drawOverlayText(
                     `kernel σ ${kernelAngstrom.minor.toPrecision(2)} × ${kernelAngstrom.major.toPrecision(2)} Å`,
-                    12 * s,
+                    textX,
                     nextLine
                 );
                 nextLine += 18 * s;
             }
-            if (kde.log) drawOverlayText('log10 density', 12 * s, nextLine);
+            if (kde.log) drawOverlayText('log10 density', textX, nextLine);
         }
     }, [kde, colormap, showContours, kdeLoading, themeVars, unitCell, sliceConfig, kernelAngstrom]);
 
