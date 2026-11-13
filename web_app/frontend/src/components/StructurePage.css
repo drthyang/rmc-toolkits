@@ -13,12 +13,20 @@
 }
 
 /* Each canvas keeps its panel's plane aspect (--panel-aspect, set inline) and
-   never grows taller than the viewport below the header and controls. */
+   never grows taller than the viewport below the header and controls — but
+   never shorter than 18rem either: on a short window (a phone in landscape, or
+   a tablet with the Copilot sheet open) the page scrolls instead. The 2D
+   panels draw at no less than 260px tall, so a shorter box would squash the
+   drawing and put the slab band out of step with the pointer. */
+.analysis-layout {
+    --density-max-h: max(18rem, calc(var(--viewport-h) - 17rem));
+}
+
 .kde-canvas {
     display: block;
     width: 100%;
     aspect-ratio: var(--panel-aspect);
-    max-height: calc(var(--viewport-h) - 17rem);
+    max-height: var(--density-max-h);
 }
 
 .slab-panel canvas {
@@ -26,7 +34,7 @@
     width: 100%;
     aspect-ratio: var(--panel-aspect);
     height: auto;
-    max-height: calc(var(--viewport-h) - 17rem);
+    max-height: var(--density-max-h);
     touch-action: none;
 }
 
@@ -35,7 +43,7 @@
     aspect-ratio: var(--panel-aspect);
     height: auto;
     min-height: 0;
-    max-height: calc(var(--viewport-h) - 17rem);
+    max-height: var(--density-max-h);
 }
 
 @container workbench (max-width: 980px) {

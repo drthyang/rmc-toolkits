@@ -677,6 +677,7 @@ export default function OrientationView({
 
             <Card roundEnds className="orient-main-panel" data-copilot-card="direction-sphere">
                 <CardHeader
+                    className="orient-main-header"
                     title={selectedEllipsoid
                         ? `${siteLabel(selectedEllipsoid)} site #${selectedEllipsoid.referenceNumber} — displacement directions`
                         : 'Displacement directions'}

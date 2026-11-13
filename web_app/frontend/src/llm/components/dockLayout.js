@@ -24,6 +24,11 @@ export const DOCK_MAX = 760;
 export const PAGE_MIN = 760;
 export const DOCK_MIN_WINDOW = PAGE_MIN + DOCK_MIN;
 export const DOCK_QUERY = `(min-width: ${DOCK_MIN_WINDOW}px) and (min-height: 541px)`;
+// A sheet on a window this short (a phone in landscape) cannot share the
+// height with the pages: open, it covers the window instead ("overlay"), and
+// its close button brings the pages back.
+export const SHEET_OVERLAY_MAX_HEIGHT = 480;
+export const SHEET_OVERLAY_QUERY = `(max-height: ${SHEET_OVERLAY_MAX_HEIGHT}px)`;
 export const DOCK_STEP = 24;
 export const SHEET_MIN = 0.28;
 export const SHEET_MAX = 0.72;
