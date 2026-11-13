@@ -154,11 +154,14 @@ function App() {
   // dock's edge does not re-render the pages.
   const handleCopilotLayout = useCallback((layout) => setCopilotLayout((current) => (
     current && current.mode === layout.mode && current.open === layout.open && current.sheet === layout.sheet
+      && current.overlay === layout.overlay
       ? current
       : layout
   )), []);
+  // An open overlay sheet (a short window) covers the pages rather than
+  // taking height from them: they keep the layout they have behind the bar.
   const copilotSheetHeight = copilotLayout?.mode === 'sheet'
-    ? (copilotLayout.open ? copilotLayout.sheetHeight : '2.75rem')
+    ? (copilotLayout.open && !copilotLayout.overlay ? copilotLayout.sheetHeight : '2.75rem')
     : '0px';
 
   useEffect(() => {

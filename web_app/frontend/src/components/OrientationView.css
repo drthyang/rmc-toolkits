@@ -145,3 +145,20 @@
     font-family: var(--font-mono);
     text-shadow: 0 0 4px var(--canvas-bg), 0 0 4px var(--canvas-bg);
 }
+
+/* A short, wide window (a phone in landscape) is past the kit's phone width
+   tier, yet the sphere card is narrow there: its long title and its actions
+   cannot share a line, so the actions wrap under the title as on a phone. */
+@media (max-height: 540px) {
+    .orient-main-header {
+        flex-wrap: wrap;
+        row-gap: 0.4rem;
+    }
+
+    .orient-main-header .ui-card__actions {
+        flex: 1 1 auto;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        row-gap: 0.4rem;
+    }
+}
