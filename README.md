@@ -125,17 +125,24 @@ sealed test split that no tool, skill or prompt was tuned on. Each case gets one
 there order beyond the average structure, and what is the space group?), and the verdict is scored
 by fixed rules written before any model run.
 
-| Arm (test split, 14 cases) | Mean score |
+| Arm | Mean score |
 | --- | --- |
-| A: the default Workbench pages, read by fixed rules (no model) | 0.800 |
-| B: the Copilot with Claude Sonnet 5.5 (3 runs per case, 42 runs) | **0.920** |
-| A+: every engine swept exhaustively, joined by fixed rules (no model) | 0.948 |
-| The planted truth | 1.000 |
+| A: default pages, no model | 0.800 |
+| B: Copilot, Claude Sonnet 5.5 | **0.920** |
+| A+: every engine, no model | 0.948 |
+| Planted truth | 1.000 |
+
+Arm A reads the default Workbench pages by fixed rules. Arm A+ runs every engine exhaustively and
+joins the results by fixed rules. Arm B is 3 runs per case, 42 runs.
 
 With Claude Sonnet 5.5 the Copilot **beats the default pages** (0.920 against 0.800). It **does not
 yet beat the exhaustive engine sweep** on this score (0.948). gemma4:26b scored 0.748 under an
 earlier protocol (2026-10-24.6), which is not strictly comparable. Muse Glimmer ran only 3 of the
 14 cases, so it is not reported as a result.
+
+A limit the same runs showed: every Sonnet answer ended **Not verified**, and the answer checks
+caught none of the 3 contradictions the score found. So the Outcome line is not yet a reliable
+signal with a strong model.
 
 ## Run it locally (optional)
 
@@ -154,8 +161,8 @@ Self-hosting, the backend API, file patterns and the Python package:
 
 ## Status
 
-Beta: version **0.8.0** ([changelog](docs/CHANGELOG.md)). Python 3.10 or newer. The AI Copilot is
-experimental: trust its step cards' checks over its own verdict.
+Beta: version **0.8.0** ([changelog](docs/CHANGELOG.md)). The Python package needs Python 3.10 or
+newer. The AI Copilot is experimental: trust its step cards' checks over its own verdict.
 
 ## Documentation
 
