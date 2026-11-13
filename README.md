@@ -59,15 +59,15 @@ All from the bundled public Demo run.
   </tr>
   <tr>
     <td width="50%"><img src="assets/workbench-bond-geometry.webp" alt="Bond Geometry: the Se–Ta–Se angle distribution with a range selected, and its bonds and wedges in the 3D cell" width="100%"></td>
-    <td width="50%"><img src="assets/workbench-atomic-density.webp" alt="Atomic Density" width="100%"></td>
+    <td width="50%"><img src="assets/workbench-atomic-density.webp" alt="Atomic Density: the KDE slice, the slab in the cell and the folded unit cell" width="100%"></td>
   </tr>
   <tr>
-    <th width="50%">PCA Ellipsoid: a Se site's ellipsoid and isosurface</th>
-    <th width="50%">Displacement Directions: a Se site's direction sphere</th>
+    <th width="50%">PCA Ellipsoid: a Ta site's ellipsoid and its three projections</th>
+    <th width="50%">Displacement Directions: a Ta site's direction sphere</th>
   </tr>
   <tr>
-    <td width="50%"><img src="assets/workbench-pca-ellipsoid.webp" alt="PCA Ellipsoid" width="100%"></td>
-    <td width="50%"><img src="assets/workbench-displacement-directions.webp" alt="Displacement Directions" width="100%"></td>
+    <td width="50%"><img src="assets/workbench-pca-ellipsoid.webp" alt="PCA Ellipsoid: Ta site #1 with the 50% ellipsoid, its wireframe and the three projections, beside the site ellipsoids in the cell" width="100%"></td>
+    <td width="50%"><img src="assets/workbench-displacement-directions.webp" alt="Displacement Directions: the direction sphere of Ta site #1 with its three axis views, beside the site ellipsoids in the cell" width="100%"></td>
   </tr>
   <tr>
     <th width="50%">The Copilot asks before it changes an input</th>
