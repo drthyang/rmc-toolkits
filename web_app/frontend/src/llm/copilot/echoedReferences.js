@@ -20,10 +20,13 @@ import { isReferenceName } from './references';
 // element symbols), superscripts ² ³, °, %, "/" and "per" — "Å", "deg²",
 // "Se per Ta" — on one line: no digits and no punctuation that ends a clause
 // (, ; : . ! ? brackets, quotes), so "6 neighbours, of which {{…}}" is left
-// alone. MAX_LABEL bounds its length.
+// alone. MAX_LABEL bounds its length. The number may carry thousands
+// separators, well formed only (1–3 digits, then groups of exactly three:
+// "215,252", "1,234.5"), so "215,252 {{…}}" is the reference's 215252; a list
+// ("1,2", "12,34") is never read as one number.
 const WORD = '[\\p{L}\\p{M}²³°%/]+';
 const ECHO = new RegExp(
-    `(-?\\d+(?:\\.\\d+)?)((?:[ \\t]?${WORD}(?:[ \\t]+${WORD}){0,2})?)([ \\t]*)\\{\\{\\s*([^{}]{1,120}?)\\s*\\}\\}`,
+    `(-?(?:(?<![\\d.])(?<!\\d,)\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?)((?:[ \\t]?${WORD}(?:[ \\t]+${WORD}){0,2})?)([ \\t]*)\\{\\{\\s*([^{}]{1,120}?)\\s*\\}\\}`,
     'gu'
 );
 const MAX_LABEL = 24;
@@ -32,7 +35,7 @@ const decimals = (literal) => (literal.includes('.') ? literal.length - literal.
 
 // Whether `value` (the reference's text) is the typed number, to its decimals.
 const sameNumber = (literal, value) => {
-    const typed = Number(literal);
+    const typed = Number(literal.replaceAll(',', ''));
     const engine = Number(value);
     if (!Number.isFinite(typed) || !Number.isFinite(engine)) return false;
     return engine.toFixed(decimals(literal)) === typed.toFixed(decimals(literal));
@@ -47,8 +50,16 @@ const echoes = (text, store) => {
         const name = inner.trim();
         if (!isReferenceName(name)) continue;
         const value = store.resolve(name);
-        if (value == null || !sameNumber(literal, String(value))) continue;
-        found.push({ whole, name, value: String(value), literal, unit, gap });
+        if (value == null) continue;
+        if (sameNumber(literal, String(value))) {
+            found.push({ whole, name, value: String(value), literal, unit, gap });
+            continue;
+        }
+        // "1,234 {{…}}" may be a list whose last item is the echo, as before.
+        const cut = literal.lastIndexOf(',') + 1;
+        if (cut > 0 && sameNumber(literal.slice(cut), String(value))) {
+            found.push({ whole: whole.slice(cut), name, value: String(value), literal: literal.slice(cut), unit, gap });
+        }
     }
     return found;
 };

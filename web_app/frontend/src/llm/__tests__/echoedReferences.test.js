@@ -111,4 +111,49 @@ describe('a number typed before its own reference', () => {
             expect(displayReferences('CN 3.25 Se per Ta {{r2.cn.Se_per_Ta}}', { store: labelled(), streaming: true })).toBe('CN 3.25 Se per Ta');
         });
     });
+    describe('with a thousands separator in the typed number', () => {
+        const grouped = () => {
+            const references = store();
+            references.put('r3', { n_atoms: 215252, volume_A3: 1234.5, small: 2, tail: 234, pair: 34 });
+            return references;
+        };
+
+        it('shows "215,252" and its reference 215252 once', () => {
+            const raw = 'The box holds 215,252 {{r3.n_atoms}} atoms.';
+            expect(collapseEchoes(raw, grouped())).toBe('The box holds {{r3.n_atoms}} atoms.');
+            const filled = fillReferences(raw, grouped()).text;
+            expect(filled).toBe('The box holds 215,252 215252 atoms.');
+            expect(collapseFilledEchoes(filled, raw, grouped())).toBe('The box holds 215252 atoms.');
+            expect(displayReferences('215,252 atoms {{r3.n_atoms}}', { store: grouped(), streaming: true })).toBe('215252 atoms');
+        });
+
+        it('reads a decimal with grouping, with its unit', () => {
+            const raw = 'Volume 1,234.5 Å³ {{r3.volume_A3}}.';
+            expect(collapseEchoes(raw, grouped())).toBe('Volume {{r3.volume_A3}} Å³.');
+            expect(collapseFilledEchoes(fillReferences(raw, grouped()).text, raw, grouped())).toBe('Volume 1234.5 Å³.');
+        });
+
+        it('never merges a comma list into one number', () => {
+            const references = grouped();
+            references.put('r4', { a: 12, b: 1234, c: 12345678 });
+            for (const raw of [
+                'Shells 1,2 {{r4.a}}.',
+                'Shells 12,34 {{r4.b}}.',
+                'Counts 12345,678 {{r4.c}}.',
+                'Counts 1,2345 {{r4.a}}.'
+            ]) {
+                expect(collapseEchoes(raw, references)).toBe(raw);
+            }
+            // The last item of a list is still its own echo, as before.
+            expect(collapseEchoes('Shells 1,2 {{r3.small}}.', references)).toBe('Shells 1,{{r3.small}}.');
+            expect(collapseEchoes('Shells 12,34 {{r3.pair}}.', references)).toBe('Shells 12,{{r3.pair}}.');
+            expect(collapseEchoes('Shells 1,234 {{r3.tail}}.', references)).toBe('Shells 1,{{r3.tail}}.');
+        });
+
+        it('keeps a grouped number that differs from the engine\'s value visible', () => {
+            const raw = 'The box holds 215,253 {{r3.n_atoms}} atoms.';
+            expect(collapseEchoes(raw, grouped())).toBe(raw);
+            expect(collapseFilledEchoes(fillReferences(raw, grouped()).text, raw, grouped())).toBe('The box holds 215,253 215252 atoms.');
+        });
+    });
 });
