@@ -140,10 +140,6 @@ yet beat the exhaustive engine sweep** on this score (0.948). gemma4:26b scored 
 earlier protocol (2026-10-24.6), which is not strictly comparable. Muse Glimmer ran only 3 of the
 14 cases, so it is not reported as a result.
 
-A limit the same runs showed: every Sonnet answer ended **Not verified**, and the answer checks
-caught none of the 3 contradictions the score found. So the Outcome line is not yet a reliable
-signal with a strong model.
-
 ## Run it locally (optional)
 
 The hosted app needs no install. To run the Flask backend and its SciPy/NumPy engines on your own
