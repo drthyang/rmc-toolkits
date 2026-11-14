@@ -211,6 +211,102 @@ describe('InteractivePlot onHoverX', () => {
             expect(bandRect()).toBeNull();
         });
 
+        describe('its knob', () => {
+            const knob = () => container.querySelector('.plot-range-knob');
+            // A drag on the knob (its own pointer events, not the plot's).
+            const dragKnob = (pointerType, from, ...to) => {
+                pointer('pointerdown', pointerType, from, knob());
+                to.forEach((degrees) => {
+                    pointer('pointermove', pointerType, degrees, knob());
+                    renderRange();
+                });
+                pointer('pointerup', pointerType, to[to.length - 1] ?? from, knob());
+                renderRange();
+            };
+            const key = (name, init = {}) => {
+                act(() => {
+                    knob().dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true, ...init }));
+                });
+                renderRange();
+            };
+
+            it('sits under the band centre, on the x axis, only while a range is picked', () => {
+                renderRange();
+                expect(knob()).toBeNull();
+                range = [80, 100];
+                renderRange();
+                expect(parseFloat(knob().style.left)).toBeCloseTo((at(90) / 720) * 100, 6);
+                expect(parseFloat(knob().style.top)).toBeCloseTo(((450 - 58) / 450) * 100, 6);
+                expect(knob().getAttribute('role')).toBe('slider');
+                expect(knob().getAttribute('aria-label')).toBe('Move the picked range');
+                expect(knob().getAttribute('aria-valuetext')).toBe('80 to 100');
+                expect(knob().tabIndex).toBe(0);
+            });
+
+            it('moves the whole window in whole bins, its width kept, by touch, pen and mouse', () => {
+                range = [80, 100];
+                renderRange();
+                dragKnob('touch', 90, 93.4, 101.6);
+                expect(range).toEqual([92, 112]);
+                expect(parseFloat(knob().style.left)).toBeCloseTo((at(102) / 720) * 100, 6);
+                dragKnob('pen', 102, 95.2);
+                expect(range).toEqual([85, 105]);
+                dragKnob('mouse', 95, 90);
+                expect(range).toEqual([80, 100]);
+                // The live updates were the band drag's: one call per new window.
+                expect(onRangeChange.mock.calls.every(([next]) => next[1] - next[0] === 20)).toBe(true);
+            });
+
+            it('stops at both ends of the axis with its width kept', () => {
+                range = [80, 100];
+                renderRange();
+                dragKnob('touch', 90, 60, 5, -40);
+                expect(range).toEqual([0, 20]);
+                dragKnob('touch', 10, 120, 400);
+                expect(range).toEqual([160, 180]);
+            });
+
+            it('leaves the range alone on a tap, and does not reach the plot', () => {
+                range = [80, 100];
+                renderRange();
+                dragKnob('touch', 90);
+                expect(onRangeChange).not.toHaveBeenCalled();
+                expect(onHoverX.mock.calls.filter(([x]) => x !== null)).toEqual([]);
+            });
+
+            it('moves by one bin with the arrow keys, five with shift, and to the ends', () => {
+                range = [80, 100];
+                renderRange();
+                key('ArrowRight');
+                expect(range).toEqual([81, 101]);
+                key('ArrowLeft');
+                key('ArrowLeft');
+                expect(range).toEqual([79, 99]);
+                key('ArrowRight', { shiftKey: true });
+                expect(range).toEqual([84, 104]);
+                key('End');
+                expect(range).toEqual([160, 180]);
+                onRangeChange.mockClear();
+                key('ArrowRight');
+                expect(onRangeChange).not.toHaveBeenCalled();
+                key('Home');
+                expect(range).toEqual([0, 20]);
+                key('ArrowLeft');
+                expect(range).toEqual([0, 20]);
+            });
+
+            it('leaves the edges and the band draggable', () => {
+                range = [80, 100];
+                renderRange();
+                dragKnob('touch', 90, 100);
+                expect(range).toEqual([90, 110]);
+                drag('touch', 110, 120);
+                expect(range).toEqual([90, 120]);
+                drag('mouse', 105, 100);
+                expect(range).toEqual([85, 115]);
+            });
+        });
+
         it('takes the place of the box zoom', () => {
             renderRange();
             drag('mouse', 60, 90, 120);
