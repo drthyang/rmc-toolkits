@@ -24,7 +24,7 @@ The Copilot is optional. Every page of the Workbench works without it.
    | | Hosted model | Local model |
    |---|---|---|
    | What it is | A model run by OpenAI, Google (Gemini) or Anthropic | A model that runs on your own computer, in Ollama or LM Studio |
-   | What you need | An API key from that provider (paid by use) | A computer with enough memory for the model (16 GB or more for a useful one) |
+   | What you need | An API key from that provider (paid by use) | A computer with enough memory for the model (the models used for the checks on this page take 6 to 17 GB) |
    | Where your data goes | The run summary and the analysis results are sent to the provider | Nothing leaves your computer |
    | Setup | [Section 2](#2-hosted-model-api-key) | [Section 3](#3-local-model-ollama-or-lm-studio) |
 
@@ -49,7 +49,7 @@ Settings are saved as you type. There is no Save button.
 ## 2. Hosted model (API key)
 
 With a hosted model, the run summary and the results of the analyses the Copilot runs are sent to
-the provider. The drawer says so in a yellow note (*Run data leaves your device*). Do not use a
+the provider. The drawer says so in a warning note (*Run data leaves your device*). Do not use a
 hosted model for data you may not share.
 
 1. Get an API key from the provider. A key is a long password for the provider's service; the
@@ -318,7 +318,7 @@ in the **Provider** list accept the browser's calls directly.
 1. Click **Demo** (top right). The bundled GaTa₄Se₈ run opens.
 2. Click the **AI Copilot** rail. The status at the top of the panel reads **Connected** and the
    model list shows your model.
-3. Type a question and press Enter, for example:
+3. Type a question and send it with the arrow button, for example:
 
    ```text
    How many atoms are in this model, and which elements?

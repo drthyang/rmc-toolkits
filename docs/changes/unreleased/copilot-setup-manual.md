@@ -5,4 +5,6 @@
   local model in Ollama or LM Studio, the local proxy (the Workbench has none; when one helps and a
   small example), a check with the Demo, and troubleshooting by the message on screen. Its last
   section says which steps were run and in which browsers.
+- One new screenshot, `assets/workbench-copilot-connection.webp` (the Demo with the Connection
+  drawer, no key shown).
 - README: links to the manual from *AI Copilot* and *Documentation*.
