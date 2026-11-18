@@ -174,9 +174,9 @@ when you do not use it (`lms server stop`).
 
 | Browser | Local copy of the Workbench | Hosted site with a local model |
 |---|---|---|
-| Chrome, Edge | Works | Works. The first time, the browser asks whether the site may reach devices on your local network: click **Allow** |
-| Firefox | See [How this page was checked](#how-this-page-was-checked) | See there |
-| Safari | See [How this page was checked](#how-this-page-was-checked) | See there |
+| Chrome, Edge | Works | Works, after you let the site reach your local network. The browser asks the first time the Copilot connects: click **Allow**. If you blocked it, the connection fails as if the server were off |
+| Safari | Works | Does not work: Safari stops an `https` page from calling `http://localhost`. Use Chrome or Edge, a hosted model, or a local copy of the Workbench |
+| Firefox | Not tested | Not tested |
 
 ### Running a local copy of the Workbench
 
@@ -292,6 +292,9 @@ only and serves one site only.
    **Server URL** and click **Test**. The drawer shows **Connected — N models available.**
 5. Choose the model from **Select a model…**.
 
+In Chrome and Edge the proxy is a local address like the model server, so the browser's
+local-network question applies to it too. The proxy does not help in Safari.
+
 Stop the proxy with Ctrl+C when you finish. While it runs, the hosted site (and only that site)
 can use the model server behind it.
 
@@ -321,15 +324,19 @@ then says what failed.
 |---|---|---|
 | **Connect a model to start** | No model server answered yet | Open the gear, pick the provider, click **Test** |
 | *Could not reach http://localhost:11434/v1: the server is not running, or CORS blocks this page.* | The server is off, or it does not allow this page. The browser cannot tell the two apart | Run `curl http://localhost:11434/v1/models`. No answer: start the server. An answer: allow the page (section 3) |
-| *Got 403 — the server rejected this origin or key.* | Ollama runs but does not allow this site | Section 3, Ollama, step 3; restart Ollama after it |
+| The same message, and `curl` gets an answer (hosted site, Chrome or Edge) | The server does not allow the site, or the browser was not allowed to reach your local network | Ollama: section 3, step 3, then restart Ollama. LM Studio: start the server with CORS. Then open the site's permissions (the icon left of the address) and allow local network access |
+| The message starts with *Failed to fetch* or *Load failed* | The browser's own words for the same failure | As above |
 | *Got 401 — the provider rejected the API key.* | The key is wrong, revoked, or belongs to another provider | Paste the key again; check the **Provider** button matches the key |
-| *Got 404 — check that the base URL ends in /v1* | **Server URL** is not the server's `/v1` address | Click the **Provider** button again to restore it |
+| *Got 404 — check that the base URL ends in /v1* | **Server URL** is not the server's `/v1` address. With **Gemini**: the **API key** box is empty (the hint about `/v1` does not apply) | Click the **Provider** button again to restore the address. Gemini: paste the key |
+| *HTTP 400: Please pass a valid API key* (Gemini) | The key is wrong | Paste the key again |
+| *Got 403 — the server rejected this origin or key.* | The server answered but refuses this page or this key | Check the key's permissions at the provider; for a local server, allow the page (section 3) |
 | *Got 429 — the provider is rate-limiting or your quota is exhausted.* | The provider's limit for your account | Wait, or check the account's billing page |
 | **Connected**, but the model list is empty | The server has no model | Ollama: `ollama pull qwen3`. LM Studio: download a model |
 | The Copilot answers but runs no analysis | The model cannot call tools, or **Let the Copilot run analyses** is off | Choose another model; tick the box in the drawer |
 | The Copilot refuses a question and names a context size (LM Studio) | The model was loaded with too small a context | Load it again with the size it names |
 | It worked yesterday, not today (Ollama, hosted site, macOS) | `launchctl setenv` is lost at logout | Run the command of section 3 again, restart Ollama |
-| Nothing works in Safari on the hosted site | See the browser table in section 3 | Use Chrome or Edge, or a local copy of the Workbench |
+| A local model never connects in Safari on the hosted site | Safari stops an `https` page from calling `http://localhost`. A proxy does not change this | Use Chrome or Edge, or a local copy of the Workbench |
+| The proxy of section 4 answers `curl` but not a local copy of the Workbench | The proxy serves one site, by default the hosted one | A local copy needs no proxy for Ollama. Otherwise start the proxy with `SITE=http://localhost:4173` |
 
 More on what the Copilot sends and how it works: the
 [Copilot guide](../web_app/frontend/src/llm/README.md) and
