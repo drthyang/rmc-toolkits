@@ -92,6 +92,7 @@ you when a choice would change the result. **Show in** opens the same analysis o
 It works with a **local** model (Ollama or LM Studio: nothing leaves your machine) or, with your
 own key, a **cloud** one (OpenAI, Gemini, Anthropic). Setup, including connecting a local Ollama
 to the hosted site: [QuickStart, *4. AI Copilot*](QuickStart.md#4-ai-copilot-optional).
+Step by step, for a first-time setup: [Setting up the AI Copilot](docs/COPILOT_SETUP.md).
 
 ### How the Copilot stays safe
 
@@ -168,6 +169,7 @@ newer. The AI Copilot is experimental: trust its step cards' checks over its own
   patterns, the Python package and command-line tools, tests.
 - [docs/ALGORITHMS.md](docs/ALGORITHMS.md): the math of every page, anchored to the code, with the
   approximations stated.
+- [docs/COPILOT_SETUP.md](docs/COPILOT_SETUP.md): connecting a model to the AI Copilot, step by step.
 - [AI Copilot guide](web_app/frontend/src/llm/README.md): how it works, its tools, privacy, setup.
 - [docs/AGENT_PLAN.md](docs/AGENT_PLAN.md) and
   [copilot-validation.md](docs/algorithms/copilot-validation.md): the Copilot's architecture and
