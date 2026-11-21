@@ -790,7 +790,9 @@ cd web_app/frontend && npm test
 CI (`.github/workflows/tests.yml`) runs the Python suite on a matrix — Python 3.10 with the
 dependency floors pinned exactly (numpy 1.22.4, SciPy 1.8.1, matplotlib 3.6.3, contourpy 1.0.7),
 3.11 and 3.13 with the latest releases — plus the frontend lint, vitest and build, on every push/PR
-to `main`. `.github/workflows/pages.yml` deploys the static dashboard. The `rmc_toolkits` package is
+to `main`. `.github/workflows/pages.yml` deploys the static dashboard, and only after that Tests run
+has passed for the same commit (it starts from the finished Tests run; a manual run is refused
+without one). The `rmc_toolkits` package is
 pip-installable (`pip install -e .`, see `pyproject.toml`; floors numpy ≥ 1.22, scipy ≥ 1.8,
 matplotlib ≥ 3.6, contourpy ≥ 1.0.7) and exposes `__version__` (0.8.0 on main, the last release).
 
