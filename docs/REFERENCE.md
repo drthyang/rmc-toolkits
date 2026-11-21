@@ -105,7 +105,7 @@ Two ways to deploy:
   machine, no Python server required. Plot parsing, `.rmc6f` model summaries, the slab view,
   browser-side KDE (WebGPU + CPU fallback), and the 3D view all run client-side. Live Data works in
   Chromium browsers (Chrome, Edge, Arc, Opera) via the File System Access API. Deployed automatically
-  from `main` by `.github/workflows/pages.yml`.
+  from `main` by `.github/workflows/pages.yml`, once the tests have passed for that commit.
 - **Flask web service** — full-featured: server-side file browsing, structure sampling, the
   reference-grade engines (SciPy KDE, PCA, orientation, bond angles), the conversion and Auto StoG
   API routes, and Live Data. The included `Dockerfile` builds the frontend and serves it via
