@@ -5,6 +5,114 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+### Demo QA for 0.8.0: Safari and phone fixes, hidden 3D panels idle
+
+- The public Demo was run end to end in Chromium and WebKit at desktop, iPhone and iPad sizes, with
+  the Copilot on a local model and a scripted one; the checklist, timings and known issues are in
+  [docs/demo-qa.md](demo-qa.md).
+- Displacement Directions: Safari no longer reports "ResizeObserver loop completed with undelivered
+  notifications" (the sphere resizes on the next frame). On phones and tablets the Axis views sit
+  side by side in their wide row, instead of three thin strips.
+- Atomic Density: in Safari the Normal menu closes on a pick (it opened again: the menu sat inside a
+  `<label>`, which forwarded the tap to its first button).
+- Bond Geometry: on a phone, with the Copilot's sheet open, the angle plot keeps a readable height
+  (the stacked card's floor is 30rem, was 24rem).
+- PCA Ellipsoid: the 3D panel's legend names what it draws — the ellipsoid only while it is drawn,
+  and the isosurface while it is on.
+- 3D panels draw nothing while their page is hidden: after visiting every page, the Dashboard kept
+  the main thread busy ~570 ms in every 5 s; ~100 ms now.
+- Copilot (display only; nothing the model reads or the verification judges changes): an answer's
+  Outcome sits above the checks its note calls "below"; a number the model types before its own
+  reference ("2.64 Å {{r1.…}}") shows once, the engine's value, instead of "2.64 Å 2.64".
+
+### Docs: the README, QuickStart and a demo script, current with 0.8.0
+
+- README: what the Workbench is for (judge the fit, read the local structure, decide the next
+  analysis or RMC run), a 3-step start, current screenshots from the public Demo (WebP, in
+  `assets/workbench-*.webp`, replacing the older PNGs and the Copilot GIF on the page; the files
+  stay for older links), *How the Copilot stays safe* and *Validation* (the 14-case held-out test,
+  protocol 2026-11-01.1: Claude Sonnet 5.5 0.920 against 0.800 for the default pages and 0.948 for
+  the exhaustive sweep).
+- QuickStart: every section brought to 0.8.0 (the Detected SG card on the Dashboard and for
+  server folders, the ladder and CIF, Save on every view) and the Copilot's connection steps: on the
+  hosted site, `launchctl setenv OLLAMA_ORIGINS "https://drthyang.github.io"`, a restart of Ollama
+  and Chrome's local-network prompt; or a local build on `http://localhost`, which Ollama allows by
+  default; the settings drawer's Test says what failed.
+- New [demo-script.md](demo-script.md): a timed 5–10 minute click path through the Demo, with a
+  prep checklist, the exact prompts, one line to say per step and fallbacks.
+- [demo-qa.md](demo-qa.md): asking "Se per Ta" does not avoid the coordination check's false
+  *Not verified* (checked again); a number shown twice when a unit sits between it and its
+  reference is listed as a known display issue.
+- The Copilot guide: its five skills are interviewed (no longer drafts), and the Ollama setup names
+  `launchctl` and Chrome's prompt. REFERENCE: the repository layout names the Copilot module, the
+  validation harness and the skills.
+
+### Copilot: a number shown once after a short label
+
+- Copilot (display only; nothing the model reads or the verification judges changes): a number the
+  model types, then a short unit or label, then its own reference ("3.25 Se per Ta {{r2.…}}",
+  "127 deg² {{r5.…}}") shows once, the engine's value with the label, instead of
+  "3.25 Se per Ta 3.25". A number that differs from the engine's value is still shown as both.
+
+### Bond Geometry: angles in the range shown as shaded wedges
+
+- The folded cell marks each angle of the range with a flat, lightly shaded wedge at its central
+  atom, in the angle plot's blue with a fine darker rim. It replaces the thin fuchsia arcs, which
+  piled into rings at a six-coordinate site.
+- The range's bonds are opaque: a larger share of angles in the range draws a bond thicker and in
+  a stronger colour, where it used to be less transparent. The other bonds turn thin and grey,
+  paler with distance, so they stay behind.
+- The triplets drawn, their shares, the 750 cap and the 2% threshold are unchanged. The "?" help
+  says "wedges".
+
+### Phones in landscape: usable pages and Copilot
+
+- On a window up to 480 px tall, the open Copilot covers the whole window and its close button
+  brings the page back. It used to leave the page a strip 30–60 px tall. Portrait phones, tablets
+  and desktops are unchanged.
+- Atomic Density: the three maps are never shorter than 18 rem; on a short window, or a tablet
+  with the Copilot sheet open, the page scrolls instead. The maps were squashed there and the
+  slab could not be dragged.
+- Atomic Density: the readout on the KDE slice sits inside the map's top-left corner, at every
+  size. Its first characters used to fall on the canvas margin.
+- Displacement Directions: on a window up to 540 px tall the sphere card is taller, so the map
+  is no longer a thin strip, and the card's actions wrap under its title instead of overlapping
+  it.
+
+### Copilot: a number with a thousands separator shown once
+
+- Copilot (display only; nothing the model reads or the verification judges changes): a number the
+  model types with a thousands separator before its own reference ("215,252 {{r1.…}}") shows once,
+  the engine's value, instead of "215,252 215252". A comma list ("1,2", "12,34") is never read as
+  one number.
+
+### Bond Geometry: a knob to move the angle range on small screens
+
+- On phones and tablets, the picked angle range has a small knob on the angle axis: dragging it
+  moves the whole range, width kept, without scrolling the page. With a keyboard, the arrow keys
+  move the range by one bin. The plot with a mouse is unchanged.
+
+### Docs: a setup manual for the AI Copilot
+
+- New [COPILOT_SETUP.md](COPILOT_SETUP.md): connecting a model step by step, for a reader who has
+  never set one up. What you need, a hosted model with an API key (where the key is stored), a
+  local model in Ollama or LM Studio, the local proxy (the Workbench has none; when one helps and a
+  small example), a check with the Demo, and troubleshooting by the message on screen. Its last
+  section says which steps were run and in which browsers.
+- One new screenshot, `assets/workbench-copilot-connection.webp` (the Demo with the Connection
+  drawer, no key shown).
+- README: links to the manual from *AI Copilot* and *Documentation*.
+
+### CI: the public dashboard deploys only after the tests pass
+
+- `.github/workflows/pages.yml` no longer deploys on every push to `main`. It starts when the Tests
+  workflow finishes for a push to `main`, and builds and deploys that tested commit only if the run
+  passed. Before, a push with failing tests still went live.
+- A manual run is still possible and has the same condition: it is refused when the commit has no
+  passed Tests run on `main`.
+- A commit that is no longer the head of `main` is skipped, so an older build cannot land after a
+  newer one. The tests stay defined once, in `tests.yml`, and run once per push.
+
 ## 0.8.0 — 2026-11-07
 
 ### Validation: the 0.8.0 live gate (Claude Sonnet 5.5; Muse Glimmer in part)
