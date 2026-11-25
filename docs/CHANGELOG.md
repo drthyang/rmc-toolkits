@@ -5,6 +5,10 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+## 0.8.1 — 2026-11-25
+
+Browsers: checked in Chromium and WebKit (Safari) at desktop, tablet and phone sizes; Firefox is untested.
+
 ### Demo QA for 0.8.0: Safari and phone fixes, hidden 3D panels idle
 
 - The public Demo was run end to end in Chromium and WebKit at desktop, iPhone and iPad sizes, with

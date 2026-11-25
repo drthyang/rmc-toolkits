@@ -794,7 +794,7 @@ to `main`. `.github/workflows/pages.yml` deploys the static dashboard, and only 
 has passed for the same commit (it starts from the finished Tests run; a manual run is refused
 without one). The `rmc_toolkits` package is
 pip-installable (`pip install -e .`, see `pyproject.toml`; floors numpy ≥ 1.22, scipy ≥ 1.8,
-matplotlib ≥ 3.6, contourpy ≥ 1.0.7) and exposes `__version__` (0.8.0 on main, the last release).
+matplotlib ≥ 3.6, contourpy ≥ 1.0.7) and exposes `__version__` (0.8.1 on main, the last release).
 
 The repo's sample data lives in `data/` (GaNb₄Se₈ runs, gitignored). Point the run folder at a
 subdirectory containing a `.rmc6f` (e.g. `data/5K_try1`) to exercise the KDE/3D page. The committed
