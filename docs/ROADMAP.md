@@ -267,9 +267,10 @@ for processing data. The Copilot's next tools are assessments that tell a real f
 artifact:
 
 1. `check_ripples`: Fourier termination ripples. RMC fits whatever is in the data, ripples
-   included. Per dataset: fit space, Q range, window and r-resolution; the low-r ripple level; the
-   predicted ripples around strong peaks; features marked ripple-consistent or below resolution;
-   datasets with different Qmax compared.
+   included. Per dataset: fit space, Q range, window and r-resolution (built, first principles
+   only). The reading of a given feature (predicted ripples around strong peaks, the low-r level,
+   features marked ripple-consistent, datasets with different Qmax compared) was not reliable on
+   known-truth tests; it is on the branch `wip/joint-fit`, not shipped.
 2. `check_overfitting`: a fit too good to be true. The residual against σ(r) for each dataset, the
    information the data hold (the Nyquist count) against the features claimed, and spurious
    disorder at high r from unmodelled Q-resolution. How to judge noise when the data carry no σ is
