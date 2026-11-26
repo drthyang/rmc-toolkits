@@ -22,6 +22,7 @@ import {
 import { copilotRun, DEFAULT_VIEW } from '../../copilotRun';
 import { copilotSkills } from '../../copilotSkills';
 import { attachFtUncertainty } from '../../ftUncertaintyRun';
+import { ripplesSource } from '../../ripplesRun';
 import { parseSkillFiles } from '../../llm/copilot/skills';
 import { copilotSystemPrompt } from '../../llm/prompts/copilot';
 import { inProcessEngine } from '../../workers/pcaKdeWorker';
@@ -110,8 +111,8 @@ export const demoEntries = () => readdirSync(DEMO).sort().map((name) => ({
  * A browser-loaded run as the Dashboard holds it once everything is parsed,
  * as a LoadedRun (copilotRun.js): its files with each plot file parsed
  * (parseDashboardPlotFile), the structure worker's parse (maxPoints 100), the
- * structure file's path, the parsed .dat as useCopilotRun reads it, and an
- * in-thread engine.
+ * structure file's path, the parsed .dat as useCopilotRun reads it, an
+ * in-thread engine and the ripple source over every file of the run.
  */
 export const dashboardLoadedRun = async (localRun) => {
     // Parsed as the Dashboard parses them, each xPDF transform with its error ribbon.
@@ -124,7 +125,8 @@ export const dashboardLoadedRun = async (localRun) => {
     const rmc6fText = await localRun.structureFile.sourceFile.text();
     return {
         loaded: {
-            name: localRun.name, files, structure, structurePath: localRun.structureFile.path, settings, engine: inProcessEngine(rmc6fText)
+            name: localRun.name, files, structure, structurePath: localRun.structureFile.path, settings, engine: inProcessEngine(rmc6fText),
+            ripples: ripplesSource(localRun.allFiles || localRun.files)
         },
         rmc6fText
     };

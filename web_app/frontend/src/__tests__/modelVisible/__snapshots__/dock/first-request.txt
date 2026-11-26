@@ -9,7 +9,7 @@ session: "session object (contextGuard.js context sizes)"
 signal: "AbortSignal"
 temperature: 0.2
 toolChoice: "auto"
-tools: 18, in the order sent (each definition in full: dock/tools.json)
+tools: 19, in the order sent (each definition in full: dock/tools.json)
   1. read_run_data
   2. assess_convergence
   3. find_gr_peaks
@@ -23,11 +23,12 @@ tools: 18, in the order sent (each definition in full: dock/tools.json)
   11. analyze_modulations
   12. detect_symmetry
   13. measure_symmetry_lowering
-  14. orient_3d_view
-  15. current_view
-  16. set_bond_geometry
-  17. ask_user
-  18. read_skill
+  14. check_ripples
+  15. orient_3d_view
+  16. current_view
+  17. set_bond_geometry
+  18. ask_user
+  19. read_skill
 
 ## messages[0] · system
 (the system prompt, variant "tools-view-ask-skills": system-prompt/tools-view-ask-skills.txt, 13281 characters, sha256 fb1bb2f23115ad01)

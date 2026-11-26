@@ -68,6 +68,9 @@ const SAMPLES = [
     ['analyze_modulations.element', 'analyze_modulations', { element: 'Ta' }],
     ['detect_symmetry', 'detect_symmetry', { tolerance_A: 0.2 }],
     ['measure_symmetry_lowering', 'measure_symmetry_lowering', {}],
+    // Termination ripples (2026-11-07, the dock only): the Demo's datasets,
+    // from its files and first principles.
+    ['check_ripples', 'check_ripples', {}],
     ['ask_user', 'ask_user', {
         question: 'Which Ta–Se window?',
         options: [
@@ -101,14 +104,15 @@ describe('tool results as the model reads them (the Demo run)', () => {
     let setup;
 
     beforeAll(async () => {
-        const { run, rmc6fText } = await loadDemoAssistantRun();
+        const { run, rmc6fText, loaded } = await loadDemoAssistantRun();
         const request = inProcessEngine(rmc6fText);
         const cards = buildCopilotCards({ plotFiles: run.plotFiles, rValueFile: run.rValueFile, symmetry: run.symmetry });
         const skills = bundledSkills();
         const tools = [
             ...buildRunTools(run, { cards }),
             ...buildCopilotTools({
-                request, structure: run.structure, elements: Object.keys(run.structure.elementCounts || {}).sort(), plotFiles: run.plotFiles, runSettings: run.runSettings
+                request, structure: run.structure, elements: Object.keys(run.structure.elementCounts || {}).sort(), plotFiles: run.plotFiles,
+                runSettings: run.runSettings, ripples: loaded.ripples
             }),
             buildAskUserTool(),
             buildReadSkillTool(skills, { load: copilotSkills.load })

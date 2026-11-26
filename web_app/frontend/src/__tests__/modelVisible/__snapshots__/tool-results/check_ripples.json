@@ -1,0 +1,62 @@
+{
+  "tool": "check_ripples",
+  "arguments": {},
+  "content_chars": 1752,
+  "content": {
+    "ref": "r1",
+    "checks": [
+      {
+        "level": "ok",
+        "text": "No real-space fit asks the box to make ripples (each model is truncated as its data are)."
+      },
+      {
+        "level": "note",
+        "text": "xpdf: fitted in r, but RMCProfile transforms the model F(Q) exactly as the data: both carry the same ripples, so the box is not asked to make them."
+      },
+      {
+        "level": "note",
+        "text": "xpdf: r-resolution: ripples repeat every 0.233 Å (2π/Q_max, Q_max = 26.98 Å⁻¹); a peak at r₀ has its ripples between about r₀ ± (n + ½)·0.116 Å and r₀ ± (n + 1)·0.116 Å (n = 1, 2, …; π/Q_max), near the first for a sharp peak and toward the second for a broad one, their sign set by the peak's width; features closer than the kernel's FWHM, 0.138 Å, are not resolved."
+      },
+      {
+        "level": "note",
+        "text": "xray_sq: fitted in Q: the box is not asked to make ripples (a G(r) transformed from these data still shows them)."
+      }
+    ],
+    "data": {
+      "datasets": [
+        {
+          "dataset": "xpdf",
+          "file": "GTS_250K_FT_XFQ1.csv",
+          "status": "assessed",
+          "fitted_in": "r",
+          "model": "same transform as the data",
+          "risk": "matched",
+          "Q_A": [0.8, 26.98],
+          "window": "none",
+          "Q_from": "the run's F(Q) file",
+          "resolution_A": {
+            "fwhm": 0.138,
+            "nyquist": 0.116,
+            "ripple_period": 0.233
+          }
+        },
+        {
+          "dataset": "xray_sq",
+          "file": "GTS_250K_FQ1.csv",
+          "status": "assessed",
+          "fitted_in": "Q",
+          "risk": "none",
+          "Q_A": [0.8, 26.98],
+          "Q_from": "this file's Q grid",
+          "resolution_A": {
+            "fwhm": 0.138,
+            "nyquist": 0.116,
+            "ripple_period": 0.233
+          }
+        }
+      ],
+      "verdict": "No real-space fit asks the box to make ripples (each model is truncated as its data are).",
+      "next": ["This check does not say whether a given peak or shoulder is a ripple. To test one: a ripple moves with Q_max and a real feature stays, so compare a G(r) transformed with a higher Q_max, a Lorch-windowed transform (which suppresses ripples) or the other radiation's data (another Q_max)."]
+    }
+  }
+}

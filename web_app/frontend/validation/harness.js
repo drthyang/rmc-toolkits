@@ -307,11 +307,21 @@ export const ARMS = Object.freeze({
 export const LIVE_ARM_EFFECTS = Object.freeze(['compute']);
 
 /**
+ * Compute tools the dock offers that the live arms do not, by name: tools
+ * added after protocol 2026-11-01.1 (the 0.8.0 live gate), left out so that
+ * protocol and its recorded results stay valid. The arms gain one only with a
+ * protocol bump, the user's call. check_ripples (src/copilotRipples.js,
+ * 2026-11-07): termination ripples.
+ */
+export const LIVE_ARM_EXCLUDED = Object.freeze(['check_ripples']);
+
+/**
  * The live arms' tools for a run (runFolder.js loadRun): the tools over its
  * props, with no cards, and its engine tools, read through the one list of
- * tool effects, compute only (LIVE_ARM_EFFECTS).
+ * tool effects, compute only (LIVE_ARM_EFFECTS), less LIVE_ARM_EXCLUDED.
  */
-export const liveArmTools = (run) => toolsWithEffects([...buildRunTools(run.props, { cards: [] }), ...run.tools], LIVE_ARM_EFFECTS);
+export const liveArmTools = (run) => toolsWithEffects([...buildRunTools(run.props, { cards: [] }), ...run.tools], LIVE_ARM_EFFECTS)
+    .filter((tool) => !LIVE_ARM_EXCLUDED.includes(tool.name));
 
 /** The simulated user: skips every question, so the model uses its own default. */
 export const skippingUser = (log) => async (request) => {

@@ -60,7 +60,7 @@ describe('the Demo through openRunFolder (the in-process adapter)', () => {
         expect(run.elements).toEqual(['Ga', 'Se', 'Ta']);
         expect(run.tools.map((tool) => tool.name)).toEqual([
             'list_sites', 'analyze_displacement_directions', 'compute_bond_angles', 'polyhedral_distortion', 'analyze_clusters',
-            'analyze_modulations', 'detect_symmetry', 'measure_symmetry_lowering'
+            'analyze_modulations', 'detect_symmetry', 'measure_symmetry_lowering', 'check_ripples'
         ]);
         expect(run.view).toEqual(DEFAULT_VIEW);
     });
@@ -156,8 +156,9 @@ describe('copilotRun (the pure core)', () => {
         expect(run.engine).toBe(engine);
         expect(run.props.symmetry).toMatchObject({ spaceGroup: 'F-43m', toleranceA: 0.2 });
         expect(run.props.symmetry.ladder.map((brick) => brick.spaceGroup)).toEqual(browser.props.symmetry.ladder.map((brick) => brick.spaceGroup));
-        // Every tool the same files picked in the browser get, as the model is sent them...
-        expect(definitions(run.tools)).toEqual(definitions(browser.tools));
+        // Every tool the same files picked in the browser get, as the model is sent them
+        // (check_ripples reads the run's fit files, which this listing leaves out)...
+        expect(definitions(run.tools)).toEqual(definitions(browser.tools.filter((entry) => entry.name !== 'check_ripples')));
         expect(run.tools.map((entry) => entry.name)).toEqual(expect.arrayContaining(['detect_symmetry', 'measure_symmetry_lowering']));
         // ...and the symmetry tools' answers.
         for (const args of [{ tolerance_A: 0.2 }, { tolerance_A: 0.02 }]) {

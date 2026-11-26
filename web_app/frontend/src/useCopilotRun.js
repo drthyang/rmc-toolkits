@@ -9,7 +9,8 @@
 //   symmetry: structure + toleranceA;  ladder: structure;
 //   rValueFile: files + hiddenPlots + structurePath;
 //   tools: engine + structure + files + run settings (the shell catalogue
-//   compute_bond_angles judges its windows against).
+//   compute_bond_angles judges its windows against) + the ripple source
+//   (check_ripples: the run's files, or Flask's /api/ripples).
 // A new PCA table (view.pcaSites) replaces `props` but not `tools` or `engine`.
 //
 // Ordering: until the Copilot is opened (`enabled`) and the Dashboard has
@@ -24,6 +25,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { isStaticMode, parseRunSettings } from './browserData';
 import { requestAnalysis } from './useSiteCloud';
+import { ripplesSource } from './ripplesRun';
+import { flaskRipplesSource } from './ripplesFlask';
 import {
     assembleCopilotRun, DEFAULT_VIEW, normalizeView, runElements, runEngineTools, runLadder, runPlotFiles,
     runRValueFile, runSymmetry
@@ -121,6 +124,15 @@ const useRunSettings = ({ localRun, enabled }) => {
 export default function useCopilotRun({ directory, localRun, dashboard = null, view = DEFAULT_VIEW, enabled = false }) {
     const engine = useRunEngine({ directory, localRun });
     const settings = useRunSettings({ localRun, enabled });
+    // check_ripples' source: a browser-loaded run's own files (every picked
+    // file), else a typed server folder through Flask; none in the static
+    // build with no run open.
+    const runFiles = localRun ? localRun.allFiles || localRun.files || null : null;
+    const canAskServer = !localRun && !isStaticMode();
+    const ripples = useMemo(
+        () => (runFiles ? ripplesSource(runFiles) : (canAskServer ? flaskRipplesSource() : null)),
+        [runFiles, canAskServer]
+    );
 
     const published = enabled ? dashboard : null;
     const files = published?.files ?? NO_FILES;
@@ -146,8 +158,8 @@ export default function useCopilotRun({ directory, localRun, dashboard = null, v
     const elements = useMemo(() => runElements(structure), [structure]);
     const runSettings = published ? settings : null;
     const tools = useMemo(
-        () => runEngineTools({ engine, structure, elements, plotFiles, settings: runSettings }),
-        [engine, structure, elements, plotFiles, runSettings]
+        () => runEngineTools({ engine, structure, elements, plotFiles, settings: runSettings, ripples }),
+        [engine, structure, elements, plotFiles, runSettings, ripples]
     );
     const name = localRun ? localRun.name : directory;
 

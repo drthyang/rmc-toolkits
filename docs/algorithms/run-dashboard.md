@@ -41,13 +41,18 @@ How a run folder becomes plots and numbers: file detection and parsing, the fit-
   - [Screen vs. export: what actually changes](#screen-vs-export-what-actually-changes)
   - [Caveats / what this is not](#caveats--what-this-is-not-1)
 - [The G(r) error ribbon (Fourier-transform error propagation)](#the-gr-error-ribbon-fourier-transform-error-propagation)
+- [Termination ripples (the Copilot's check_ripples)](#termination-ripples-the-copilots-check_ripples)
+  - [Step 1 — How RMCProfile makes the model it compares (established on its own files)](#step-1--how-rmcprofile-makes-the-model-it-compares-established-on-its-own-files)
+  - [Step 3 — The r-resolution](#step-3--the-r-resolution)
+  - [Known answers — termination ripples](#known-answers--termination-ripples)
+  - [Caveats / what this is not](#caveats--what-this-is-not-3)
 - [Model summary and the Detected SG symmetry finder](#model-summary-and-the-detected-sg-symmetry-finder)
   - [What this section covers — model summary and symmetry](#what-this-section-covers--model-summary-and-symmetry)
   - [Part A — Model information](#part-a--model-information)
   - [Part B — The Detected SG symmetry finder](#part-b--the-detected-sg-symmetry-finder)
   - [Part C — The symmetry-averaged CIF of a ladder brick](#part-c--the-symmetry-averaged-cif-of-a-ladder-brick)
   - [Parameters and defaults — model summary and symmetry](#parameters-and-defaults--model-summary-and-symmetry)
-  - [Caveats / what this is not](#caveats--what-this-is-not-2)
+  - [Caveats / what this is not](#caveats--what-this-is-not-4)
 
 ---
 
@@ -2705,6 +2710,153 @@ the endpoint halves.
 - **An input file outside the run folder.** Flask reads it inside the data roots; the browser sees
   only the picked files, so the same `.dat` can give a ribbon on the server and "not in the run
   folder" in the browser (an absolute `FILENAME`, or one above the picked folder).
+
+
+## Termination ripples (the Copilot's check_ripples)
+
+### What this section covers — termination ripples
+
+A G(r) is the sine transform of F(Q) measured from $Q_\mathrm{min}$ to $Q_\mathrm{max}$. Cutting the
+transform at $Q_\mathrm{max}$ convolves every peak with the termination kernel: the peak broadens,
+and ripples of period $2\pi/Q_\mathrm{max}$ spread on both sides of it, decaying only as 1/distance.
+RMC is a minimiser and fits whatever the data carry: fitted to a G(r) with ripples, against a model
+G(r) without them, the box makes structure that reproduces them (the user's concern, 2026-11-01:
+ripples must not be read as physical properties). `rmc_toolkits/ripples.py` says, per fitted
+dataset of a run, from the run's files and first principles only: whether RMCProfile truncates the
+model as the data (whether the box is asked to fit ripples), the data's Q range and window, and the
+r-resolution. It does **not** judge whether a given peak or shoulder is a ripple: that reading (the
+strong peaks fitted through the transform, their predicted ripples, the low-r level, the feature
+classes) was not reliable enough on known-truth tests to ship and is kept, with its tests, on the
+branch `wip/joint-fit`. It is the AI Copilot's `check_ripples` (no page); the dock only for now
+(the validation's live arms leave it out by name, `LIVE_ARM_EXCLUDED`).
+
+| Runtime | Engine | Run glue | Reaches the Copilot |
+|---|---|---|---|
+| **Flask mode** | [`rmc_toolkits/ripples.py`](../../rmc_toolkits/ripples.py) (the source of truth) | `ripples_for_run()`; `app.py` → `/api/ripples` (`path`, `qmax`, `qmin`, `window`; cached on every file the call may read, the input read only inside the data roots) | `src/ripplesFlask.js`, the run's ripple source |
+| **Browser** (a picked folder, the Demo, the in-process run) | [`src/ripples.js`](../../web_app/frontend/src/ripples.js), a port | [`src/ripplesRun.js`](../../web_app/frontend/src/ripplesRun.js) → `ripplesForRun()` over every picked file | `ripplesSource(allFiles)` (LoadedRun `ripples`) |
+
+The payload is `{datasets}`, one per fit file: `status`, `reason`, `file`, `kind`, `number`, the
+`.dat` `block`, `fit` (Step 1), `transform` (Step 2), `resolution` (Step 3), `processing`. One golden,
+`ripples_fixture.json` (`tests/generate_ripples_fixture.py`: the Demo and seven synthetic run
+folders), held by `ripplesParity.test.js` and `tests/test_ripples_api.py` at the goldens' usual
+tolerance; `tests/test_ripples_fixture.py` fails when it is stale.
+
+### Step 1 — How RMCProfile makes the model it compares (established on its own files)
+
+Whether the box is asked to make ripples depends on how RMCProfile computes the model function a
+dataset is compared with — established on RMCProfile's own output files, not assumed:
+
+| Dataset (`.dat` block, output file) | Model RMCProfile compares | Evidence | `risk` |
+|---|---|---|---|
+| X-ray F(Q) with `REAL_SPACE_FIT` (`_FT_XFQ<n>.csv`) | the same rectangle-rule transform $\sum_k \Delta Q\,Q_k F_k\sin(Q_k r)$ of the model's `F(Q)_RMC` over the run's Q grid as the data's | the Demo: the `X_ray-calc` column to $1.6\times10^{-5}$ of max \|G\| (the experiment's to $1.5\times10^{-14}$, [the ribbon](#the-gr-error-ribbon-fourier-transform-error-propagation)); the trapezoid rule misses by $6.6\times10^{-4}$; the manual: "the Fourier transform from the reciprocal space to the real space now is done internally" | `matched`: both carry the same ripples |
+| `NEUTRON_REAL_SPACE_DATA` without `CONVOLVE` (`_PDF<n>.csv`) | the configuration's histogram $\sum_{ij} w_{ij}[g_{ij}(r)-1]$ from `_PDFpartials.csv` — **not truncated** | three runs: a local Mn₃Sn neutron run of the user's (not committed; to $3.9\times10^{-15}$ of max \|G\|), the RMCProfile tutorial's SF₆ (RMCProfile 6.7.9.1, $6.4\times10^{-15}$), a synthetic Ni box (6.9.0-rc.0, $4\times10^{-14}$) | `high`: the box is asked to make the data's ripples |
+| the same with `CONVOLVE :: Q_c` | the histogram convolved in D-space: $G_c(r) = \frac{1}{r}\frac{1}{\pi}\sum_j \Delta r\,r_j G(r_j)\left[\frac{\sin Q_c(r-r_j)}{r-r_j} - \frac{\sin Q_c(r+r_j)}{r+r_j}\right]$ for $r \ge$ `R_CUTOFF`, the baseline $-\sum w_{ij}$ below it (`R_CUTOFF` defaults to the smallest `MINIMUM_DISTANCES`) | the synthetic Ni box, RMCProfile 6.9.0-rc.0: to $1.8\times10^{-14}$ with `R_CUTOFF` 2.0 Å (the default) and 0.5 Å; the sinc applied to G itself (no r) misses by 4 % | `matched` only when $Q_c$ is the data's $Q_\mathrm{max}$ within 2 % and neither has a window; `high` when the data were Lorch-windowed or $Q_c$ differs; **`unknown`** when the run's files do not say how the data were transformed |
+| `XRAY_REAL_SPACE_DATA` (`_Xray_PDF<n>.csv`) | the histogram transformed to Q on the block's QMIN–QMAX grid at QSTEP and back by the rectangle rule | the Ni box: to $8\times10^{-6}$ of max \|G\| with QMIN 0 (its file has 7 decimals); with QMIN 0.5 a slowly varying term remains (≤ 1.3 % of max \|G\|, not identified; it does not change the cut at QMAX) | as `CONVOLVE`, against the block's QMAX |
+| a fit in Q (`_FQ<n>.csv`, `_SQ<n>.csv`) | — | — | `none`: the box is not asked to make ripples (a G(r) transformed from these data still shows them) |
+
+The synthetic Ni box's output (2048 atoms, no moves) is committed as
+`tests/fixtures/rmcprofile_model_gr.json` with its `.dat`, so CI re-checks the histogram, the D-space
+sinc, the `R_CUTOFF` baseline and the X-ray transform (`tests/test_ripples.py::RmcProfileModelGr`).
+An `_FT_XFQ<n>.csv` with no `.dat` beside it is `matched` with `fitSpace` `unknown`: fitted in r or
+not, its ripples are not fitted.
+
+### Step 2 — The data's own transform
+
+The Q range, step and window of the function the dataset fits, from the files beside it, in this
+order: the caller's word (`qmax`, `qmin`, `window`: `argument`); an Auto StoG provenance JSON
+(`*_provenance.json` in the folder or its `autoscale/`, `tool` rmc-autoscale) whose outputs name the
+`.dat`'s `FILENAME` (`provenance`: `qmin`, `qmax`, `lorch`, ΔQ from `n_q_points`, its Fourier-filter
+`r_cutoff` and enforcement cutoff, reported in `processing`); a classic stog input (`*.inp`,
+`stog_input.dat`) whose outputs name it (`stog`: line 3, the Lorch flag of line 10, the filter of lines
+14–15, the RMC cutoff of line 22); `CONVOLVE :: Q_c` (`convolve`, the model's stated Q range, window
+unknown); a `XRAY_REAL_SPACE_DATA` block's QMIN/QMAX/QSTEP (`xray-block`); an X-ray transform's own
+F(Q) file (`run-fq`, after RMCProfile's transform of it reproduces the fitted file — Step 2 of the
+ribbon — else `transform-not-reproduced`); a fit in Q, its file's Q grid (`q-file`). None: `reason`
+`qmax-unknown` (the tool asks for `qmax`, quoting a neutron S(Q) of the run that may come from the same
+measurement). The rule: RMCProfile's rectangle for its own transforms, the trapezoid (stog, pystog,
+Auto StoG) for a data file; a window or step the files do not give is assumed none / 0.01 Å⁻¹ and
+marked `windowKnown: false`. A real-space dataset's input file is mapped onto the fitted file
+($y = s\,y_\mathrm{in} + c$ by least squares within $10^{-5}$ of max \|y\|, `transform.input`); the r
+grid read must be uniform (`r-grid-not-uniform` otherwise).
+
+### Step 3 — The r-resolution
+
+With weights $w_k$ (ΔQ, the trapezoid's halves at the ends, times the window) on the grid
+$Q_k = Q_\mathrm{min} + k\Delta Q$, the termination kernel is $K(x) = \sum_k w_k\cos(Q_k x)$.
+`resolution()` gives the Nyquist step $\pi/Q_\mathrm{max}$ (Farrow et al. 2011), the kernel's FWHM
+(twice the first $x$ with $K(x) = K(0)/2$, by bisection: $3.79/Q_\mathrm{max}$ for a rectangle from 0
+— $\sin u/u = 1/2$ at $u = 1.8955$; wider with Lorch), its main lobe (its first zero: $\pi/Q_\mathrm{max}$
+for a rectangle), and the ripple period $2\pi/Q_\mathrm{max}$. Two features closer than the FWHM are not
+resolved by the data (Toby & Egami 1992; Egami & Billinge 2012, ch. 5). Where a peak's ripples fall:
+a Gaussian peak of width $\sigma$ at $r_0$, cut at $Q_\mathrm{max}$, leaves at $\Delta r = r - r_0$
+$$\Delta(\Delta r) \propto -\int_{Q_\mathrm{max}}^{\infty} e^{-Q^2\sigma^2/2}\cos(Q\Delta r)\,dQ
+\approx e^{-Q_\mathrm{max}^2\sigma^2/2}\Big[\frac{\sin(Q_\mathrm{max}\Delta r)}{\Delta r}
+- \frac{Q_\mathrm{max}\sigma^2\cos(Q_\mathrm{max}\Delta r)}{\Delta r^2} + \dots\Big]
+\propto \frac{\sin(Q_\mathrm{max}\Delta r - \varphi)}{\Delta r},\quad \tan\varphi = \frac{Q_\mathrm{max}\sigma^2}{\Delta r}$$
+(integration by parts; the second term is the derivative of the Gaussian envelope at $Q_\mathrm{max}$).
+Its extrema solve $\tan(x - \varphi) = x$ with $x = Q_\mathrm{max}\Delta r$, so $x \approx (n + \tfrac12)\pi + \varphi$,
+$\varphi \in [0, \pi/2)$: from the extrema of $\sin x/x$ ($\tan x = x$, just inside $(n + \tfrac12)\pi$, by
+$0.22/Q_\mathrm{max}$ at $n = 1$) for a sharp peak ($\varphi \to 0$) to $(n + 1)\pi/Q_\mathrm{max}$ for a broad
+one ($\sigma Q_\mathrm{max} \gtrsim 2$) — hence "between about". Checked against an independent transform for
+$\sigma$ 0.03–0.12 Å and $Q_\mathrm{max}$ 15–30 Å⁻¹, $n = 1$–4: every extremum lies between the $\tan x = x$
+root and $(n + 1)\pi/Q_\mathrm{max}$ to 0.01 Å and at $\tan(x - \varphi) = x$ to 0.015 Å, while the rule
+$n\pi/Q_\mathrm{max}$ fails at every $Q_\mathrm{max}$ (`tests/test_ripples_truth.py`). Their sign depends
+on the peak's width, so none is stated.
+
+### Step 4 — What the Copilot reads
+
+`check_ripples` (`src/copilotRipples.js`; offered over the run's fit files, `xpdf`, `npdf`, `xray_sq`,
+`neutron_sq`, when the run has a ripple source; arguments `dataset`, `qmax`, `window`) renders the
+engine's codes in sentences (`RISK_SENTENCES`, `REASON_SENTENCES`): per dataset its risk, model, Q
+range, window (`(assumed)` where the files do not give it), source and resolution; a `warn` per
+high-risk or not-assessed dataset, notes otherwise; one note per assessed real-space dataset with
+its r-resolution (the ripple period, where a peak's ripples fall, the kernel's FWHM; Lorch named);
+a verdict, the risk only (`fail` only when nothing could be assessed); and the next step — fit in Q or
+give RMCProfile `CONVOLVE :: Q_max` on an unwindowed G(r) for a `high` risk; give `qmax`; that the
+check does not say whether a given feature is a ripple, and how to test one (a ripple moves with
+Q_max, a real feature stays: a higher Q_max, a Lorch-windowed transform or the other radiation); a run
+from a new start only for a specific suspect feature in a high-risk fit. The real-space datasets come
+first, the riskiest first; the result has its own budget (`RIPPLES_RESULT_BUDGET`, 4,500 characters;
+the Demo's result is 1,647), so no row is cut.
+
+### Parameters and defaults — termination ripples
+
+| Name | Value | Role |
+|---|---|---|
+| `DEFAULT_DQ` | 0.01 Å⁻¹ | the step of a transform whose files do not give it |
+| `INPUT_MAP_TOLERANCE` | $10^{-5}$ | the input file's map onto the fitted file |
+| the `CONVOLVE` / QMAX match | 2 % of the data's $Q_\mathrm{max}$ | `matched` against `*-q-differs` |
+
+### Known answers — termination ripples
+
+`tests/test_ripples.py`: RMCProfile's model functions (Step 1, from the committed Ni output and the
+Demo); `fit_space_risk` for every block and transform; the rectangle and Lorch kernels; the `.dat`,
+provenance and stog readers; a neutron G(r) made by stog beside its input (risk `high`, the stog
+transform, Lorch, its filter); the Demo end to end (matched, $Q$ 0.8–26.98 Å⁻¹, the transform
+reproduced to $10^{-12}$, FWHM 0.138 Å). `tests/test_ripples_truth.py`, against numpy alone:
+`resolution()` gives $2\pi/Q_\mathrm{max}$ and $3.79/Q_\mathrm{max}$ (within 1 %) for $Q_\mathrm{max}$
+15, 20, 25 Å⁻¹; a single Gaussian peak transformed exactly, cut at $Q_\mathrm{max}$ and back by the
+rectangle rule has its ripple extrema, for $n = 1 \ldots 4$, σ 0.03, 0.07, 0.12 Å and $Q_\mathrm{max}$
+15, 20, 30 Å⁻¹, between the $\tan x = x$ root and $(n + 1)\pi/Q_\mathrm{max}$ (to 0.01 Å) and at
+$\tan(x - \varphi) = x$ (to 0.015 Å); the rule $n\pi/Q_\mathrm{max}$, a negative control, fails at every
+$Q_\mathrm{max}$. A broad peak's extrema lie up to 0.04 Å outward of $(n + \tfrac12)\pi/Q_\mathrm{max}$,
+toward $(n + 1)\pi/Q_\mathrm{max}$.
+
+### Caveats / what this is not
+
+- **No reading of a feature.** The check says whether the box is asked to fit ripples and where
+  ripples can fall; it does not say whether a given peak, shoulder or split is one. The test is
+  physical: a ripple moves with $Q_\mathrm{max}$, a real feature stays.
+- **The data's transform is the files' word.** Without a stog input or an Auto StoG provenance a
+  neutron G(r)'s window is assumed none (marked `(assumed)`) — give `window`.
+- **Established on RMCProfile 6.7.9.1 (the histogram), the user's Mn₃Sn run and 6.9.0-rc.0 (the
+  histogram, CONVOLVE's sinc, R_CUTOFF, the X-ray real-space transform).** The X-ray real-space
+  model with QMIN > 0 carries a smooth term not identified here.
+- **The position rule is the rectangle kernel's.** A Lorch window suppresses the ripples and widens
+  the kernel; a broad peak ($\sigma Q_\mathrm{max}$ of a few) moves its extrema outward, toward
+  $(n + 1)\pi/Q_\mathrm{max}$, up to about 0.04 Å in the tests above ($\tan(x - \varphi) = x$).
+- **Not a structure test.** A feature that is not a ripple is not thereby real: it can be noise, a
+  processing artefact or the box's own (a run from a new start, for that feature, tells).
 
 
 ## Model summary and the Detected SG symmetry finder

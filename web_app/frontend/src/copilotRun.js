@@ -15,7 +15,7 @@
 // The seam is the LoadedRun below; whatever builds one, the Copilot is
 // handed the same thing for the same files and view.
 //
-//   LoadedRun  { name, files, structure, structurePath, settings, engine }
+//   LoadedRun  { name, files, structure, structurePath, settings, engine, ripples? }
 //     name:          the run folder's name (the picked or Demo root, the
 //                    Flask directory, the harness's root folder)
 //     files:         as the Dashboard holds them (plotKind from
@@ -26,6 +26,9 @@
 //     structurePath: the .rmc6f the Model card describes (picks the χ² logs)
 //     settings:      the parsed <stem>.dat, or null (always null in Flask mode)
 //     engine:        (kind, params, { signal }) => Promise<payload>, or null
+//     ripples:       (paths, args, { signal }) => Promise<result>, the run's
+//                    termination-ripple source (ripplesRun.js over the run's
+//                    files, or Flask's /api/ripples), or null/absent
 //   View       { toleranceA, hiddenPlots, pcaSites, liveData, ladder }
 //   CopilotRun { props, tools, elements, engine, view }
 
@@ -121,8 +124,8 @@ export const runElements = (structure) => Object.keys(structure?.elementCounts |
  * props' own (the same objects), so compute_bond_angles judges a window
  * against the shell catalogue the Workbench's questions read.
  */
-export const runEngineTools = ({ engine, structure, elements, plotFiles = null, settings = null }) => buildCopilotTools({
-    request: engine || null, structure: structure || null, elements, plotFiles, runSettings: settings
+export const runEngineTools = ({ engine, structure, elements, plotFiles = null, settings = null, ripples = null }) => buildCopilotTools({
+    request: engine || null, structure: structure || null, elements, plotFiles, runSettings: settings, ripples: ripples || null
 });
 
 /** The CopilotRun from its finished fields: `props` frozen, passed whole to CopilotChat. */
@@ -163,7 +166,9 @@ export const copilotRun = (loaded, view = DEFAULT_VIEW) => {
         structure,
         symmetry: runSymmetry(structure, normalized.toleranceA, runLadder(structure, normalized.ladder)),
         settings: loaded?.settings ?? null,
-        tools: runEngineTools({ engine, structure, elements, plotFiles, settings: loaded?.settings ?? null }),
+        tools: runEngineTools({
+            engine, structure, elements, plotFiles, settings: loaded?.settings ?? null, ripples: loaded?.ripples ?? null
+        }),
         elements,
         engine,
         view: normalized

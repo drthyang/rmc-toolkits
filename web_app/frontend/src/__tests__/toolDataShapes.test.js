@@ -82,19 +82,22 @@ const NOT_REACHED = {
     },
     detect_symmetry: {},
     measure_symmetry_lowering: {},
+    check_ripples: {},
     ask_user: {},
     read_skill: {}
 };
 
-// The tools on a run, as the harness offers them (no view tools), with the
-// PCA table the PCA Ellipsoid page would hand the dock (read_run_data's
+// The tools on a run, as the dock offers them less the view and change tools
+// (check_ripples included, which the harness leaves out), with the PCA table
+// the PCA Ellipsoid page would hand the dock (read_run_data's
 // pca_displacements section).
-const runTools = async ({ props, request }) => {
+const runTools = async ({ props, request, ripples = null, extra = [] }) => {
     const pcaSites = await request('sites', {});
     const elements = Object.keys(props.structure.elementCounts || {}).sort();
     return [
         ...buildRunTools({ ...props, pcaSites }, { cards: [] }),
-        ...buildCopilotTools({ request, structure: props.structure, elements, plotFiles: props.plotFiles, runSettings: props.runSettings })
+        ...buildCopilotTools({ request, structure: props.structure, elements, plotFiles: props.plotFiles, runSettings: props.runSettings, ripples }),
+        ...extra
     ];
 };
 
@@ -185,6 +188,13 @@ const exercise = async (tools, structure) => {
     for (const tolerance of [0.2, 0.001, 1]) await call('detect_symmetry', { tolerance_A: tolerance });
     await call('measure_symmetry_lowering', {});
     await call('measure_symmetry_lowering', { parent_tolerance_A: 0.2, tolerance_A: 0.001 });
+
+    // Termination ripples: every dataset, and one with the caller's transform.
+    const rippleSets = enumOf('check_ripples', 'dataset');
+    if (rippleSets.length) {
+        await call('check_ripples', {});
+        await call('check_ripples', { dataset: rippleSets.at(-1), qmax: 25, window: 'lorch' });
+    }
     return results;
 };
 
@@ -229,13 +239,15 @@ describe('every live tool\'s data fits its declared dataShape', () => {
         const runs = [{
             name: 'demo',
             props: demo.run,
+            ripples: demo.loaded.ripples,
             request: inProcessEngine(demo.rmc6fText)
         }];
         // The dev cases only: the held-out test cases are never built here.
         for (const item of DEV_CASES) {
             // The harness's run (validation/runFolder.js → the run module).
             const run = await loadRun(buildCase(item));
-            runs.push({ name: item.id, props: run.props, request: run.engine });
+            // check_ripples as the run module built it (its ripple source over the case's files).
+            runs.push({ name: item.id, props: run.props, request: run.engine, extra: run.tools.filter((tool) => tool.name === 'check_ripples') });
         }
         for (const run of runs) {
             const tools = await runTools(run);

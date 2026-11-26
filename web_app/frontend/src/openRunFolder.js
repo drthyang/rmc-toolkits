@@ -19,6 +19,7 @@ import {
 } from './browserData';
 import { copilotRun, DEFAULT_VIEW, normalizeView } from './copilotRun';
 import { attachFtUncertainty } from './ftUncertaintyRun';
+import { ripplesSource } from './ripplesRun';
 
 /**
  * A run folder as a LoadedRun ({ name, files, structure, structurePath,
@@ -60,7 +61,9 @@ export const readRunFolder = async (entries) => {
         structure,
         structurePath: run.structureFile?.path ?? null,
         settings,
-        engine: run.structureFile ? inProcessEngine(() => sourceFile.text()) : null
+        engine: run.structureFile ? inProcessEngine(() => sourceFile.text()) : null,
+        // Termination ripples over every file of the run (ripplesRun.js).
+        ripples: ripplesSource(run.allFiles)
     };
 };
 
