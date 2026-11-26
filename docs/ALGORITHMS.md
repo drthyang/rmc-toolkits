@@ -277,7 +277,7 @@ Consolidated from every page's *Caveats* section. Each line links to the section
 
 **Termination ripples**
 
-- `check_ripples` does not say whether a given peak or shoulder is a ripple: a ripple moves with Q_max and a real feature stays, so a second Q_max decides. The position rule $r_0 \pm (n+\tfrac12)\pi/Q_\mathrm{max}$ is the rectangle kernel's; a broad peak moves its extrema toward $n\pi/Q_\mathrm{max}$ (up to 0.04 Å in the tests). A neutron G(r)'s window is the stog / Auto StoG files' word, else assumed none and marked so. RMCProfile's model functions were established on 6.7.9.1 (the histogram) and 6.9.0-rc.0 (the histogram, `CONVOLVE`'s sinc, `R_CUTOFF`, the X-ray real-space transform; with QMIN > 0 a smooth term remains unidentified) — [run-dashboard.md](algorithms/run-dashboard.md#caveats--what-this-is-not-3).
+- `check_ripples` does not say whether a given peak or shoulder is a ripple: a ripple moves with Q_max and a real feature stays, so a second Q_max decides. The position rule is the rectangle kernel's: a sharp peak has its extrema at about $r_0 \pm (n+\tfrac12)\pi/Q_\mathrm{max}$, a broad one moves them outward toward $r_0 \pm (n+1)\pi/Q_\mathrm{max}$ (up to 0.04 Å in the tests), as $\tan(x - \varphi) = x$ gives. A neutron G(r)'s window is the stog / Auto StoG files' word, else assumed none and marked so. RMCProfile's model functions were established on 6.7.9.1 (the histogram) and 6.9.0-rc.0 (the histogram, `CONVOLVE`'s sinc, `R_CUTOFF`, the X-ray real-space transform; with QMIN > 0 a smooth term remains unidentified) — [run-dashboard.md](algorithms/run-dashboard.md#caveats--what-this-is-not-3).
 
 **Tolerance dependence in the symmetry finder**
 

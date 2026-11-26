@@ -2836,9 +2836,11 @@ transform, Lorch, its filter); the Demo end to end (matched, $Q$ 0.8–26.98 Å�
 reproduced to $10^{-12}$, FWHM 0.138 Å). `tests/test_ripples_truth.py`, against numpy alone:
 `resolution()` gives $2\pi/Q_\mathrm{max}$ and $3.79/Q_\mathrm{max}$ (within 1 %) for $Q_\mathrm{max}$
 15, 20, 25 Å⁻¹; a single Gaussian peak transformed exactly, cut at $Q_\mathrm{max}$ and back by the
-rectangle rule has its ripple extrema within 0.05 Å of $r_0 \pm (n + \tfrac12)\pi/Q_\mathrm{max}$,
-$n = 1 \ldots 4$, for σ 0.03, 0.07, 0.12 Å and $Q_\mathrm{max}$ 15, 20, 30 Å⁻¹ (the largest miss 0.040 Å,
-at σ 0.12 Å: a broad peak's extrema drift toward $n\pi/Q_\mathrm{max}$).
+rectangle rule has its ripple extrema, for $n = 1 \ldots 4$, σ 0.03, 0.07, 0.12 Å and $Q_\mathrm{max}$
+15, 20, 30 Å⁻¹, between the $\tan x = x$ root and $(n + 1)\pi/Q_\mathrm{max}$ (to 0.01 Å) and at
+$\tan(x - \varphi) = x$ (to 0.015 Å); the rule $n\pi/Q_\mathrm{max}$, a negative control, fails at every
+$Q_\mathrm{max}$. A broad peak's extrema lie up to 0.04 Å outward of $(n + \tfrac12)\pi/Q_\mathrm{max}$,
+toward $(n + 1)\pi/Q_\mathrm{max}$.
 
 ### Caveats / what this is not
 
@@ -2851,8 +2853,8 @@ at σ 0.12 Å: a broad peak's extrema drift toward $n\pi/Q_\mathrm{max}$).
   histogram, CONVOLVE's sinc, R_CUTOFF, the X-ray real-space transform).** The X-ray real-space
   model with QMIN > 0 carries a smooth term not identified here.
 - **The position rule is the rectangle kernel's.** A Lorch window suppresses the ripples and widens
-  the kernel; a broad peak ($\sigma Q_\mathrm{max}$ of a few) moves its extrema toward
-  $n\pi/Q_\mathrm{max}$, up to about 0.04 Å in the tests above.
+  the kernel; a broad peak ($\sigma Q_\mathrm{max}$ of a few) moves its extrema outward, toward
+  $(n + 1)\pi/Q_\mathrm{max}$, up to about 0.04 Å in the tests above ($\tan(x - \varphi) = x$).
 - **Not a structure test.** A feature that is not a ripple is not thereby real: it can be noise, a
   processing artefact or the box's own (a run from a new start, for that feature, tells).
 
