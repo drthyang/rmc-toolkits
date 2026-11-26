@@ -2788,10 +2788,20 @@ $Q_k = Q_\mathrm{min} + k\Delta Q$, the termination kernel is $K(x) = \sum_k w_k
 — $\sin u/u = 1/2$ at $u = 1.8955$; wider with Lorch), its main lobe (its first zero: $\pi/Q_\mathrm{max}$
 for a rectangle), and the ripple period $2\pi/Q_\mathrm{max}$. Two features closer than the FWHM are not
 resolved by the data (Toby & Egami 1992; Egami & Billinge 2012, ch. 5). Where a peak's ripples fall:
-the rectangle kernel $\sin(Q_\mathrm{max}\Delta r)/\Delta r$ has its extrema where $\tan x = x$
-($x = Q_\mathrm{max}\Delta r$), $x \approx (n + \tfrac12)\pi$ for $n \ge 1$, so a peak at $r_0$ has its
-ripples near $r_0 \pm (n + \tfrac12)\pi/Q_\mathrm{max}$; their sign depends on the peak's width
-($\sigma Q_\mathrm{max}$), so none is stated.
+a Gaussian peak of width $\sigma$ at $r_0$, cut at $Q_\mathrm{max}$, leaves at $\Delta r = r - r_0$
+$$\Delta(\Delta r) \propto -\int_{Q_\mathrm{max}}^{\infty} e^{-Q^2\sigma^2/2}\cos(Q\Delta r)\,dQ
+\approx e^{-Q_\mathrm{max}^2\sigma^2/2}\Big[\frac{\sin(Q_\mathrm{max}\Delta r)}{\Delta r}
+- \frac{Q_\mathrm{max}\sigma^2\cos(Q_\mathrm{max}\Delta r)}{\Delta r^2} + \dots\Big]
+\propto \frac{\sin(Q_\mathrm{max}\Delta r - \varphi)}{\Delta r},\quad \tan\varphi = \frac{Q_\mathrm{max}\sigma^2}{\Delta r}$$
+(integration by parts; the second term is the derivative of the Gaussian envelope at $Q_\mathrm{max}$).
+Its extrema solve $\tan(x - \varphi) = x$ with $x = Q_\mathrm{max}\Delta r$, so $x \approx (n + \tfrac12)\pi + \varphi$,
+$\varphi \in [0, \pi/2)$: from the extrema of $\sin x/x$ ($\tan x = x$, just inside $(n + \tfrac12)\pi$, by
+$0.22/Q_\mathrm{max}$ at $n = 1$) for a sharp peak ($\varphi \to 0$) to $(n + 1)\pi/Q_\mathrm{max}$ for a broad
+one ($\sigma Q_\mathrm{max} \gtrsim 2$) — hence "between about". Checked against an independent transform for
+$\sigma$ 0.03–0.12 Å and $Q_\mathrm{max}$ 15–30 Å⁻¹, $n = 1$–4: every extremum lies between the $\tan x = x$
+root and $(n + 1)\pi/Q_\mathrm{max}$ to 0.01 Å and at $\tan(x - \varphi) = x$ to 0.015 Å, while the rule
+$n\pi/Q_\mathrm{max}$ fails at every $Q_\mathrm{max}$ (`tests/test_ripples_truth.py`). Their sign depends
+on the peak's width, so none is stated.
 
 ### Step 4 — What the Copilot reads
 

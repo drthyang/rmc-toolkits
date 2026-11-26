@@ -28,7 +28,8 @@ const NEW_START = 'If a feature matters: one run with the model truncated as the
 
 const resolutionLine = (key, { period, qmax, half, fwhm, lorch = false }) => `note: ${key}: r-resolution: ripples repeat every ${period} Å `
     + `(2π/Q_max, Q_max = ${qmax} Å⁻¹)${lorch ? ' (Lorch window: ripples suppressed, resolution coarser)' : ''}; a peak at r₀ `
-    + `has its ripples near r₀ ± (n + ½)·${half} Å (n = 1, 2, …; π/Q_max), their sign set by the peak's width; features `
+    + `has its ripples between about r₀ ± (n + ½)·${half} Å and r₀ ± (n + 1)·${half} Å (n = 1, 2, …; π/Q_max), near the first `
+    + 'for a sharp peak and toward the second for a broad one, their sign set by the peak\'s width; features '
     + `closer than the kernel's FWHM, ${fwhm} Å, are not resolved.`;
 
 describe('check_ripples on the Demo, end to end', () => {

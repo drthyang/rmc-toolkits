@@ -20,7 +20,7 @@
   the caller's `qmax` / `window`) and the r-resolution (Nyquist step π/Q_max, the kernel's FWHM on
   the run's own grid and window, 3.79/Q_max for a rectangle, the ripple period 2π/Q_max). The tool
   adds one line per real-space dataset: the ripple period, a peak's ripples near
-  r₀ ± (n + ½)π/Q_max, features closer than the FWHM not resolved. A verdict (the risk) and the
+  between about r₀ ± (n + ½)π/Q_max and r₀ ± (n + 1)π/Q_max, features closer than the FWHM not resolved. A verdict (the risk) and the
   next step: fit in Q or give `CONVOLVE`; give `qmax`; to test a suspect feature, a higher Q_max, a
   Lorch-windowed transform or the other radiation's data (a ripple moves with Q_max); a run from a
   new start only for a specific suspect feature.
@@ -31,9 +31,11 @@
 - One golden, `ripples_fixture.json` (the Demo and seven synthetic runs), holds the browser and
   Flask to the Python engine.
 - Known answers: RMCProfile's model functions (`tests/test_ripples.py`); `resolution()` gives
-  2π/Q_max and 3.79/Q_max within 1 %, and a Gaussian peak's ripple extrema lie within 0.05 Å of
-  r₀ ± (n + ½)π/Q_max, n = 1–4, for σ 0.03–0.12 Å and Q_max 15–30 Å⁻¹, against an independent numpy
-  transform (`tests/test_ripples_truth.py`).
+  2π/Q_max and 3.79/Q_max within 1 %, and a Gaussian peak's ripple extrema lie between
+  the root of tan x = x and (n + 1)π (x = Q_max·Δr; to 0.01 Å) and at tan(x − φ) = x,
+  tan φ = Q_max·σ²/Δr (to 0.015 Å), n = 1–4, for σ 0.03–0.12 Å and
+  Q_max 15–30 Å⁻¹, against an independent numpy transform; the rule nπ/Q_max fails it at every Q_max
+  (`tests/test_ripples_truth.py`).
 - Model-visible: the dock gains one tool (`dock/tools.json`, the tool-result snapshot
   `check_ripples.json`), +374 tokens on the dock's worst turn (headroom at 48k 3,258 → 2,885). The
   validation's live arms leave it out by name (`LIVE_ARM_EXCLUDED`), so protocol 2026-11-01.1, arm

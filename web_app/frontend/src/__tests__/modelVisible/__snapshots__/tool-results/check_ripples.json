@@ -1,7 +1,7 @@
 {
   "tool": "check_ripples",
   "arguments": {},
-  "content_chars": 1647,
+  "content_chars": 1752,
   "content": {
     "ref": "r1",
     "checks": [
@@ -15,7 +15,7 @@
       },
       {
         "level": "note",
-        "text": "xpdf: r-resolution: ripples repeat every 0.233 Å (2π/Q_max, Q_max = 26.98 Å⁻¹); a peak at r₀ has its ripples near r₀ ± (n + ½)·0.116 Å (n = 1, 2, …; π/Q_max), their sign set by the peak's width; features closer than the kernel's FWHM, 0.138 Å, are not resolved."
+        "text": "xpdf: r-resolution: ripples repeat every 0.233 Å (2π/Q_max, Q_max = 26.98 Å⁻¹); a peak at r₀ has its ripples between about r₀ ± (n + ½)·0.116 Å and r₀ ± (n + 1)·0.116 Å (n = 1, 2, …; π/Q_max), near the first for a sharp peak and toward the second for a broad one, their sign set by the peak's width; features closer than the kernel's FWHM, 0.138 Å, are not resolved."
       },
       {
         "level": "note",

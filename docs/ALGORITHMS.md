@@ -57,8 +57,10 @@ No σ column in the input file, no ribbon — never an assumed σ.
 **Termination ripples** — the Copilot's `check_ripples`, from the run's files and first principles:
 cutting the transform at $Q_\mathrm{max}$ convolves each peak with the kernel
 $K(x)=\sum_k w_k\cos(Q_k x)$ (FWHM $3.79/Q_\mathrm{max}$ for a rectangle); its ripples repeat every
-$2\pi/Q_\mathrm{max}$, a peak at $r_0$ having them near $r_0 \pm (n+\tfrac12)\pi/Q_\mathrm{max}$ (the
-extrema of $\sin(Q_\mathrm{max}\Delta r)/\Delta r$, $\tan x = x$). Whether the box is *asked* to fit
+$2\pi/Q_\mathrm{max}$, a peak at $r_0$ having them between about $r_0 \pm (n+\tfrac12)\pi/Q_\mathrm{max}$ and
+$r_0 \pm (n+1)\pi/Q_\mathrm{max}$: where $\tan(Q_\mathrm{max}\Delta r - \varphi) = Q_\mathrm{max}\Delta r$, $\approx (n+\tfrac12)\pi + \varphi$, with
+$\tan\varphi = Q_\mathrm{max}\sigma^2/\Delta r$, the next asymptotic term of a Gaussian of width $\sigma$
+cut at $Q_\mathrm{max}$ (near the first for a sharp peak, toward the second for a broad one). Whether the box is *asked* to fit
 ripples is how RMCProfile makes the model it compares, established on its own files: an X-ray F(Q)
 fitted in r is compared through the same transform (matched); a neutron G(r) without `CONVOLVE`
 against the untruncated histogram (high risk); with `CONVOLVE :: Q_c` against the D-space sinc of

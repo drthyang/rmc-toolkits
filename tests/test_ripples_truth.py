@@ -5,8 +5,8 @@
 
 What check_ripples ships besides RMCProfile's fit space (tests/test_ripples.py)
 is the r-resolution of each dataset's transform and the rule its checks state:
-ripples repeat every 2π/Q_max, a peak at r₀ has them near r₀ ± (n + ½)π/Q_max,
-and the kernel's FWHM is 3.79/Q_max for a rectangle from ~0. Both are tested
+ripples repeat every 2π/Q_max, a peak at r₀ has them between about r₀ ± (n + ½)π/Q_max
+and r₀ ± (n + 1)π/Q_max, and the kernel's FWHM is 3.79/Q_max for a rectangle from ~0. Both are tested
 here against numpy alone, independent of the engine's own helpers:
 
 * ``resolution()`` on the rectangle Q = ΔQ … Q_max: ripplePeriod = 2π/Q_max and
@@ -14,9 +14,12 @@ here against numpy alone, independent of the engine's own helpers:
 * a single Gaussian peak A[g(r − r₀) − g(r + r₀)] in D(r), its exact sine
   transform cut at Q_max and transformed back by the rectangle rule
   (2/π) Σ_k ΔQ F(Q_k) sin(Q_k r), Q_k = ΔQ … Q_max, ΔQ = 0.01; the true
-  termination artefact is that less the untruncated peak. Its extrema lie
-  within 0.05 Å of r₀ ± (n + ½)π/Q_max for n = 1 … 4, for σ 0.03, 0.07 and
-  0.12 Å and Q_max 15, 20 and 30 Å⁻¹.
+  termination artefact is that less the untruncated peak. For n = 1 … 4 on
+  both sides, σ 0.03, 0.07 and 0.12 Å and Q_max 15, 20 and 30 Å⁻¹, its extrema
+  (x = Q_max·Δr) lie between the root of tan x = x near (n + ½)π and (n + 1)π, to
+  INTERVAL_TOLERANCE, and at the root of tan(x − φ) = x, tan φ = Q_max·σ²/Δr, to
+  PHASE_TOLERANCE; the rule Δr = nπ/Q_max, a negative control, must fail that at
+  every Q_max.
 
 The verdict cases (groups A, B and C: whether a given feature is read as a
 ripple) and their KNOWN_FAILURES live on the branch wip/joint-fit with the
@@ -35,7 +38,9 @@ from rmc_toolkits import ripples as R
 DQ = 0.01
 R0 = 5.0
 R_FINE = R0 + np.round(np.arange(-1500, 1501) * 0.001, 10)  # r₀ ± 1.5 Å at 0.001 Å
-POSITION_TOLERANCE = 0.05  # Å
+INTERVAL_TOLERANCE = 0.01  # Å
+PHASE_TOLERANCE = 0.015  # Å
+NS = range(1, 5)
 
 
 def rectangle_q(qmax):
@@ -67,24 +72,74 @@ class Resolution(unittest.TestCase):
                 self.assertLess(abs(res["fwhm"] / (3.79 / qmax) - 1), 0.01, res["fwhm"])
 
 
+def kernel_root(n, qmax):
+    """Δr of the sin x/x kernel's n-th extremum: tan x = x, x = Q_max·Δr, just inside (n + ½)π."""
+    x = (n + 0.5) * math.pi
+    for _ in range(200):
+        x = n * math.pi + math.atan(x)
+    return x / qmax
+
+
+def phase_rule(n, sigma, qmax):
+    """Δr of a Gaussian peak's n-th ripple extremum: tan(x − φ) = x, x = Q_max·Δr, tan φ = Q_max·σ²/Δr.
+
+    A Gaussian of width σ cut at Q_max leaves Δ ∝ −∫_{Q_max}^∞ e^{−Q²σ²/2} cos(QΔr) dQ
+    ≈ e^{−Q_max²σ²/2}[sin(Q_maxΔr)/Δr − Q_maxσ² cos(Q_maxΔr)/Δr² + …] (by parts:
+    the next asymptotic term, from the envelope's slope at Q_max) ∝ sin(x − φ)/Δr,
+    whose extrema solve tan(x − φ) = x: the kernel's own (tan x = x) shifted
+    outward by φ ∈ [0, π/2), toward (n + 1)π for a broad peak.
+    """
+    x = (n + 0.5) * math.pi
+    for _ in range(200):
+        x = n * math.pi + math.atan(x) + math.atan(qmax * qmax * sigma * sigma / x)
+    return x / qmax
+
+
+def nearest_offsets(sigma, qmax):
+    """For each side and n: (side, n, the nearest extremum's |Δr|)."""
+    found = R_FINE[extrema(artefact(sigma, qmax))]
+    out = []
+    for side in (-1, 1):
+        for n in NS:
+            guess = phase_rule(n, sigma, qmax)
+            nearest = float(found[np.argmin(np.abs(found - (R0 + side * guess)))])
+            out.append((side, n, abs(nearest - R0)))
+    return out
+
+
+SIGMAS = (0.03, 0.07, 0.12)
+QMAXES = (15.0, 20.0, 30.0)
+
+
 class RipplePositions(unittest.TestCase):
-    def test_a_peaks_ripples_lie_at_r0_plus_minus_n_and_a_half_pi_over_qmax(self):
-        # The rule follows from the extrema of the truncation kernel
-        # sin(Q_max·Δr)/Δr: they are where tan x = x (x = Q_max·Δr), x ≈ (n + ½)π
-        # for n ≥ 1. Their sign is set by the peak's width (σ·Q_max), so only
-        # the positions are tested, not the sign.
-        for sigma in (0.03, 0.07, 0.12):
-            for qmax in (15.0, 20.0, 30.0):
+    """Where a peak's ripples fall (the r-resolution line of check_ripples)."""
+
+    def test_extrema_lie_between_the_kernel_root_and_n_plus_one_pi_over_qmax(self):
+        for sigma in SIGMAS:
+            for qmax in QMAXES:
                 with self.subTest(sigma=sigma, qmax=qmax):
-                    found = R_FINE[extrema(artefact(sigma, qmax))]
-                    misses = []
-                    for side in (-1, 1):
-                        for n in range(1, 5):
-                            expected = R0 + side * (n + 0.5) * math.pi / qmax
-                            nearest = float(found[np.argmin(np.abs(found - expected))])
-                            if abs(nearest - expected) > POSITION_TOLERANCE:
-                                misses.append((side * n, round(expected, 3), round(nearest, 3)))
-                    self.assertEqual(misses, [], "ripple extrema off r₀ ± (n + ½)π/Q_max")
+                    outside = [(side * n, round(x, 3)) for side, n, x in nearest_offsets(sigma, qmax)
+                               if not (kernel_root(n, qmax) - INTERVAL_TOLERANCE
+                                       <= x <= (n + 1) * math.pi / qmax + INTERVAL_TOLERANCE)]
+                    self.assertEqual(outside, [], "extrema outside [tan x = x root, (n + 1)π]/Q_max")
+
+    def test_extrema_follow_the_phase_rule(self):
+        for sigma in SIGMAS:
+            for qmax in QMAXES:
+                with self.subTest(sigma=sigma, qmax=qmax):
+                    misses = [(side * n, round(x, 3), round(phase_rule(n, sigma, qmax), 3))
+                              for side, n, x in nearest_offsets(sigma, qmax)
+                              if abs(x - phase_rule(n, sigma, qmax)) > PHASE_TOLERANCE]
+                    self.assertEqual(misses, [], "extrema off the phase rule")
+
+    def test_the_rule_n_pi_over_qmax_fails_at_every_qmax(self):
+        # Negative control: the same check with the wrong rule Δr = nπ/Q_max
+        # must miss by more than PHASE_TOLERANCE somewhere at every Q_max.
+        for qmax in QMAXES:
+            with self.subTest(qmax=qmax):
+                worst = max(abs(x - n * math.pi / qmax) for sigma in SIGMAS
+                            for _side, n, x in nearest_offsets(sigma, qmax))
+                self.assertGreater(worst, PHASE_TOLERANCE, f"nπ/Q_max not rejected at Q_max {qmax}")
 
 
 if __name__ == "__main__":

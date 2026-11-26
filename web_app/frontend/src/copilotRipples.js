@@ -165,17 +165,24 @@ export const summarizeRipples = (result, { keys, only = null } = {}) => {
         }
         if (dataset.status === 'assessed' && dataset.fit && ['real', 'unknown'].includes(dataset.fit.fitSpace)
             && dataset.resolution && dataset.transform) {
-            // Where a peak's ripples fall: the truncation kernel sin(Q_max·Δr)/Δr
-            // has its extrema where tan x = x (x = Q_max·Δr), x ≈ (n + ½)π for
-            // n ≥ 1, so at Δr ≈ (n + ½)·π/Q_max. Their sign depends on the
-            // peak's width (σ·Q_max), so no sign is stated.
+            // Where a peak's ripples fall. A Gaussian peak (width σ) cut at Q_max
+            // leaves Δ(Δr) ∝ −∫_{Q_max}^∞ e^{−Q²σ²/2} cos(Q·Δr) dQ; by parts,
+            // ≈ e^{−Q_max²σ²/2} [sin(Q_max·Δr)/Δr − Q_max·σ²·cos(Q_max·Δr)/Δr² + …]
+            // ∝ sin(Q_max·Δr − φ)/Δr with tan φ = Q_max·σ²/Δr. Its extrema solve
+            // tan(x − φ) = x (x = Q_max·Δr), x ≈ (n + ½)π + φ, φ in [0, π/2):
+            // from the sin x/x kernel's own extrema (tan x = x, just inside
+            // (n + ½)π: by 0.22/Q_max Å at n = 1) for a sharp peak to
+            // (n + 1)·π/Q_max for a broad one (σ·Q_max ≳ 2), hence "about". The
+            // sign depends on the peak's width, so none is stated
+            // (tests/test_ripples_truth.py).
             const { fwhm, ripplePeriod } = dataset.resolution;
             const lorch = dataset.transform.window === 'lorch' ? ' (Lorch window: ripples suppressed, resolution coarser)' : '';
             checks.push({
                 level: 'note',
                 text: `${key}: r-resolution: ripples repeat every ${fmt(ripplePeriod)} Å (2π/Q_max, Q_max = `
-                    + `${fmt(dataset.transform.qMax, 4)} Å⁻¹)${lorch}; a peak at r₀ has its ripples near r₀ ± (n + ½)·`
-                    + `${fmt(ripplePeriod / 2)} Å (n = 1, 2, …; π/Q_max), their sign set by the peak's width; features `
+                    + `${fmt(dataset.transform.qMax, 4)} Å⁻¹)${lorch}; a peak at r₀ has its ripples between about r₀ ± (n + ½)·`
+                    + `${fmt(ripplePeriod / 2)} Å and r₀ ± (n + 1)·${fmt(ripplePeriod / 2)} Å (n = 1, 2, …; π/Q_max), near the `
+                    + 'first for a sharp peak and toward the second for a broad one, their sign set by the peak\'s width; features '
                     + `closer than the kernel's FWHM, ${fmt(fwhm)} Å, are not resolved.`
             });
         }
