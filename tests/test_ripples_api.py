@@ -36,18 +36,11 @@ except ModuleNotFoundError:  # `python -m unittest tests.test_ripples_api`
     from tests.golden_compare import assert_same
 
 DEMO = ROOT / "web_app" / "frontend" / "public" / "demo"
-RIPPLES_RTOL = 1e-7
 
 
 def query(paths, args: dict) -> list:
     out = [("path", str(path)) for path in paths]
-    if args.get("features"):
-        out.append(("features", ",".join(repr(value) for value in args["features"])))
-    if args.get("rRange"):
-        out += [("rMin", repr(args["rRange"][0])), ("rMax", repr(args["rRange"][1]))]
-    if args.get("split"):
-        out.append(("split", ",".join(repr(value) for value in args["split"])))
-    for key in ("pair", "qmax", "qmin", "window"):
+    for key in ("qmax", "qmin", "window"):
         if args.get(key) is not None:
             out.append((key, str(args[key])))
     return out
@@ -72,7 +65,7 @@ class RipplesApiTests(unittest.TestCase):
         for call in self.fixture["demo"]["calls"]:
             response = self.get([DEMO / name for name in self.fixture["demo"]["fits"]], call["args"])
             self.assertEqual(response.status_code, 200, response.get_json())
-            assert_same(self, response.get_json(), call["expected"], "demo", rtol=RIPPLES_RTOL)
+            assert_same(self, response.get_json(), call["expected"], "demo")
 
     def test_every_synthetic_case_is_the_golden(self):
         for case, committed in zip(committed_cases(self.fixture), self.fixture["cases"]):
@@ -89,19 +82,16 @@ class RipplesApiTests(unittest.TestCase):
                     # A failure message names the file, never the server's folder.
                     for dataset in got["datasets"]:
                         self.assertNotIn(str(folder), dataset.get("reason") or "")
-                    assert_same(self, got, call["expected"], "expected", rtol=RIPPLES_RTOL)
+                    assert_same(self, got, call["expected"], "expected")
 
     def test_bad_arguments_are_400s_that_say_why(self):
         fit = DEMO / "GTS_250K_FT_XFQ1.csv"
         for args, needle in (
             ({}, None),
-            ({"features": "x"}, "features"),
-            ({"rMin": "3"}, "rMin and rMax"),
-            ({"rMin": "3", "rMax": "2"}, "rMax"),
-            ({"split": "2.5"}, "split"),
             ({"qmax": "-1"}, "qmax"),
+            ({"qmax": "x"}, "qmax"),
+            ({"qmin": "5", "qmax": "2"}, "qmax must exceed qmin"),
             ({"window": "hann"}, "window"),
-            ({"features": ",".join(["2"] * 9)}, "at most"),
         ):
             with self.subTest(args=args):
                 response = self.client.get("/api/ripples", query_string=[("path", str(fit)), *args.items()])
@@ -122,7 +112,7 @@ class RipplesApiTests(unittest.TestCase):
             (self.folder / name).write_text(text, encoding="utf-8")
         dat = self.folder / "rmc_run.dat"
         dat.write_text(dat.read_text().replace("FILENAME :: scale_ft_rmc.gr", "FILENAME :: /etc/hosts"))
-        response = self.get([self.folder / "rmc_run_PDF1.csv"], {"features": [2.26]})
+        response = self.get([self.folder / "rmc_run_PDF1.csv"], {})
         self.assertEqual(response.status_code, 200)
         dataset = response.get_json()["datasets"][0]
         self.assertNotIn("input", dataset["transform"] or {})
