@@ -120,6 +120,20 @@ BACKFIT_SWEEPS = 2
 #: A peak's ripples are computed within this many ripple periods of it.
 RIPPLE_REACH_PERIODS = 10
 
+#: The strong peaks are refined together (JOINT_FIT): one least-squares fit of
+#: every accepted peak's (A, r₀, ln σ) through the transform over r ≥ the floor,
+#: against the data less a smooth background (the box average of what the
+#: peaks leave over BACKGROUND_PERIODS ripple periods), JOINT_OUTER times;
+#: then extrema the peaks leave unexplained, with a prominence of at least
+#: STRONG_PEAK_FRACTION of the largest in the data, are added as peaks and the
+#: fit repeated, at most JOINT_ADD_ROUNDS times, JOINT_ADD_PER_ROUND at a time.
+JOINT_FIT = True
+JOINT_MAX_ITERATIONS = 60
+JOINT_OUTER = 2
+JOINT_ADD_ROUNDS = 2
+JOINT_ADD_PER_ROUND = 4
+JOINT_MAX_PEAKS = 48
+
 #: The ripples listed per peak on each side.
 RIPPLES_LISTED = 2
 
@@ -509,6 +523,114 @@ def _peak_like(peak: Optional[dict], sign: float, half_width: float) -> bool:
             and peak["sigma"] <= half_width)
 
 
+def _joint_lm(matrix: np.ndarray, q: np.ndarray, target: np.ndarray, params: np.ndarray, lower: np.ndarray,
+              upper: np.ndarray) -> tuple[np.ndarray, float]:
+    """Levenberg–Marquardt on [A, r₀, ln σ] per peak: matrix @ Σ_j S_j(Q) ≈ target, analytic Jacobian.
+
+    ``matrix``: (2/π) w_k sin(Q_k r_i). S_j = A√(2π)σ e^{−Q²σ²/2} sin(Q r₀), so
+    ∂S/∂A = S/A, ∂S/∂r₀ = A√(2π)σ e^{−Q²σ²/2} Q cos(Q r₀), ∂S/∂ln σ = S (1 − Q²σ²).
+    Bounds by clamping. Returns (params, cost).
+    """
+    n = params.size // 3
+
+    def spectra(p):
+        a, r0, s = p[0::3], p[1::3], np.exp(p[2::3])
+        env = _SQRT_2PI * s[:, None] * np.exp(-0.5 * np.outer(s * s, q * q))
+        unit_sin = env * np.sin(np.outer(r0, q))
+        return a, r0, s, env, unit_sin
+
+    def residual(p):
+        a, _, _, _, unit_sin = spectra(p)
+        return matrix @ (a @ unit_sin) - target
+
+    f = residual(params)
+    cost = float(f @ f)
+    lam = 1e-3
+    for _ in range(JOINT_MAX_ITERATIONS):
+        a, r0, s, env, unit_sin = spectra(params)
+        derivs = np.empty((3 * n, q.size))
+        derivs[0::3] = unit_sin
+        derivs[1::3] = a[:, None] * env * q[None, :] * np.cos(np.outer(r0, q))
+        derivs[2::3] = a[:, None] * unit_sin * (1.0 - np.outer(s * s, q * q))
+        jac = matrix @ derivs.T
+        h = jac.T @ jac
+        g = jac.T @ f
+        diag = np.diag(h).copy()
+        diag[diag <= 0] = 1.0
+        improved = False
+        while lam < 1e12:
+            try:
+                step = np.linalg.solve(h + lam * np.diag(diag), -g)
+            except np.linalg.LinAlgError:
+                lam *= 4.0
+                continue
+            trial = np.minimum(np.maximum(params + step, lower), upper)
+            ft = residual(trial)
+            trial_cost = float(ft @ ft)
+            if trial_cost < cost:
+                moved = float(np.max(np.abs(trial - params)[1::3])) if n else 0.0
+                previous = cost
+                params, f, cost = trial, ft, trial_cost
+                lam = max(lam / 3.0, 1e-12)
+                improved = True
+                break
+            lam *= 4.0
+        if not improved or moved < FIT_STEP_TOL or previous - cost <= FIT_COST_RTOL * previous:
+            break
+    return params, cost
+
+
+def joint_refine(r: np.ndarray, d: np.ndarray, q: np.ndarray, weights: np.ndarray, dq: float, rule: str,
+                 peaks: list[dict], bounds: list[tuple[float, float]], r_floor: Optional[float],
+                 signs: str, largest: float) -> list[dict]:
+    """The strong peaks refined together, with unexplained extrema added (JOINT_FIT)."""
+    qmax = float(q[-1])
+    period = 2.0 * math.pi / qmax
+    step = float(r[1] - r[0])
+    mask = np.ones(r.size, dtype=bool) if r_floor is None else r >= r_floor
+    rr = r[mask]
+    matrix = np.sin(np.outer(rr, q)) * ((2.0 / math.pi) * weights)[None, :]
+    half = max(1, int(round(0.5 * BACKGROUND_PERIODS * period / step)))
+    s_lo, s_hi = math.log(SIGMA_MIN_QMAX / qmax), math.log(SIGMA_MAX)
+    res = resolution(q, weights)
+    peaks, bounds = [dict(p) for p in peaks], list(bounds)
+    for round_ in range(JOINT_ADD_ROUNDS + 1):
+        if not peaks:
+            return []
+        params = np.array([v for p in peaks for v in (p["amplitude"], p["r"], math.log(p["sigma"]))])
+        lower = np.array([v for (lo, _hi) in bounds for v in (-np.inf, lo, s_lo)])
+        upper = np.array([v for (_lo, hi) in bounds for v in (np.inf, hi, s_hi)])
+        background = np.zeros(rr.size)
+        for _ in range(JOINT_OUTER):
+            params, _cost = _joint_lm(matrix, q, d[mask] - background, params, lower, upper)
+            model = matrix @ sum(gaussian_sine(q, {"amplitude": params[3 * j], "r": params[3 * j + 1],
+                                                   "sigma": math.exp(params[3 * j + 2])}) for j in range(len(peaks)))
+            background = _box_average(d[mask] - model, half)
+        peaks = [{**p, "amplitude": float(params[3 * j]), "r": float(params[3 * j + 1]),
+                  "sigma": float(math.exp(params[3 * j + 2]))} for j, p in enumerate(peaks)]
+        if round_ == JOINT_ADD_ROUNDS or len(peaks) >= JOINT_MAX_PEAKS:
+            break
+        left = np.zeros(r.size)
+        left[mask] = d[mask] - background - model
+        found = []
+        for index, prominence, base in sorted(_prominences(left, local_extrema(left)), key=lambda e: -e[1]):
+            if prominence < STRONG_PEAK_FRACTION * largest or len(found) >= JOINT_ADD_PER_ROUND:
+                break
+            if not mask[index] or (signs != "both" and left[index] <= base):
+                continue
+            if any(abs(r[index] - p["r"]) <= res["mainLobe"] for p in peaks + found):
+                continue
+            found.append({"amplitude": float(left[index] - base), "r": float(r[index]),
+                          "sigma": max(0.5 / qmax, 0.5 * res["fwhm"] / 1.1774), "background": 0.0, "slope": 0.0,
+                          "rms": 0.0})
+        if not found:
+            break
+        peaks += found
+        bounds += [(p["r"] - period, p["r"] + period) for p in found]
+    keep = [p for p in peaks if p["sigma"] < SIGMA_MAX and (signs == "both" or p["amplitude"] > 0)]
+    return keep
+
+
 def strong_peaks(r: np.ndarray, d: np.ndarray, q: np.ndarray, weights: np.ndarray, dq: float, rule: str,
                  r_floor: Optional[float] = None, signs: str = "positive") -> list[dict]:
     """The strong peaks of d(r), each a Gaussian fitted through the transform, backfitted.
@@ -568,13 +690,19 @@ def strong_peaks(r: np.ndarray, d: np.ndarray, q: np.ndarray, weights: np.ndarra
                              (float(r[lo]), float(r[hi - 1])))
             if _peak_like(refit, entry["sign"], entry["halfWidth"]):
                 entry["peak"] = refit
-    kept = [{**entry["peak"], "rippleScale": ripple_scale(entry["peak"], qmax)} for entry in accepted]
+    if JOINT_FIT and accepted:
+        refined = joint_refine(r, d, q, weights, dq, rule, [entry["peak"] for entry in accepted],
+                               [(float(r[entry["window"][0]]), float(r[entry["window"][1] - 1])) for entry in accepted],
+                               r_floor, signs, largest)
+        kept = [{**peak, "rippleScale": ripple_scale(peak, qmax)} for peak in refined]
+    else:
+        kept = [{**entry["peak"], "rippleScale": ripple_scale(entry["peak"], qmax)} for entry in accepted]
     if not kept:
         return []
     top = max(peak["rippleScale"] for peak in kept)
     kept = [peak for peak in kept if peak["rippleScale"] >= STRONG_RIPPLE_FRACTION * top]
     kept.sort(key=lambda peak: (-peak["rippleScale"], peak["r"]))
-    kept = kept[:MAX_STRONG_PEAKS]
+    kept = kept[:JOINT_MAX_PEAKS if JOINT_FIT else MAX_STRONG_PEAKS]
     kept.sort(key=lambda peak: peak["r"])
     return kept
 
