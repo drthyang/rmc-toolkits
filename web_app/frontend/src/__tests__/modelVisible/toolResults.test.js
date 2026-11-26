@@ -69,10 +69,8 @@ const SAMPLES = [
     ['detect_symmetry', 'detect_symmetry', { tolerance_A: 0.2 }],
     ['measure_symmetry_lowering', 'measure_symmetry_lowering', {}],
     // Termination ripples (2026-11-07, the dock only): the Demo's datasets,
-    // then the small features between 2 and 6 Å found and read, and two named.
+    // from its files and first principles.
     ['check_ripples', 'check_ripples', {}],
-    ['check_ripples.range', 'check_ripples', { r_min: 2, r_max: 6 }],
-    ['check_ripples.features', 'check_ripples', { features: [2.32, 2.8], split: [2.45, 2.6] }],
     ['ask_user', 'ask_user', {
         question: 'Which Ta–Se window?',
         options: [
@@ -168,6 +166,5 @@ describe('tool results as the model reads them (the Demo run)', () => {
             content_chars: message.content.length,
             content: JSON.parse(message.content)
         })).toMatchFileSnapshot(`__snapshots__/tool-results/${file}.json`);
-    // check_ripples fits the strong peaks of the Demo's G(r): seconds on a loaded machine.
-    }, 60000);
+    });
 });

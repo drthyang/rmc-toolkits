@@ -1,7 +1,7 @@
 {
   "tool": "check_ripples",
   "arguments": {},
-  "content_chars": 1806,
+  "content_chars": 1647,
   "content": {
     "ref": "r1",
     "checks": [
@@ -15,7 +15,7 @@
       },
       {
         "level": "note",
-        "text": "xpdf: below the first distance (0.01–2.06 Å) the data's rms about the baseline is 6.6× the ripples the strong peaks predict there (the model, transformed alike, shows 1.2× the prediction there): noise or processing errors dominate the low r."
+        "text": "xpdf: r-resolution: ripples repeat every 0.233 Å (2π/Q_max, Q_max = 26.98 Å⁻¹); a peak at r₀ has its ripples near r₀ ± (n + ½)·0.116 Å (n = 1, 2, …; π/Q_max), their sign set by the peak's width; features closer than the kernel's FWHM, 0.138 Å, are not resolved."
       },
       {
         "level": "note",
@@ -38,49 +38,6 @@
             "fwhm": 0.138,
             "nyquist": 0.116,
             "ripple_period": 0.233
-          },
-          "strong_peaks": [
-            {
-              "r": 2.509,
-              "sigma_A": 0.057,
-              "first_ripples": [
-                [2.32, -0.066],
-                [2.7, -0.071]
-              ]
-            },
-            {
-              "r": 5.493,
-              "sigma_A": 0.099,
-              "first_ripples": [
-                [5.28, -0.0067],
-                [5.7, -0.0066]
-              ]
-            },
-            {
-              "r": 7.333,
-              "sigma_A": 0.1,
-              "first_ripples": [
-                [7.12, -0.0045],
-                [7.65, 0.0038]
-              ]
-            },
-            {
-              "r": 12.687,
-              "sigma_A": 0.098,
-              "first_ripples": [
-                [12.48, -0.0071],
-                [12.9, -0.007]
-              ]
-            }
-          ],
-          "low_r": {
-            "state": "measured",
-            "range_A": [0.01, 2.06],
-            "rms": 0.028,
-            "predicted_rms": 0.0043,
-            "model_rms": 0.005,
-            "data_minus_model_rms": 0.026,
-            "relative_to": "largest peak"
           }
         },
         {
@@ -98,7 +55,8 @@
           }
         }
       ],
-      "verdict": "No real-space fit asks the box to make ripples (each model is truncated as its data are)."
+      "verdict": "No real-space fit asks the box to make ripples (each model is truncated as its data are).",
+      "next": ["This check does not say whether a given peak or shoulder is a ripple. To test one: a ripple moves with Q_max and a real feature stays, so compare a G(r) transformed with a higher Q_max, a Lorch-windowed transform (which suppresses ripples) or the other radiation's data (another Q_max)."]
     }
   }
 }

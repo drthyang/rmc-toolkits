@@ -362,7 +362,7 @@
     "type": "function",
     "function": {
       "name": "check_ripples",
-      "description": "Fourier termination ripples in the run's G(r): per fitted dataset, whether RMCProfile truncates the model as the data (the risk that the box fits ripples), the Q range, window and r-resolution, the strong peaks' predicted ripples, the low-r level; for features, whether each is a ripple, larger than one, below the resolution, or moves with Q_max across datasets; a verdict and the next step. Use it before reading a small peak, shoulder or split in a G(r) or partial g(r) as structure.",
+      "description": "Fourier termination ripples in the run's G(r), from the run's files and first principles: per fitted dataset, whether RMCProfile truncates the model as the data (whether the box is asked to fit ripples), the Q range and window, and the r-resolution (the ripple period 2π/Q_max and the kernel's FWHM). It does not judge whether a given peak or shoulder is a ripple. Use it before reading a small peak, shoulder or split in a G(r) or partial g(r) as structure.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -370,35 +370,6 @@
             "type": "string",
             "enum": ["xray_sq", "xpdf"],
             "description": "xray_sq: X-ray F(Q); xpdf: X-ray G(r), RMCProfile's transform of its F(Q). Default: all."
-          },
-          "features": {
-            "type": "array",
-            "items": {
-              "type": "number"
-            },
-            "minItems": 1,
-            "maxItems": 8,
-            "description": "Small peaks or shoulders to read (Å)."
-          },
-          "r_min": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 100,
-            "description": "Or find them from r_min to r_max (Å)."
-          },
-          "r_max": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 100
-          },
-          "split": {
-            "type": "array",
-            "items": {
-              "type": "number"
-            },
-            "minItems": 2,
-            "maxItems": 2,
-            "description": "A split peak's two positions (Å)."
           },
           "qmax": {
             "type": "number",
@@ -410,11 +381,6 @@
             "type": "string",
             "enum": ["none", "lorch"],
             "description": "That G(r)'s window."
-          },
-          "pair": {
-            "type": "string",
-            "enum": ["Ga-Ga", "Ga-Ta", "Ga-Se", "Ta-Ta", "Ta-Se", "Se-Se"],
-            "description": "Read the features in this partial g(r) of the box."
           }
         }
       }

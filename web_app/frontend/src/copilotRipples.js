@@ -2,18 +2,19 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 // The AI Copilot's check_ripples (effect 'compute', llm copilot/effects.js):
-// Fourier termination ripples in the run's G(r), so a small peak, a shoulder
-// or a split is not read as structure when it is a ripple — RMC is a
-// minimiser and fits whatever the data carry, ripples included. The engine
-// (rmc_toolkits/ripples.py, its port src/ripples.js through ripplesRun.js, or
-// Flask's /api/ripples) decides; this module renders: per fitted dataset how
-// RMCProfile makes the model it compares (the risk that the box fits ripples),
-// the transform and the r-resolution, the strong peaks' predicted ripples and
-// the low-r level; the caller's features read as ripple-consistent, larger
-// or smaller than the ripple there, below the resolution, across datasets of
-// different Q_max; a plain verdict and the next step. The run's ripple source
-// is the adapter's (copilotRun.js LoadedRun `ripples`): (paths, args,
-// { signal }) → the engine's result.
+// Fourier termination ripples in the run's G(r), from the run's files and
+// first principles — RMC is a minimiser and fits whatever the data carry,
+// ripples included. The engine (rmc_toolkits/ripples.py, its port
+// src/ripples.js through ripplesRun.js, or Flask's /api/ripples) decides; this
+// module renders: per fitted dataset how RMCProfile makes the model it
+// compares (whether the box is asked to fit ripples), the Q range and window,
+// and the r-resolution (the ripple period 2π/Q_max, where a peak's ripples
+// fall, the kernel's FWHM); a plain verdict and the next step, which says how
+// to test a suspect feature. It does not judge whether a given peak or
+// shoulder is a ripple: that reading was not reliable enough to ship (it is
+// kept on the branch wip/joint-fit). The run's ripple source is the adapter's
+// (copilotRun.js LoadedRun `ripples`): (paths, args, { signal }) → the
+// engine's result.
 //
 // Offered in the dock only for now: the validation's live arms leave it out
 // by name (validation/harness.js LIVE_ARM_EXCLUDED) so protocol 0.8.0 and its
@@ -32,7 +33,6 @@ const FIT_FILE_RE = /_(FT_XFQ|Xray_PDF|PDF|FQ|SQ)\d+\.csv$/;
 const roundSig = (value, digits = 3) => (
     Number.isFinite(value) && value !== 0 ? Number(value.toPrecision(digits)) : (Number.isFinite(value) ? value : null)
 );
-const roundR = (value) => (Number.isFinite(value) ? Math.round(value * 1000) / 1000 : null);
 
 // How RMCProfile makes the model, in a few words (fit_space_risk's `model`;
 // the risk's sentence in the checks says what it means).
@@ -69,25 +69,6 @@ const REASON_SENTENCES = {
     'r-grid-not-uniform': 'its r grid is not uniform'
 };
 
-// A feature's reading in one dataset (classify_feature's `class`).
-export const FEATURE_SENTENCES = {
-    'ripple-consistent': 'the size of the ripple predicted there: a termination ripple, not structure',
-    'larger-than-ripple': 'larger than the ripple predicted there: more than termination (a weaker peak, the strong peak\'s own shape, or noise)',
-    'smaller-than-ripple': 'smaller than the ripple predicted there: the ripple is not there in full (the data\'s transform differs from the one assumed, or something of the other sign fills it)',
-    'no-ripple-here': 'no ripple of its sign is predicted there: not termination (a weaker peak, the strong peak\'s own shape, or noise)',
-    'within-noise': 'within twice the data\'s noise level (from the low-r region): not resolved from noise',
-    'resolved-peak': 'a peak in its own right (the larger peaks\' ripples do not explain it)'
-};
-
-// One feature across datasets of different Q_max (across_datasets' `verdict`).
-export const ACROSS_SENTENCES = {
-    'moves-with-qmax': 'it moves with Q_max: a ripple',
-    'not-discriminating': 'the Q_max differ too little to tell a ripple from a feature here',
-    'in-every-dataset': 'it is in every dataset and a ripple in none: not termination',
-    'ripple-in-every-dataset': 'it is ripple-consistent in every dataset',
-    mixed: 'the datasets disagree'
-};
-
 // Where a dataset's transform comes from (the engine's transform `source`).
 const SOURCE_WORDS = {
     'run-fq': 'the run\'s F(Q) file',
@@ -97,14 +78,6 @@ const SOURCE_WORDS = {
     convolve: 'the .dat\'s CONVOLVE Q',
     argument: 'given (qmax)',
     'xray-block': 'the .dat\'s QMIN-QMAX'
-};
-
-const LOW_R_WORDS = {
-    measured: 'measured',
-    enforced: 'set to the baseline (stog / Auto StoG): the low-r level cannot be read',
-    filtered: 'cleaner than the predicted ripples: Fourier-filtered, it does not measure them',
-    'too-short': 'too short below the first distance to read',
-    unavailable: 'not read'
 };
 
 const keyFiles = (plotFiles) => {
@@ -119,9 +92,7 @@ const keyFiles = (plotFiles) => {
     return keyed;
 };
 
-const STRONG_PEAKS_SHOWN = 4;
-
-/** check_ripples' result budget (characters): its datasets and features whole. */
+/** check_ripples' result budget (characters): its datasets whole. */
 export const RIPPLES_RESULT_BUDGET = 4500;
 
 const datasetRow = (dataset, key) => {
@@ -149,52 +120,6 @@ const datasetRow = (dataset, key) => {
             ripple_period: roundSig(dataset.resolution.ripplePeriod)
         };
     }
-    if (dataset.peaks?.length) {
-        row.strong_peaks = [...dataset.peaks]
-            .sort((a, b) => (b.rippleScale - a.rippleScale) || (a.r - b.r))
-            .slice(0, STRONG_PEAKS_SHOWN)
-            .sort((a, b) => a.r - b.r)
-            .map((peak) => {
-                // The first ripple on each side.
-                const left = peak.ripples.filter((ripple) => ripple.r < peak.r).sort((a, b) => b.r - a.r)[0];
-                const right = peak.ripples.filter((ripple) => ripple.r > peak.r).sort((a, b) => a.r - b.r)[0];
-                const nearest = [left, right].filter(Boolean);
-                return {
-                    r: roundR(peak.r),
-                    sigma_A: roundSig(peak.sigma, 2),
-                    first_ripples: nearest.map((ripple) => [roundR(ripple.r), roundSig(ripple.relative, 2)])
-                };
-            });
-    }
-    const low = dataset.lowR;
-    if (low && low.state !== 'unavailable') {
-        row.low_r = { state: low.state };
-        if (low.range) row.low_r.range_A = [roundR(low.range[0]), roundR(low.range[1])];
-        if (Number.isFinite(low.rms)) {
-            const height = Math.max(0, ...(dataset.peaks || []).map((peak) => Math.abs(peak.height)));
-            const relative = (value) => (height > 0 && Number.isFinite(value) ? roundSig(value / height, 2) : null);
-            row.low_r.rms = relative(low.rms);
-            row.low_r.predicted_rms = relative(low.predictedRms);
-            if (Number.isFinite(low.modelRms)) row.low_r.model_rms = relative(low.modelRms);
-            if (Number.isFinite(low.dataMinusModelRms)) row.low_r.data_minus_model_rms = relative(low.dataMinusModelRms);
-            row.low_r.relative_to = 'largest peak';
-        }
-        if (Number.isFinite(low.enforcedBelow)) row.low_r.enforced_below_A = roundR(low.enforcedBelow);
-    }
-    return row;
-};
-
-const readingRow = (reading, key) => {
-    const row = { dataset: key, class: reading.class };
-    if (reading.class === 'resolved-peak') {
-        row.peak_A = roundR(reading.r);
-        return row;
-    }
-    row.at_A = roundR(reading.r);
-    row.size = roundSig(reading.size, 2);
-    if (reading.ripple) row.ripple_size = roundSig(reading.ripple.amplitude, 2);
-    if (reading.fromPeak) row.from_peak_A = roundR(reading.fromPeak.distance);
-    row.below_resolution = Boolean(reading.belowResolution);
     return row;
 };
 
@@ -204,7 +129,7 @@ const fmt = (value, digits = 3) => String(roundSig(value, digits));
  * The data, checks and verdict of one check_ripples call from the engine's
  * result. `keys` maps a file name to its dataset key; `only` keeps one key.
  */
-export const summarizeRipples = (result, { keys, only = null, pair = null } = {}) => {
+export const summarizeRipples = (result, { keys, only = null } = {}) => {
     const keyOf = (file) => keys.get(file) || file;
     // Real-space datasets first, the riskiest first (the result budget halves
     // lists from the end), then the fits in Q.
@@ -238,137 +163,31 @@ export const summarizeRipples = (result, { keys, only = null, pair = null } = {}
                 : '';
             checks.push({ level: 'warn', text: `${key}: not assessed: ${REASON_SENTENCES[dataset.reason] || dataset.reason}${hint}.` });
         }
-        const low = dataset.lowR;
-        if (low && low.state === 'measured' && Number.isFinite(low.rms) && low.predictedRms > 0) {
-            const ratio = low.rms / low.predictedRms;
-            // The model, where it is transformed as the data are, has only its own
-            // ripples there: what the prediction should be.
-            const model = Number.isFinite(low.modelRms)
-                ? ` (the model, transformed alike, shows ${fmt(low.modelRms / low.predictedRms, 2)}× the prediction there)` : '';
+        if (dataset.status === 'assessed' && dataset.fit && ['real', 'unknown'].includes(dataset.fit.fitSpace)
+            && dataset.resolution && dataset.transform) {
+            // Where a peak's ripples fall: the truncation kernel sin(Q_max·Δr)/Δr
+            // has its extrema where tan x = x (x = Q_max·Δr), x ≈ (n + ½)π for
+            // n ≥ 1, so at Δr ≈ (n + ½)·π/Q_max. Their sign depends on the
+            // peak's width (σ·Q_max), so no sign is stated.
+            const { fwhm, ripplePeriod } = dataset.resolution;
+            const lorch = dataset.transform.window === 'lorch' ? ' (Lorch window: ripples suppressed, resolution coarser)' : '';
             checks.push({
                 level: 'note',
-                text: `${key}: below the first distance (${fmt(low.range[0])}–${fmt(low.range[1])} Å) the data's rms about the baseline `
-                    + `is ${fmt(ratio, 2)}× the ripples the strong peaks predict there${model}`
-                    + (ratio > 2 ? ': noise or processing errors dominate the low r.' : ': ripple-dominated.')
-            });
-        } else if (low && ['enforced', 'filtered'].includes(low.state)) {
-            checks.push({ level: 'note', text: `${key}: the low-r region is ${LOW_R_WORDS[low.state]}.` });
-        }
-    }
-
-    // Features (in the datasets, or in the box's partial g(r)).
-    if (result.features) {
-        data.features = result.features.map((feature) => {
-            const readings = feature.datasets.filter((reading) => keys.has(reading.file)
-                && (!only || keyOf(reading.file) === only));
-            const row = { r: roundR(feature.asked), in: readings.map((reading) => readingRow(reading, keyOf(reading.file))) };
-            if (feature.across && !only) {
-                row.across = { verdict: feature.across.verdict, discriminating: feature.across.discriminating };
-            }
-            return row;
-        });
-        data.found = Boolean(result.found);
-        // One line per reading, the features that read so grouped (positions in Å).
-        const byClass = new Map();
-        const readIn = new Set(data.features.flatMap((feature) => feature.in.map((reading) => reading.dataset)));
-        for (const feature of data.features) {
-            for (const reading of feature.in) {
-                const label = readIn.size > 1 ? `${feature.r} (${reading.dataset})` : String(feature.r);
-                if (!byClass.has(reading.class)) byClass.set(reading.class, []);
-                byClass.get(reading.class).push(label);
-            }
-        }
-        for (const [kind, where] of byClass) {
-            checks.push({
-                level: kind === 'ripple-consistent' ? 'warn' : 'note',
-                text: `r = ${where.join(', ')} Å: ${FEATURE_SENTENCES[kind] || kind}.`
+                text: `${key}: r-resolution: ripples repeat every ${fmt(ripplePeriod)} Å (2π/Q_max, Q_max = `
+                    + `${fmt(dataset.transform.qMax, 4)} Å⁻¹)${lorch}; a peak at r₀ has its ripples near r₀ ± (n + ½)·`
+                    + `${fmt(ripplePeriod / 2)} Å (n = 1, 2, …; π/Q_max), their sign set by the peak's width; features `
+                    + `closer than the kernel's FWHM, ${fmt(fwhm)} Å, are not resolved.`
             });
         }
-        const close = data.features.filter((feature) => feature.in.some((reading) => reading.below_resolution));
-        if (close.length) {
-            checks.push({ level: 'note', text: `r = ${close.map((feature) => feature.r).join(', ')} Å: closer to a strong peak than the r-resolution (the kernel's FWHM).` });
-        }
-        const byVerdict = new Map();
-        for (const feature of data.features) {
-            if (!feature.across) continue;
-            if (!byVerdict.has(feature.across.verdict)) byVerdict.set(feature.across.verdict, []);
-            byVerdict.get(feature.across.verdict).push(feature.r);
-        }
-        for (const [verdict, where] of byVerdict) {
-            checks.push({
-                level: verdict === 'moves-with-qmax' ? 'warn' : 'note',
-                text: `Across the datasets, r = ${where.join(', ')} Å: ${ACROSS_SENTENCES[verdict] || verdict}.`
-            });
-        }
-    }
-    if (result.pair) {
-        data.pair = {
-            pair: result.pair.label,
-            features: result.pair.features.map((feature) => {
-                const row = { r: roundR(feature.r), in_partial: feature.inPartial };
-                if (Number.isFinite(feature.spacing)) row.spacing_A = roundR(feature.spacing);
-                row.below_resolution = Boolean(feature.belowResolution);
-                row.at_ripple = feature.atRipple.filter((ripple) => keys.has(ripple.file)).map((ripple) => ({
-                    dataset: keyOf(ripple.file), r: roundR(ripple.r), relative: roundSig(ripple.relative, 2)
-                }));
-                return row;
-            })
-        };
-        const atRipple = data.pair.features.filter((feature) => feature.at_ripple.length);
-        const clear = data.pair.features.filter((feature) => !feature.at_ripple.length);
-        if (atRipple.length) {
-            checks.push({
-                level: 'warn',
-                text: `${data.pair.pair} g(r) r = ${atRipple.map((feature) => feature.r).join(', ')} Å: at a predicted ripple of a G(r) fitted `
-                    + 'in r against a model not truncated like the data: the box may be making it.'
-            });
-        }
-        if (clear.length) {
-            checks.push({
-                level: 'note',
-                text: `${data.pair.pair} g(r) r = ${clear.map((feature) => feature.r).join(', ')} Å: at no predicted ripple of a dataset whose box may fit ripples.`
-            });
-        }
-        const unresolved = data.pair.features.filter((feature) => feature.below_resolution);
-        if (unresolved.length) {
-            checks.push({
-                level: 'note',
-                text: `${data.pair.pair} g(r) r = ${unresolved.map((feature) => feature.r).join(', ')} Å: closer to the next peak than the data's r-resolution.`
-            });
-        }
-    } else if (pair) {
-        checks.push({ level: 'note', text: `No partial g(r) ${pair} in the run's partials file: the features were read in the datasets.` });
-    }
-    if (result.split) {
-        const below = result.split.datasets.filter((entry) => keys.has(entry.file) && entry.belowResolution);
-        data.split = {
-            spacing_A: roundR(result.split.spacing),
-            below_resolution_in: below.map((entry) => keyOf(entry.file)),
-            fwhm_A: Object.fromEntries(result.split.datasets.filter((entry) => keys.has(entry.file))
-                .map((entry) => [keyOf(entry.file), roundSig(entry.fwhm)]))
-        };
-        checks.push({
-            level: below.length ? 'warn' : 'note',
-            text: below.length
-                ? `A split of ${data.split.spacing_A} Å is below the r-resolution of ${data.split.below_resolution_in.join(', ')}: those data cannot resolve it.`
-                : `A split of ${data.split.spacing_A} Å is above every dataset's r-resolution.`
-        });
     }
 
     // The verdict, result first.
-    const featureRows = data.features || [];
-    const ripples = featureRows.filter((row) => row.in.some((reading) => reading.class === 'ripple-consistent'));
-    const notRipples = featureRows.filter((row) => row.in.length && row.in.every((reading) => (
-        ['larger-than-ripple', 'no-ripple-here', 'resolved-peak'].includes(reading.class))));
-    const parts = [];
-    if (high.length) parts.push(`the box is asked to fit termination ripples in ${high.map((d) => keyOf(d.file)).join(', ')} (fitted in r against an untruncated or differently truncated model)`);
-    else if (unknown.length) parts.push(`whether the box fits ripples in ${unknown.map((d) => keyOf(d.file)).join(', ')} cannot be established from the run's files`);
-    else if (real.length) parts.push('no real-space fit asks the box to make ripples (each model is truncated as its data are)');
-    else if (datasets.length) parts.push('every dataset is fitted in Q: the box is not asked to make ripples');
-    if (ripples.length) parts.push(`ripple-consistent: r = ${ripples.map((row) => row.r).join(', ')} Å`);
-    if (notRipples.length) parts.push(`not ripples: r = ${notRipples.map((row) => row.r).join(', ')} Å`);
-    const sentence = parts.join('; ');
-    data.verdict = parts.length ? `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.` : 'No fitted dataset to assess.';
+    let verdict = null;
+    if (high.length) verdict = `the box is asked to fit termination ripples in ${high.map((d) => keyOf(d.file)).join(', ')} (fitted in r against an untruncated or differently truncated model)`;
+    else if (unknown.length) verdict = `whether the box fits ripples in ${unknown.map((d) => keyOf(d.file)).join(', ')} cannot be established from the run's files`;
+    else if (real.length) verdict = 'no real-space fit asks the box to make ripples (each model is truncated as its data are)';
+    else if (datasets.length) verdict = 'every dataset is fitted in Q: the box is not asked to make ripples';
+    data.verdict = verdict ? `${verdict.charAt(0).toUpperCase()}${verdict.slice(1)}.` : 'No fitted dataset to assess.';
 
     // The next step (the user runs RMC again only for a specific suspect finding).
     if (high.length) {
@@ -377,17 +196,11 @@ export const summarizeRipples = (result, { keys, only = null, pair = null } = {}
     if (datasets.some((dataset) => dataset.reason === 'qmax-unknown')) {
         next.push('Give qmax (and window, if the G(r) was transformed with Lorch\'s) for the G(r) whose Q_max the files do not give.');
     }
-    if (ripples.length) {
-        next.push(`Do not read r = ${ripples.map((row) => row.r).join(', ')} Å as structure; to test it, use data with a higher Q_max, a Lorch-windowed transform (which suppresses the ripples) or the other radiation's data (another Q_max).`);
-        if (high.length) {
-            next.push('If it matters: one run with the model truncated as the data are (or fitted in Q), from a new start, for that feature only — if it does not return, it was the ripple.');
-        }
+    if (assessed.some((dataset) => ['real', 'unknown'].includes(dataset.fit?.fitSpace))) {
+        next.push('This check does not say whether a given peak or shoulder is a ripple. To test one: a ripple moves with Q_max and a real feature stays, so compare a G(r) transformed with a higher Q_max, a Lorch-windowed transform (which suppresses ripples) or the other radiation\'s data (another Q_max).');
     }
-    if (data.split?.below_resolution_in?.length || featureRows.some((row) => row.in.some((reading) => reading.below_resolution))) {
-        next.push('A split or shoulder below the r-resolution is not constrained by the data: only a higher Q_max resolves it.');
-    }
-    if (featureRows.length && assessed.filter((dataset) => ['real', 'unknown'].includes(dataset.fit?.fitSpace) && dataset.total !== false).length < 2) {
-        next.push('One G(r) only: add a dataset with a different Q_max (X-ray beside neutron) to tell a ripple, which moves with Q_max, from a feature, which stays.');
+    if (high.length) {
+        next.push('If a feature matters: one run with the model truncated as the data are (or fitted in Q), from a new start; if the feature does not return, it was a ripple.');
     }
     if (next.length) data.next = next;
     checks.unshift({ level: assessed.length || datasets.some((d) => d.fit) ? 'ok' : 'fail', text: data.verdict });
@@ -407,42 +220,8 @@ const RIPPLES_SHAPE = {
         'Q_A?': ['number|null', 'number|null'],
         'window?': 'string',
         'Q_from?': 'string',
-        'resolution_A?': { fwhm: 'number|null', nyquist: 'number|null', ripple_period: 'number|null' },
-        'strong_peaks?': [{ r: 'number|null', sigma_A: 'number|null', first_ripples: [['number|null', 'number|null']] }],
-        'low_r?': {
-            state: 'string',
-            'range_A?': ['number|null', 'number|null'],
-            'rms?': 'number|null',
-            'predicted_rms?': 'number|null',
-            'model_rms?': 'number|null',
-            'data_minus_model_rms?': 'number|null',
-            'relative_to?': 'string',
-            'enforced_below_A?': 'number|null'
-        }
+        'resolution_A?': { fwhm: 'number|null', nyquist: 'number|null', ripple_period: 'number|null' }
     }],
-    'features?': [{
-        r: 'number|null',
-        in: [{
-            dataset: 'string',
-            class: 'string',
-            'peak_A?': 'number|null',
-            'at_A?': 'number|null',
-            'size?': 'number|null',
-            'ripple_size?': 'number|null',
-            'from_peak_A?': 'number|null',
-            'below_resolution?': 'boolean'
-        }],
-        'across?': { verdict: 'string', discriminating: 'boolean' }
-    }],
-    'found?': 'boolean',
-    'pair?': {
-        pair: 'string',
-        features: [{
-            r: 'number|null', in_partial: 'boolean', 'spacing_A?': 'number|null', below_resolution: 'boolean',
-            at_ripple: [{ dataset: 'string', r: 'number|null', relative: 'number|null' }]
-        }]
-    },
-    'split?': { spacing_A: 'number|null', below_resolution_in: ['string'], fwhm_A: { '*': 'number|null' } },
     verdict: 'string',
     'next?': ['string']
 };
@@ -456,66 +235,38 @@ export const buildRippleTool = ({ plotFiles = null, ripples = null } = {}) => {
     const keyed = keyFiles(plotFiles);
     if (!ripples || !keyed.size) return null;
     const keys = new Map([...keyed.entries()].map(([key, file]) => [file.name, key]));
-    const partials = (plotFiles || []).find((file) => file.plotKind === 'pdf_partials' && file.plotData?.series?.length);
-    const pairs = partials
-        ? partials.plotData.series.map((entry) => (entry.label || '').trim()).filter((label) => /^[A-Z][a-z]?\s*-\s*[A-Z][a-z]?$/.test(label))
-        : [];
     const properties = {
         dataset: {
             type: 'string',
             enum: [...keyed.keys()],
             description: `${[...keyed.entries()].map(([key, file]) => `${key}: ${RIPPLE_FIT_KINDS[file.plotKind]}`).join('; ')}. Default: all.`
         },
-        features: {
-            type: 'array', items: { type: 'number' }, minItems: 1, maxItems: 8, description: 'Small peaks or shoulders to read (Å).'
-        },
-        r_min: { type: 'number', minimum: 0, maximum: 100, description: 'Or find them from r_min to r_max (Å).' },
-        r_max: { type: 'number', minimum: 0, maximum: 100 },
-        split: {
-            type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2, description: 'A split peak\'s two positions (Å).'
-        },
         qmax: { type: 'number', minimum: 1, maximum: 200, description: 'Q_max (Å⁻¹) of a G(r) whose files lack it.' },
         window: { type: 'string', enum: ['none', 'lorch'], description: 'That G(r)\'s window.' }
     };
-    if (pairs.length) {
-        properties.pair = { type: 'string', enum: pairs, description: 'Read the features in this partial g(r) of the box.' };
-    }
     return {
         name: 'check_ripples',
-        description: 'Fourier termination ripples in the run\'s G(r): per fitted dataset, whether RMCProfile truncates the '
-            + 'model as the data (the risk that the box fits ripples), the Q range, window and r-resolution, the strong '
-            + 'peaks\' predicted ripples, the low-r level; for features, whether each is a ripple, larger than one, below '
-            + 'the resolution, or moves with Q_max across datasets; a verdict and the next step.',
+        description: 'Fourier termination ripples in the run\'s G(r), from the run\'s files and first principles: per '
+            + 'fitted dataset, whether RMCProfile truncates the model as the data (whether the box is asked to fit '
+            + 'ripples), the Q range and window, and the r-resolution (the ripple period 2π/Q_max and the kernel\'s '
+            + 'FWHM). It does not judge whether a given peak or shoulder is a ripple.',
         // A short pointer to when to use it (method.js: sent with method 'full').
         method: 'Use it before reading a small peak, shoulder or split in a G(r) or partial g(r) as structure.',
         parameters: { type: 'object', properties },
         dataShape: RIPPLES_SHAPE,
-        // Every dataset and up to eight features: within the default budget
-        // the rows would be cut (as analyze_clusters' and analyze_modulations').
+        // Every dataset whole: within the default budget the rows and their
+        // checks would be cut (as analyze_clusters' and analyze_modulations').
         resultBudget: RIPPLES_RESULT_BUDGET,
-        label: ({ dataset, pair }) => `Termination ripples${dataset ? ` ${dataset}` : ''}${pair ? ` · ${pair}` : ''}`,
+        label: ({ dataset }) => `Termination ripples${dataset ? ` ${dataset}` : ''}`,
         page: 'dashboard',
         cards: ({ dataset } = {}) => [...keyed.entries()]
             .filter(([key]) => !dataset || key === dataset)
             .map(([, file]) => `plot:${file.name}`),
         run: async (args = {}, { signal } = {}) => {
-            const { dataset = null, features = null, r_min: rMin = null, r_max: rMax = null, split = null, qmax = null, window = null } = args;
-            const pair = args.pair ?? null;
-            const checksOnly = [];
-            if ((rMin === null) !== (rMax === null)) checksOnly.push('give r_min and r_max together');
-            if (rMin !== null && rMax !== null && !(rMax > rMin)) checksOnly.push('r_max must exceed r_min');
-            if (checksOnly.length) return { data: { datasets: [], verdict: 'Not run.' }, checks: [{ level: 'fail', text: `${checksOnly.join('; ')}.` }] };
+            const { dataset = null, qmax = null, window = null } = args;
             const paths = [...keyed.values()].map((file) => file.path || file.name);
-            const result = await ripples(paths, {
-                features: features && features.length ? features.map(Number) : null,
-                rRange: rMin !== null ? [rMin, rMax] : null,
-                split: split && split.length === 2 ? split.map(Number) : null,
-                pair,
-                qmax,
-                qmin: null,
-                window
-            }, { signal });
-            return summarizeRipples(result, { keys, only: dataset, pair });
+            const result = await ripples(paths, { qmax, qmin: null, window }, { signal });
+            return summarizeRipples(result, { keys, only: dataset });
         }
     };
 };
