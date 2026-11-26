@@ -209,6 +209,17 @@ export const AssistantTurn = ({
                 ) : (
                     <TextSegment key={index} item={group} last={turn.streaming && index === groups.length - 1} cardLinks={cardLinks} references={references} />
                 )))}
+                {/* The Outcome, then the checks its note points to ("a check below"). */}
+                {turn.outcome && (
+                    <div className={`llm-outcome is-${turn.outcome.status.replace(' ', '-')}`} role="status">
+                        <span className="llm-outcome-label">Outcome</span>
+                        <strong>{OUTCOME_TEXT[turn.outcome.status]}</strong>
+                        {turn.outcome.note && (
+                            // Models write math and card links in the note too.
+                            <span className="llm-outcome-note"><MarkdownMessage inline {...cardLinks} references={references}>{turn.outcome.note}</MarkdownMessage></span>
+                        )}
+                    </div>
+                )}
                 {turn.audit?.length > 0 && (
                     // Checks on the answer itself (the verification, facts.js): where it
                     // contradicts what the tools or the run context established.
@@ -220,16 +231,6 @@ export const AssistantTurn = ({
                             </li>
                         ))}
                     </ul>
-                )}
-                {turn.outcome && (
-                    <div className={`llm-outcome is-${turn.outcome.status.replace(' ', '-')}`} role="status">
-                        <span className="llm-outcome-label">Outcome</span>
-                        <strong>{OUTCOME_TEXT[turn.outcome.status]}</strong>
-                        {turn.outcome.note && (
-                            // Models write math and card links in the note too.
-                            <span className="llm-outcome-note"><MarkdownMessage inline {...cardLinks} references={references}>{turn.outcome.note}</MarkdownMessage></span>
-                        )}
-                    </div>
                 )}
                 {!turn.streaming && (summary || stopNote || turn.toolsUnsupported || turn.cut || turn.gates?.length > 0 || turn.compacted > 0) && (
                     <p className={`llm-turn-footer${turn.cut ? ' is-cut' : ''}`}>

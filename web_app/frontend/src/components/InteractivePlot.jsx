@@ -69,6 +69,10 @@ const isExperimental = (label) => /exp/i.test(label);
 //                       snap to multiples of rangeStep (the bin width), so a
 //                       bin is wholly in or out. The box zoom gives way to it;
 //                       ⌘/ctrl + wheel still zooms. `range` is [lo, hi] or null.
+//                       A knob on the x axis under the band moves the whole
+//                       window (width kept): shown on touch and narrow
+//                       screens, elsewhere under keyboard focus (arrow keys
+//                       one step, shift five, Home/End the axis ends).
 //   ribbon              { series, sigma, label }: a ±σ band around the series
 //                       labelled `series` (sigma[i] at its x[i]; a non-finite
 //                       σ or y is a gap), drawn under it in its colour and
@@ -609,6 +613,7 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
     const rangeMode = typeof onRangeChange === 'function';
     const rangeDragRef = useRef(null);
     const [rangeCursor, setRangeCursor] = useState(null);
+    const [knobHeld, setKnobHeld] = useState(false);
     const rangeUnit = rangeStep > 0 ? rangeStep : (domains.baseX[1] - domains.baseX[0]) / 1000;
     const clampRangeX = (value) => Math.min(domains.baseX[1], Math.max(domains.baseX[0], value));
     const snapRange = (value, round = Math.round) => clampRangeX(round(value / rangeUnit) * rangeUnit);
@@ -685,6 +690,55 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
         setRangeCursor(current.zone === 'move' ? 'grab' : null);
         // A tap (no drag) on touch shows, or clears, the readout.
         if (!current.moved && current.touch) nearestHover(event, { unpinX: current.pinnedX ?? null });
+    };
+
+    // --- The range knob: a grip under the band that moves the whole window.
+    // The same drag as the band's ('move' in moveRange), from a target a
+    // thumb can hold; shown on touch and narrow screens (InteractivePlot.css).
+    const moveRangeBy = (bins) => {
+        if (!range) return;
+        const width = range[1] - range[0];
+        const lo = Math.min(Math.max(range[0] + bins * rangeUnit, domains.baseX[0]), domains.baseX[1] - width);
+        if (lo !== range[0]) onRangeChange([lo, lo + width]);
+    };
+    // Under the band's centre, on the x axis; none while a zoom has it off the plot.
+    const rangeKnobCentre = rangeMode && range ? xScale((range[0] + range[1]) / 2) : null;
+    const rangeKnobX = rangeKnobCentre !== null && rangeKnobCentre >= view.left && rangeKnobCentre <= view.width - view.right
+        ? rangeKnobCentre
+        : null;
+    const startKnob = (event) => {
+        if (!range || (event.pointerType === 'mouse' && event.button !== 0)) return;
+        event.preventDefault();
+        setHover(null);
+        try {
+            event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+            // Pointer capture is best-effort.
+        }
+        rangeDragRef.current = {
+            zone: 'move', knob: true, anchor: xInvert(pointerToView(event).x), start: range,
+            clientX: event.clientX, moved: false, pinnedX: null, touch: event.pointerType === 'touch'
+        };
+        setKnobHeld(true);
+    };
+    const moveKnob = (event) => {
+        if (rangeDragRef.current?.knob) moveRange(event);
+    };
+    const finishKnob = (event) => {
+        if (!rangeDragRef.current?.knob) return;
+        rangeDragRef.current = null;
+        setKnobHeld(false);
+        try {
+            event.currentTarget.releasePointerCapture?.(event.pointerId);
+        } catch {
+            // No capture was held for this pointer.
+        }
+    };
+    const keyKnob = (event) => {
+        const bins = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1, Home: -Infinity, End: Infinity }[event.key];
+        if (bins === undefined) return;
+        event.preventDefault();
+        moveRangeBy(event.shiftKey && Number.isFinite(bins) ? bins * 5 : bins);
     };
 
     const startDrag = (event) => {
@@ -1075,6 +1129,31 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
                         />
                     )}
                 </svg>
+                {rangeKnobX !== null && (
+                    <div
+                        className={knobHeld ? 'plot-range-knob plot-range-knob--held' : 'plot-range-knob'}
+                        role="slider"
+                        tabIndex={0}
+                        aria-label="Move the picked range"
+                        aria-orientation="horizontal"
+                        aria-valuemin={domains.baseX[0]}
+                        aria-valuemax={domains.baseX[1] - (range[1] - range[0])}
+                        aria-valuenow={range[0]}
+                        aria-valuetext={`${Number(range[0].toFixed(6))} to ${Number(range[1].toFixed(6))}`}
+                        title="Drag to move the range"
+                        style={{
+                            left: `${(rangeKnobX / view.width) * 100}%`,
+                            top: `${((view.top + plotHeight) / view.height) * 100}%`
+                        }}
+                        onPointerDown={startKnob}
+                        onPointerMove={moveKnob}
+                        onPointerUp={finishKnob}
+                        onPointerCancel={finishKnob}
+                        onKeyDown={keyKnob}
+                    >
+                        <span aria-hidden="true" />
+                    </div>
+                )}
                 {hover && (
                     <div
                         className="plot-tooltip"

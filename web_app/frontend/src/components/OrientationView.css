@@ -64,8 +64,9 @@
     white-space: nowrap;
 }
 
-/* Axis-views mini panel: three fixed-angle views stacked vertically, one
-   scissored canvas with a click-to-snap zone over each third. */
+/* Axis-views mini panel: three fixed-angle views stacked vertically (side by
+   side in a wide panel, .is-across), one scissored canvas with a
+   click-to-snap zone over each third. */
 .orient-multiview {
     position: relative;
     flex: 1 1 auto;
@@ -103,6 +104,24 @@
     border-bottom: 0;
 }
 
+/* A wide, short panel (the stacked layouts): the three views side by side. */
+.orient-multiview.is-across .orient-multiview-zone {
+    top: 0;
+    right: auto;
+    width: 33.334%;
+    height: 100%;
+    border-bottom: 0;
+    border-right: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.orient-multiview.is-across .orient-multiview-zone:last-child {
+    border-right: 0;
+}
+
+.orient-multiview.is-across .orient-multiview-zone:hover {
+    border-right-color: color-mix(in srgb, var(--border) 70%, transparent);
+}
+
 /* Hover: a translucent dark scrim that visibly DIMS the pane (the sphere stays
    readable through it), so a hovered axis view recedes/darkens. Two things had
    to be right here: (1) the extra `.orient-multiview` raises specificity above
@@ -125,4 +144,21 @@
     font-weight: 700;
     font-family: var(--font-mono);
     text-shadow: 0 0 4px var(--canvas-bg), 0 0 4px var(--canvas-bg);
+}
+
+/* A short, wide window (a phone in landscape) is past the kit's phone width
+   tier, yet the sphere card is narrow there: its long title and its actions
+   cannot share a line, so the actions wrap under the title as on a phone. */
+@media (max-height: 540px) {
+    .orient-main-header {
+        flex-wrap: wrap;
+        row-gap: 0.4rem;
+    }
+
+    .orient-main-header .ui-card__actions {
+        flex: 1 1 auto;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        row-gap: 0.4rem;
+    }
 }

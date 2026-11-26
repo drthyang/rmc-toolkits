@@ -13,6 +13,7 @@
 // the model read (questionReply, changeReply).
 
 import { createReferenceStore, fillReferences } from './references';
+import { collapseEchoes, collapseFilledEchoes } from './echoedReferences';
 
 // Every text segment of an ended turn with its {{r<n>.…}} references filled
 // from the turn's own steps (each keeps its ref and the data it sent) and
@@ -36,7 +37,7 @@ const fillTexts = (items, shown = null) => {
     if (!items.some((item) => item.kind === 'text' && item.text?.includes('{{'))) return items;
     const store = turnReferences(items, shown);
     return items.map((item) => (item.kind === 'text' && item.text?.includes('{{')
-        ? { ...item, text: fillReferences(item.text, store).text }
+        ? { ...item, text: fillReferences(collapseEchoes(item.text, store), store).text }
         : item));
 };
 
@@ -151,8 +152,15 @@ export const applyTurnEvent = (turn, event, now = 0) => {
             // The verdict line is shown as the chip, not repeated in the text;
             // the answer comes filled, earlier segments are filled here.
             const filled = fillTexts(turn.items, turn.shown);
+            // A number typed before its own reference is shown once
+            // (echoedReferences.js; the dock's display only).
+            const raw = typeof event.rawText === 'string' ? event.rawText : '';
             const items = event.outcome
-                ? updateLastText(filled, () => ({ text: event.outcome.body }))
+                ? updateLastText(filled, () => ({
+                    text: raw.includes('{{')
+                        ? collapseFilledEchoes(event.outcome.body, raw, turnReferences(turn.items, turn.shown))
+                        : event.outcome.body
+                }))
                 : filled;
             return {
                 ...turn,

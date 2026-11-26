@@ -2,35 +2,44 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 // The angle marks of the folded cell's highlight (FoldedCellPanel): for each
-// drawn triplet, a thin lit arc at its central atom from one bond to the
-// other, so the view shows which angle at a site is in the range, not only
-// which bonds. angleHighlight.js highlightForBins gives the arcs (apex, A end,
-// C end) and their shares; the arc is drawn as strongly as the bonds are
-// (highlightStrength: the square root of the share).
+// drawn triplet, a flat shaded wedge at its central atom between its two
+// bonds, so the view shows which angle at a site is in the range, not only
+// which bonds. angleHighlight.js highlightForBins gives the angles (`arcs`:
+// apex, A end, C end) and their shares; a wedge is drawn as strongly as the
+// bonds are (highlightStrength: the square root of the share).
 //
 // - Radius ARC_RADIUS_FRACTION of the shorter bond: past the site's thermal
 //   cloud (and the bond's BOND_END_GAP), well short of the end atoms.
-// - All arcs are one merged tube mesh (one draw call), each arc's opacity a
-//   vertex alpha; a software renderer takes fewer segments around and along.
-// - An angle near 180° has no plane of its own: its arc bends towards the
+// - A light fill in the angle plot's blue, with a darker rim along the arc;
+//   unlit and double-sided, so a wedge looks the same from either face.
+// - All wedges are one merged mesh (one draw call), each one's strength a
+//   vertex alpha; a software renderer takes fewer segments along the arc.
+// - An angle near 180° has no plane of its own: its wedge bends towards the
 //   cell axis least along its bonds, the same way every time.
 
 import * as THREE from 'three';
+import { PLOT_PALETTE } from '../plotPalette';
 import { renderQuality } from './bondTubes';
 
 // The arc's radius as a fraction of its shorter bond.
 export const ARC_RADIUS_FRACTION = 0.35;
-// The arcs' colour: apart from the bond-role blue and orange and the
-// elements' colours, readable on light and dark.
-export const ARC_COLOR = '#c026d3';
-// Degrees per segment along an arc (GPU, software renderer).
-const ARC_STEP_DEGREES = { gpu: 7.5, software: 15 };
+// The wedges' colour: the angle plot's line and range band.
+export const WEDGE_COLOR = PLOT_PALETTE[0];
+// A wedge of strength 1: its fill's and its rim's opacity.
+export const WEDGE_FILL_OPACITY = 0.2;
+export const WEDGE_RIM_OPACITY = 0.95;
+// The rim's width as a fraction of the wedge's radius, and how far its
+// colour goes from WEDGE_COLOR towards RIM_SHADE.
+export const WEDGE_RIM_FRACTION = 0.043;
+const RIM_SHADE = '#0b1b33';
+const RIM_SHADE_MIX = 0.28;
+// Degrees per segment along a wedge's arc (GPU, software renderer).
+const ARC_STEP_DEGREES = { gpu: 4, software: 10 };
 // Below this sine the two bonds are taken as collinear.
 const COLLINEAR_SINE = 1e-6;
 
 const sub = (p, q) => [p[0] - q[0], p[1] - q[1], p[2] - q[2]];
 const dot = (p, q) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
-const cross = (p, q) => [p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0]];
 const scaled = (p, k) => [p[0] * k, p[1] * k, p[2] * k];
 const unitOf = (p) => {
     const length = Math.hypot(...p);
@@ -70,79 +79,57 @@ export const arcPoint = ({ center, radius, u, w }, phi) => [0, 1, 2].map(
 );
 
 /**
- * One merged tube mesh for every arc (nine numbers each), `tubeRadius` thick
- * × `scales[i]`, opacity `opacities[i]` (both default 1), in ARC_COLOR.
- * Arcs are in the given order; a degenerate one (a bond of no length) is
- * skipped. Null when nothing is drawn.
+ * One merged mesh for every angle (nine numbers each): a filled sector from
+ * the apex to the arc, and a rim band along the arc, in `color`, each as
+ * strong as `strengths[i]` (0..1; default 1). Angles are in the given order;
+ * a degenerate one (a bond of no length) or one of no strength is skipped.
+ * Null when nothing is drawn.
  */
-export const arcMesh = (arcs, tubeRadius, {
-    scales = null, opacities = null, quality = renderQuality(), color = ARC_COLOR
-} = {}) => {
+export const wedgeMesh = (arcs, { strengths = null, quality = renderQuality(), color = WEDGE_COLOR } = {}) => {
     const count = Math.floor(arcs.length / 9);
-    const step = (quality.software ? ARC_STEP_DEGREES.software : ARC_STEP_DEGREES.gpu) * Math.PI / 180;
-    const around = quality.software ? 5 : 8;
-    const frames = [];
-    let vertexCount = 0;
-    let indexCount = 0;
+    const stepDegrees = quality.software ? ARC_STEP_DEGREES.software : ARC_STEP_DEGREES.gpu;
+    const fill = new THREE.Color(color);
+    const rim = new THREE.Color(color).lerp(new THREE.Color(RIM_SHADE), RIM_SHADE_MIX);
+    const positions = [];
+    const colors = [];
+    const indices = [];
     for (let i = 0; i < count; i += 1) {
         const frame = arcFrame(arcs, i);
-        if (!frame || !(frame.angle > 0)) continue;
-        const along = Math.max(2, Math.ceil(frame.angle / step));
-        frames.push({ frame, along, index: i });
-        vertexCount += (along + 1) * around;
-        indexCount += along * around * 6;
-    }
-    if (!frames.length) return null;
-    const positions = new Float32Array(vertexCount * 3);
-    const normals = new Float32Array(vertexCount * 3);
-    const colors = new Float32Array(vertexCount * 4);
-    const indices = vertexCount > 65535 ? new Uint32Array(indexCount) : new Uint16Array(indexCount);
-    let v = 0;
-    let n = 0;
-    frames.forEach(({ frame, along, index }) => {
-        const r = tubeRadius * (scales ? scales[index] : 1);
-        const alpha = opacities ? opacities[index] : 1;
-        // The tube's cross-section at φ: the in-plane radial direction and
-        // the plane's normal.
-        const normal = cross(frame.u, frame.w);
-        const first = v;
+        const strength = strengths ? strengths[i] : 1;
+        if (!frame || !(frame.angle > 0) || !(strength > 0)) continue;
+        const along = Math.max(2, Math.ceil(frame.angle * 180 / Math.PI / stepDegrees - 1e-9));
+        // The fill: a fan from the apex.
+        const apexAt = positions.length / 3;
+        positions.push(...frame.center);
+        colors.push(fill.r, fill.g, fill.b, WEDGE_FILL_OPACITY * strength);
+        for (let k = 0; k <= along; k += 1) {
+            positions.push(...arcPoint(frame, (k / along) * frame.angle));
+            colors.push(fill.r, fill.g, fill.b, WEDGE_FILL_OPACITY * strength);
+        }
+        for (let k = 0; k < along; k += 1) indices.push(apexAt, apexAt + 1 + k, apexAt + 2 + k);
+        // The rim: a thin band in the wedge's plane, ending on the arc.
+        const inner = { ...frame, radius: frame.radius * (1 - WEDGE_RIM_FRACTION) };
+        const rimAt = positions.length / 3;
         for (let k = 0; k <= along; k += 1) {
             const phi = (k / along) * frame.angle;
-            const centre = arcPoint(frame, phi);
-            const radial = [0, 1, 2].map((axis) => Math.cos(phi) * frame.u[axis] + Math.sin(phi) * frame.w[axis]);
-            for (let j = 0; j < around; j += 1) {
-                const theta = (j / around) * Math.PI * 2;
-                const out = [0, 1, 2].map((axis) => Math.cos(theta) * radial[axis] + Math.sin(theta) * normal[axis]);
-                positions.set([centre[0] + r * out[0], centre[1] + r * out[1], centre[2] + r * out[2]], v * 3);
-                normals.set(out, v * 3);
-                colors.set([1, 1, 1, alpha], v * 4);
-                v += 1;
-            }
+            positions.push(...arcPoint(inner, phi), ...arcPoint(frame, phi));
+            for (let side = 0; side < 2; side += 1) colors.push(rim.r, rim.g, rim.b, WEDGE_RIM_OPACITY * strength);
         }
         for (let k = 0; k < along; k += 1) {
-            for (let j = 0; j < around; j += 1) {
-                const a = first + k * around + j;
-                const b = first + k * around + ((j + 1) % around);
-                indices.set([a, a + around, b, b, a + around, b + around], n);
-                n += 6;
-            }
+            const a = rimAt + 2 * k;
+            indices.push(a, a + 1, a + 2, a + 2, a + 1, a + 3);
         }
-    });
+    }
+    if (!indices.length) return null;
     const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4));
-    geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
+    geometry.setIndex(indices);
     geometry.computeBoundingSphere();
-    const material = new THREE.MeshPhongMaterial({
-        color,
-        emissive: color,
-        emissiveIntensity: 0.35,
-        specular: 0x3a3a3a,
-        shininess: 40,
+    return new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
         vertexColors: true,
         transparent: true,
+        side: THREE.DoubleSide,
         depthWrite: false
-    });
-    return new THREE.Mesh(geometry, material);
+    }));
 };

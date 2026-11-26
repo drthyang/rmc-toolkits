@@ -1,12 +1,24 @@
 name: Deploy static dashboard to GitHub Pages
 
+# The public dashboard is deployed only from a commit whose Tests run passed.
+#
+# - Normal path: the Tests workflow finishes for a push to main, and this
+#   workflow starts from that (workflow_run). It builds and deploys the commit
+#   that was tested, not whatever main points to by then.
+# - Manual run (workflow_dispatch): allowed, with the same condition. The gate
+#   looks up the Tests run for the commit and stops if there is no passed one.
+#
+# The tests are defined once, in tests.yml, and run once per push.
 on:
-  push:
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
   pages: write
   id-token: write
 
@@ -15,11 +27,66 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  gate:
+    name: Tests passed for this commit
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.check.outputs.deploy }}
+      sha: ${{ steps.check.outputs.sha }}
+    steps:
+      - name: Check the Tests run
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TRIGGER: ${{ github.event_name }}
+          DISPATCH_SHA: ${{ github.sha }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+          out="${GITHUB_OUTPUT:-/dev/stdout}"
+          skip() { echo "::notice::No deploy: $1"; echo "deploy=false" >> "$out"; exit 0; }
+
+          if [ "$TRIGGER" = "workflow_run" ]; then
+            sha="$RUN_SHA"
+            echo "Tests run: $RUN_URL ($RUN_EVENT on $RUN_BRANCH, $RUN_CONCLUSION) for $sha"
+            # Only a push to main counts. A pull request from a fork can also
+            # have a head branch called main; its Tests run must never deploy.
+            [ "$RUN_EVENT" = "push" ] || skip "the Tests run was for a $RUN_EVENT, not a push to main."
+            [ "$RUN_BRANCH" = "main" ] || skip "the Tests run was on $RUN_BRANCH, not main."
+            [ "$RUN_CONCLUSION" = "success" ] || skip "Tests ended with '$RUN_CONCLUSION' for $sha."
+          else
+            sha="$DISPATCH_SHA"
+            passed=$(gh api "repos/$REPO/actions/workflows/tests.yml/runs?head_sha=$sha&event=push&branch=main&status=success" --jq '.total_count')
+            echo "Manual run for $sha: $passed passed Tests run(s) on main for this commit"
+            if [ "$passed" -lt 1 ]; then
+              echo "::error::Manual deploy refused: no passed Tests run on main for $sha."
+              exit 1
+            fi
+          fi
+
+          # A newer commit on main deploys itself when its own tests pass.
+          # Skipping here keeps an older build from landing after a newer one.
+          head=$(gh api "repos/$REPO/commits/main" --jq '.sha')
+          [ "$head" = "$sha" ] || skip "$sha is no longer the head of main ($head is)."
+
+          echo "sha=$sha" >> "$out"
+          echo "deploy=true" >> "$out"
+          echo "Deploying $sha"
+
   build:
+    needs: gate
+    if: needs.gate.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout the tested commit
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
 
       - name: Setup Node
         uses: actions/setup-node@v4

@@ -260,6 +260,22 @@ and MFA aware) — the app never stores credentials.
 11. Prototype Phase 8a remote monitoring: a read-only SSH pull of an HPC run directory into a local
     cache, surfaced through the existing run-source abstraction (see `docs/HPC_MONITORING_PLAN.md`).
 
+## AI Copilot: next, after 0.8.0
+
+The Workbench is for interpreting a run and deciding the next analysis or the next RMC run, not
+for processing data. The Copilot's next tools are assessments that tell a real feature from an
+artifact:
+
+1. `check_ripples`: Fourier termination ripples. RMC fits whatever is in the data, ripples
+   included. Per dataset: fit space, Q range, window and r-resolution; the low-r ripple level; the
+   predicted ripples around strong peaks; features marked ripple-consistent or below resolution;
+   datasets with different Qmax compared.
+2. `check_overfitting`: a fit too good to be true. The residual against σ(r) for each dataset, the
+   information the data hold (the Nyquist count) against the features claimed, and spurious
+   disorder at high r from unmodelled Q-resolution. How to judge noise when the data carry no σ is
+   still open.
+3. An MCP server (`rmc_toolkits/mcp.py`) so other agents can run the Workbench's engines.
+
 ## Candidates after 0.6.0
 
 Maintainer decisions the 0.6.0 audit considered and did not take, grouped by engine (moved here

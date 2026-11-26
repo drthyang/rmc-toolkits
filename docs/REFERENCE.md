@@ -14,9 +14,12 @@ see [ALGORITHMS.md](ALGORITHMS.md).
 | `web_app/backend/app.py` | Flask API server with data-root guarding. |
 | `web_app/frontend/` | React + Vite single-page app. |
 | `web_app/frontend/public/demo/` | Bundled GaTa₄Se₈ 250 K demo run (the app's **Demo** button). |
+| `web_app/frontend/src/llm/` | The AI Copilot module ([its guide](../web_app/frontend/src/llm/README.md)). |
+| `web_app/frontend/validation/` | The Copilot's validation harness ([protocol and results](algorithms/copilot-validation.md)). |
+| `.claude/skills/` | The Copilot's skills (written methods), shared with Claude Code. |
 | `src/` | Original standalone CLI/desktop scripts. |
 | `tests/` | `unittest` suite for the package and backend. |
-| `docs/` | Changelog, roadmap, architecture notes. |
+| `docs/` | Changelog, roadmap, architecture notes, the Demo QA and the [demo script](demo-script.md). |
 | `docs/ALGORITHMS.md` + `docs/algorithms/` | Per-page math reference: every operation, anchored to the code. |
 
 ## Setup
@@ -102,7 +105,7 @@ Two ways to deploy:
   machine, no Python server required. Plot parsing, `.rmc6f` model summaries, the slab view,
   browser-side KDE (WebGPU + CPU fallback), and the 3D view all run client-side. Live Data works in
   Chromium browsers (Chrome, Edge, Arc, Opera) via the File System Access API. Deployed automatically
-  from `main` by `.github/workflows/pages.yml`.
+  from `main` by `.github/workflows/pages.yml`, once the tests have passed for that commit.
 - **Flask web service** — full-featured: server-side file browsing, structure sampling, the
   reference-grade engines (SciPy KDE, PCA, orientation, bond angles), the conversion and Auto StoG
   API routes, and Live Data. The included `Dockerfile` builds the frontend and serves it via

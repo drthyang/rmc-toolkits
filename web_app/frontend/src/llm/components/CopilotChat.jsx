@@ -13,7 +13,7 @@ import CopilotView from './CopilotView';
 import {
     DOCK_QUERY, DOCK_STORAGE_KEY, SHEET_MAX, SHEET_MIN,
     clampDockWidth, clampSheet, defaultDockWidth, dragDockWidth, dragSheet, keyResize, maxDockWidth,
-    readDockState, sheetForCard, sheetHeightCss, writeDockState, DOCK_MIN
+    readDockState, sheetForCard, sheetHeightCss, writeDockState, DOCK_MIN, SHEET_OVERLAY_QUERY
 } from './dockLayout';
 import { ChevronIcon, CloseIcon, WaveMark } from './icons';
 import './Copilot.css';
@@ -82,18 +82,19 @@ const nextFrame = () => new Promise((resolve) => {
 
 // "docked" when the window is wide enough for the pages and the panel side by
 // side, else "sheet". Without matchMedia (tests), docked.
-const useDockMode = () => {
-    const [docked, setDocked] = useState(() => !hasMatchMedia() || window.matchMedia(DOCK_QUERY).matches);
+const useMediaQuery = (queryText, fallback) => {
+    const [matches, setMatches] = useState(() => (hasMatchMedia() ? window.matchMedia(queryText).matches : fallback));
     useEffect(() => {
         if (!hasMatchMedia()) return undefined;
-        const query = window.matchMedia(DOCK_QUERY);
-        const update = () => setDocked(query.matches);
+        const query = window.matchMedia(queryText);
+        const update = () => setMatches(query.matches);
         update();
         query.addEventListener?.('change', update);
         return () => query.removeEventListener?.('change', update);
-    }, []);
-    return docked ? 'docked' : 'sheet';
+    }, [queryText]);
+    return matches;
 };
+const useDockMode = () => (useMediaQuery(DOCK_QUERY, true) ? 'docked' : 'sheet');
 
 // The edge the panel is resized from: a vertical separator on the docked
 // panel's left edge, a grab bar on the sheet's top edge. Pointer drag (with
@@ -281,6 +282,9 @@ const CopilotChat = ({
     skills = null
 }) => {
     const mode = useDockMode();
+    // A sheet on a window too short to share (a phone in landscape) covers
+    // the window while open, instead of squeezing the pages to a strip.
+    const overlay = useMediaQuery(SHEET_OVERLAY_QUERY, false) && mode === 'sheet';
     const [saved] = useState(() => readDockState(storage(), storageKey));
     const initialOpen = defaultOpen || saved.open;
     const [open, setOpen] = useState(initialOpen);
@@ -392,8 +396,8 @@ const CopilotChat = ({
     }, []);
 
     useEffect(() => {
-        onLayoutChange?.({ mode, open, width, sheet, sheetHeight: sheetHeightCss(sheet) });
-    }, [onLayoutChange, mode, open, width, sheet]);
+        onLayoutChange?.({ mode, open, width, sheet, sheetHeight: sheetHeightCss(sheet), overlay });
+    }, [onLayoutChange, mode, open, width, sheet, overlay]);
 
     const resize = useCallback(({ width: nextWidth, sheet: nextSheet }) => {
         if (nextWidth != null) setWidth(nextWidth);
@@ -431,7 +435,7 @@ const CopilotChat = ({
     return (
         <aside
             ref={shellRef}
-            className={`llm-dock is-${mode} ${open ? 'is-open' : 'is-collapsed'}${className ? ` ${className}` : ''}`}
+            className={`llm-dock is-${mode} ${open ? 'is-open' : 'is-collapsed'}${overlay ? ' is-overlay' : ''}${className ? ` ${className}` : ''}`}
             data-mode={mode}
             data-open={open ? 'true' : 'false'}
             aria-label="AI Copilot"
@@ -443,7 +447,7 @@ const CopilotChat = ({
                 }
             }}
         >
-            {open && (
+            {open && !overlay && (
                 <ResizeHandle
                     mode={mode}
                     width={width}

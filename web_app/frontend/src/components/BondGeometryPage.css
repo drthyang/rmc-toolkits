@@ -118,8 +118,10 @@
         max-height: none;
     }
 
+    /* The floor keeps the plot readable under the KPI rail where it wraps
+       (phones), also with the Copilot's sheet open: 24rem left it ~4rem. */
     .geom-hero {
-        height: clamp(24rem, calc(var(--viewport-h) * 0.62), 36rem);
+        height: clamp(30rem, calc(var(--viewport-h) * 0.62), 36rem);
     }
 
     .geom-layout .pca-unitcell-panel {

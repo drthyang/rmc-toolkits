@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     DOCK_MAX, DOCK_MIN, DOCK_QUERY, PAGE_MIN, SHEET_DEFAULT, SHEET_FLOOR_REM, SHEET_MAX, SHEET_MIN,
+    SHEET_OVERLAY_QUERY,
     clampDockWidth, clampSheet, defaultDockWidth, dragDockWidth, dragSheet, keyResize, maxDockWidth,
     readDockState, sheetHeightCss, writeDockState
 } from '../components/dockLayout';
@@ -23,6 +24,10 @@ const memoryStorage = () => {
 describe('dock layout', () => {
     it('docks from 1080 × 541 up: the narrowest panel beside pages of 760px', () => {
         expect(DOCK_QUERY).toBe('(min-width: 1080px) and (min-height: 541px)');
+    });
+
+    it('covers a window up to 480px tall instead of sharing it (a phone in landscape); taller ones keep the sheet', () => {
+        expect(SHEET_OVERLAY_QUERY).toBe('(max-height: 480px)');
     });
 
     it('keeps an open sheet tall enough for its composer, up to SHEET_MAX of a short window', () => {

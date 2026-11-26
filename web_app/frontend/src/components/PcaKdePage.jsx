@@ -31,6 +31,7 @@ import { siteLabel } from '../siteLabel';
 import AppFooter from './AppFooter';
 import useCopilotViewer from '../useCopilotViewer';
 import './PcaKdePage.css';
+import { isDisplayed } from './pageVisibility';
 
 // The main viewport exports as PNG at native or 3× resolution, matching the
 // KDE / 3D page's save options.
@@ -801,8 +802,11 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
 
         let animationId = 0;
         const animate = () => {
-            controls.update();
-            renderer.render(scene, camera);
+            // A page the app keeps mounted but hidden draws nothing.
+            if (isDisplayed(renderer.domElement)) {
+                controls.update();
+                renderer.render(scene, camera);
+            }
             animationId = requestAnimationFrame(animate);
         };
         animate();
@@ -1472,7 +1476,13 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                 <span className="ui-legend__item"><i className="ui-legend__swatch" style={{ background: '#3f7fd6' }} /> PC3</span>
                             </>
                         )}
-                        <span className="ui-legend__item"><i className="ui-legend__swatch" style={{ background: ellipsoidColor }} /> {Math.round(probability * 100)}% ellipsoid</span>
+                        {/* Name what is drawn: the ellipsoid (wireframe or its KDE shell), the isosurface. */}
+                        {(showEllipsoid || showEllipsoidKde) && (
+                            <span className="ui-legend__item"><i className="ui-legend__swatch" style={{ background: ellipsoidColor }} /> {Math.round(probability * 100)}% ellipsoid</span>
+                        )}
+                        {showSurface && (
+                            <span className="ui-legend__item"><i className="ui-legend__swatch" style={{ background: `rgb(${sampleColormap(colormap, 0.72).join(', ')})` }} /> {isoPercent}% isosurface</span>
+                        )}
                         {shellBoxNeeded && (
                             <span
                                 className="ui-legend__item ui-legend__warning"

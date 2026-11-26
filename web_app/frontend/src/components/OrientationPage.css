@@ -83,3 +83,21 @@
         grid-column: 1 / -1;
     }
 }
+
+/* A short window (a phone in landscape, ≤ 540px tall): the heights above
+   would leave the sphere a strip between its header and readouts. The sphere
+   card takes a fixed, taller height and the page scrolls; in the two-up tier
+   the site picker matches it. */
+@media (max-height: 540px) {
+    @container workbench (max-width: 1200px) {
+        .orient-main-panel {
+            height: 34rem;
+        }
+    }
+
+    @container workbench (min-width: 940px) and (max-width: 1200px) {
+        .orient-layout .pca-unitcell-panel {
+            height: 34rem;
+        }
+    }
+}

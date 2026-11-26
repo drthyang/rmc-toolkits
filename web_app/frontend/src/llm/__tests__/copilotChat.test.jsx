@@ -165,6 +165,33 @@ describe('CopilotChat', () => {
         expect(JSON.parse(localStorage.getItem(DOCK_STORAGE_KEY)).open).toBe(true);
     });
 
+    it('covers a short window while open (a phone in landscape), with no resize handle', async () => {
+        // A window 874 × 402: too narrow and short to dock, and under the overlay height.
+        const matches = (query) => query === '(max-height: 480px)';
+        vi.stubGlobal('matchMedia', (query) => ({ matches: matches(query), addEventListener() {}, removeEventListener() {} }));
+        window.matchMedia = globalThis.matchMedia;
+        try {
+            const onLayoutChange = vi.fn();
+            act(() => root.render(chat({ onLayoutChange })));
+            await settle();
+            const dock = container.querySelector('.llm-dock');
+            expect(dock.dataset.mode).toBe('sheet');
+            expect(dock.classList.contains('is-overlay')).toBe(true);
+            expect(onLayoutChange).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'sheet', open: false, overlay: true }));
+
+            await openChat();
+            expect(dock.classList.contains('is-open')).toBe(true);
+            expect(container.querySelector('.llm-dock-resize')).toBeNull();
+            expect(onLayoutChange).toHaveBeenLastCalledWith(expect.objectContaining({ open: true, overlay: true }));
+            // Its close button brings the pages back.
+            act(() => container.querySelector('[aria-label="Collapse the Copilot"]').click());
+            await settle();
+            expect(dock.dataset.open).toBe('false');
+        } finally {
+            delete window.matchMedia;
+        }
+    });
+
     it('runs a tool, shows the step, ends with the Outcome chip, and shows the analysis on its page', async () => {
         const onOpenPage = vi.fn();
         act(() => root.render(chat({ onOpenPage })));
