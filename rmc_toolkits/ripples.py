@@ -83,6 +83,16 @@ from .ft_uncertainty import FT_FILE_RE, RMC_FT_TOLERANCE, reproduce_transform, u
 #: through the transform: an approximation of their true shape).
 RIPPLE_SIZE_FACTOR = 1.5
 
+#: A feature is ripple-consistent when the data less the strong peaks' truncated
+#: models and the background leave, at it, at most RIPPLE_EXCESS_FRACTION of the
+#: ripple predicted there (the excess); more, of the ripple's sign, is larger
+#: than the ripple, of the other sign smaller. The background under the feature
+#: is interpolated across ±EXCLUDE_PERIODS ripple periods of it, so it does not
+#: absorb the feature.
+RIPPLE_EXCESS_FRACTION = 0.5
+EXCESS_RULE = True
+EXCLUDE_PERIODS = 1.0
+
 #: A predicted ripple matches a feature's position within this fraction of
 #: the ripple period 2π/Q_max (a quarter period: the ripple's own half-width).
 RIPPLE_POSITION_FRACTION = 0.25
@@ -949,7 +959,7 @@ def _box_average(y: np.ndarray, half: int) -> np.ndarray:
     return out
 
 
-def deviation(analysis: dict) -> dict:
+def deviation(analysis: dict, exclude: Optional[float] = None) -> dict:
     """A dataset's deviation from its strong peaks with no truncation, and the ripples predicted for it.
 
     In D-space h = d − P − B, P = Σ d_j and B the box average over
@@ -963,6 +973,12 @@ def deviation(analysis: dict) -> dict:
     period = analysis["resolution"]["ripplePeriod"]
     peaks_d = peaks_on(r, arrays["peaks"])
     rest = d - peaks_d - arrays["predictedD"]
+    if exclude is not None:
+        # The background under a feature at ``exclude``: interpolated across it, so it does not absorb it.
+        inside = np.abs(r - float(exclude)) <= EXCLUDE_PERIODS * period
+        if inside.any() and (~inside).sum() >= 2:
+            rest = rest.copy()
+            rest[inside] = np.interp(r[inside], r[~inside], rest[~inside])
     half = max(1, int(round(0.5 * BACKGROUND_PERIODS * period / step)))
     background = _box_average(rest, half)
     h = d - peaks_d - background
@@ -1045,6 +1061,9 @@ def classify_feature(analysis: dict, at: float, noise: Optional[float] = None) -
             "r": nearest["r"], "asked": float(at), "size": nearest["height"], "predictedHere": _value_at(r, predicted, nearest["r"]),
             "ripple": None, "class": "resolved-peak", "fromPeak": None, "belowResolution": False,
         }
+    if EXCESS_RULE:
+        dev = deviation(analysis, exclude=float(at))
+        r, h, predicted = dev["r"], dev["h"], dev["predicted"]
     index = _nearest_extremum(r, h, at, tolerance)
     position = float(r[index]) if index is not None else float(at)
     size = float(h[index]) if index is not None else _value_at(r, h, at)
@@ -1060,6 +1079,14 @@ def classify_feature(analysis: dict, at: float, noise: Optional[float] = None) -
         kind = "within-noise"
     elif ripple is None or abs(ripple["amplitude"]) < NEGLIGIBLE_RIPPLE_FRACTION * abs(size):
         kind = "no-ripple-here"
+    elif EXCESS_RULE:
+        excess = size - _value_at(r, predicted, position)
+        if abs(excess) <= RIPPLE_EXCESS_FRACTION * abs(ripple["amplitude"]):
+            kind = "ripple-consistent"
+        elif excess * ripple["amplitude"] > 0:
+            kind = "larger-than-ripple"
+        else:
+            kind = "smaller-than-ripple"
     elif abs(size) > RIPPLE_SIZE_FACTOR * abs(ripple["amplitude"]):
         kind = "larger-than-ripple"
     elif abs(size) < abs(ripple["amplitude"]) / RIPPLE_SIZE_FACTOR:
