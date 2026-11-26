@@ -12,14 +12,13 @@ it by ``src/__tests__/ripplesParity.test.js``, and
 matches the Python engine.
 
 Cases: the committed Demo (an X-ray F(Q) fitted in real space), read in
-place, with an r range, named features, a split and a pair; and synthetic run
-folders built the way RMCProfile and stog write them — a neutron G(r) from a
-stog input (Lorch, its Fourier filter), from Auto StoG (its provenance in
-autoscale/, the low r set to the baseline), with CONVOLVE and nothing else, with
-no word on Q_max (and then with the caller's), an X-ray G(r) with its
-QMIN/QMAX, a partial beside two totals of different Q_max (features read
-across), and the failures (an unreadable file, no F(Q) beside a transform, a
-transform the F(Q) does not reproduce).
+place; and synthetic run folders built the way RMCProfile and stog write them —
+a neutron G(r) from a stog input (Lorch, its Fourier filter), from Auto StoG
+(its provenance in autoscale/, the low r set to the baseline), with CONVOLVE
+and nothing else, with no word on Q_max (and then with the caller's), an X-ray
+G(r) with its QMIN/QMAX, an X-ray F(Q) fitted in r beside two neutron G(r)s
+(one a partial), and the failures (an unreadable file, no F(Q) beside a
+transform, a transform the F(Q) does not reproduce).
 
 The files' text is committed in the fixture, so the staleness test checks the
 engine, not this construction. Regenerate from the checkout under test:
@@ -41,7 +40,7 @@ from rmc_toolkits import ripples as R
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "web_app" / "frontend" / "src" / "__tests__" / "fixtures" / "ripples_fixture.json"
 DEMO = ROOT / "web_app" / "frontend" / "public" / "demo"
-DEMO_FILES = ["GTS_250K.dat", "GTS_250K_FT_XFQ1.csv", "GTS_250K_XFQ1.csv", "GTS_250K_FQ1.csv", "GTS_250K_PDFpartials.csv"]
+DEMO_FILES = ["GTS_250K.dat", "GTS_250K_FT_XFQ1.csv", "GTS_250K_XFQ1.csv", "GTS_250K_FQ1.csv"]
 DEMO_FITS = ["GTS_250K_FQ1.csv", "GTS_250K_FT_XFQ1.csv"]
 
 STEM = "rmc_run"
@@ -55,12 +54,23 @@ PEAKS = (
 )
 
 
+def gaussian_sine(q: np.ndarray) -> np.ndarray:
+    """The peaks' sine transform: Σ A√(2π)σ e^{−Q²σ²/2} sin(Q r₀) (each A[e^{−(r−r₀)²/2σ²} − e^{−(r+r₀)²/2σ²}])."""
+    return sum(p["amplitude"] * math.sqrt(2.0 * math.pi) * p["sigma"] * np.exp(-0.5 * q * q * p["sigma"] ** 2)
+               * np.sin(q * p["r"]) for p in PEAKS)
+
+
+def apply_transform(q: np.ndarray, weights: np.ndarray, spectrum: np.ndarray, r: np.ndarray) -> np.ndarray:
+    """(2/π) Σ_k w_k S_k sin(Q_k r)."""
+    return np.sin(np.outer(r, q)) @ ((2.0 / math.pi) * weights * spectrum)
+
+
 def d_space(qmax: float, *, rule: str = "trapezoid", window: str = "none", q_min: float = DQ) -> np.ndarray:
     """The peaks' D-space function through a transform cut at Q_max."""
     n = int(round((qmax - q_min) / DQ)) + 1
     q = R.q_grid(q_min, DQ, n)
     weights = R.transform_weights(q, DQ, rule, window)
-    return R.apply_transform(q, weights, sum(R.gaussian_sine(q, peak) for peak in PEAKS), R_GRID)
+    return apply_transform(q, weights, gaussian_sine(q), R_GRID)
 
 
 def g_of(d: np.ndarray, baseline: float) -> np.ndarray:
@@ -76,12 +86,6 @@ def pdf_csv(y: np.ndarray, calc: np.ndarray | None = None, start: float = 1.5) -
     calc = y if calc is None else calc
     rows = [f"   {x:.4f} ,  {c:.10e} ,  {v:.10e}" for x, c, v in zip(R_GRID[keep], calc[keep], y[keep])]
     return "\n".join(["r (Ang), PDF (RMC), PDF (Expt)", *rows]) + "\n"
-
-
-def partials_csv(first: float = 2.2) -> str:
-    r = np.round(0.01 * np.arange(1, 801), 10)
-    rows = [f"   {x:.5f} ,   {0.0 if x < first else 1.0:.1f} ,   {0.0 if x < first + 0.3 else 1.0:.1f} , " for x in r]
-    return "\n".join(["   r (Ang),     A-A,     A-B", *rows]) + "\n"
 
 
 def dat(blocks: list[str], minimum: str = "2.2 2.2") -> str:
@@ -109,9 +113,8 @@ def xray_ft_files(qmax: float, *, reproduce: bool = True, with_fq: bool = True) 
     """An X-ray F(Q) fitted in real space: <stem>_FT_XFQ1.csv = Σ ΔQ Q F sin(Qr) of <stem>_XFQ1.csv."""
     dq = 0.02
     q = R.q_grid(0.5, dq, int(round((qmax - 0.5) / dq)) + 1)
-    weights = R.transform_weights(q, dq, "rectangle", "none")
     # Q F(Q) = (2/π)·S(Q) of the peaks: then Σ ΔQ Q F sin(Qr) = (2/π) Σ ΔQ S sin(Qr).
-    spectrum = sum(R.gaussian_sine(q, peak) for peak in PEAKS)
+    spectrum = gaussian_sine(q)
     f = np.array([float(f"{v:.12g}") for v in (2.0 / math.pi) * spectrum / q])
     r = np.round(1.5 + 0.01 * np.arange(551), 10)
     g = np.sin(np.outer(r, q)) @ (dq * q * f)
@@ -140,8 +143,8 @@ def synthetic_cases() -> list[dict]:
         "enforcement": {"cutoff": 2.0, "peak_rmin": 2.0, "peak_rmax": 2.0, "source": "auto (first-shell foot)"},
         "provenance": {"n_q_points": 2500, "config": {"qmin": 0.01, "qmax": 25.0, "lorch": False, "r_cutoff": 0.8}},
     }
-    xray_real = R.apply_transform(R.q_grid(DQ, DQ, 2000), R.transform_weights(R.q_grid(DQ, DQ, 2000), DQ, "rectangle", "none"),
-                                  sum(R.gaussian_sine(R.q_grid(DQ, DQ, 2000), p) for p in PEAKS), R_GRID)
+    q_xray = R.q_grid(DQ, DQ, 2000)
+    xray_real = apply_transform(q_xray, R.transform_weights(q_xray, DQ, "rectangle", "none"), gaussian_sine(q_xray), R_GRID)
     partial = g_of(rect_d * 0.4, -0.02)
     return [
         {
@@ -151,10 +154,9 @@ def synthetic_cases() -> list[dict]:
                 "scale_ft_rmc.gr": gr_text("stog G(r)", g_lorch),
                 "stog.inp": stog_inp("scale_ft_rmc.gr", qmax=25.0, lorch=True, r_cutoff=1.0),
                 f"{STEM}_PDF1.csv": pdf_csv(g_lorch),
-                f"{STEM}_PDFpartials.csv": partials_csv(),
             },
             "fits": [f"{STEM}_PDF1.csv"],
-            "calls": [{"rRange": [2.0, 5.0]}, {"features": [2.26, 5.3], "split": [3.55, 3.66]}],
+            "calls": [{}],
         },
         {
             "name": "a neutron G(r) from Auto StoG (provenance in autoscale/, enforced below 2 Å)",
@@ -163,20 +165,18 @@ def synthetic_cases() -> list[dict]:
                 "scale_ft_rmc.gr": gr_text("rmc-autoscale 0.8.0: a=1.1 b=-0.2", enforced),
                 "autoscale/stog_input_provenance.json": json.dumps(provenance, indent=1) + "\n",
                 f"{STEM}_PDF1.csv": pdf_csv(0.8 * enforced + 0.001),
-                f"{STEM}_PDFpartials.csv": partials_csv(),
             },
             "fits": [f"{STEM}_PDF1.csv"],
-            "calls": [{"features": [2.26, 2.74]}],
+            "calls": [{}],
         },
         {
             "name": "a neutron G(r) with CONVOLVE and no word on its data's transform",
             "files": {
                 f"{STEM}.dat": dat([neutron_block("missing.gr", ["  > CONVOLVE :: 25.0", "  > R_CUTOFF :: 1.9"])]),
                 f"{STEM}_PDF1.csv": pdf_csv(g_rect, start=0.01),
-                f"{STEM}_PDFpartials.csv": partials_csv(),
             },
             "fits": [f"{STEM}_PDF1.csv"],
-            "calls": [{"rRange": [2.0, 4.0]}],
+            "calls": [{}],
         },
         {
             "name": "a neutron G(r) with no word on Q_max",
@@ -185,7 +185,7 @@ def synthetic_cases() -> list[dict]:
                 f"{STEM}_PDF1.csv": pdf_csv(g_rect, start=0.01),
             },
             "fits": [f"{STEM}_PDF1.csv"],
-            "calls": [{}, {"qmax": 25.0, "features": [2.26]}, {"qmax": 25.0, "qmin": 0.5, "window": "lorch", "features": [2.26]}],
+            "calls": [{}, {"qmax": 25.0}, {"qmax": 25.0, "qmin": 0.5, "window": "lorch"}],
         },
         {
             "name": "an X-ray G(r) with its QMIN-QMAX",
@@ -194,13 +194,12 @@ def synthetic_cases() -> list[dict]:
                                                "  > FIT_TYPE :: D(r)", "  > QMIN :: 0.0", "  > QMAX :: 20.0",
                                                "  > QSTEP :: 0.01", ""])]),
                 f"{STEM}_Xray_PDF1.csv": pdf_csv(xray_real, start=0.01),
-                f"{STEM}_PDFpartials.csv": partials_csv(),
             },
             "fits": [f"{STEM}_Xray_PDF1.csv"],
-            "calls": [{"features": [2.25]}],
+            "calls": [{}],
         },
         {
-            "name": "two totals of different Q_max and a partial",
+            "name": "an X-ray F(Q) fitted in r beside a neutron total and a partial",
             "files": {
                 f"{STEM}.dat": dat([
                     "\n".join(["XRAY_RECIPROCAL_SPACE_DATA ::", "  > FILENAME :: scale_ft_rmc.fq", "  > FIT_TYPE :: F(Q)",
@@ -214,10 +213,9 @@ def synthetic_cases() -> list[dict]:
                 "stog.inp": stog_inp("low.gr", qmax=18.0, lorch=False, r_cutoff=0.0),
                 f"{STEM}_PDF1.csv": pdf_csv(g_of(low_d, -0.06)),
                 f"{STEM}_PDF2.csv": pdf_csv(partial),
-                f"{STEM}_PDFpartials.csv": partials_csv(),
             },
             "fits": [f"{STEM}_FT_XFQ1.csv", f"{STEM}_PDF1.csv", f"{STEM}_PDF2.csv"],
-            "calls": [{"features": [2.26, 2.72, 5.3]}, {"pair": "A-B", "features": [2.5, 2.76]}],
+            "calls": [{}],
         },
         {
             "name": "the failures",
@@ -235,10 +233,7 @@ def synthetic_cases() -> list[dict]:
 
 
 def call_kwargs(call: dict) -> dict:
-    return {
-        "features": call.get("features"), "r_range": call.get("rRange"), "split": call.get("split"),
-        "pair": call.get("pair"), "qmax": call.get("qmax"), "qmin": call.get("qmin"), "window": call.get("window"),
-    }
+    return {"qmax": call.get("qmax"), "qmin": call.get("qmin"), "window": call.get("window")}
 
 
 def result_for(files: dict, fits: list[str], call: dict) -> dict:
@@ -255,11 +250,7 @@ def _plain(value):
     return json.loads(json.dumps(value, allow_nan=False, default=float))
 
 
-DEMO_CALLS = [
-    {"rRange": [2.0, 6.0], "split": [2.45, 2.6]},
-    {"features": [2.32, 2.8, 3.18]},
-    {"pair": "Ta-Se", "features": [2.55, 2.75]},
-]
+DEMO_CALLS = [{}]
 
 
 def build_fixture(cases: list[dict] | None = None) -> dict:
@@ -300,33 +291,8 @@ def committed_cases(fixture: dict) -> list[dict]:
     ]
 
 
-#: A reading this close to a rule's threshold (relative) is refused: the two
-#: engines' fits agree to ~1e-9, and the golden must not depend on which side.
-THRESHOLD_MARGIN = 1e-6
-
-
-def near_thresholds(fixture: dict) -> list[str]:
-    """Readings within THRESHOLD_MARGIN of a rule's threshold (the classes would be round-off)."""
-    found = []
-    calls = [("demo", call) for call in fixture["demo"]["calls"]]
-    calls += [(case["name"], call) for case in fixture["cases"] for call in case["calls"]]
-    for name, call in calls:
-        for feature in call["expected"]["features"] or []:
-            for reading in feature["datasets"]:
-                ripple = reading["ripple"]
-                if ripple and ripple["amplitude"]:
-                    ratio = abs(reading["size"]) / abs(ripple["amplitude"])
-                    for bound in (R.RIPPLE_SIZE_FACTOR, 1.0 / R.RIPPLE_SIZE_FACTOR, 1.0 / R.NEGLIGIBLE_RIPPLE_FRACTION):
-                        if abs(ratio / bound - 1.0) < THRESHOLD_MARGIN:
-                            found.append(f"{name}: feature at {reading['r']} has |size|/|ripple| at {bound}")
-    return found
-
-
 def main() -> None:
     fixture = build_fixture()
-    close = near_thresholds(fixture)
-    if close:
-        raise SystemExit("refusing a golden on a threshold:\n  " + "\n  ".join(close))
     OUT.write_text(json.dumps(fixture, indent=1, allow_nan=False) + "\n", encoding="utf-8")
     print(f"wrote {OUT}")
     for case in [{"name": "demo", "calls": fixture["demo"]["calls"]}, *fixture["cases"]]:

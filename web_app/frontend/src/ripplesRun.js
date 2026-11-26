@@ -9,18 +9,15 @@
 // to the Python golden.
 //
 // Per fit file (<stem>_FT_XFQ<n>.csv, _Xray_PDF<n>.csv, _PDF<n>.csv,
-// _FQ<n>.csv, _SQ<n>.csv): <stem>.dat (ripple_settings), <stem>_PDFpartials.csv
-// (the closest approach; a pair's g(r)), for the transform of an X-ray F(Q)
-// <stem>_XFQ<n>.csv else <stem>_FQ<n>.csv, for a real-space block the input
-// file it names and the Auto StoG provenance (*_provenance.json, in the
-// folder or its autoscale/) or classic stog input (*.inp, stog_input.dat)
-// that made it. One result is kept per set of file versions and arguments.
+// _FQ<n>.csv, _SQ<n>.csv): <stem>.dat (ripple_settings), for the transform of
+// an X-ray F(Q) <stem>_XFQ<n>.csv else <stem>_FQ<n>.csv, for a real-space
+// block the input file it names and the Auto StoG provenance
+// (*_provenance.json, in the folder or its autoscale/) or classic stog input
+// (*.inp, stog_input.dat) that made it. One result is kept per set of file
+// versions and arguments.
 
 import { readRmcCsv, rwpColumns } from './browserData';
-import {
-    assessDataset, assessRun, autoStogTitle, BLOCKS, closestApproach, datasetFile, provenanceTransform, rippleSettings,
-    stogTransform
-} from './ripples';
+import { assessDataset, autoStogTitle, BLOCKS, datasetFile, provenanceTransform, rippleSettings, stogTransform } from './ripples';
 import { readStogInp, readStogXy } from './workers/autoScale';
 
 const dirname = (path) => (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '');
@@ -53,7 +50,7 @@ const readColumns = async (file) => {
 };
 
 /** The data file's own transform and processing, from the files beside it (data_processing). */
-const dataProcessing = async (byPath, runFiles, dir, dataName, inputText) => {
+const dataProcessing = async (runFiles, dir, dataName, inputText) => {
     let transform = null;
     for (const directory of [dir, joinPath(dir, 'autoscale')]) {
         if (transform !== null) continue;
@@ -97,8 +94,7 @@ const dataProcessing = async (byPath, runFiles, dir, dataName, inputText) => {
 
 const failed = (file, info, error) => ({
     status: 'failed', reason: `could not read the run's files: ${error?.message || error}`, file: file.name, kind: info.kind,
-    number: info.number, total: true, block: null, fit: null, transform: null, resolution: null, peaks: [], lowR: null,
-    processing: null, space: null, rFirst: null, _analysis: null
+    number: info.number, block: null, fit: null, transform: null, resolution: null, processing: null
 });
 
 // Results by the versions of the files they were computed from and the arguments.
@@ -111,26 +107,19 @@ const remember = (key, value) => {
     return value;
 };
 
-// The datasets' analyses by file versions and the caller's transform.
-const MAX_ANALYSED = 4;
-const analysed = new Map();
-
 /** Forget every kept result (tests). */
 export const clearRipplesCache = () => {
     cache.clear();
-    analysed.clear();
 };
 
 /**
- * assessRun for a run's fit files (`fitFiles`, each { name, path, sourceFile,
- * modified, size }) from `runFiles`, every file of the run; `args` the
- * caller's { features, rRange, split, pair, qmax, qmin, window }. A file that
- * cannot be read gives a failed dataset.
+ * assessDataset for a run's fit files (`fitFiles`, each { name, path,
+ * sourceFile, modified, size }) from `runFiles`, every file of the run; `args`
+ * the caller's { qmax, qmin, window }. A file that cannot be read gives a
+ * failed dataset. Returns { datasets } (ripples_for_run).
  */
 export const ripplesForRun = async (fitFiles, runFiles, args = {}) => {
-    const {
-        features = null, rRange = null, split = null, pair = null, qmax = null, qmin = null, window = null
-    } = args;
+    const { qmax = null, qmin = null, window = null } = args;
     const byPath = new Map((runFiles || []).map((file) => [file.path || file.name, file]));
     const override = qmax !== null && qmax !== undefined ? { qMax: qmax, qMin: qmin, window } : null;
     const relevant = (fitFiles || []).filter((file) => datasetFile(file.name));
@@ -138,21 +127,15 @@ export const ripplesForRun = async (fitFiles, runFiles, args = {}) => {
     for (const file of relevant) {
         const info = datasetFile(file.name);
         const dir = dirname(file.path || file.name);
-        for (const name of [`${info.stem}.dat`, `${info.stem}_PDFpartials.csv`, `${info.stem}_XFQ${info.number}.csv`,
-            `${info.stem}_FQ${info.number}.csv`]) companions.add(joinPath(dir, name));
+        for (const name of [`${info.stem}.dat`, `${info.stem}_XFQ${info.number}.csv`, `${info.stem}_FQ${info.number}.csv`]) {
+            companions.add(joinPath(dir, name));
+        }
     }
     const versions = [...relevant.map(versionOf), ...[...companions].sort().map((path) => versionOf(byPath.get(path))),
         ...(runFiles || []).filter((file) => /_provenance\.json$|\.inp$|^stog_input\.dat$|\.(gr|sq|fq|dat)$/i.test(file.name))
             .map(versionOf).sort()];
-    const key = JSON.stringify([versions, features, rRange, split, pair, qmax, qmin, window]);
+    const key = JSON.stringify([versions, qmax, qmin, window]);
     if (cache.has(key)) return cache.get(key);
-    // The datasets' analyses depend on the files and the caller's transform
-    // only: a call that asks about other features reuses them.
-    const datasetsKey = JSON.stringify([versions, pair, qmax, qmin, window]);
-    if (analysed.has(datasetsKey)) {
-        const { payloads, pairSeries } = analysed.get(datasetsKey);
-        return remember(key, assessRun(payloads, { features, rRange, split, pair: pair !== null ? pairSeries : null }));
-    }
 
     const memo = new Map();
     const once = (id, make) => {
@@ -160,7 +143,6 @@ export const ripplesForRun = async (fitFiles, runFiles, args = {}) => {
         return memo.get(id);
     };
     const payloads = [];
-    let pairSeries = null;
     for (const file of relevant) {
         const info = datasetFile(file.name);
         const dir = dirname(file.path || file.name);
@@ -170,22 +152,7 @@ export const ripplesForRun = async (fitFiles, runFiles, args = {}) => {
                 const dat = find(`${info.stem}.dat`);
                 return dat ? rippleSettings(await dat.sourceFile.text()) : null;
             });
-            const partials = await once(`partials:${dir}:${info.stem}`, async () => {
-                const entry = find(`${info.stem}_PDFpartials.csv`);
-                return entry ? readRmcCsv(await entry.sourceFile.text(), entry.name) : null;
-            });
-            const rFirst = closestApproach(partials ? partials.data : null, settings ? settings.minimumDistances : null);
-            if (pair !== null && partials !== null && pairSeries === null) {
-                const wanted = String(pair).split('-').map((part) => part.trim()).sort();
-                partials.labels.slice(1).forEach((label, k) => {
-                    if (pairSeries !== null) return;
-                    const parts = label.split('-').map((part) => part.trim()).sort();
-                    if (parts.length === wanted.length && parts.every((part, i) => part === wanted[i])) {
-                        pairSeries = { label: label.trim(), r: partials.data[0], g: partials.data[k + 1] };
-                    }
-                });
-            }
-            const [x, calc, data] = await readColumns(file);
+            const [x, , data] = await readColumns(file);
             let fq = null;
             let inputColumns = null;
             let dataTransform = null;
@@ -205,21 +172,18 @@ export const ripplesForRun = async (fitFiles, runFiles, args = {}) => {
                         text = await inputFile.sourceFile.text();
                         inputColumns = readStogXy(text);
                     }
-                    [dataTransform, processing] = await dataProcessing(byPath, runFiles, dir, relative.split('/').pop(), text);
+                    [dataTransform, processing] = await dataProcessing(runFiles, dir, relative.split('/').pop(), text);
                 }
             }
             payloads.push(assessDataset({
-                name: file.name, kind: info.kind, number: info.number, settings, x, calc, data, fq, inputColumns, dataTransform,
-                override, rFirst, processing
+                name: file.name, kind: info.kind, number: info.number, settings, x, data, fq, inputColumns, dataTransform,
+                override, processing
             }));
         } catch (error) {
             payloads.push(failed(file, info, error));
         }
     }
-    analysed.set(datasetsKey, { payloads, pairSeries });
-    while (analysed.size > MAX_ANALYSED) analysed.delete(analysed.keys().next().value);
-    const result = assessRun(payloads, { features, rRange, split, pair: pair !== null ? pairSeries : null });
-    return remember(key, result);
+    return remember(key, { datasets: payloads });
 };
 
 /**

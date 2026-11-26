@@ -81,7 +81,7 @@ from .ft_uncertainty import (
     rmc_ft_covariance,
     rmc_ft_sigma,
 )
-from .ripples import RIPPLE_SIZE_FACTOR, analyse_series, assess_run, classify_features, ripples_for_run
+from .ripples import fit_space_risk, ripples_for_run
 from .plots import PlotResult, close_plot, detect_plot_kind, make_plot, plot_to_png
 from .structure_basis import MAX_BASIS_SITES, basis_site_count, read_structure_basis, structure_basis
 from .triplets import (
@@ -266,9 +266,6 @@ __all__ = [
     "rmc_ft",
     "rmc_ft_covariance",
     "rmc_ft_sigma",
-    "RIPPLE_SIZE_FACTOR",
-    "analyse_series",
-    "assess_run",
-    "classify_features",
+    "fit_space_risk",
     "ripples_for_run",
 ]

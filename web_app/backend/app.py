@@ -526,9 +526,8 @@ _SCALING_CACHE = _FileCache(8)  # /api/scaling/*: per (data file, config, mode, 
 _FT_UNCERTAINTY_CACHE = _FileCache(8)  # /api/plot/data (xPDF): per (transform file, its companions' signatures)
 _RIPPLES_CACHE = _FileCache(8)  # /api/ripples: per (first fit file, every file the call may read, the arguments)
 
-#: At most this many fit files and features per /api/ripples call.
+#: At most this many fit files per /api/ripples call.
 MAX_RIPPLE_FILES = 16
-MAX_RIPPLE_FEATURES = 8
 
 
 def _companion_signatures(ft_path: Path) -> tuple:
@@ -1373,31 +1372,17 @@ def _folder_signatures(folders) -> tuple:
     return tuple(out)
 
 
-def _query_numbers(name: str, *, count: int | None = None, limit: int | None = None, **rules):
-    """A comma-separated list of numbers; missing or blank means None."""
-    raw = request.args.get(name)
-    if raw is None or not raw.strip():
-        return None
-    values = [_number(token.strip(), name, **rules) for token in raw.split(",") if token.strip()]
-    if count is not None and len(values) != count:
-        raise ValueError(f"{name} must be {count} numbers, got {len(values)}")
-    if limit is not None and len(values) > limit:
-        raise ValueError(f"{name} takes at most {limit} numbers, got {len(values)}")
-    return values
-
-
 @app.route("/api/ripples", methods=["GET"])
 def ripples_endpoint():
     """Fourier termination ripples of a run's fitted datasets (rmc_toolkits.ripples.ripples_for_run).
 
     Params: path (repeated; the run's fit files: <stem>_FT_XFQ<n>.csv,
-    _PDF<n>.csv, _Xray_PDF<n>.csv, _FQ<n>.csv, _SQ<n>.csv, one folder),
-    features (comma-separated positions in angstrom) or rMin and rMax (find
-    them), split (two positions), pair (a partial g(r), e.g. Ta-Se), qmax,
+    _PDF<n>.csv, _Xray_PDF<n>.csv, _FQ<n>.csv, _SQ<n>.csv, one folder), qmax,
     qmin and window (none | lorch: the caller's word on a real-space dataset
     whose files do not give its transform). The input files a .dat names are
-    read only inside the data roots. Payload shape: assess_run's, mirrored by
-    the browser's src/ripplesRun.js (ripples_fixture.json).
+    read only inside the data roots. Payload shape: ripples_for_run's
+    ``{datasets}``, mirrored by the browser's src/ripplesRun.js
+    (ripples_fixture.json).
     """
     try:
         raw_paths = request.args.getlist("path")
@@ -1413,15 +1398,6 @@ def ripples_endpoint():
                 raise ValueError(f"{path.name} is not a fit file the ripple check reads")
         if len({path.parent for path in paths}) != 1:
             raise ValueError("the paths must be in one folder")
-        features = _query_numbers("features", limit=MAX_RIPPLE_FEATURES, gt=0.0, le=100.0)
-        r_min = _query_number("rMin", None, ge=0.0, le=100.0)
-        r_max = _query_number("rMax", None, gt=0.0, le=100.0)
-        if (r_min is None) != (r_max is None):
-            raise ValueError("rMin and rMax go together")
-        if r_min is not None and not r_max > r_min:
-            raise ValueError("rMax must exceed rMin")
-        split = _query_numbers("split", count=2, gt=0.0, le=100.0)
-        pair = (request.args.get("pair") or "").strip() or None
         qmax = _query_number("qmax", None, gt=0.0, le=200.0)
         qmin = _query_number("qmin", None, ge=0.0, le=200.0)
         if qmin is not None and qmax is not None and not qmax > qmin:
@@ -1429,18 +1405,14 @@ def ripples_endpoint():
         window = (request.args.get("window") or "").strip().lower() or None
         if window not in (None, "none", "lorch"):
             raise ValueError("window must be none or lorch")
-        r_range = None if r_min is None else [r_min, r_max]
         params = (
-            tuple(str(path) for path in paths), _folder_signatures({path.parent for path in paths}),
-            tuple(features) if features else None, tuple(r_range) if r_range else None, tuple(split) if split else None,
-            pair, qmax, qmin, window,
+            tuple(str(path) for path in paths), _folder_signatures({path.parent for path in paths}), qmax, qmin, window,
         )
         result = _RIPPLES_CACHE.get(
             paths[0],
             params,
             lambda: ripples_for_run(
-                paths, features=features, r_range=r_range, split=split, pair=pair, qmax=qmax, qmin=qmin, window=window,
-                resolve=lambda path: _resolve_inside_root(str(path)),
+                paths, qmax=qmax, qmin=qmin, window=window, resolve=lambda path: _resolve_inside_root(str(path)),
             ),
         )
         return _strict_result_response(result)

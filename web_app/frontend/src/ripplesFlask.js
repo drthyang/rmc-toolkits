@@ -19,13 +19,7 @@ const abortError = () => {
 export const ripplesQuery = (paths, args = {}) => {
     const query = new URLSearchParams();
     for (const path of paths || []) query.append('path', path);
-    if (args.features?.length) query.append('features', args.features.join(','));
-    if (args.rRange) {
-        query.append('rMin', String(args.rRange[0]));
-        query.append('rMax', String(args.rRange[1]));
-    }
-    if (args.split?.length === 2) query.append('split', args.split.join(','));
-    for (const key of ['pair', 'qmax', 'qmin', 'window']) {
+    for (const key of ['qmax', 'qmin', 'window']) {
         if (args[key] !== null && args[key] !== undefined) query.append(key, String(args[key]));
     }
     return query;
