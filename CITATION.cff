@@ -1,0 +1,37 @@
+cff-version: 1.2.0
+message: "If you use RMC Workbench in your work, please cite it as below."
+type: software
+title: "RMC Workbench: monitoring and interpreting RMCProfile fits"
+abstract: >-
+  A browser dashboard for RMCProfile runs: fits, structures, atomic displacements,
+  symmetry tools and an AI Copilot that answers by calling analysis tools. Runs in the
+  browser; data stay on the user's machine.
+authors:
+  - family-names: "Yang"
+    given-names: "Tsung-Han"
+    orcid: "https://orcid.org/0000-0003-0186-302X"
+version: "0.8.1"
+date-released: "2026-11-25"
+license: AGPL-3.0-or-later
+repository-code: "https://github.com/drthyang/rmc-toolkits"
+url: "https://drthyang.github.io/rmc-toolkits/"
+keywords: [reverse Monte Carlo, RMCProfile, total scattering, pair distribution function, local structure]
+references:
+  - type: article
+    title: "RMCProfile: reverse Monte Carlo for polycrystalline materials"
+    authors:
+      - family-names: "Tucker"
+        given-names: "Matthew G."
+      - family-names: "Keen"
+        given-names: "David A."
+      - family-names: "Dove"
+        given-names: "Martin T."
+      - family-names: "Goodwin"
+        given-names: "Andrew L."
+      - family-names: "Hui"
+        given-names: "Qun"
+    journal: "Journal of Physics: Condensed Matter"
+    volume: 19
+    start: 335218
+    year: 2007
+    doi: "10.1088/0953-8984/19/33/335218"
